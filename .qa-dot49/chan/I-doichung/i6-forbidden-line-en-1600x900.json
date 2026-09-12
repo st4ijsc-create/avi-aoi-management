@@ -1,0 +1,61 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "lang": "en",
+  "vp": "1600x900",
+  "tag": "../.qa-dot49/chan/I-doichung",
+  "luc": "2026-09-12T01:40:17.158Z",
+  "coMan": true,
+  "onDinh": true,
+  "msToiOnDinh": 1275,
+  "url": "/twin/line/2",
+  "__soCanvas": 1,
+  "canvasDom": 1,
+  "canvasDs": [
+    {
+      "x": 288,
+      "y": 125,
+      "w": 1288,
+      "h": 659,
+      "chaTestId": "khoi-canh-3d"
+    }
+  ],
+  "drawCalls": 6,
+  "api": {
+    "factoryList": {
+      "status": 200,
+      "code": null,
+      "soPhanTu": 1
+    },
+    "overview": {
+      "status": 200,
+      "code": null,
+      "soPhanTu": 4
+    },
+    "toaNha": {
+      "status": 200,
+      "code": null,
+      "soPhanTu": 1
+    },
+    "canh": {
+      "status": 200,
+      "code": null,
+      "soPhanTu": 10
+    }
+  },
+  "lineKhongMoDuoc": {
+    "co": 0,
+    "lyDo": null,
+    "chu": null
+  },
+  "daiLine": 1,
+  "oTram": 12,
+  "lineRong": 0,
+  "demMay": "Machines 12",
+  "body": "Factory\n›\nDây chuyền ảo 2\nMachines 12\nStations 12\nWIP 1304\n◆\nSIM-L2-CONVEYOR\n◆\nSIM-L2-ROBOT\nCONVEYOR · Unknown\nROBOT · Unknown\nFCT · Unknown\nPWR · Unknown\nASSY · Unknown\nICT · Unknown\nSCREW · Unknown\nPACK · Unknown\nAVI · Unknown\nAOI · Unknown\nAGV · Unknown\nSPI · Unknown\nMetrics\n12 machines\nDây chuyền ảo 2\nRunning\n0\nDown\n0\nMaintenance\n0\nOffline\n12\nRunning rate\n0%\nAverage OEE\n—\nMachines w/ andon\n2\nP",
+  "biChan": 0,
+  "i6": {
+    "forbiddenThat": false,
+    "dat": true
+  }
+}

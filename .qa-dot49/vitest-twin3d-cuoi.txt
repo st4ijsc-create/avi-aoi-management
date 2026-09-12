@@ -1,0 +1,131 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+ ✓ client/src/components/twin3d/van-hanh/nhungTaiCho.unit.test.ts (40 tests) 19ms
+ ✓ client/src/components/twin3d/loi/locNhan.unit.test.ts (68 tests) 55ms
+ ✓ client/src/components/twin3d/van-hanh/daiCanhBaoLogic.unit.test.ts (35 tests) 13ms
+ ✓ client/src/components/twin3d/van-hanh/duongDanTwin.unit.test.ts (75 tests) 77ms
+ ✓ client/src/components/twin3d/sinhBoCuc.unit.test.ts (38 tests) 71ms
+ ✓ client/src/components/twin3d/boCucTang.unit.test.ts (50 tests) 20ms
+ ✓ client/src/components/twin3d/van-hanh/moPhongLogic.unit.test.ts (37 tests) 13ms
+ ✓ client/src/components/twin3d/hinhHocCanChinh.unit.test.ts (69 tests) 20ms
+ ✓ client/src/components/twin3d/van-hanh/trungThucDuLieu.unit.test.ts (56 tests) 13ms
+ ✓ client/src/components/twin3d/thiet-ke/trangThaiThietKe.unit.test.ts (69 tests) 70ms
+ ✓ client/src/components/twin3d/van-hanh/cuaVaoTwin.unit.test.ts (34 tests) 17ms
+ ✓ client/src/components/twin3d/thiet-ke/cayPhanCapLogic.unit.test.ts (51 tests) 17ms
+ ✓ client/src/components/twin3d/van-hanh/sucKhoeMay.unit.test.ts (35 tests) 19ms
+ ✓ client/src/components/twin3d/hieuChinhNhapModel.unit.test.ts (45 tests) 22ms
+ ✓ client/src/components/twin3d/van-hanh/locBadge.unit.test.ts (28 tests) 19ms
+ ✓ client/src/components/twin3d/thiet-ke/vungAnToan.unit.test.ts (49 tests) 27ms
+ ✓ client/src/components/twin3d/docBanVe.unit.test.ts (46 tests) 24ms
+ ✓ client/src/components/twin3d/van-hanh/manLineNoiVaoTrang.unit.test.ts (43 tests) 18ms
+ ✓ client/src/components/twin3d/loi/hinhHocTuMoTa.unit.test.ts (30 tests) 34ms
+ ✓ client/src/components/twin3d/van-hanh/phamViCanh.unit.test.ts (53 tests) 32ms
+ ✓ client/src/components/twin3d/van-hanh/manMayNoiVaoTrang.unit.test.ts (41 tests) 24ms
+ ✓ client/src/components/twin3d/van-hanh/manLine.unit.test.ts (36 tests) 398ms
+ ✓ client/src/components/twin3d/van-hanh/manMay.unit.test.ts (42 tests) 25ms
+ ✓ client/src/components/twin3d/van-hanh/wipTram.unit.test.ts (40 tests) 26ms
+ ✓ client/src/components/twin3d/van-hanh/noiChoGoi.unit.test.ts (18 tests) 15ms
+ ✓ client/src/components/twin3d/phamViLine.unit.test.ts (49 tests) 28ms
+ ✓ client/src/components/twin3d/van-hanh/hopNhatCanh.unit.test.ts (27 tests) 23ms
+ ✓ client/src/components/twin3d/van-hanh/nganXuLyLogic.unit.test.ts (29 tests) 20ms
+ ✓ client/src/components/twin3d/van-hanh/tang1KhongTachDuoc.unit.test.ts (8 tests) 36ms
+ ✓ client/src/components/twin3d/heToaDo.unit.test.ts (38 tests) 17ms
+ ✓ client/src/components/twin3d/mauTrangThai.unit.test.ts (29 tests) 92ms
+ ✓ client/src/components/twin3d/van-hanh/cayVanHanh.unit.test.ts (21 tests) 10ms
+ ✓ client/src/components/twin3d/thiet-ke/khungNhin.unit.test.ts (34 tests) 16ms
+ ✓ client/src/components/twin3d/van-hanh/kpiNoiLogic.unit.test.ts (16 tests) 19ms
+ ✓ client/src/components/twin3d/lichSuThaoTac.unit.test.ts (30 tests) 19ms
+ ✓ client/src/components/twin3d/van-hanh/boChonNap.unit.test.ts (22 tests) 19ms
+ ✓ client/src/components/twin3d/mucChiTiet.unit.test.ts (38 tests) 23ms
+ ✓ client/src/components/twin3d/bo-cuc/dinhTuyenTwinCu.unit.test.ts (22 tests) 14ms
+ ✓ client/src/components/twin3d/thiet-ke/quyenThietKe.unit.test.ts (14 tests) 8ms
+ ✓ client/src/components/twin3d/thiet-ke/xemTruocSinh.unit.test.ts (24 tests) 23ms
+ ✓ client/src/components/twin3d/van-hanh/xuatXuNhip.unit.test.ts (21 tests) 12ms
+ ✓ client/src/components/twin3d/loi/locNhanKhoiMay.unit.test.ts (12 tests) 15ms
+ ✓ client/src/components/twin3d/tachTangTuHinhHoc.unit.test.ts (29 tests) 19ms
+ ✓ client/src/components/twin3d/thiet-ke/banDoNho.unit.test.ts (28 tests) 14ms
+ ✓ client/src/components/twin3d/van-hanh/useMoPhongTwin.unit.test.ts (12 tests) 14ms
+ ✓ client/src/components/twin3d/napModel.unit.test.ts (19 tests) 17ms
+ ✓ client/src/components/twin3d/hinhKhoiMay.unit.test.ts (55 tests) 31ms
+ ✓ client/src/components/twin3d/thiet-ke/gizmoNoiLogic.unit.test.ts (32 tests) 21ms
+ ✓ client/src/components/twin3d/loi/matDoKhungHinh.unit.test.ts (34 tests) 26ms
+ ✓ client/src/components/twin3d/van-hanh/useTrangThaiSong.unit.test.ts (10 tests) 12ms
+ ✓ client/src/components/twin3d/thiet-ke/xuatAnh.unit.test.ts (25 tests) 25ms
+ ✓ client/src/components/twin3d/van-hanh/usePhanTichLine.unit.test.ts (10 tests) 14ms
+ ✓ client/src/components/twin3d/van-hanh/xuatUsd.unit.test.ts (17 tests) 15ms
+ ✓ client/src/components/twin3d/van-hanh/khoTrangThai.unit.test.ts (15 tests) 13ms
+ ✓ client/src/components/twin3d/bo-cuc/vungQuyen.unit.test.ts (12 tests) 17ms
+ ✓ client/src/components/twin3d/bo-cuc/daiHopNhatLogic.unit.test.ts (16 tests) 14ms
+ ✓ client/src/components/twin3d/van-hanh/hopNhatCanhKhongTachThem.unit.test.ts (6 tests) 13ms
+ ✓ client/src/components/twin3d/van-hanh/hopNhatCanhNoiVaoTrang.unit.test.ts (12 tests) 14ms
+ ✓ client/src/components/twin3d/van-hanh/nguonDuLieu.unit.test.ts (17 tests) 14ms
+ ✓ client/src/components/twin3d/van-hanh/chipCanhBaoAn.unit.test.ts (11 tests) 104ms
+ ✓ client/src/components/twin3d/kiemTraAsset.unit.test.ts (18 tests) 13ms
+ ✓ client/src/components/twin3d/van-hanh/khuChoVaNhanLine.unit.test.ts (12 tests) 9ms
+ ✓ client/src/components/twin3d/van-hanh/i18nBaMan.unit.test.ts (7 tests) 23ms
+ ✓ client/src/components/twin3d/bo-cuc/duongDanBaMan.unit.test.ts (14 tests) 10ms
+ ✓ client/src/components/twin3d/thiet-ke/tiLeAnhNen.unit.test.ts (18 tests) 12ms
+ ✓ client/src/components/twin3d/van-hanh/phuUns.unit.test.ts (11 tests) 12ms
+ ✓ client/src/components/twin3d/van-hanh/hoatAnhDongChay.unit.test.ts (12 tests) 9ms
+ ✓ client/src/components/twin3d/van-hanh/canhLine.unit.test.ts (9 tests) 11ms
+ ✓ client/src/components/twin3d/van-hanh/dichKhungDoc.unit.test.ts (6 tests) 21ms
+ ✓ client/src/components/twin3d/van-hanh/boCucViewport.unit.test.ts (18 tests) 21ms
+ ✓ client/src/components/twin3d/loi/chonVatThe.unit.test.ts (17 tests) 13ms
+ ✓ client/src/components/twin3d/van-hanh/dongThoiGian.unit.test.ts (25 tests) 16ms
+ ✓ client/src/components/twin3d/van-hanh/chinhSachNhan.unit.test.ts (8 tests) 16ms
+ ✓ client/src/components/twin3d/van-hanh/canhBaoAnToan.unit.test.ts (11 tests) 10ms
+ ✓ client/src/components/twin3d/van-hanh/useAnhLichSu.unit.test.ts (7 tests) 7ms
+ ✓ client/src/components/twin3d/van-hanh/congQuyenTwin.unit.test.ts (7 tests) 8ms
+ ✓ client/src/components/twin3d/van-hanh/nhipAnToan.unit.test.ts (7 tests) 8ms
+ ✓ client/src/components/twin3d/van-hanh/giuDuLieuTruoc.unit.test.ts (6 tests) 8ms
+ ✓ client/src/components/twin3d/van-hanh/lopCanhBaoNoiVaoCanvas.unit.test.ts (4 tests) 13ms
+ ✓ client/src/components/twin3d/loi/demDuoiChoChip.unit.test.ts (5 tests) 9ms
+ ✓ client/src/components/twin3d/van-hanh/useTrangThaiTwin.unit.test.ts (7 tests) 8ms
+ ✓ client/src/components/twin3d/van-hanh/maNgan.unit.test.ts (9 tests) 8ms
+ ✓ client/src/components/twin3d/van-hanh/onDinhTheoGiaTri.unit.test.ts (5 tests) 7ms
+ ✓ client/src/components/twin3d/van-hanh/boCucThanhCongCu.unit.test.ts (5 tests) 9ms
+ ✓ client/src/components/twin3d/van-hanh/cheNhan.unit.test.ts (20 tests) 163ms
+ ✓ client/src/components/twin3d/loi/phanBietBamKeo.unit.test.ts (8 tests) 7ms
+ ✓ client/src/components/twin3d/loi/hopDaVe.unit.test.ts (6 tests) 12ms
+ ✓ client/src/components/twin3d/loi/cheDoDo.unit.test.ts (2 tests) 5ms
+ ✓ client/src/components/twin3d/thiet-ke/banDoNhoCanh.unit.test.ts (6 tests) 13ms
+ ✓ client/src/components/twin3d/van-hanh/vungVanHanh.dom.test.tsx (15 tests) 12ms
+ ✓ client/src/components/twin3d/van-hanh/vienSucKhoe.dom.test.tsx (16 tests) 28ms
+stderr | client/src/components/twin3d/loi/loBatchMay.dom.test.tsx
+THREE.WARNING: Multiple instances of Three.js being imported.
+
+stderr | client/src/components/twin3d/van-hanh/mauThree.dom.test.tsx
+THREE.WARNING: Multiple instances of Three.js being imported.
+
+stderr | client/src/components/twin3d/van-hanh/phaVeNen.dom.test.tsx > ★★★ D2 — tái hiện: `phaVeNen` với oklch THÔ trả NGUYÊN màu gốc > ★★★ đầu vào oklch ⇒ đầu ra === đầu vào (chênh = 0 bit thông tin)
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ ✓ client/src/components/twin3d/van-hanh/phaVeNen.dom.test.tsx (18 tests) 274ms
+ ✓ client/src/components/twin3d/loi/loBatchMay.dom.test.tsx (5 tests) 108ms
+ ✓ client/src/components/twin3d/van-hanh/noiLoD.dom.test.tsx (17 tests) 176ms
+ ✓ client/src/components/twin3d/van-hanh/dongThoiGian.dom.test.tsx (3 tests) 96ms
+ ✓ client/src/components/twin3d/van-hanh/DaiCanhBao.dom.test.tsx (29 tests) 495ms
+ ✓ client/src/components/twin3d/van-hanh/daiLineWip.dom.test.tsx (13 tests) 474ms
+ ✓ client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx (25 tests) 408ms
+stderr | client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx
+Not implemented: navigation to another Document
+
+ ✓ client/src/components/twin3d/loi/modelErrorBoundary.dom.test.tsx (13 tests) 110ms
+ ✓ client/src/components/twin3d/thiet-ke/CayPhanCap.dom.test.tsx (27 tests) 890ms
+ ✓ client/src/components/twin3d/van-hanh/mauThree.dom.test.tsx (15 tests) 129ms
+stderr | client/src/components/twin3d/van-hanh/danhSachMayAoHoa.dom.test.tsx > H1 — ảo hoá đo được > 549 máy ⇒ SỐ `<li>` trong DOM ÍT HƠN MỘT BẬC (549 → dưới 40)
+react-i18next:: useTranslation: You will need to pass in an i18next instance by using initReactI18next { code: 'NO_I18NEXT_INSTANCE' }
+
+ ✓ client/src/components/twin3d/van-hanh/danhSachMayAoHoa.dom.test.tsx (11 tests) 968ms
+ ✓ client/src/components/twin3d/van-hanh/nhungTaiCho.dom.test.tsx (30 tests) 1924ms
+   ✓ NganNhung — ngăn chi tiết tại chỗ > ★★★ mở ngăn MÁY ⇒ render THÂN MÁY, đúng id — không phải thân khác 342ms
+   ✓ NganNhung — ngăn chi tiết tại chỗ > ★★★ mở ngăn ROBOT ⇒ render THÂN ROBOT, đúng id 313ms
+   ✓ NganNhung — ngăn chi tiết tại chỗ > ★★★ mở ngăn TRẠM ⇒ render THÂN TRẠM, đúng id 321ms
+
+ Test Files  103 passed (103)
+      Tests  2449 passed (2449)
+   Start at  08:13:00
+   Duration  11.56s (transform 20.59s, setup 6.32s, collect 51.83s, tests 8.45s, environment 32.88s, prepare 27.46s)
+

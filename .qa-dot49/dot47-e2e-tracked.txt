@@ -1,0 +1,8 @@
+.qa-dot47/e2e/t1a-man-twin-line-1280-sau-bam.png
+.qa-dot47/e2e/t1a-man-twin-line-1280.json
+.qa-dot47/e2e/t1a-man-twin-line-1600-sau-bam.png
+.qa-dot47/e2e/t1a-man-twin-line-1600.json
+.qa-dot47/e2e/t1a-man-twin-van-hanh-1280-sau-bam.png
+.qa-dot47/e2e/t1a-man-twin-van-hanh-1280.json
+.qa-dot47/e2e/t1a-man-twin-van-hanh-1600-sau-bam.png
+.qa-dot47/e2e/t1a-man-twin-van-hanh-1600.json

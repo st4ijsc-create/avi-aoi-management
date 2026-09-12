@@ -1,0 +1,484 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "luc": "2026-09-12T02:13:16.454Z",
+  "url": "/twin/may/14",
+  "coMan": true,
+  "coCanvas": true,
+  "coCockpit": true,
+  "__soCanvas": 1,
+  "canvasDom": 1,
+  "canvasDs": [
+    {
+      "x": 288,
+      "y": 125,
+      "w": 1000,
+      "h": 324,
+      "day": 449,
+      "chaTestId": "khoi-canh-3d",
+      "w_attr": 1000,
+      "h_attr": 324
+    }
+  ],
+  "drawCalls": 5,
+  "matContext": 0,
+  "__demNhan": {
+    "ve": 1,
+    "tong": 1,
+    "ngoaiKhung": 0,
+    "chongLap": 0,
+    "vuotTran": 0,
+    "tran": 30,
+    "biGiau": 0,
+    "vuotMep": 0,
+    "biChe": 0,
+    "deKhoiKhac": 0,
+    "deKhoiKhacDoLai": 0,
+    "soHopKhoi": 3,
+    "soVungCam": 1,
+    "soLopPhuDom": 1,
+    "soHopBadge": 0,
+    "suCoNgoaiKhung": 0,
+    "capConChong": 0
+  },
+  "nhan": {
+    "canvas": {
+      "x": 288,
+      "y": 125,
+      "w": 1000,
+      "h": 324
+    },
+    "lop": {
+      "x": 288,
+      "y": 125,
+      "w": 1000,
+      "h": 324
+    },
+    "soBiChe": 0,
+    "phuBox": [
+      {
+        "t": "chip-may",
+        "x": 296,
+        "y": 415,
+        "w": 313,
+        "h": 26
+      },
+      {
+        "t": "thanh-tren-may",
+        "x": 288,
+        "y": 80,
+        "w": 1288,
+        "h": 45
+      }
+    ],
+    "lopTrungCanvas": true,
+    "so": 1,
+    "tamTrong": 1,
+    "tronVen": 1,
+    "chipNhanAn": null,
+    "ds": [
+      {
+        "text": "SIM-L2-AOI · Unknown",
+        "x": 715,
+        "y": 155,
+        "w": 146,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      }
+    ]
+  },
+  "lienKet": {
+    "hrefLine": [
+      "/twin/line/2"
+    ],
+    "hrefMay": [],
+    "studio": 0
+  },
+  "bbox": {
+    "man": {
+      "x": 288,
+      "y": 80,
+      "w": 1288,
+      "h": 796,
+      "day": 876,
+      "phai": 1576
+    },
+    "thanhTren": {
+      "x": 288,
+      "y": 80,
+      "w": 1288,
+      "h": 45,
+      "day": 125,
+      "phai": 1576
+    },
+    "khoiCanh": {
+      "x": 288,
+      "y": 125,
+      "w": 1000,
+      "h": 324,
+      "day": 449,
+      "phai": 1288
+    },
+    "chip": {
+      "x": 296,
+      "y": 415,
+      "w": 313,
+      "h": 26,
+      "day": 441,
+      "phai": 609
+    },
+    "cockpit": {
+      "x": 288,
+      "y": 449,
+      "w": 1000,
+      "h": 427,
+      "day": 876,
+      "phai": 1288
+    },
+    "panelPhai": {
+      "x": 1288,
+      "y": 125,
+      "w": 288,
+      "h": 751,
+      "day": 876,
+      "phai": 1576
+    },
+    "nganXuLy": {
+      "x": 1289,
+      "y": 125,
+      "w": 287,
+      "h": 751,
+      "day": 876,
+      "phai": 1576
+    }
+  },
+  "chip": {
+    "ma": "SIM-L2-AOI",
+    "loai": "AOI",
+    "trangThai": {
+      "giaTri": "khong_ro",
+      "chu": "Unknown"
+    },
+    "sucKhoe": {
+      "hang": "canh",
+      "chu": "Health 61 % · warning"
+    }
+  },
+  "ngan": {
+    "maMay": "SIM-L2-AOI",
+    "trangThai": {
+      "giaTri": "khong_ro",
+      "chu": "Unknown"
+    },
+    "ghiDe": 1,
+    "doTuoi": "Updated 57 days ago",
+    "soCanhBao": 1,
+    "khongCanhBao": 0,
+    "nutAck": 0,
+    "moChucNang": "OPEN MODULE\nFull cockpit\nMachine health\nTraceability\nControl plane"
+  },
+  "cockpit": {
+    "soTab": 12,
+    "online": "OFFLINE",
+    "ketNoi": "Disconnected",
+    "status": "offline",
+    "chu": "SIM-L2 AOI\nSIM-L2-AOI · AOI · Nhà máy ảo (SIM) · Dây chuyền ảo 2\nOFFLINE\nRefresh\nOverview\nHealth / PdM\nTelemetry\nProcess results\nOEE\nAlarms\nRecipes\nIR programs\nGenealogy\n3D model\nMaintenance\nActions\n—\nOEE\n0%\nFailure risk\n1\nActive alarms\nDisconnected\nConnection\nIdentity\nCode\nSIM-L2-AOI\nType\nAOI\nModel\nSIM-AOI\nManufacturer\nST4I-SIM\nStation\nSIM-L2-AOI-ST\nLine\nDây chuyền ảo 2\nFactory\nNhà máy ảo (SIM)\nCorporate\nSIM\nActive\nactive\nResolved capability\nNo declared capabilities\nEquipment class\nAOI\nAdapter kind\nvision\nDevice type\nAOI\nPackML states\nIdle\nStarting\nExecute\nCompleting\nComplete\nHolding\nHeld\nSuspending\nSuspended\nUnsuspending\nUnholding\nAborting\nAborted\nClearing\nStopping\nStopped\nResetting\nTelemetry tags (5)\nYield %\nNG count\nOK count\nCycle time\nPackML state\nLive state\nStatus\noffline\nPackML / op\n—\nLast change\nonline · 9/7/2026, 1:51:22 AM\nHeartbeat\nrunning\nLast heartbeat\n57d\nConnection\noffline"
+  },
+  "lyDo": null,
+  "vo": {
+    "coSidebar": true,
+    "coContent": true,
+    "soLink": 0,
+    "links": [],
+    "tieuDeApp": "Production (MES)",
+    "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+    "activeApp": "active_app=production"
+  },
+  "htmlLang": "en",
+  "lopCanhBao": 4,
+  "tab3d": {
+    "coTab": true,
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "day": 449,
+        "chaTestId": "khoi-canh-3d",
+        "w_attr": 1000,
+        "h_attr": 324
+      }
+    ],
+    "drawCalls": 5,
+    "matContext": 0,
+    "__demNhan": {
+      "ve": 1,
+      "tong": 1,
+      "ngoaiKhung": 0,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 0,
+      "vuotMep": 0,
+      "biChe": 0,
+      "deKhoiKhac": 0,
+      "deKhoiKhacDoLai": 0,
+      "soHopKhoi": 3,
+      "soVungCam": 1,
+      "soLopPhuDom": 1,
+      "soHopBadge": 0,
+      "suCoNgoaiKhung": 0,
+      "capConChong": 0
+    },
+    "nhan": {
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324
+      },
+      "lop": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324
+      },
+      "soBiChe": 0,
+      "phuBox": [
+        {
+          "t": "chip-may",
+          "x": 296,
+          "y": 415,
+          "w": 313,
+          "h": 26
+        },
+        {
+          "t": "thanh-tren-may",
+          "x": 288,
+          "y": 80,
+          "w": 1288,
+          "h": 45
+        }
+      ],
+      "lopTrungCanvas": true,
+      "so": 1,
+      "tamTrong": 1,
+      "tronVen": 1,
+      "chipNhanAn": null,
+      "ds": [
+        {
+          "text": "SIM-L2-AOI · Unknown",
+          "x": 715,
+          "y": 155,
+          "w": 146,
+          "h": 24,
+          "opacityTichLuy": 1,
+          "tamTrong": true,
+          "tronVen": true,
+          "cheBoi": []
+        }
+      ]
+    }
+  },
+  "dieuHuong": {
+    "sauVeLine": {
+      "url": "/twin/line/2",
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 288,
+          "y": 125,
+          "w": 1288,
+          "h": 659,
+          "day": 784,
+          "chaTestId": "khoi-canh-3d",
+          "w_attr": 1288,
+          "h_attr": 658
+        }
+      ],
+      "drawCalls": 6,
+      "matContext": 0,
+      "__demNhan": {
+        "ve": 12,
+        "tong": 12,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 5,
+        "soLopPhuDom": 2,
+        "soHopBadge": 3,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    "sauBack": {
+      "url": "/twin/may/14",
+      "coManMay": true,
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 288,
+          "y": 125,
+          "w": 1000,
+          "h": 324,
+          "day": 449,
+          "chaTestId": "khoi-canh-3d",
+          "w_attr": 1000,
+          "h_attr": 324
+        }
+      ],
+      "drawCalls": 5,
+      "matContext": 0,
+      "__demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 3,
+        "soVungCam": 1,
+        "soLopPhuDom": 1,
+        "soHopBadge": 0,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    "sauF5": {
+      "url": "/twin/may/14",
+      "coManMay": true,
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 288,
+          "y": 125,
+          "w": 1000,
+          "h": 324,
+          "day": 449,
+          "chaTestId": "khoi-canh-3d",
+          "w_attr": 1000,
+          "h_attr": 324
+        }
+      ],
+      "drawCalls": 5,
+      "matContext": 0,
+      "__demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 3,
+        "soVungCam": 1,
+        "soLopPhuDom": 1,
+        "soHopBadge": 0,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    "sauVeNhaMay": {
+      "url": "/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 288,
+          "y": 207,
+          "w": 1288,
+          "h": 669,
+          "day": 876,
+          "chaTestId": "khoi-canh-3d",
+          "w_attr": 1288,
+          "h_attr": 669
+        }
+      ],
+      "drawCalls": 5,
+      "matContext": 0,
+      "__demNhan": {
+        "ve": 4,
+        "tong": 45,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 41,
+        "vuotMep": 0,
+        "biChe": 3,
+        "deKhoiKhac": 2,
+        "deKhoiKhacDoLai": 2,
+        "soHopKhoi": 42,
+        "soVungCam": 13,
+        "soLopPhuDom": 5,
+        "soHopBadge": 8,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    "backTuNhaMay": {
+      "url": "/twin/may/14",
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 288,
+          "y": 125,
+          "w": 1000,
+          "h": 324,
+          "day": 449,
+          "chaTestId": "khoi-canh-3d",
+          "w_attr": 1000,
+          "h_attr": 324
+        }
+      ],
+      "drawCalls": 5,
+      "matContext": 0,
+      "__demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 3,
+        "soVungCam": 1,
+        "soLopPhuDom": 1,
+        "soHopBadge": 0,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    }
+  }
+}

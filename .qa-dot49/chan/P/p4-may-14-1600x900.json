@@ -1,0 +1,39 @@
+{
+  "tag": "../.qa-dot49/chan/P",
+  "vp": "1600x900",
+  "luc": "2026-09-12T01:40:44.286Z",
+  "coTab": true,
+  "macDinh": {
+    "dom": 1,
+    "so": 1,
+    "ds": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "cha": "khoi-canh-3d"
+      }
+    ]
+  },
+  "moTab": {
+    "dom": 1,
+    "so": 1,
+    "ds": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "cha": "khoi-canh-3d"
+      }
+    ],
+    "noiDungTab": "3D model | No 3D model registered for this machine — showing a placeholder block. | The 3D twin scene above already shows this machine — a second 3D view is not rendered here (one WebGL context per page)."
+  },
+  "dongTab": {
+    "dom": 1,
+    "so": 1
+  },
+  "dat": true,
+  "loiConsole": []
+}

@@ -1,0 +1,63 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "lang": "en",
+  "vp": "1600x900",
+  "tag": "../.qa-dot49/chan/I",
+  "luc": "2026-09-12T01:38:02.198Z",
+  "twin": {
+    "coMan": true,
+    "coCanvas": true,
+    "url": "/twin?pv=factory%3A1&cam=51.38%2C19.68%2C45.11%2C19.13%2C12.85",
+    "tab3d": null,
+    "kyThuat": {
+      "soText": 0,
+      "soHtml": 0,
+      "text": [],
+      "html": []
+    }
+  },
+  "line": {
+    "coMan": true,
+    "coCanvas": true,
+    "url": "/twin/line/2",
+    "tab3d": null,
+    "kyThuat": {
+      "soText": 0,
+      "soHtml": 0,
+      "text": [],
+      "html": []
+    }
+  },
+  "may": {
+    "coMan": true,
+    "coCanvas": true,
+    "url": "/twin/may/14",
+    "tab3d": {
+      "co": true,
+      "chuTab": "3D model",
+      "canvasSau": 1
+    },
+    "kyThuat": {
+      "soText": 0,
+      "soHtml": 1,
+      "text": [],
+      "html": [
+        "a-testid=\"ve-man-line\" href=\"/twin/line/2\" class=\"rounded px-2 py-1 te"
+      ]
+    }
+  },
+  "i3": {
+    "soText": {
+      "twin": 0,
+      "line": 0,
+      "may": 0
+    },
+    "soHtml": {
+      "twin": 0,
+      "line": 0,
+      "may": 1
+    },
+    "datText": true
+  }
+}

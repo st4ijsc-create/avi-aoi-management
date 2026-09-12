@@ -1,0 +1,255 @@
+{
+  "url": "http://localhost:3049/twin/may/14",
+  "lang": "en",
+  "canvas": {
+    "x": 288,
+    "y": 125,
+    "w": 680,
+    "h": 280,
+    "day": 405,
+    "phai": 968
+  },
+  "soCanvas": 1,
+  "lopPhu": [
+    {
+      "t": "chip-may",
+      "cheNhan": 1,
+      "rect": {
+        "x": 296,
+        "y": 371,
+        "w": 313,
+        "h": 26,
+        "day": 397,
+        "phai": 609
+      },
+      "z": 10
+    },
+    {
+      "t": "panel-phai-may",
+      "cheNhan": 0,
+      "rect": {
+        "x": 968,
+        "y": 125,
+        "w": 288,
+        "h": 571,
+        "day": 696,
+        "phai": 1256
+      },
+      "z": 0
+    },
+    {
+      "t": "thanh-tren-may",
+      "cheNhan": 0,
+      "rect": {
+        "x": 288,
+        "y": 80,
+        "w": 968,
+        "h": 45,
+        "day": 125,
+        "phai": 1256
+      },
+      "z": 0
+    },
+    {
+      "t": "cockpit-2d",
+      "cheNhan": 0,
+      "rect": {
+        "x": 288,
+        "y": 405,
+        "w": 680,
+        "h": 291,
+        "day": 696,
+        "phai": 968
+      },
+      "z": 0
+    },
+    {
+      "t": "thanh-tab-cockpit",
+      "cheNhan": 0,
+      "rect": {
+        "x": 292,
+        "y": 482,
+        "w": 672,
+        "h": 48,
+        "day": 530,
+        "phai": 964
+      },
+      "z": 0
+    }
+  ],
+  "nhan": [
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "SIM-L2-AOI · Unknown",
+      "rect": {
+        "x": 555,
+        "y": 147,
+        "w": 146,
+        "h": 24,
+        "day": 171,
+        "phai": 701
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    }
+  ],
+  "badge": [],
+  "chip": [],
+  "capChongNhan": 0,
+  "capChongBadge": 0,
+  "capChongNhanBadge": 0,
+  "badgeDoiCho": 0,
+  "cat": [],
+  "sel": [],
+  "tran": {
+    "docW": 1280,
+    "docH": 720,
+    "innerW": 1280,
+    "innerH": 720,
+    "manDay": 696,
+    "manRect": {
+      "x": 288,
+      "y": 80,
+      "w": 968,
+      "h": 616,
+      "day": 696,
+      "phai": 1256
+    }
+  },
+  "vien": {
+    "chip-may": {
+      "rect": {
+        "x": 296,
+        "y": 371,
+        "w": 313,
+        "h": 26,
+        "day": 397,
+        "phai": 609
+      },
+      "chu": "SIM-L2-AOIAOIUnknownHealth 61 % · warning",
+      "z": 10
+    },
+    "trang-thai-may": {
+      "rect": {
+        "x": 421,
+        "y": 376,
+        "w": 52,
+        "h": 16,
+        "day": 392,
+        "phai": 473
+      },
+      "chu": "Unknown",
+      "z": 10
+    },
+    "suc-khoe-may": {
+      "rect": {
+        "x": 485,
+        "y": 376,
+        "w": 115,
+        "h": 16,
+        "day": 392,
+        "phai": 600
+      },
+      "chu": "Health 61 % · warning",
+      "z": 10
+    },
+    "thanh-tab-cockpit": {
+      "rect": {
+        "x": 292,
+        "y": 482,
+        "w": 672,
+        "h": 48,
+        "day": 530,
+        "phai": 964
+      },
+      "chu": "OverviewHealth / PdMTelemetryProcess resultsOEEAlarmsRecipes",
+      "z": 0
+    },
+    "khoi-canh-may": {
+      "rect": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "day": 405,
+        "phai": 968
+      },
+      "chu": "SIM-L2-AOI · UnknownSIM-L2-AOIAOIUnknownHealth 61 % · warnin",
+      "z": 0
+    },
+    "cockpit-2d": {
+      "rect": {
+        "x": 288,
+        "y": 405,
+        "w": 680,
+        "h": 291,
+        "day": 696,
+        "phai": 968
+      },
+      "chu": "SIM-L2 AOISIM-L2-AOI · AOI · Nhà máy ảo (SIM) · Dây chuyền ả",
+      "z": 0
+    },
+    "khoi-canh-3d": {
+      "rect": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "day": 405,
+        "phai": 968
+      },
+      "chu": "SIM-L2-AOI · Unknown",
+      "z": 0
+    }
+  },
+  "font": {
+    "status": "loaded",
+    "soFace": 11,
+    "faceGeistLoaded": 3,
+    "faceMonoLoaded": 1,
+    "body": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Em",
+    "nhanFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Appl"
+  },
+  "nutThu": {},
+  "demNhan": {
+    "ve": 1,
+    "tong": 1,
+    "ngoaiKhung": 0,
+    "chongLap": 0,
+    "vuotTran": 0,
+    "tran": 30,
+    "biGiau": 0,
+    "vuotMep": 0,
+    "biChe": 0,
+    "deKhoiKhac": 0,
+    "deKhoiKhacDoLai": 0,
+    "soHopKhoi": 3,
+    "soVungCam": 1,
+    "soLopPhuDom": 1,
+    "soHopBadge": 0,
+    "suCoNgoaiKhung": 0,
+    "capConChong": 0
+  },
+  "demBadge": null,
+  "tuongPhan": {
+    "nhan:SIM-L2-AOI · U": {
+      "p5": 0.006,
+      "p95": 0.607,
+      "tiSo": 11.75,
+      "pixel": 3504
+    },
+    "chip-may": {
+      "p5": 0.004,
+      "p95": 0.596,
+      "tiSo": 11.88,
+      "pixel": 8138
+    }
+  }
+}

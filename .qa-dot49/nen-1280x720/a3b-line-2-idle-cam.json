@@ -1,0 +1,31 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1280x720",
+  "luc": "2026-09-12T01:59:37.955Z",
+  "idle1": {
+    "soKhungDoiTrong": 4000,
+    "khung": 0
+  },
+  "idle2": {
+    "soKhungDoiTrong": 4000,
+    "khung": 0
+  },
+  "camDoiCamera": true,
+  "nhanKhongCam": [
+    "CONVEYOR · Unknown@669,397",
+    "ROBOT · Unknown@989,397",
+    "FCT · Unknown@629,371",
+    "PWR · Unknown@865,405",
+    "ASSY · Unknown@868,379",
+    "ICT · Unknown@570,397",
+    "SCREW · Unknown@863,454",
+    "PACK · Unknown@992,371",
+    "AVI · Unknown@457,401",
+    "AOI · Unknown@449,375",
+    "AGV · Unknown@1116,423",
+    "SPI · Unknown@334,427"
+  ],
+  "nhanCoCam": [],
+  "url": "/twin/line/2?cam=10,5,10,0,0"
+}

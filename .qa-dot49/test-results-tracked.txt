@@ -1,0 +1,5 @@
+test-results/C1-C4-toan-man.png
+test-results/C1-fit-all-sau.png
+test-results/C2-anh-xuat-that.png
+test-results/C3-minimap-sau-click.png
+test-results/C5-hop-thoai-luu-vung.png

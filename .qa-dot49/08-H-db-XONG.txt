@@ -1,0 +1,16 @@
+H (CHI DO + DOC MA — KHONG migration, khong doi schema):
+1. robot_telemetry = 1.373.282 hang · robots = 3 · hypertable Timescale 10 chunk (7 NEN + 3 CHUA NEN: 41+95+39 MB).
+   Index ("robotId","timestamp") CO SAN va CO tren ca 3 chunk chua nen ⇒ KHONG phai "thieu index".
+2. twinCanh.ts:1518 `SELECT DISTINCT ON ("robotId") ... ORDER BY "robotId","timestamp" DESC`:
+   EXPLAIN ANALYZE = 409 ms; 3 chunk CHUA NEN bi Seq Scan + Sort "external merge Disk" 3.4+7.6+3.2 MB
+   tren 561.753 hang (316/409 ms). Chunk NEN dung SkipScan, 1 hang/0,05 ms.
+   DOI CHUNG cung ket qua: per-robot `ORDER BY "timestamp" DESC LIMIT 1` x3 = 154+13+10 ms (am: 13+10),
+   so voi DISTINCT ON 782 ms / 673 ms am. => DE XUAT (chua ap): doi HINH DANG cau, khong can migration.
+3. ★★★ NANG NHAT KHONG PHAI CAU TREN: fleetRouter.ts:216 `robotPositions` select * from robot_telemetry
+   where robotId in (...) ORDER BY timestamp DESC — KHONG CO LIMIT. Do: 12.601 ms, keo 1.373.283 HANG
+   (ca poseJson) ve Node de giu 3 hang. Day la "robot state select max 14 s" cua QA lan 7.
+4. machinePresenceService.ts:142 GROUP BY toan bang ot_telemetry (33.372.321 hang) = 774 ms/luot.
+5. G104: cau o twinCanh.ts:1518 DA co `AT TIME ZONE 'UTC'`. 7 cau trong so no cu KHONG con dung dong
+   (machine.ts:122 la CTE co WHERE timestamp >= ... — khong tra timestamp ra ngoai SQL).
+6. CHUA co lap tren DB rieng: DB dev dung chung voi 3000/3001/3008 (phien khac) — do bang EXPLAIN
+   ANALYZE + doi chung hai hinh dang cau tren CUNG DB thay vi tach DB.

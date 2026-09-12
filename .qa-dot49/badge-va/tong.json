@@ -1,0 +1,94 @@
+{
+  "1600x900/twin": {
+    "badge": {
+      "ve": 7,
+      "tong": 7,
+      "soAn": 0,
+      "biChe": 0,
+      "soBiChongLap": 0,
+      "doiCho": 4,
+      "capConChong": 0
+    },
+    "soBadgeDom": 7,
+    "chip": null,
+    "cumChip": {
+      "x": 821,
+      "y": 808,
+      "w": 222,
+      "h": 23,
+      "trongCanvas": true
+    },
+    "canvas": {
+      "x": 288,
+      "y": 207,
+      "w": 1288,
+      "h": 669
+    }
+  },
+  "1600x900/twin/line/2": {
+    "badge": {
+      "ve": 2,
+      "tong": 2,
+      "soAn": 0,
+      "biChe": 0,
+      "soBiChongLap": 0,
+      "doiCho": 0,
+      "capConChong": 0
+    },
+    "soBadgeDom": 2,
+    "chip": null,
+    "cumChip": null,
+    "canvas": {
+      "x": 288,
+      "y": 125,
+      "w": 1288,
+      "h": 659
+    }
+  },
+  "1280x720/twin": {
+    "badge": {
+      "ve": 7,
+      "tong": 7,
+      "soAn": 0,
+      "biChe": 0,
+      "soBiChongLap": 0,
+      "doiCho": 6,
+      "capConChong": 0
+    },
+    "soBadgeDom": 7,
+    "chip": null,
+    "cumChip": {
+      "x": 659,
+      "y": 628,
+      "w": 225,
+      "h": 23,
+      "trongCanvas": true
+    },
+    "canvas": {
+      "x": 288,
+      "y": 207,
+      "w": 968,
+      "h": 489
+    }
+  },
+  "1280x720/twin/line/2": {
+    "badge": {
+      "ve": 2,
+      "tong": 2,
+      "soAn": 0,
+      "biChe": 0,
+      "soBiChongLap": 0,
+      "doiCho": 0,
+      "capConChong": 0
+    },
+    "soBadgeDom": 2,
+    "chip": null,
+    "cumChip": null,
+    "canvas": {
+      "x": 288,
+      "y": 125,
+      "w": 968,
+      "h": 479
+    }
+  }
+}

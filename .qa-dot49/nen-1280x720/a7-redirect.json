@@ -1,0 +1,180 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1280x720",
+  "luc": "2026-09-12T02:05:10.762Z",
+  "soDo": 15,
+  "dat": 14,
+  "truot": [],
+  "doiChungTruot": true,
+  "maxMs": 60118,
+  "ds": [
+    {
+      "cu": "/digital-twin",
+      "dich": "/twin",
+      "tid": "man-twin-van-hanh",
+      "urlCuoi": "/twin",
+      "msDoiDuong": 3870,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=overview",
+      "dich": "/twin",
+      "tid": "man-twin-van-hanh",
+      "urlCuoi": "/twin",
+      "msDoiDuong": 171,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=center",
+      "dich": "/twin",
+      "tid": "man-twin-van-hanh",
+      "urlCuoi": "/twin",
+      "msDoiDuong": 154,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=map",
+      "dich": "/twin",
+      "tid": "man-twin-van-hanh",
+      "urlCuoi": "/twin",
+      "msDoiDuong": 166,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=floor",
+      "dich": "/twin-studio",
+      "tid": "man-twin-studio",
+      "urlCuoi": "/twin-studio",
+      "msDoiDuong": 159,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=layout",
+      "dich": "/twin-studio",
+      "tid": "man-twin-studio",
+      "urlCuoi": "/twin-studio",
+      "msDoiDuong": 195,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=cell",
+      "dich": "/twin",
+      "tid": "man-twin-van-hanh",
+      "urlCuoi": "/twin",
+      "msDoiDuong": 312,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=rf",
+      "dich": "/rf-test-cell",
+      "tid": "",
+      "urlCuoi": "/rf-test-cell",
+      "msDoiDuong": 354,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/factory-live-map",
+      "dich": "/twin",
+      "tid": "man-twin-van-hanh",
+      "urlCuoi": "/twin",
+      "msDoiDuong": 356,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/factory-floor-editor",
+      "dich": "/twin-studio",
+      "tid": "man-twin-studio",
+      "urlCuoi": "/twin-studio",
+      "msDoiDuong": 321,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/cell-twin",
+      "dich": "/twin",
+      "tid": "man-twin-van-hanh",
+      "urlCuoi": "/twin",
+      "msDoiDuong": 281,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin-center",
+      "dich": "/twin",
+      "tid": "man-twin-van-hanh",
+      "urlCuoi": "/twin",
+      "msDoiDuong": 569,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/layout",
+      "dich": "/twin-studio",
+      "tid": "man-twin-studio",
+      "urlCuoi": "/twin-studio",
+      "msDoiDuong": 376,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/rf-test-cell",
+      "dich": "/rf-test-cell",
+      "tid": "",
+      "ghi": "tuyen THAT, 0 chang",
+      "urlCuoi": "/rf-test-cell",
+      "msDoiDuong": 233,
+      "toiDich": true,
+      "coTid": true,
+      "la404": false,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=overview",
+      "dich": "/twin-studio",
+      "tid": "man-twin-studio",
+      "doiChung": true,
+      "urlCuoi": "/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "msDoiDuong": 60118,
+      "toiDich": false,
+      "coTid": false,
+      "la404": false,
+      "dat": false
+    }
+  ]
+}

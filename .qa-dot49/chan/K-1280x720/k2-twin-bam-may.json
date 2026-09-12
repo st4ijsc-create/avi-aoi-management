@@ -1,0 +1,140 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1280x720",
+  "tag": "../.qa-dot49/chan/K-1280x720",
+  "luc": "2026-09-12T01:28:06.851Z",
+  "batDau": "/twin?pv=tang:28",
+  "truoc": {
+    "url": "/twin?pv=tang%3A28&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+    "pv": "tang:28",
+    "coHang": true,
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 207,
+        "w": 968,
+        "h": 489,
+        "chaTestId": "khoi-canh-3d"
+      }
+    ],
+    "drawCalls": 5,
+    "tuTheCamera": {
+      "x": 46.28983020377636,
+      "y": 16.2802169896242,
+      "z": 40.014830203776356,
+      "mucX": 19.125,
+      "mucZ": 12.849999999999998
+    },
+    "nganNhung": 0,
+    "dialog": 0,
+    "xemTrongUrl": false
+  },
+  "sauClickNgay": {
+    "url": "/twin/may/14",
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0,
+        "chaTestId": "khoi-canh-3d"
+      }
+    ],
+    "drawCalls": 5,
+    "tuTheCamera": {
+      "x": 46.28983020377636,
+      "y": 16.2802169896242,
+      "z": 40.014830203776356,
+      "mucX": 19.125,
+      "mucZ": 12.849999999999998
+    },
+    "nganNhung": 0,
+    "dialog": 0,
+    "xemTrongUrl": false
+  },
+  "sau": {
+    "url": "/twin/may/14",
+    "toi": {
+      "dat": true,
+      "ms": 6
+    },
+    "coManMay": true,
+    "coCockpit": true,
+    "cockpit2d": 1,
+    "nganXuLy": 1,
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "chaTestId": "khoi-canh-3d"
+      }
+    ],
+    "drawCalls": 5,
+    "tuTheCamera": {
+      "x": 10.695926983734275,
+      "y": 2.4974080805581735,
+      "z": 17.545926983734276,
+      "mucX": 7.949999999999999,
+      "mucZ": 14.800000000000002
+    },
+    "nganNhung": 0,
+    "dialog": 0,
+    "xemTrongUrl": false,
+    "vo": {
+      "coSidebar": true,
+      "tieuDeApp": "Production (MES)",
+      "soMucMenu": 10,
+      "mucActive": [],
+      "muc3D": {
+        "text": "3D Factory",
+        "ariaCurrent": null,
+        "dataActive": null,
+        "dataState": null,
+        "className": "flex min-h-10 w-full items-center text-sm transition-colors gap-3 rounded-full px-3 py-2.5 hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-sidebar-accent tex"
+      },
+      "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+      "activeApp": "production"
+    },
+    "lyDo": null
+  },
+  "sauBack": {
+    "url": "/twin?pv=tang%3A28&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+    "pv": "tang:28",
+    "toi": {
+      "dat": true,
+      "ms": 43
+    },
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 207,
+        "w": 968,
+        "h": 489,
+        "chaTestId": "khoi-canh-3d"
+      }
+    ],
+    "drawCalls": 5,
+    "tuTheCamera": {
+      "x": 46.28983020377636,
+      "y": 16.2802169896242,
+      "z": 40.014830203776356,
+      "mucX": 19.125,
+      "mucZ": 12.849999999999998
+    },
+    "nganNhung": 0,
+    "dialog": 0,
+    "xemTrongUrl": false
+  },
+  "dat": true
+}

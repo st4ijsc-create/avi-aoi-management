@@ -1,0 +1,46 @@
+{
+  "nut": {
+    "x20": true,
+    "phat": "[data-testid=\"nut-phat\"]"
+  },
+  "nutCoTren": [
+    "may-hang-36",
+    "may-hang-26",
+    "may-hang-32",
+    "may-hang-27",
+    "may-hang-30",
+    "may-hang-29",
+    "may-hang-28",
+    "may-hang-34",
+    "may-hang-31",
+    "may-hang-35",
+    "may-hang-33",
+    "may-hang-25",
+    "may-hang-247",
+    "may-hang-246",
+    "may-hang-250",
+    "nut-thu-kpi",
+    "nut-thu-trai",
+    "nut-truc-tiep",
+    "nut-lui",
+    "nut-phat",
+    "nut-tien",
+    "nut-toc-do-1",
+    "nut-toc-do-5",
+    "nut-toc-do-20"
+  ],
+  "phatLai": {
+    "giay": 40,
+    "truoc": {
+      "dungLo": 3,
+      "khung": 5
+    },
+    "sau": {
+      "dungLo": 3,
+      "khung": 5
+    },
+    "dungLo": 0,
+    "soMay": 42,
+    "khungTang": 0
+  }
+}
