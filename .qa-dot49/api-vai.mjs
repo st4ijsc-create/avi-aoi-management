@@ -1,5 +1,5 @@
 // ĐỢT 48 · D-4 — MA TRẬN API × VAI × NHÀ MÁY cho MỌI thủ tục ĐỌC mà 4 màn twin (+MachineCockpitBody nhúng) gọi (G113).
-//   node .qa-dot48/api-vai.mjs --vai=A|B|C|D|M|ADM [--base=http://localhost:3048]
+//   node .qa-dot49/api-vai.mjs --vai=A|B|C|D|M|ADM [--base=http://localhost:3049]
 //   A e2e_tai_loE (oee+status+andon, gán NM1) · B operator1 (status+andon, 0 gán) · C e2e_dot32_khongquyen (0 quyền, 0 gán) ·
 //   D e2e_dot36_oee (CHỈ analytics_oee, gán NM1) · M e2e_dot41_mon (machine_monitoring+status+oee, gán NM1) · ADM e2e_dot41_adm (admin, 0 perm, 0 gán).
 //   NM1 = SIM-FAC (toà 24, tầng 28, line 2, trạm 14, máy 14) · NM18 = T12-SHOT (line 11, trạm 44, máy 257, KHÔNG có toà nhà twin).
@@ -7,8 +7,13 @@
 import { request } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 const arg = (k, d) => { const m = process.argv.find((a) => a.startsWith(`--${k}=`)); return m ? m.slice(k.length + 3) : d; };
-const VAI = arg("vai", "A"); const BASE = arg("base", "http://localhost:3048");
-const OUT = ".qa-dot48/api-vai"; mkdirSync(OUT, { recursive: true });
+const VAI = arg("vai", "A"); const BASE = arg("base", "http://localhost:3049");
+// ★★★ ĐỢT 49 — ĐƯỜNG RA LẤY TỪ ENV. Bản chép nguyên văn của QA ghi CỨNG `.qa-dot48/api-vai`, nên
+//   lượt D-4 của tôi ĐÃ GHI ĐÈ 13 tệp TRACKED của Đợt 48 (đã khôi phục byte-exact bằng
+//   `git show HEAD:<tep>`). Đúng cùng lớp lỗi mà mục F vừa vá cho `e2e/twin-dot47-bam-canh.spec.ts`
+//   — và tôi dính nó ở một tệp KHÁC trong cùng phiên: sửa MỘT chỗ ghi cứng không đóng được lớp lỗi,
+//   phải quét MỌI harness có đường ra ghi cứng (G110 "cùng kit, màn thứ ba không quét").
+const OUT = process.env.API_VAI_OUT || ".qa-dot49/api-vai"; mkdirSync(OUT, { recursive: true });
 const TK = {
   A: { username: "e2e_tai_loE", password: "E2eTaiLoE!2026" }, B: { username: "operator1", password: "User@123" },
   C: { username: "e2e_dot32_khongquyen", password: "KhongQuyen!2026" }, D: { username: "e2e_dot36_oee", password: "Oee!2026Dot36" },
