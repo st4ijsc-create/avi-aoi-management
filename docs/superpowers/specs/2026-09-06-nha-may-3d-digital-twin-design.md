@@ -6927,6 +6927,36 @@ HEAD `389fa9b3`, 5 commit đã push `fresh`. Tôi đo lại: `vitest twin3d` **1
 
 **Đợt 52 = QA lần 8 NGHIỆM THU CUỐI** (chủ sở hữu chọn): chấm yêu cầu gốc + *tối ưu · nhanh · đẹp · trực quan* + QĐ-18/19/21/23/24/25/27, bấm tâm khối máy ≥ 5 máy/màn/vp **kể cả máy bị nhãn phủ**, F1 ≥ 7 lượt, `[SLOW QUERY]` đọc từ **stderr**, 22 trạng thái vi+en, D-4 6 vai, và **chạy MỌI script kiểm trong `package.json`** (G108 đã cắn 4 lần).
 
+### 14q.31 Đợt 52 — QA lần 8 NGHIỆM THU CUỐI: 290/308, chỉ "đẹp" còn thiếu đúng một thứ (2026-09-12, commit `52e62d94`)
+
+**Tổng theo rổ 308 ca: ĐẠT 290 · SAI 5 · HỎNG 0 · CHẶN-ĐÚNG 9 · N/A 4.** K8 (bấm máy) 46/48 · K9 (chọn Line) 6/6 · F1 28/28 · 40 s đứng yên 6/6 · thị giác 46/46 · bbox 34/34 · nhãn×badge màn Máy 28/32 · D-1 41 ĐẠT/5 chặn-đúng/2 N/A · D-2 50/54 · hợp đồng trạng thái 5/6. D-4 chấm riêng: **lệch 0/299** (288 tRPC × 6 vai + 6 socket + 5 HTTP v1).
+
+| Mục nghiệm thu | Phán quyết | Số |
+|---|---|---|
+| **Yêu cầu gốc** (chọn Line → Line 3D, chọn máy → Machine 3D) | **ĐẠT** | Máy **24/24** `mouse.click` tâm khối ⇒ đúng `/twin/may/:id` (**gồm 5 máy mà tâm bị nhãn máy khác phủ** — kết cục Đợt 49 đứng vững), trễ trong trang 0–0,5 ms; Line **6/6** |
+| **Tối ưu** | **ĐẠT** | `__soCanvas=1` cả 3 màn · `demObject` 1/1/1 · draw 3–6 (trần 150) · 0 khung/40 s × 3 màn, rAF 0, commit R3F 0 |
+| **Nhanh** | **ĐẠT** | p50 **1 169** · p90 **1 284** · max **1 300** ms · **0/28** > 2 500 ms · `traSucKhoeMay` 0 câu chậm (QĐ-27 có hiệu lực) |
+| **Đẹp** | **CHƯA** | 34/34 bbox, 0 tràn, 46/46 trạng thái sạch — thiếu **đúng 1 thứ**: màn Máy của máy *đang có cảnh báo*, badge đè **17–35 %** nhãn tên (4/4 ca vp × ngôn ngữ) |
+| **Trực quan** | **ĐẠT** | 0 nhãn ngoài canvas / bị che · chip "còn N tên bị ẩn" nhìn thấy · vòng sức khoẻ đổi màu theo hạng (đọc trên 6 ảnh) |
+| **QĐ-18/19/21/23/24/25** | **ĐẠT** | studio chặn riêng · 1 canvas/màn 30/30 · URL phân cấp 30/30 · redirect 20/20 + 2 đối chứng trượt đúng · what-if ở màn Line · API key thiếu scope ⇒ 404 |
+| **QĐ-27** | **ĐẠT (dev)** | index có thật, `traSucKhoeMay` 0 câu chậm — **production chưa áp** |
+
+**Pareto SAI (2 nguyên nhân / 5 ca).** (1) **4 ca** — màn Máy **không có** chính sách tránh nhau `lop-nhan` ↔ `lop-canh-bao` (ở `/twin`/Line có `chinhSachNhan` + `locBadge`: badge dời chỗ 30 lần, cặp chồng 0). Lỗ đo: lưới 22 trạng thái dùng `/twin/may/14` — máy **0 cảnh báo** — nên trạng thái này **chưa bao giờ vào lưới**. (2) **1 ca** — `assetCockpit.machineDetail.liveState.value.operationStatus = **null**` ⇒ `factoryCommandService.ts:576` mất dữ kiện ⇒ `mapMachineStatus` rơi `default:` ⇒ **`machineDetail`="running" trong khi `overview`="idle"** cho cùng máy đang kết nối; chỉ lộ khi chèn nhịp tim `now()` (8 đợt trước mọi máy offline nên hai bề mặt tình cờ bằng nhau — đúng họ G105).
+
+**Pareto hiệu năng (không tính SAI):** `server/services/factoryCommandService.ts:289` còn **bản sao thứ hai của đúng lớp lỗi QĐ-27**: `DISTINCT ON machine_health_history`, không WHERE, `ORDER BY timestamp` (index mới là `createdAt DESC`) ⇒ Seq Scan **214 197 hàng** → external merge **8 824 kB** → **136,7 ms**, và **nằm trên đường người dùng cả 3 màn Twin** (`useTrangThaiSong.ts:87`).
+
+**Bảng cổng `package.json` — chạy HẾT (G108 lần 5).** Xanh: `check` · `i18n:check` · `lint:tokens` · `i18n:audit` · `kb:stale-check` · `vision:validate` · `lake:verify` · `kiem-vo-app-https`. **ĐỎ:** `check:tests` 32 lỗi TS (**5 lỗi nằm TRONG `client/src/components/twin3d/van-hanh/`**) · `kb:operational-cards:test` 194≠164 · `ext:check` thiếu `@types/vscode` · `vitest` toàn bộ 96 tệp/196 test (0 trong twin3d). Chưa chạy có lý do: `test:e2e` toàn bộ (spec ghi DB dev ngoài trap).
+
+**Lỗi của QA, 5/6 nằm ở THIẾT BỊ ĐO** — và mỗi cái đều bị chính phép đo khác bác: đếm khung bằng `__thongKeVe.calls` (draw call một khung) ⇒ đối chứng "kéo vẫn vẽ" trượt, phải đếm **đổi định danh object**; gom số thị giác nhầm khoá ⇒ "toàn 0" GIẢ; K9 0/6 SAI vì điều hướng trong trang làm rơi `?do=1`; diff D-4 lần đầu chỉ so 12/288 lượt; `grep "QĐ-19"` rỗng vì tài liệu viết "QD-19". **Brief tôi sai 4 chỗ**, nặng nhất: **mục 1 bỏ mất nửa yêu cầu gốc** (chỉ bấm MÁY, không có ca nào đi đường người dùng cho **chọn Line**) — QA tự thêm K9; và K8i "đổi tầng/toà nhà" **không đo được** vì DB dev chỉ có **1 toà / 1 tầng**.
+
+> #### ★★★ G134 - **LƯỚI TRẠNG THÁI CHỌN MẪU "SẠCH" THÌ TRẠNG THÁI CÓ SỰ CỐ KHÔNG BAO GIỜ ĐƯỢC ĐO.**
+> 22 trạng thái thị giác chạy suốt 20 đợt trên `/twin/may/14` — máy **0 cảnh báo**. Màn Máy chưa bao giờ có badge để mà chồng, nên lỗi "badge đè nhãn 35 %" sống sót qua mọi lần QA cho tới khi ai đó chọn `/twin/may/18`. **Chọn mẫu theo TRẠNG THÁI cần phủ (có/không cảnh báo, có/không dữ liệu tươi), không theo mẫu tiện tay**; danh sách trạng thái phải nằm trong lưới, không nằm trong trí nhớ người chạy.
+
+> #### ★★ G135 - **HỢP ĐỒNG TRẠNG THÁI CHỈ VỠ KHI DỮ LIỆU SỐNG XUẤT HIỆN — "HAI BỀ MẶT BẰNG NHAU" TRÊN DỮ LIỆU CHẾT LÀ SỰ TRÙNG HỢP.**
+> Đợt 34 đóng "một hợp đồng trạng thái" và 8 đợt sau đều xanh — vì mọi máy đều offline, mọi bề mặt cùng nói "offline". Chèn một nhịp tim `now()` là hai bề mặt tách đôi ngay (`machineDetail` "running" vs `overview` "idle") do nhánh `default:` suy ra "running" khi thiếu dữ kiện. **Bất biến trạng thái phải đo trên dữ liệu SỐNG (chèn nhịp tim tạm), và nhánh thiếu-dữ-kiện phải fail-safe, không suy ra trạng thái đẹp nhất.**
+
+**Đợt 53 (giao tiếp — kỹ thuật, tự quyết):** A đóng "đẹp" (chính sách tránh nhau ở màn Máy + mở lưới 22 trạng thái sang máy CÓ cảnh báo, ablation 2 chiều) · B `mapMachineStatus` fail-safe + bất biến 6 bề mặt thành lưới tự động · C vá bản sao câu chậm `factoryCommandService.ts:289` + quét mọi `DISTINCT ON` trên đường người dùng · D ghi bảng nợ (`check:tests` 32 lỗi trong đó 5 ở twin3d, `kb:operational-cards`, `ext:check`, 1 toà/1 tầng chặn bộ chọn nạp).
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
