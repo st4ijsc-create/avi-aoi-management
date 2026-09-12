@@ -1,0 +1,61 @@
+{
+  "tag": "../.qa-dot54/chan/P",
+  "vp": "1600x900",
+  "luc": "2026-09-12T13:26:21.277Z",
+  "lan": [
+    {
+      "msToiTrucTiep": 1050,
+      "moc": [
+        {
+          "t": 159,
+          "kn": null
+        },
+        {
+          "t": 376,
+          "kn": null
+        },
+        {
+          "t": 578,
+          "kn": null
+        },
+        {
+          "t": 816,
+          "kn": "chua_ket_noi",
+          "chu": "Not connected"
+        },
+        {
+          "t": 1050,
+          "kn": "truc_tiep",
+          "chu": "Live"
+        }
+      ]
+    },
+    {
+      "msToiTrucTiep": 1024,
+      "moc": [
+        {
+          "t": 180,
+          "kn": null
+        },
+        {
+          "t": 391,
+          "kn": null
+        },
+        {
+          "t": 597,
+          "kn": null
+        },
+        {
+          "t": 814,
+          "kn": null
+        },
+        {
+          "t": 1024,
+          "kn": "truc_tiep",
+          "chu": "Live"
+        }
+      ]
+    }
+  ],
+  "dat": true
+}

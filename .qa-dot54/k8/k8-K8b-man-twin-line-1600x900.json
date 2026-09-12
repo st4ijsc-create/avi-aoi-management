@@ -1,0 +1,351 @@
+{
+  "luc": "2026-09-12T12:18:33.131Z",
+  "base": "http://localhost:3054",
+  "duong": "/twin/line/2",
+  "man": "man-twin-line",
+  "vp": "1600x900",
+  "me": {
+    "cache": true,
+    "ten": "e2e_tai_loE",
+    "status": 200,
+    "ct": "application/json"
+  },
+  "mo": {
+    "msCanvas": 1150,
+    "msSanSang": 3729,
+    "coMayTrongKhung": true
+  },
+  "coChe": {
+    "soObject": 1,
+    "coHandler": 1,
+    "trongScene": 1,
+    "ten": [
+      "twin3d-lo-may-su-kien"
+    ]
+  },
+  "census": {
+    "soTrongKhung": 12,
+    "soBamDuoc": 12,
+    "soNhanVe": 12,
+    "ds": [
+      {
+        "id": 13,
+        "X": 476.2068400092677,
+        "Y": 595.8811932245372,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 23,
+        "X": 1305.499005647585,
+        "Y": 590.4949471919194,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 18,
+        "X": 890.48859235867,
+        "Y": 594.775008813539,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 16,
+        "X": 723.7122985278099,
+        "Y": 592.9964732389033,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 14,
+        "X": 559.0835530608474,
+        "Y": 595.8669429125673,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 15,
+        "X": 641.9498049795004,
+        "Y": 595.8811932245372,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 20,
+        "X": 1055.508637256561,
+        "Y": 599.6359978980166,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 22,
+        "X": 1222.571890111155,
+        "Y": 594.7464876324461,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 21,
+        "X": 1138.909992839764,
+        "Y": 596.6795520945813,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 17,
+        "X": 807.0273765741116,
+        "Y": 592.9964732389033,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 24,
+        "X": 1388.6257880934468,
+        "Y": 594.775008813539,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      },
+      {
+        "id": 19,
+        "X": 973.2132129199787,
+        "Y": 597.7763467121381,
+        "biNhanKhacPhu": [],
+        "biChe": null
+      }
+    ],
+    "loai": [],
+    "cv": [
+      288,
+      125,
+      1288,
+      658.5
+    ]
+  },
+  "cursorTrenMay": "pointer",
+  "san": {
+    "X": 932,
+    "Y": 177.68
+  },
+  "cursorTrenSan": "auto",
+  "urlSauSan": "http://localhost:3054/twin/line/2?do=1",
+  "chon": [
+    {
+      "id": 13,
+      "biNhanKhacPhu": []
+    },
+    {
+      "id": 18,
+      "biNhanKhacPhu": []
+    },
+    {
+      "id": 14,
+      "biNhanKhacPhu": []
+    },
+    {
+      "id": 20,
+      "biNhanKhacPhu": []
+    },
+    {
+      "id": 21,
+      "biNhanKhacPhu": []
+    }
+  ],
+  "soBiPhuTrongKhung": 0,
+  "bam": [
+    {
+      "may": 13,
+      "biNhanKhacPhu": [],
+      "biChe": null,
+      "X": 476,
+      "Y": 596,
+      "hit": "twin3d-lo-may#13",
+      "url": "http://localhost:3054/twin/may/13",
+      "dich": "13",
+      "treTrongTrang": 0.3,
+      "msPlaywright": 14,
+      "veXong": {
+        "coCanvas": true,
+        "onDinh": true,
+        "msVeXong": 2316
+      },
+      "manMay": {
+        "coMan": true,
+        "canvasDom": 1,
+        "canvasTrongMan": 1,
+        "__soCanvas": 1,
+        "dangTai": 0,
+        "spin": 0,
+        "calls": 5,
+        "thanhTren": "Nhà máy›Dây chuyền ảo 2›SIM-L2 SPI",
+        "h1": "SIM-L2 SPI"
+      },
+      "png": ".qa-dot54/k8/k8-K8b-1600x900-may1-13-sau.png",
+      "ok": true
+    },
+    {
+      "may": 18,
+      "biNhanKhacPhu": [],
+      "biChe": null,
+      "X": 890,
+      "Y": 595,
+      "hit": "twin3d-lo-may#18",
+      "url": "http://localhost:3054/twin/may/18",
+      "dich": "18",
+      "treTrongTrang": 0.1,
+      "msPlaywright": 17,
+      "veXong": {
+        "coCanvas": true,
+        "onDinh": true,
+        "msVeXong": 2216
+      },
+      "manMay": {
+        "coMan": true,
+        "canvasDom": 1,
+        "canvasTrongMan": 1,
+        "__soCanvas": 1,
+        "dangTai": 0,
+        "spin": 0,
+        "calls": 5,
+        "thanhTren": "Nhà máy›Dây chuyền ảo 2›SIM-L2 CONVEYOR",
+        "h1": "SIM-L2 CONVEYOR"
+      },
+      "png": ".qa-dot54/k8/k8-K8b-1600x900-may2-18-sau.png",
+      "ok": true
+    },
+    {
+      "may": 14,
+      "biNhanKhacPhu": [],
+      "biChe": null,
+      "X": 559,
+      "Y": 596,
+      "hit": "twin3d-lo-may#14",
+      "url": "http://localhost:3054/twin/may/14",
+      "dich": "14",
+      "treTrongTrang": 0,
+      "msPlaywright": 15,
+      "veXong": {
+        "coCanvas": true,
+        "onDinh": true,
+        "msVeXong": 2217
+      },
+      "manMay": {
+        "coMan": true,
+        "canvasDom": 1,
+        "canvasTrongMan": 1,
+        "__soCanvas": 1,
+        "dangTai": 0,
+        "spin": 0,
+        "calls": 5,
+        "thanhTren": "Nhà máy›Dây chuyền ảo 2›SIM-L2 AOI",
+        "h1": "SIM-L2 AOI"
+      },
+      "png": ".qa-dot54/k8/k8-K8b-1600x900-may3-14-sau.png",
+      "ok": true
+    },
+    {
+      "may": 20,
+      "biNhanKhacPhu": [],
+      "biChe": null,
+      "X": 1056,
+      "Y": 600,
+      "hit": "twin3d-lo-may#20",
+      "url": "http://localhost:3054/twin/may/20",
+      "dich": "20",
+      "treTrongTrang": 0.2,
+      "msPlaywright": 17,
+      "veXong": {
+        "coCanvas": true,
+        "onDinh": true,
+        "msVeXong": 2221
+      },
+      "manMay": {
+        "coMan": true,
+        "canvasDom": 1,
+        "canvasTrongMan": 1,
+        "__soCanvas": 1,
+        "dangTai": 0,
+        "spin": 0,
+        "calls": 5,
+        "thanhTren": "Nhà máy›Dây chuyền ảo 2›SIM-L2 ASSY",
+        "h1": "SIM-L2 ASSY"
+      },
+      "png": ".qa-dot54/k8/k8-K8b-1600x900-may4-20-sau.png",
+      "ok": true
+    },
+    {
+      "may": 21,
+      "biNhanKhacPhu": [],
+      "biChe": null,
+      "X": 1139,
+      "Y": 597,
+      "hit": "twin3d-lo-may#21",
+      "url": "http://localhost:3054/twin/may/21",
+      "dich": "21",
+      "treTrongTrang": 0.2,
+      "msPlaywright": 13,
+      "veXong": {
+        "coCanvas": true,
+        "onDinh": true,
+        "msVeXong": 2212
+      },
+      "manMay": {
+        "coMan": true,
+        "canvasDom": 1,
+        "canvasTrongMan": 1,
+        "__soCanvas": 1,
+        "dangTai": 0,
+        "spin": 0,
+        "calls": 3,
+        "thanhTren": "Nhà máy›Dây chuyền ảo 2›SIM-L2 SCREW",
+        "h1": "SIM-L2 SCREW"
+      },
+      "png": ".qa-dot54/k8/k8-K8b-1600x900-may5-21-sau.png",
+      "ok": true
+    }
+  ],
+  "camTruoc": {
+    "x": 19.200000000000003,
+    "y": 21.367311858230227,
+    "z": 27.76373859388744,
+    "mucX": 19.200000000000003,
+    "mucZ": 12.755692603869027
+  },
+  "camSau": {
+    "x": 13.496259260230783,
+    "y": 21.367311858230227,
+    "z": 26.6376516159107,
+    "mucX": 19.200000000000003,
+    "mucZ": 12.755692603869027
+  },
+  "urlSauKeo": "http://localhost:3054/twin/line/2?do=1",
+  "bamSauKeo": {
+    "may": 23,
+    "biNhanKhacPhu": [],
+    "biChe": null,
+    "X": 1228,
+    "Y": 437,
+    "hit": "twin3d-lo-may#23",
+    "url": "http://localhost:3054/twin/may/23",
+    "dich": "23",
+    "treTrongTrang": 0.2,
+    "msPlaywright": 25,
+    "veXong": {
+      "coCanvas": true,
+      "onDinh": true,
+      "msVeXong": 2222
+    },
+    "manMay": {
+      "coMan": true,
+      "canvasDom": 1,
+      "canvasTrongMan": 1,
+      "__soCanvas": 1,
+      "dangTai": 0,
+      "spin": 0,
+      "calls": 5,
+      "thanhTren": "Nhà máy›Dây chuyền ảo 2›SIM-L2 ROBOT",
+      "h1": "SIM-L2 ROBOT"
+    },
+    "png": ".qa-dot54/k8/k8-K8b-1600x900-mayi1-23-sau.png",
+    "ok": true
+  }
+}

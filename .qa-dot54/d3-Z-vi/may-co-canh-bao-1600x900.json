@@ -1,0 +1,299 @@
+{
+  "url": "http://localhost:3054/twin/may/18",
+  "lang": "vi",
+  "canvas": {
+    "x": 288,
+    "y": 125,
+    "w": 1000,
+    "h": 324,
+    "day": 449,
+    "phai": 1288
+  },
+  "soCanvas": 1,
+  "lopPhu": [
+    {
+      "t": "chip-may",
+      "cheNhan": 1,
+      "rect": {
+        "x": 296,
+        "y": 415,
+        "w": 428,
+        "h": 26,
+        "day": 441,
+        "phai": 724
+      },
+      "z": 10
+    },
+    {
+      "t": "panel-phai-may",
+      "cheNhan": 0,
+      "rect": {
+        "x": 1288,
+        "y": 125,
+        "w": 288,
+        "h": 751,
+        "day": 876,
+        "phai": 1576
+      },
+      "z": 0
+    },
+    {
+      "t": "thanh-tren-may",
+      "cheNhan": 0,
+      "rect": {
+        "x": 288,
+        "y": 80,
+        "w": 1288,
+        "h": 45,
+        "day": 125,
+        "phai": 1576
+      },
+      "z": 0
+    },
+    {
+      "t": "cockpit-2d",
+      "cheNhan": 0,
+      "rect": {
+        "x": 288,
+        "y": 449,
+        "w": 1000,
+        "h": 427,
+        "day": 876,
+        "phai": 1288
+      },
+      "z": 0
+    },
+    {
+      "t": "thanh-tab-cockpit",
+      "cheNhan": 0,
+      "rect": {
+        "x": 292,
+        "y": 526,
+        "w": 992,
+        "h": 48,
+        "day": 574,
+        "phai": 1284
+      },
+      "z": 0
+    }
+  ],
+  "nhan": [
+    {
+      "t": "nhan-may-twin3d",
+      "chu": "SIM-L2-CONVEYOR · Không rõ",
+      "rect": {
+        "x": 694,
+        "y": 132,
+        "w": 188,
+        "h": 24,
+        "day": 156,
+        "phai": 882
+      },
+      "z": 19,
+      "opacity": 1,
+      "fontPx": 12,
+      "color": "oklch(0.96 0.01 260)",
+      "bg": "oklch(0.18 0.015 260)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": []
+    }
+  ],
+  "badge": [
+    {
+      "t": "badge-canh-bao-11",
+      "chu": "◆SIM-L2-CONVEYOR➤",
+      "rect": {
+        "x": 716,
+        "y": 145,
+        "w": 144,
+        "h": 17,
+        "day": 162,
+        "phai": 860
+      },
+      "z": 29,
+      "opacity": 0.6,
+      "fontPx": 11,
+      "color": "rgb(255, 255, 255)",
+      "bg": "oklch(0.78 0.15 75)",
+      "trongCanvas": true,
+      "giaoLop": [],
+      "biChe": [],
+      "giaoDuoi": [],
+      "ngoaiKhung": "1",
+      "muc": "yellow"
+    }
+  ],
+  "chip": [],
+  "capChongNhan": 0,
+  "capChongBadge": 0,
+  "capChongNhanBadge": 1,
+  "badgeDoiCho": 0,
+  "cat": [],
+  "sel": [],
+  "tran": {
+    "docW": 1600,
+    "docH": 900,
+    "innerW": 1600,
+    "innerH": 900,
+    "manDay": 876,
+    "manRect": {
+      "x": 288,
+      "y": 80,
+      "w": 1288,
+      "h": 796,
+      "day": 876,
+      "phai": 1576
+    }
+  },
+  "vien": {
+    "chip-may": {
+      "rect": {
+        "x": 296,
+        "y": 415,
+        "w": 428,
+        "h": 26,
+        "day": 441,
+        "phai": 724
+      },
+      "chu": "SIM-L2-CONVEYORAUTOMATIONKhông rõSức khoẻ 60 % · cảnh báo",
+      "z": 10
+    },
+    "trang-thai-may": {
+      "rect": {
+        "x": 513,
+        "y": 420,
+        "w": 49,
+        "h": 16,
+        "day": 436,
+        "phai": 562
+      },
+      "chu": "Không rõ",
+      "z": 10
+    },
+    "suc-khoe-may": {
+      "rect": {
+        "x": 574,
+        "y": 420,
+        "w": 141,
+        "h": 16,
+        "day": 436,
+        "phai": 715
+      },
+      "chu": "Sức khoẻ 60 % · cảnh báo",
+      "z": 10
+    },
+    "thanh-tab-cockpit": {
+      "rect": {
+        "x": 292,
+        "y": 526,
+        "w": 992,
+        "h": 48,
+        "day": 574,
+        "phai": 1284
+      },
+      "chu": "Tổng quanSức khỏe / PdMTelemetryKết quả processOEECảnh báoRe",
+      "z": 0
+    },
+    "khoi-canh-may": {
+      "rect": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "day": 449,
+        "phai": 1288
+      },
+      "chu": "◆SIM-L2-CONVEYOR➤SIM-L2-CONVEYOR · Không rõSIM-L2-CONVEYORAU",
+      "z": 0
+    },
+    "cockpit-2d": {
+      "rect": {
+        "x": 288,
+        "y": 449,
+        "w": 1000,
+        "h": 427,
+        "day": 876,
+        "phai": 1288
+      },
+      "chu": "SIM-L2 CONVEYORSIM-L2-CONVEYOR · AUTOMATION · Nhà máy ảo (SI",
+      "z": 0
+    },
+    "khoi-canh-3d": {
+      "rect": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "day": 449,
+        "phai": 1288
+      },
+      "chu": "◆SIM-L2-CONVEYOR➤SIM-L2-CONVEYOR · Không rõ",
+      "z": 0
+    }
+  },
+  "font": {
+    "status": "loaded",
+    "soFace": 11,
+    "faceGeistLoaded": 3,
+    "faceMonoLoaded": 1,
+    "body": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Em",
+    "nhanFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Appl"
+  },
+  "nutThu": {},
+  "demNhan": {
+    "ve": 1,
+    "tong": 1,
+    "ngoaiKhung": 0,
+    "chongLap": 0,
+    "vuotTran": 0,
+    "tran": 30,
+    "biGiau": 0,
+    "vuotMep": 0,
+    "biChe": 0,
+    "deKhoiKhac": 0,
+    "deKhoiKhacDoLai": 0,
+    "soHopKhoi": 8,
+    "soVungCam": 1,
+    "soLopPhuDom": 1,
+    "soHopBadge": 0,
+    "suCoNgoaiKhung": 0,
+    "capConChong": 0
+  },
+  "demBadge": {
+    "ve": 1,
+    "tong": 1,
+    "soAn": 0,
+    "soBiChongLap": 0,
+    "soVuotTran": 0,
+    "biChe": 0,
+    "doiCho": 0,
+    "soVungCam": 1,
+    "tran": 12,
+    "capConChong": 0
+  },
+  "tuongPhan": {
+    "nhan:SIM-L2-CONVEYO": {
+      "p5": 0.006,
+      "p95": 0.614,
+      "tiSo": 11.87,
+      "pixel": 4512
+    },
+    "badge:◆SIM-L2-CONVEY(op0.6)": {
+      "p5": 0.068,
+      "p95": 0.552,
+      "tiSo": 5.1,
+      "pixel": 2448
+    },
+    "chip-may": {
+      "p5": 0.004,
+      "p95": 0.596,
+      "tiSo": 11.88,
+      "pixel": 11128
+    }
+  },
+  "soBadgeMay18": 1,
+  "soHopBadgeNhan": 0,
+  "veBadge": 1
+}

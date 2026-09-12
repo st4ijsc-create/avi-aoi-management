@@ -1,0 +1,65 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "lang": "zh",
+  "vp": "1600x900",
+  "tag": "../.qa-dot54/chan/I",
+  "luc": "2026-09-12T13:25:16.408Z",
+  "coMan": true,
+  "coCanvas": true,
+  "url": "/twin?pv=factory%3A1&cam=51.38%2C19.68%2C45.11%2C19.13%2C12.85",
+  "htmlLang": "zh",
+  "tuoi14": {
+    "id": "tuoi-14",
+    "chu": "57 天",
+    "giay": "4967942"
+  },
+  "soO": 42,
+  "soXau": 0,
+  "mauXau": [],
+  "mau": [
+    {
+      "id": "tuoi-244",
+      "chu": "—",
+      "giay": null
+    },
+    {
+      "id": "tuoi-245",
+      "chu": "56 天",
+      "giay": "4886848"
+    },
+    {
+      "id": "tuoi-243",
+      "chu": "56 天",
+      "giay": "4863183"
+    },
+    {
+      "id": "tuoi-12",
+      "chu": "57 天",
+      "giay": "4967942"
+    },
+    {
+      "id": "tuoi-2",
+      "chu": "57 天",
+      "giay": "4967942"
+    },
+    {
+      "id": "tuoi-8",
+      "chu": "57 天",
+      "giay": "4967942"
+    },
+    {
+      "id": "tuoi-3",
+      "chu": "57 天",
+      "giay": "4967942"
+    },
+    {
+      "id": "tuoi-6",
+      "chu": "57 天",
+      "giay": "4967942"
+    }
+  ],
+  "i2": {
+    "dat": true
+  }
+}

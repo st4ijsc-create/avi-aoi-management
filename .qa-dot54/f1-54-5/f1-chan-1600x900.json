@@ -1,0 +1,859 @@
+{
+  "mang": "chan",
+  "vp": "1600x900",
+  "base": "http://localhost:3054",
+  "lang": "vi",
+  "luc": "2026-09-12T11:54:53.293Z",
+  "man": {
+    "/twin": {
+      "duong": "/twin",
+      "tid": "man-twin-van-hanh",
+      "msGoto": 180,
+      "msToiMan": 1261,
+      "msToiCanvas": 1369,
+      "msTruocDoFont": 1369,
+      "fontsStatus": "loaded",
+      "soFace": 11,
+      "faces": [
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "loaded"
+        }
+      ],
+      "faceGeistLoaded": 3,
+      "faceMonoLoaded": 1,
+      "checkGeist": true,
+      "checkGeist600": true,
+      "checkMono": true,
+      "bodyFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "h1": null,
+      "breadcrumb": {
+        "text": "Tập đoàn › › › Nhà máy ảo (SIM) › › › Tầng",
+        "bbox": {
+          "x": 300,
+          "y": 149,
+          "w": 222,
+          "h": 16
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\""
+      },
+      "mono": {
+        "tag": "KBD",
+        "font": "\"Geist Mono\", ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace"
+      },
+      "tieuDe": {
+        "tag": "H2",
+        "text": "Tìm trang, lệnh…",
+        "bbox": {
+          "x": -1,
+          "y": -1,
+          "w": 1,
+          "h": 18
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+        "size": "18px",
+        "weight": "600"
+      },
+      "thanhTren": {
+        "tid": "khoi-tong-quan",
+        "text": "Máy 42 Dữ liệu tươi 0 Dữ liệu cũ 0 Không rõ 41 Ngừng khai th",
+        "bbox": {
+          "x": 288,
+          "y": 207,
+          "w": 287,
+          "h": 105
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\""
+      },
+      "soCanvas": 1,
+      "__soCanvas": 1,
+      "tongResource": 64,
+      "resourceNgoai": [],
+      "woff2": [
+        "/assets/geist-latin-wght-normal-BgDaEnEv.woff2",
+        "/assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2",
+        "/assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2",
+        "/assets/geist-mono-latin-wght-normal-XN7g48iV.woff2"
+      ],
+      "lang": "vi",
+      "msSauDoFont": 1397,
+      "url": "/twin",
+      "neo": {
+        "breadcrumb": {
+          "ten": "breadcrumb",
+          "tag": "NAV",
+          "tid": "breadcrumb-twin",
+          "text": "Tập đoàn › Nhà máy ảo (SIM) › Tầng",
+          "bbox": {
+            "x": 300,
+            "y": 149,
+            "w": 222,
+            "h": 16
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "12px",
+          "weight": "400"
+        },
+        "tieuDe": {
+          "ten": "tieuDe",
+          "tag": "H2",
+          "tid": null,
+          "text": "Tìm trang, lệnh…",
+          "bbox": {
+            "x": -1,
+            "y": -1,
+            "w": 1,
+            "h": 18
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "18px",
+          "weight": "600"
+        },
+        "thanhTren": {
+          "ten": "thanhTren",
+          "tag": "DIV",
+          "tid": "khoi-tong-quan",
+          "text": "Máy 42 Dữ liệu tươi 0 Dữ liệu cũ 0 Không rõ 41 Ngừng khai thác 1",
+          "bbox": {
+            "x": 288,
+            "y": 207,
+            "w": 287,
+            "h": 105
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "12px",
+          "weight": "400"
+        },
+        "nhan": {
+          "ten": "nhan",
+          "tag": "DIV",
+          "tid": "nhan-may-twin3d",
+          "text": "SIM-L2-ROBOT · Không rõ",
+          "bbox": {
+            "x": 1197,
+            "y": 551,
+            "w": 163,
+            "h": 24
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "12px",
+          "weight": "600"
+        },
+        "nut": {
+          "ten": "nut",
+          "tag": "BUTTON",
+          "tid": null,
+          "text": "Sản xuất",
+          "bbox": {
+            "x": 8,
+            "y": 72,
+            "w": 247,
+            "h": 40
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "14px",
+          "weight": "500"
+        },
+        "soNhan": 4,
+        "bodyFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\""
+      },
+      "msNeo": 7405,
+      "requestNgoai": 0,
+      "requestNgoaiDs": [],
+      "dat": true
+    },
+    "/twin/line/2": {
+      "duong": "/twin/line/2",
+      "tid": "man-twin-line",
+      "msGoto": 178,
+      "msToiMan": 1172,
+      "msToiCanvas": 1246,
+      "msTruocDoFont": 1246,
+      "fontsStatus": "loaded",
+      "soFace": 11,
+      "faces": [
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "loaded"
+        }
+      ],
+      "faceGeistLoaded": 3,
+      "faceMonoLoaded": 1,
+      "checkGeist": true,
+      "checkGeist600": true,
+      "checkMono": true,
+      "bodyFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "h1": null,
+      "breadcrumb": null,
+      "mono": {
+        "tag": "KBD",
+        "font": "\"Geist Mono\", ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace"
+      },
+      "tieuDe": {
+        "tag": "H2",
+        "text": "Dải chuyền",
+        "bbox": {
+          "x": 300,
+          "y": 791,
+          "w": 69,
+          "h": 17
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+        "size": "11px",
+        "weight": "600"
+      },
+      "thanhTren": {
+        "tid": "thanh-tren-line",
+        "text": "Nhà máy › Dây chuyền ảo 2 Máy 12 Trạm 12 WIP 1304",
+        "bbox": {
+          "x": 288,
+          "y": 80,
+          "w": 1288,
+          "h": 45
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\""
+      },
+      "soCanvas": 1,
+      "__soCanvas": 1,
+      "tongResource": 55,
+      "resourceNgoai": [],
+      "woff2": [
+        "/assets/geist-latin-wght-normal-BgDaEnEv.woff2",
+        "/assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2",
+        "/assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2",
+        "/assets/geist-mono-latin-wght-normal-XN7g48iV.woff2"
+      ],
+      "lang": "vi",
+      "msSauDoFont": 1264,
+      "url": "/twin/line/2",
+      "neo": {
+        "breadcrumb": null,
+        "tieuDe": {
+          "ten": "tieuDe",
+          "tag": "H2",
+          "tid": null,
+          "text": "DẢI CHUYỀN",
+          "bbox": {
+            "x": 300,
+            "y": 791,
+            "w": 69,
+            "h": 17
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "11px",
+          "weight": "600"
+        },
+        "thanhTren": {
+          "ten": "thanhTren",
+          "tag": "DIV",
+          "tid": "thanh-tren-line",
+          "text": "Nhà máy › Dây chuyền ảo 2 Máy 12 Trạm 12 WIP 1304",
+          "bbox": {
+            "x": 288,
+            "y": 80,
+            "w": 1288,
+            "h": 45
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "14px",
+          "weight": "400"
+        },
+        "nhan": {
+          "ten": "nhan",
+          "tag": "DIV",
+          "tid": "nhan-may-twin3d",
+          "text": "CONVEYOR · Không rõ",
+          "bbox": {
+            "x": 818,
+            "y": 519,
+            "w": 142,
+            "h": 24
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "12px",
+          "weight": "600"
+        },
+        "nut": {
+          "ten": "nut",
+          "tag": "BUTTON",
+          "tid": null,
+          "text": "Sản xuất",
+          "bbox": {
+            "x": 8,
+            "y": 72,
+            "w": 247,
+            "h": 40
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "14px",
+          "weight": "500"
+        },
+        "soNhan": 12,
+        "bodyFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\""
+      },
+      "msNeo": 7281,
+      "requestNgoai": 0,
+      "requestNgoaiDs": [],
+      "dat": true
+    },
+    "/twin/may/14": {
+      "duong": "/twin/may/14",
+      "tid": "man-twin-may",
+      "msGoto": 171,
+      "msToiMan": 1135,
+      "msToiCanvas": 1152,
+      "msTruocDoFont": 1152,
+      "fontsStatus": "loaded",
+      "soFace": 11,
+      "faces": [
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "loaded"
+        }
+      ],
+      "faceGeistLoaded": 3,
+      "faceMonoLoaded": 1,
+      "checkGeist": true,
+      "checkGeist600": true,
+      "checkMono": true,
+      "bodyFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "h1": {
+        "text": "SIM-L2 AOI",
+        "bbox": {
+          "x": 344,
+          "y": 454,
+          "w": 703,
+          "h": 36
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+        "size": "30px",
+        "weight": "700"
+      },
+      "breadcrumb": null,
+      "mono": {
+        "tag": "KBD",
+        "font": "\"Geist Mono\", ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace"
+      },
+      "tieuDe": {
+        "tag": "H1",
+        "text": "SIM-L2 AOI",
+        "bbox": {
+          "x": 344,
+          "y": 454,
+          "w": 703,
+          "h": 36
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+        "size": "30px",
+        "weight": "700"
+      },
+      "thanhTren": {
+        "tid": "thanh-tren-may",
+        "text": "Nhà máy › Dây chuyền ảo 2 › SIM-L2 AOI",
+        "bbox": {
+          "x": 288,
+          "y": 80,
+          "w": 1288,
+          "h": 45
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\""
+      },
+      "soCanvas": 1,
+      "__soCanvas": 1,
+      "tongResource": 74,
+      "resourceNgoai": [],
+      "woff2": [
+        "/assets/geist-latin-wght-normal-BgDaEnEv.woff2",
+        "/assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2",
+        "/assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2",
+        "/assets/geist-mono-latin-wght-normal-XN7g48iV.woff2"
+      ],
+      "lang": "vi",
+      "msSauDoFont": 1154,
+      "url": "/twin/may/14",
+      "neo": {
+        "breadcrumb": null,
+        "tieuDe": {
+          "ten": "tieuDe",
+          "tag": "H1",
+          "tid": null,
+          "text": "SIM-L2 AOI",
+          "bbox": {
+            "x": 344,
+            "y": 454,
+            "w": 703,
+            "h": 36
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "30px",
+          "weight": "700"
+        },
+        "thanhTren": {
+          "ten": "thanhTren",
+          "tag": "DIV",
+          "tid": "thanh-tren-may",
+          "text": "Nhà máy › Dây chuyền ảo 2 › SIM-L2 AOI",
+          "bbox": {
+            "x": 288,
+            "y": 80,
+            "w": 1288,
+            "h": 45
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "14px",
+          "weight": "400"
+        },
+        "nhan": {
+          "ten": "nhan",
+          "tag": "DIV",
+          "tid": "nhan-may-twin3d",
+          "text": "SIM-L2-AOI · Không rõ",
+          "bbox": {
+            "x": 716,
+            "y": 155,
+            "w": 143,
+            "h": 24
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "12px",
+          "weight": "600"
+        },
+        "nut": {
+          "ten": "nut",
+          "tag": "BUTTON",
+          "tid": null,
+          "text": "Sản xuất",
+          "bbox": {
+            "x": 8,
+            "y": 72,
+            "w": 247,
+            "h": 40
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "14px",
+          "weight": "500"
+        },
+        "soNhan": 1,
+        "bodyFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\""
+      },
+      "msNeo": 7167,
+      "requestNgoai": 0,
+      "requestNgoaiDs": [],
+      "dat": true
+    },
+    "/twin-studio": {
+      "duong": "/twin-studio",
+      "tid": "man-twin-studio",
+      "msGoto": 175,
+      "msToiMan": 1084,
+      "msToiCanvas": 1093,
+      "msTruocDoFont": 1093,
+      "fontsStatus": "loaded",
+      "soFace": 11,
+      "faces": [
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist",
+          "weight": "300 700",
+          "style": "normal",
+          "status": "loaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "unloaded"
+        },
+        {
+          "family": "Geist Mono",
+          "weight": "400 600",
+          "style": "normal",
+          "status": "loaded"
+        }
+      ],
+      "faceGeistLoaded": 3,
+      "faceMonoLoaded": 1,
+      "checkGeist": true,
+      "checkGeist600": true,
+      "checkMono": true,
+      "bodyFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "h1": {
+        "text": "Nhà máy 3D — Thiết kế",
+        "bbox": {
+          "x": 304,
+          "y": 151,
+          "w": 198,
+          "h": 28
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+        "size": "18px",
+        "weight": "600"
+      },
+      "breadcrumb": null,
+      "mono": {
+        "tag": "KBD",
+        "font": "\"Geist Mono\", ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace"
+      },
+      "tieuDe": {
+        "tag": "H1",
+        "text": "Nhà máy 3D — Thiết kế",
+        "bbox": {
+          "x": 304,
+          "y": 151,
+          "w": 198,
+          "h": 28
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+        "size": "18px",
+        "weight": "600"
+      },
+      "thanhTren": {
+        "tid": "tablist",
+        "text": "Thêm toà nhà Chọn tệp bản vẽ Thiết kế",
+        "bbox": {
+          "x": 304,
+          "y": 193,
+          "w": 394,
+          "h": 36
+        },
+        "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\""
+      },
+      "soCanvas": 1,
+      "__soCanvas": 1,
+      "tongResource": 69,
+      "resourceNgoai": [],
+      "woff2": [
+        "/assets/geist-latin-wght-normal-BgDaEnEv.woff2",
+        "/assets/geist-latin-ext-wght-normal-DC-KSUi6.woff2",
+        "/assets/geist-vietnamese-wght-normal-6IgcOCM7.woff2",
+        "/assets/geist-mono-latin-wght-normal-XN7g48iV.woff2"
+      ],
+      "lang": "vi",
+      "msSauDoFont": 1096,
+      "url": "/twin-studio",
+      "neo": {
+        "breadcrumb": null,
+        "tieuDe": {
+          "ten": "tieuDe",
+          "tag": "H1",
+          "tid": null,
+          "text": "Nhà máy 3D — Thiết kế",
+          "bbox": {
+            "x": 304,
+            "y": 151,
+            "w": 198,
+            "h": 28
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "18px",
+          "weight": "600"
+        },
+        "thanhTren": {
+          "ten": "thanhTren",
+          "tag": "DIV",
+          "tid": null,
+          "text": "Thêm toà nhà Chọn tệp bản vẽ Thiết kế",
+          "bbox": {
+            "x": 304,
+            "y": 193,
+            "w": 394,
+            "h": 36
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "16px",
+          "weight": "400"
+        },
+        "nhan": null,
+        "nut": {
+          "ten": "nut",
+          "tag": "BUTTON",
+          "tid": null,
+          "text": "Sản xuất",
+          "bbox": {
+            "x": 8,
+            "y": 72,
+            "w": 247,
+            "h": 40
+          },
+          "font": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+          "size": "14px",
+          "weight": "500"
+        },
+        "soNhan": 0,
+        "bodyFont": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\""
+      },
+      "msNeo": 7102,
+      "requestNgoai": 0,
+      "requestNgoaiDs": [],
+      "dat": true
+    }
+  },
+  "datTatCa": true,
+  "tomTat": {
+    "/twin": {
+      "msToiMan": 1261,
+      "msToiCanvas": 1369,
+      "fonts": "loaded",
+      "checkGeist": true,
+      "ngoai": 0,
+      "dat": true
+    },
+    "/twin/line/2": {
+      "msToiMan": 1172,
+      "msToiCanvas": 1246,
+      "fonts": "loaded",
+      "checkGeist": true,
+      "ngoai": 0,
+      "dat": true
+    },
+    "/twin/may/14": {
+      "msToiMan": 1135,
+      "msToiCanvas": 1152,
+      "fonts": "loaded",
+      "checkGeist": true,
+      "ngoai": 0,
+      "dat": true
+    },
+    "/twin-studio": {
+      "msToiMan": 1084,
+      "msToiCanvas": 1093,
+      "fonts": "loaded",
+      "checkGeist": true,
+      "ngoai": 0,
+      "dat": true
+    }
+  }
+}

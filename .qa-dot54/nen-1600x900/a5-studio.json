@@ -1,0 +1,152 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "luc": "2026-09-12T12:41:10.316Z",
+  "url": "/twin-studio",
+  "coMan": true,
+  "tabs": {
+    "tab-con-duong-b": {
+      "__soCanvas": 0,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": 3,
+      "matContext": 1,
+      "__demNhan": null,
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "bbox": {
+        "man": {
+          "x": 288,
+          "y": 133,
+          "w": 1288,
+          "h": 743,
+          "day": 876,
+          "phai": 1576
+        },
+        "khoiCanh": null,
+        "vungCanvas": null
+      },
+      "bien": 0,
+      "phamViRong": 0,
+      "chiXem": 0,
+      "htmlTrongCanvas": 0,
+      "body": "3D Factory — Design\nBuild buildings and floors, import engineering drawings, place machines, and publish a version for operations.\nFactory\nNhà máy ảo (SIM)\nAdd building\nChoose drawing file\nDesign\nBuilding: 1\n1. Building\n2. Floor\n3. Preview\nBuilding\nCode\nName\nLength (m)\nWidth (m)\nHeight (m)\nSite position X (m)\nSite position Y (m)\nEnter metres. The system stores millimetres so machines can be placed to the mm.\nBack\nNext"
+    },
+    "tab-con-duong-a": {
+      "__soCanvas": 0,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": 3,
+      "matContext": 1,
+      "__demNhan": null,
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "bbox": {
+        "man": {
+          "x": 288,
+          "y": 133,
+          "w": 1288,
+          "h": 743,
+          "day": 876,
+          "phai": 1576
+        },
+        "khoiCanh": null,
+        "vungCanvas": null
+      },
+      "bien": 0,
+      "phamViRong": 0,
+      "chiXem": 0,
+      "htmlTrongCanvas": 0,
+      "body": "3D Factory — Design\nBuild buildings and floors, import engineering drawings, place machines, and publish a version for operations.\nFactory\nNhà máy ảo (SIM)\nAdd building\nChoose drawing file\nDesign\nBuilding: 1\nChoose drawing file\nAccepts .step/.stp, .iges/.igs, .brep, .glb/.gltf. Max 60 MB and 2.000.000 triangles. (.dxf/.dwg not accepted in this version.)"
+    },
+    "tab-thiet-ke": {
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 556,
+          "y": 312,
+          "w": 726,
+          "h": 457,
+          "day": 769,
+          "chaTestId": "khoi-canh-3d",
+          "w_attr": 726,
+          "h_attr": 457
+        }
+      ],
+      "drawCalls": 3,
+      "matContext": 1,
+      "__demNhan": null,
+      "nhan": {
+        "canvas": {
+          "x": 556,
+          "y": 312,
+          "w": 726,
+          "h": 457
+        },
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "bbox": {
+        "man": {
+          "x": 288,
+          "y": 133,
+          "w": 1288,
+          "h": 743,
+          "day": 876,
+          "phai": 1576
+        },
+        "khoiCanh": {
+          "x": 556,
+          "y": 312,
+          "w": 726,
+          "h": 457,
+          "day": 769,
+          "phai": 1283
+        },
+        "vungCanvas": {
+          "x": 556,
+          "y": 312,
+          "w": 726,
+          "h": 457,
+          "day": 769,
+          "phai": 1283
+        }
+      },
+      "bien": 1,
+      "phamViRong": 0,
+      "chiXem": 1,
+      "htmlTrongCanvas": 0,
+      "body": "3D Factory — Design\nBuild buildings and floors, import engineering drawings, place machines, and publish a version for operations.\nFactory\nNhà máy ảo (SIM)\nAdd building\nChoose drawing file\nDesign\nBuilding: 1\nView Only\nGrid\nData health:\n41 machines placed\n·\n0 awaiting placement\n·\n41 dimensions not measured\n1 placements point to retired machines\nSIM-WS — Xưởng lắp ráp ảo (SIM)\nUNPLACED MACHINES (0)\n—\nMachines with no position in the 3D layout. Drag onto the floor to place them.\nSelect an object in"
+    }
+  },
+  "htmlLang": "en"
+}

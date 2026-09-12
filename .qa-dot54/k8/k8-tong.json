@@ -1,0 +1,347 @@
+{
+  "tag": "k8",
+  "base": "http://localhost:3054",
+  "luc": "2026-09-12T12:15:34.063Z",
+  "ca": [
+    {
+      "ma": "K8g",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "demObject {\"soObject\":1,\"coHandler\":1,\"trongScene\":1,\"ten\":[\"twin3d-lo-may-su-kien\"]}"
+    },
+    {
+      "ma": "K8e",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "trên máy \"pointer\" · trên sàn \"auto\""
+    },
+    {
+      "ma": "K8c",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "sàn (772,246) URL không đổi"
+    },
+    {
+      "ma": "K8a.1",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 7 [tâm bị NHÃN máy 18 phủ] @(824,447) ⇒ /twin/may/7 · trễ trong trang 0.4 ms (PW 26 ms) · vẽ xong 2625 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 1›SIM-L1 PWR\""
+    },
+    {
+      "ma": "K8a.2",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 17 [tâm bị NHÃN máy 18 phủ] @(717,446) ⇒ /twin/may/17 · trễ trong trang 0.2 ms (PW 29 ms) · vẽ xong 2230 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 FCT\""
+    },
+    {
+      "ma": "K8a.3",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 246 @(657,413) ⇒ /twin/may/246 · trễ trong trang 0.1 ms (PW 21 ms) · vẽ xong 2225 ms canvas 1/kit 1 dangTai 0 calls 3 · \"Nhà máy›Dây chuyền ảo 1›SIM Verify Screw\""
+    },
+    {
+      "ma": "K8a.4",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 6 @(799,436) ⇒ /twin/may/6 · trễ trong trang 0 ms (PW 17 ms) · vẽ xong 2216 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 1›SIM-L1 CONVEYOR\""
+    },
+    {
+      "ma": "K8a.5",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 21 @(823,491) ⇒ /twin/may/21 · trễ trong trang 0.1 ms (PW 16 ms) · vẽ xong 2225 ms canvas 1/kit 1 dangTai 0 calls 3 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 SCREW\""
+    },
+    {
+      "ma": "K8d",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "pathname giữ · camera đổi ({\"x\":46.28983020377636,\"y\":16.2802169896242,\"z\":40.014830203776356,\"mucX\":19.125,\"mucZ\":12.849999999999998} → {\"x\":30.952273791847333,\"y\":16.280216989624215,\"z\":49.400945195065546,\"mucX\":19.125,\"mucZ\":12.849999999999998})"
+    },
+    {
+      "ma": "K8i-keo",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "sau kéo 60px: máy 246 ⇒ /twin/may/246 · trễ 0.1 ms"
+    },
+    {
+      "ma": "K8f",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "nhãn \"SIM-L2-ROBOT · Không rõ\" (id 23) ⇒ /twin/may/23 · Back ⇒ /twin"
+    },
+    {
+      "ma": "K8g",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "demObject {\"soObject\":1,\"coHandler\":1,\"trongScene\":1,\"ten\":[\"twin3d-lo-may-su-kien\"]}"
+    },
+    {
+      "ma": "K8e",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "trên máy \"pointer\" · trên sàn \"auto\""
+    },
+    {
+      "ma": "K8c",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "sàn (772,163) URL không đổi"
+    },
+    {
+      "ma": "K8b.1",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 22 [tâm bị NHÃN máy 21 phủ] @(978,465) ⇒ /twin/may/22 · trễ trong trang 0.3 ms (PW 15 ms) · vẽ xong 2301 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 PACK\""
+    },
+    {
+      "ma": "K8b.2",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 13 @(449,466) ⇒ /twin/may/13 · trễ trong trang 0.1 ms (PW 20 ms) · vẽ xong 2222 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 SPI\""
+    },
+    {
+      "ma": "K8b.3",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 18 @(743,465) ⇒ /twin/may/18 · trễ trong trang 0.2 ms (PW 18 ms) · vẽ xong 2210 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 CONVEYOR\""
+    },
+    {
+      "ma": "K8b.4",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 14 @(508,466) ⇒ /twin/may/14 · trễ trong trang 0.1 ms (PW 17 ms) · vẽ xong 2224 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 AOI\""
+    },
+    {
+      "ma": "K8b.5",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 20 @(860,469) ⇒ /twin/may/20 · trễ trong trang 0.1 ms (PW 19 ms) · vẽ xong 2221 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 ASSY\""
+    },
+    {
+      "ma": "K8d",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "pathname giữ · camera đổi ({\"x\":19.2,\"y\":21.847814931672122,\"z\":28.11401061740952,\"mucX\":19.2,\"mucZ\":12.708306073405517} → {\"x\":11.543118971939368,\"y\":21.847814931672122,\"z\":26.076473689772037,\"mucX\":19.199999999999996,\"mucZ\":12.708306073405515})"
+    },
+    {
+      "ma": "K8i-keo",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "sau kéo 60px: máy 23 ⇒ /twin/may/23 · trễ 0.5 ms"
+    },
+    {
+      "ma": "K8f",
+      "man": "/twin/line/2",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "nhãn \"CONVEYOR · Không rõ\" (id 18) ⇒ /twin/may/18 · Back ⇒ /twin/line/2"
+    },
+    {
+      "ma": "K8i-tang",
+      "man": "/twin",
+      "vp": "1280x720",
+      "pq": "HỎNG",
+      "so": "HỎNG Error: khong co tang khac de doi: {\"nhaMay\":{\"soMuc\":1,\"value\":\"1\",\"opts\":[{\"v\":\"1\",\"n\":\"Nhà máy ảo (SIM)\"}]},\"toaNha\":{\"soMuc\":1,\"value\":\"24\",\"opts\":[{\"v\":\"24\",\"n\":\"Xuong lap rap ao (SIM)\"}]},\"tang\":{\"soMuc\":1,\"value\":\"28\",\"opts\":[{\"v\":\"28\",\"n\":\"Tang tret\"}]}}"
+    },
+    {
+      "ma": "K8h",
+      "man": "/factory-command 3D",
+      "vp": "1280x720",
+      "pq": "ĐẠT",
+      "so": "máy 246 · cursor \"pointer\" · dialog 0→1 \"SIM-L3 PWRSIM-L3-PWRChi tiết máy: hiện t\" · URL giữ · demObject {\"soObject\":1,\"coHandler\":1,\"trongScene\":1,\"ten\":[\"twin3d-lo-may-su-kien\"]}"
+    },
+    {
+      "ma": "K8g",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "demObject {\"soObject\":1,\"coHandler\":1,\"trongScene\":1,\"ten\":[\"twin3d-lo-may-su-kien\"]}"
+    },
+    {
+      "ma": "K8e",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "trên máy \"pointer\" · trên sàn \"auto\""
+    },
+    {
+      "ma": "K8c",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "sàn (932,261) URL không đổi"
+    },
+    {
+      "ma": "K8a.1",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 246 [tâm bị NHÃN máy 3 phủ] @(775,489) ⇒ /twin/may/246 · trễ trong trang 0.4 ms (PW 12 ms) · vẽ xong 2310 ms canvas 1/kit 1 dangTai 0 calls 3 · \"Nhà máy›Dây chuyền ảo 1›SIM Verify Screw\""
+    },
+    {
+      "ma": "K8a.2",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 13 [tâm bị NHÃN máy 3 phủ] @(751,495) ⇒ /twin/may/13 · trễ trong trang 0.2 ms (PW 18 ms) · vẽ xong 2222 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 SPI\""
+    },
+    {
+      "ma": "K8a.3",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 247 @(861,466) ⇒ /twin/may/247 · trễ trong trang 0.2 ms (PW 22 ms) · vẽ xong 2223 ms canvas 1/kit 1 dangTai 0 calls 3 · \"Nhà máy›Dây chuyền ảo 1›Trạm vít demo\""
+    },
+    {
+      "ma": "K8a.4",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 18 @(888,549) ⇒ /twin/may/18 · trễ trong trang 0.1 ms (PW 28 ms) · vẽ xong 2221 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 CONVEYOR\""
+    },
+    {
+      "ma": "K8a.5",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 21 @(1001,596) ⇒ /twin/may/21 · trễ trong trang 0.2 ms (PW 25 ms) · vẽ xong 2225 ms canvas 1/kit 1 dangTai 0 calls 3 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 SCREW\""
+    },
+    {
+      "ma": "K8d",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "pathname giữ · camera đổi ({\"x\":46.28983020377636,\"y\":16.2802169896242,\"z\":40.014830203776356,\"mucX\":19.125,\"mucZ\":12.849999999999998} → {\"x\":36.38075550743993,\"y\":16.280216989624215,\"z\":47.173387097829675,\"mucX\":19.125,\"mucZ\":12.849999999999998})"
+    },
+    {
+      "ma": "K8i-keo",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "sau kéo 60px: máy 246 ⇒ /twin/may/246 · trễ 0.4 ms"
+    },
+    {
+      "ma": "K8f",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "nhãn \"SIM-L2-ROBOT · Không rõ\" (id 23) ⇒ /twin/may/23 · Back ⇒ /twin"
+    },
+    {
+      "ma": "K8g",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "demObject {\"soObject\":1,\"coHandler\":1,\"trongScene\":1,\"ten\":[\"twin3d-lo-may-su-kien\"]}"
+    },
+    {
+      "ma": "K8e",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "trên máy \"pointer\" · trên sàn \"auto\""
+    },
+    {
+      "ma": "K8c",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "sàn (932,178) URL không đổi"
+    },
+    {
+      "ma": "K8b.1",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 13 @(476,596) ⇒ /twin/may/13 · trễ trong trang 0.3 ms (PW 14 ms) · vẽ xong 2316 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 SPI\""
+    },
+    {
+      "ma": "K8b.2",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 18 @(890,595) ⇒ /twin/may/18 · trễ trong trang 0.1 ms (PW 17 ms) · vẽ xong 2216 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 CONVEYOR\""
+    },
+    {
+      "ma": "K8b.3",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 14 @(559,596) ⇒ /twin/may/14 · trễ trong trang 0 ms (PW 15 ms) · vẽ xong 2217 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 AOI\""
+    },
+    {
+      "ma": "K8b.4",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 20 @(1056,600) ⇒ /twin/may/20 · trễ trong trang 0.2 ms (PW 17 ms) · vẽ xong 2221 ms canvas 1/kit 1 dangTai 0 calls 5 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 ASSY\""
+    },
+    {
+      "ma": "K8b.5",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 21 @(1139,597) ⇒ /twin/may/21 · trễ trong trang 0.2 ms (PW 13 ms) · vẽ xong 2212 ms canvas 1/kit 1 dangTai 0 calls 3 · \"Nhà máy›Dây chuyền ảo 2›SIM-L2 SCREW\""
+    },
+    {
+      "ma": "K8d",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "pathname giữ · camera đổi ({\"x\":19.200000000000003,\"y\":21.367311858230227,\"z\":27.76373859388744,\"mucX\":19.200000000000003,\"mucZ\":12.755692603869027} → {\"x\":13.496259260230783,\"y\":21.367311858230227,\"z\":26.6376516159107,\"mucX\":19.200000000000003,\"mucZ\":12.755692603869027})"
+    },
+    {
+      "ma": "K8i-keo",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "sau kéo 60px: máy 23 ⇒ /twin/may/23 · trễ 0.2 ms"
+    },
+    {
+      "ma": "K8f",
+      "man": "/twin/line/2",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "nhãn \"CONVEYOR · Không rõ\" (id 18) ⇒ /twin/may/18 · Back ⇒ /twin/line/2"
+    },
+    {
+      "ma": "K8i-tang",
+      "man": "/twin",
+      "vp": "1600x900",
+      "pq": "HỎNG",
+      "so": "HỎNG Error: khong co tang khac de doi: {\"nhaMay\":{\"soMuc\":1,\"value\":\"1\",\"opts\":[{\"v\":\"1\",\"n\":\"Nhà máy ảo (SIM)\"}]},\"toaNha\":{\"soMuc\":1,\"value\":\"24\",\"opts\":[{\"v\":\"24\",\"n\":\"Xuong lap rap ao (SIM)\"}]},\"tang\":{\"soMuc\":1,\"value\":\"28\",\"opts\":[{\"v\":\"28\",\"n\":\"Tang tret\"}]}}"
+    },
+    {
+      "ma": "K8h",
+      "man": "/factory-command 3D",
+      "vp": "1600x900",
+      "pq": "ĐẠT",
+      "so": "máy 246 · cursor \"pointer\" · dialog 0→1 \"SIM-L3 PWRSIM-L3-PWRChi tiết máy: hiện t\" · URL giữ · demObject {\"soObject\":1,\"coHandler\":1,\"trongScene\":1,\"ten\":[\"twin3d-lo-may-su-kien\"]}"
+    }
+  ],
+  "dem": {
+    "ĐẠT": 46,
+    "HỎNG": 2
+  }
+}

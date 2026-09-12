@@ -1,0 +1,42 @@
+{
+ "vi": {
+  "ca": 24,
+  "soCanvasKhac1": 0,
+  "nhan": 127,
+  "badge": 56,
+  "chip": 6,
+  "nhanNgoai": 0,
+  "badgeNgoai": 0,
+  "chipNgoai": 0,
+  "nhanChe": 0,
+  "badgeChe": 0,
+  "chipChe": 0,
+  "capNN": 0,
+  "capBB": 0,
+  "capNB": 0,
+  "badgeDoiCho": 30,
+  "tran": 0,
+  "fontThieu": 0,
+  "veBadgeVsSo": []
+ },
+ "en": {
+  "ca": 24,
+  "soCanvasKhac1": 0,
+  "nhan": 127,
+  "badge": 56,
+  "chip": 6,
+  "nhanNgoai": 0,
+  "badgeNgoai": 0,
+  "chipNgoai": 0,
+  "nhanChe": 0,
+  "badgeChe": 0,
+  "chipChe": 0,
+  "capNN": 0,
+  "capBB": 0,
+  "capNB": 0,
+  "badgeDoiCho": 30,
+  "tran": 0,
+  "fontThieu": 0,
+  "veBadgeVsSo": []
+ }
+}

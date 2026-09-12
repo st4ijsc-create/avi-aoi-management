@@ -1,0 +1,5 @@
+5a319966d26b68f31d42eec7b369e677 *client/src/components/twin3d/van-hanh/locBadge.ts
+0b826520bca8a1a7097abc50a6d7a16b *client/src/components/twin3d/van-hanh/LopCanhBao.tsx
+7629c4f27147d95dbaa98dc4bbc2b5ac *server/services/trangThaiMayTuoi.ts
+54c61aed4b2ee0d1952d2e06189bef43 *server/services/ecosystem/assetCockpitService.ts
+a29d17856f8285ec9c97e2722192a843 *server/services/factoryCommandService.ts

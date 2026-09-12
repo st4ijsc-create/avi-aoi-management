@@ -1,0 +1,60 @@
+=== EXPLAIN oeeService — 2026-09-12T11:52:04.014Z ===
+
+--- oee_metrics: 897 hang ---
+  idx_oee_machine
+  idx_oee_machine_code
+  idx_oee_machine_time
+  idx_oee_period
+  idx_oee_timestamp
+  oee_metrics_pkey
+  uq_oee_metrics_machine_ts_period
+
+--- product_machine_mappings: 8 hang ---
+  idx_pm_mapping_machine
+  idx_pm_mapping_product
+  product_machine_mappings_pkey
+  uq_pm_mappings_pair
+
+════ oeeService:837 oee_metrics idealCycleTime ════
+[lan 1 NGUOI]
+Unique  (cost=115.60..120.44 rows=200 width=16) (actual time=0.446..0.575 rows=36 loops=1)
+  Buffers: shared hit=6 read=53
+  ->  Sort  (cost=115.60..118.02 rows=969 width=16) (actual time=0.445..0.542 rows=897 loops=1)
+        Sort Key: oee_metrics."machineId", oee_metrics."timestamp" DESC
+        Sort Method: quicksort  Memory: 53kB
+        Buffers: shared hit=6 read=53
+        ->  Append  (cost=0.00..67.53 rows=969 width=16) (actual time=0.037..0.293 rows=897 loops=1)
+              Buffers: shared read=53
+              ->  Seq Scan on _hyper_3_1_chunk  (cost=0.00..32.67 rows=567 width=16) (actual time=0.036..0.148 rows=567 loops=1)
+                    Buffers: shared read=27
+              ->  Seq Scan on _hyper_3_2_chunk  (cost=0.00..30.02 rows=402 width=16) (actual time=0.083..0.103 rows=330 loops=1)
+                    Buffers: shared read=26
+Planning:
+  Buffers: shared hit=63 read=4
+Planning Time: 0.266 ms
+Execution Time: 0.608 ms
+[lan 2 AM] Planning Time: 0.113 ms · Execution Time: 0.302 ms
+[lan 3 AM] Planning Time: 0.097 ms · Execution Time: 0.298 ms
+[lan 4 AM] Planning Time: 0.080 ms · Execution Time: 0.295 ms
+[lan 5 AM] Planning Time: 0.071 ms · Execution Time: 0.284 ms
+
+════ oeeService:855 product_machine_mappings idealCycleTimeSec ════
+[lan 1 NGUOI]
+Unique  (cost=25.45..26.14 rows=106 width=12) (actual time=0.006..0.006 rows=0 loops=1)
+  Buffers: shared hit=1
+  ->  Sort  (cost=25.45..25.80 rows=139 width=12) (actual time=0.006..0.006 rows=0 loops=1)
+        Sort Key: "machineId", priority DESC, "idealCycleTimeSec"
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=1
+        ->  Seq Scan on product_machine_mappings  (cost=0.00..20.50 rows=139 width=12) (actual time=0.004..0.004 rows=0 loops=1)
+              Filter: ("isActive" AND ("idealCycleTimeSec" IS NOT NULL) AND ("idealCycleTimeSec" > 0))
+              Rows Removed by Filter: 8
+              Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=6
+Planning Time: 0.060 ms
+Execution Time: 0.020 ms
+[lan 2 AM] Planning Time: 0.046 ms · Execution Time: 0.013 ms
+[lan 3 AM] Planning Time: 0.040 ms · Execution Time: 0.011 ms
+[lan 4 AM] Planning Time: 0.039 ms · Execution Time: 0.011 ms
+[lan 5 AM] Planning Time: 0.039 ms · Execution Time: 0.011 ms

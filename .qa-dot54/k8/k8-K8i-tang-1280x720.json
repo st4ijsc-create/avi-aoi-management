@@ -1,0 +1,44 @@
+{
+  "luc": "2026-09-12T12:17:01.093Z",
+  "base": "http://localhost:3054",
+  "vp": "1280x720",
+  "duong": "/twin",
+  "mo": {
+    "msCanvas": 1089,
+    "msSanSang": 3622,
+    "coMayTrongKhung": true
+  },
+  "oChon": {
+    "nhaMay": {
+      "soMuc": 1,
+      "value": "1",
+      "opts": [
+        {
+          "v": "1",
+          "n": "Nhà máy ảo (SIM)"
+        }
+      ]
+    },
+    "toaNha": {
+      "soMuc": 1,
+      "value": "24",
+      "opts": [
+        {
+          "v": "24",
+          "n": "Xuong lap rap ao (SIM)"
+        }
+      ]
+    },
+    "tang": {
+      "soMuc": 1,
+      "value": "28",
+      "opts": [
+        {
+          "v": "28",
+          "n": "Tang tret"
+        }
+      ]
+    }
+  },
+  "loi": "Error: khong co tang khac de doi: {\"nhaMay\":{\"soMuc\":1,\"value\":\"1\",\"opts\":[{\"v\":\"1\",\"n\":\"Nhà máy ảo (SIM)\"}]},\"toaNha\":{\"soMuc\":1,\"value\":\"24\",\"opts\":[{\"v\":\"24\",\"n\":\"Xuong lap rap ao (SIM)\"}]},\"tang\":{\"soMuc\":1,\"value\":\"28\",\"opts\":[{\"v\":\"28\",\"n\":\"Tang tret\"}]}}"
+}

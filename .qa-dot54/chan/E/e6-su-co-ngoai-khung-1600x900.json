@@ -1,0 +1,187 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot54/chan/E",
+  "luc": "2026-09-12T13:20:56.692Z",
+  "p14": {
+    "x": 7.95,
+    "z": 14.8
+  },
+  "p24": {
+    "x": 32.95,
+    "z": 14.8
+  },
+  "cam": "32.95,2.2,20.80,32.95,14.80",
+  "raised14": 2,
+  "macDinh": {
+    "url": "/twin/line/2",
+    "chipSuCo": null,
+    "__demNhan": {
+      "ve": 12,
+      "tong": 12,
+      "ngoaiKhung": 0,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 0,
+      "vuotMep": 0,
+      "biChe": 0,
+      "deKhoiKhac": 1,
+      "deKhoiKhacDoLai": 1,
+      "soHopKhoi": 12,
+      "soVungCam": 6,
+      "soLopPhuDom": 2,
+      "soHopBadge": 4,
+      "suCoNgoaiKhung": 0,
+      "capConChong": 0
+    },
+    "cam": {
+      "x": 19.200000000000003,
+      "y": 21.367311858230227,
+      "z": 27.76373859388744,
+      "mucX": 19.200000000000003,
+      "mucZ": 12.755692603869027
+    },
+    "nhan14": [],
+    "soLopCanhBao": 13,
+    "lan2": {
+      "chipSuCo": null,
+      "__demNhan": {
+        "ve": 12,
+        "tong": 12,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 1,
+        "deKhoiKhacDoLai": 1,
+        "soHopKhoi": 12,
+        "soVungCam": 6,
+        "soLopPhuDom": 2,
+        "soHopBadge": 4,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "cam": {
+        "x": 19.200000000000003,
+        "y": 21.367311858230227,
+        "z": 27.76373859388744,
+        "mucX": 19.200000000000003,
+        "mucZ": 12.755692603869027
+      },
+      "nhan": [
+        "CONVEYOR · Unknown@816,519",
+        "ROBOT · Unknown@1263,519",
+        "AOI · Unknown@496,499",
+        "FCT · Unknown@751,493",
+        "PWR · Unknown@922,582",
+        "ASSY · Unknown@1005,556",
+        "ICT · Unknown@667,519",
+        "SCREW · Unknown@1085,527",
+        "PACK · Unknown@1181,493",
+        "AVI · Unknown@583,577",
+        "AGV · Unknown@1358,493",
+        "SPI · Unknown@411,577"
+      ]
+    },
+    "nhanLan1": [
+      "CONVEYOR · Unknown@816,519",
+      "ROBOT · Unknown@1263,519",
+      "AOI · Unknown@496,499",
+      "FCT · Unknown@751,493",
+      "PWR · Unknown@922,582",
+      "ASSY · Unknown@1005,556",
+      "ICT · Unknown@667,519",
+      "SCREW · Unknown@1085,527",
+      "PACK · Unknown@1181,493",
+      "AVI · Unknown@583,577",
+      "AGV · Unknown@1358,493",
+      "SPI · Unknown@411,577"
+    ]
+  },
+  "camNgoai": {
+    "url": "/twin/line/2?cam=32.95,2.2,20.80,32.95,14.80",
+    "chipSuCo": {
+      "chu": "2 alarms out of view",
+      "so": "2"
+    },
+    "__demNhan": {
+      "ve": 2,
+      "tong": 12,
+      "ngoaiKhung": 10,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 10,
+      "vuotMep": 0,
+      "biChe": 0,
+      "deKhoiKhac": 0,
+      "deKhoiKhacDoLai": 0,
+      "soHopKhoi": 12,
+      "soVungCam": 6,
+      "soLopPhuDom": 2,
+      "soHopBadge": 4,
+      "suCoNgoaiKhung": 2,
+      "capConChong": 0
+    },
+    "cam": {
+      "x": 32.95,
+      "y": 2.2000000000000033,
+      "z": 20.799999999999997,
+      "mucX": 32.95,
+      "mucZ": 14.8
+    },
+    "nhan14": [],
+    "soLopCanhBao": 16,
+    "lan2": {
+      "chipSuCo": {
+        "chu": "2 alarms out of view",
+        "so": "2"
+      },
+      "__demNhan": {
+        "ve": 2,
+        "tong": 12,
+        "ngoaiKhung": 10,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 10,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 6,
+        "soLopPhuDom": 2,
+        "soHopBadge": 4,
+        "suCoNgoaiKhung": 2,
+        "capConChong": 0
+      },
+      "cam": {
+        "x": 32.95,
+        "y": 2.2000000000000033,
+        "z": 20.799999999999997,
+        "mucX": 32.95,
+        "mucZ": 14.8
+      },
+      "nhan": [
+        "ROBOT · Unknown@586,165",
+        "AGV · Unknown@881,139"
+      ]
+    },
+    "nhanLan1": [
+      "ROBOT · Unknown@586,165",
+      "AGV · Unknown@881,139"
+    ]
+  },
+  "e6": {
+    "coAndonRaised14": true,
+    "chipMacDinh": "0",
+    "chipCamNgoai": "2",
+    "suCoNgoaiKhungKit": 2
+  }
+}

@@ -1,0 +1,232 @@
+{
+  "tag": "../.qa-dot54/chan/P",
+  "vp": "1280x720",
+  "luc": "2026-09-12T13:27:25.058Z",
+  "ol": {
+    "scrollW": 944,
+    "clientW": 944,
+    "cuonNgang": false
+  },
+  "oTram": [
+    {
+      "tid": "o-tram-13",
+      "x": 300,
+      "w": 61,
+      "h": 55,
+      "ma": "SPI-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-SPI-ST — SIM-L2 SPI Station — Unknown — WIP 121"
+    },
+    {
+      "tid": "o-tram-14",
+      "x": 374,
+      "w": 61,
+      "h": 55,
+      "ma": "AOI-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-AOI-ST — SIM-L2 AOI Station — Unknown — WIP 116"
+    },
+    {
+      "tid": "o-tram-15",
+      "x": 448,
+      "w": 61,
+      "h": 55,
+      "ma": "AVI-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-AVI-ST — SIM-L2 AVI Station — Unknown — WIP 113"
+    },
+    {
+      "tid": "o-tram-16",
+      "x": 522,
+      "w": 61,
+      "h": 55,
+      "ma": "ICT-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-ICT-ST — SIM-L2 ICT Station — Unknown — WIP 112"
+    },
+    {
+      "tid": "o-tram-17",
+      "x": 596,
+      "w": 61,
+      "h": 55,
+      "ma": "FCT-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-FCT-ST — SIM-L2 FCT Station — Unknown — WIP 111"
+    },
+    {
+      "tid": "o-tram-18",
+      "x": 670,
+      "w": 76,
+      "h": 55,
+      "ma": "CONVEYOR-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-CONVEYOR-ST — SIM-L2 CONVEYOR Station — Unknown — WIP 107"
+    },
+    {
+      "tid": "o-tram-19",
+      "x": 759,
+      "w": 61,
+      "h": 55,
+      "ma": "PWR-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-PWR-ST — SIM-L2 PWR Station — Unknown — WIP 109"
+    },
+    {
+      "tid": "o-tram-20",
+      "x": 833,
+      "w": 61,
+      "h": 55,
+      "ma": "ASSY-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-ASSY-ST — SIM-L2 ASSY Station — Unknown — WIP 105"
+    },
+    {
+      "tid": "o-tram-21",
+      "x": 907,
+      "w": 61,
+      "h": 55,
+      "ma": "SCREW-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-SCREW-ST — SIM-L2 SCREW Station — Unknown — WIP 105"
+    },
+    {
+      "tid": "o-tram-22",
+      "x": 981,
+      "w": 61,
+      "h": 55,
+      "ma": "PACK-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-PACK-ST — SIM-L2 PACK Station — Unknown — WIP 102"
+    },
+    {
+      "tid": "o-tram-23",
+      "x": 1055,
+      "w": 63,
+      "h": 55,
+      "ma": "ROBOT-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-ROBOT-ST — SIM-L2 ROBOT Station — Unknown — WIP 103"
+    },
+    {
+      "tid": "o-tram-24",
+      "x": 1131,
+      "w": 62,
+      "h": 55,
+      "ma": "AGV-ST",
+      "maCat": false,
+      "maTrongO": true,
+      "title": "SIM-L2-AGV-ST — SIM-L2 AGV Station — Unknown — WIP 100"
+    }
+  ],
+  "soOTram": 12,
+  "soMaCat": 0,
+  "chipNhanAn": null,
+  "soNhanVe": 12,
+  "nhan": [
+    [
+      "CONVEYOR · Unknown",
+      669,
+      397,
+      144
+    ],
+    [
+      "ROBOT · Unknown",
+      989,
+      397,
+      119
+    ],
+    [
+      "FCT · Unknown",
+      629,
+      371,
+      101
+    ],
+    [
+      "PWR · Unknown",
+      865,
+      405,
+      105
+    ],
+    [
+      "ASSY · Unknown",
+      868,
+      379,
+      109
+    ],
+    [
+      "ICT · Unknown",
+      570,
+      397,
+      97
+    ],
+    [
+      "SCREW · Unknown",
+      863,
+      454,
+      122
+    ],
+    [
+      "PACK · Unknown",
+      992,
+      371,
+      110
+    ],
+    [
+      "AVI · Unknown",
+      457,
+      401,
+      97
+    ],
+    [
+      "AOI · Unknown",
+      449,
+      375,
+      99
+    ],
+    [
+      "AGV · Unknown",
+      1116,
+      423,
+      103
+    ],
+    [
+      "SPI · Unknown",
+      334,
+      427,
+      97
+    ]
+  ],
+  "__demNhan": {
+    "ve": 12,
+    "tong": 12,
+    "ngoaiKhung": 0,
+    "chongLap": 0,
+    "vuotTran": 0,
+    "tran": 30,
+    "biGiau": 0,
+    "vuotMep": 0,
+    "biChe": 0,
+    "deKhoiKhac": 1,
+    "deKhoiKhacDoLai": 1,
+    "soHopKhoi": 12,
+    "soVungCam": 4,
+    "soLopPhuDom": 2,
+    "soHopBadge": 2,
+    "suCoNgoaiKhung": 0,
+    "capConChong": 0
+  },
+  "daiLineChu": "LINE STRIP | 12 stations | Prefix: SIM-L2- | Takt: 2.4s | WIP: 1304",
+  "soAn": 0,
+  "dat": true
+}

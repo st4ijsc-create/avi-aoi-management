@@ -1,0 +1,50 @@
+{
+  "luc": "2026-09-12T13:29:14.164Z",
+  "ds": [
+    {
+      "ten": "KHONG khoa: /machines/257/detail (doi chung 401)",
+      "path": "/api/v1/machines/257/detail",
+      "status": 401,
+      "bytes": 123,
+      "coSIM": false,
+      "coT12": false,
+      "tho": "{\"ok\":false,\"error\":{\"code\":\"unauthorized\",\"message\":\"Missing API key. Provide Authorization: Bearer <key> or X-API-Key.\"}}"
+    },
+    {
+      "ten": "khoa SIM-FAC: /machines/14/detail (NM1)",
+      "path": "/api/v1/machines/14/detail",
+      "status": 200,
+      "bytes": 3560,
+      "coSIM": true,
+      "coT12": false,
+      "tho": "{\"ok\":true,\"data\":{\"identity\":{\"id\":14,\"code\":\"SIM-L2-AOI\",\"name\":\"SIM-L2 AOI\",\"machineType\":\"AOI\",\"model\":\"SIM-AOI\",\"manufacturer\":\"ST4I-SIM\",\"stationId\":14,\"s"
+    },
+    {
+      "ten": "khoa SIM-FAC: /machines/257/detail (NM18)",
+      "path": "/api/v1/machines/257/detail",
+      "status": 404,
+      "bytes": 76,
+      "coSIM": false,
+      "coT12": false,
+      "tho": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"message\":\"Machine 257 not found.\"}}"
+    },
+    {
+      "ten": "khoa SIM-FAC: /robots/1/detail",
+      "path": "/api/v1/robots/1/detail",
+      "status": 200,
+      "bytes": 7006,
+      "coSIM": true,
+      "coT12": false,
+      "tho": "{\"ok\":true,\"data\":{\"identity\":{\"id\":1,\"code\":\"ROB-SIM-01\",\"name\":\"Robot mô phỏng (SIM)\",\"vendor\":\"sim\",\"kind\":\"arm\",\"model\":\"sim-arm\",\"status\":\"idle\",\"lineId\":1"
+    },
+    {
+      "ten": "khoa SIM-FAC: /machines/999999/detail (doi chung 404)",
+      "path": "/api/v1/machines/999999/detail",
+      "status": 404,
+      "bytes": 79,
+      "coSIM": false,
+      "coT12": false,
+      "tho": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"message\":\"Machine 999999 not found.\"}}"
+    }
+  ]
+}

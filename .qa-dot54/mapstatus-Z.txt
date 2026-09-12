@@ -1,0 +1,22 @@
+{
+ "luc": "2026-09-12T11:51:16.014Z",
+ "dangKetNoi": true,
+ "NGUONG_TRANG_THAI_TUOI_MS": 300000,
+ "ca": {
+  "null": "running",
+  "undefined": "running",
+  "rong ''": "running",
+  "stopped": "idle",
+  "running": "running",
+  "maintenance": "maintenance",
+  "error": "down",
+  "warming_up": "running",
+  "XAP_XI": "running"
+ },
+ "khongKetNoi": {
+  "null": "offline",
+  "running": "offline"
+ },
+ "lichSuTaiMoc": "running"
+}
+--- da xoa server/services/trangThaiMayTuoiDot54Goc.ts: SACH ---

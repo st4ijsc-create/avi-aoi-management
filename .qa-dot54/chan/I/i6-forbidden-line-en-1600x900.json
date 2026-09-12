@@ -1,0 +1,53 @@
+{
+  "role": "C",
+  "user": "e2e_dot36_oee",
+  "lang": "en",
+  "vp": "1600x900",
+  "tag": "../.qa-dot54/chan/I",
+  "luc": "2026-09-12T13:25:29.038Z",
+  "coMan": true,
+  "onDinh": true,
+  "msToiOnDinh": 1208,
+  "url": "/twin/line/2",
+  "__soCanvas": 0,
+  "canvasDom": 0,
+  "canvasDs": [],
+  "drawCalls": 2,
+  "api": {
+    "factoryList": {
+      "status": 200,
+      "code": null,
+      "soPhanTu": 1
+    },
+    "overview": {
+      "status": 403,
+      "code": "FORBIDDEN",
+      "soPhanTu": null
+    },
+    "toaNha": {
+      "status": 200,
+      "code": null,
+      "soPhanTu": 1
+    },
+    "canh": {
+      "status": 200,
+      "code": null,
+      "soPhanTu": 10
+    }
+  },
+  "lineKhongMoDuoc": {
+    "co": 1,
+    "lyDo": "thieuQuyen",
+    "chu": "Cannot open line #2\nYou do not have permission to view this item. Contact an administrator to be assigned a factory.\nFactory"
+  },
+  "daiLine": 0,
+  "oTram": 0,
+  "lineRong": 0,
+  "demMay": "Machines —",
+  "body": "Factory\n›\nDây chuyền ảo 2\nMachines —\nStations —\nWIP —\nCannot open line #2\nYou do not have permission to view this item. Contact an administrator to be assigned a factory.\nFactory",
+  "biChan": 0,
+  "i6": {
+    "forbiddenThat": true,
+    "dat": true
+  }
+}

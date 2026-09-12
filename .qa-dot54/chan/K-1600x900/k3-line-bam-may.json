@@ -1,0 +1,79 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot54/chan/K-1600x900",
+  "luc": "2026-09-12T13:07:38.753Z",
+  "truoc": {
+    "url": "/twin/line/2",
+    "coOTram": true,
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 1288,
+        "h": 659,
+        "chaTestId": "khoi-canh-3d"
+      }
+    ],
+    "drawCalls": 6,
+    "tuTheCamera": {
+      "x": 19.200000000000003,
+      "y": 21.367311858230227,
+      "z": 27.76373859388744,
+      "mucX": 19.200000000000003,
+      "mucZ": 12.755692603869027
+    }
+  },
+  "sau": {
+    "url": "/twin/may/14",
+    "toi": {
+      "dat": true,
+      "ms": 2
+    },
+    "coManMay": true,
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "chaTestId": "khoi-canh-3d"
+      }
+    ],
+    "drawCalls": 5,
+    "tuTheCamera": {
+      "x": 10.695926983734275,
+      "y": 2.4974080805581735,
+      "z": 17.545926983734276,
+      "mucX": 7.949999999999999,
+      "mucZ": 14.800000000000002
+    },
+    "nganNhung": 0,
+    "dialog": 0,
+    "xemTrongUrl": false
+  },
+  "veLine": {
+    "url": "/twin/line/2",
+    "toi": {
+      "dat": true,
+      "ms": 7
+    }
+  },
+  "sauBack": {
+    "url": "/twin/line/2",
+    "toiMay": {
+      "dat": true,
+      "ms": 110
+    },
+    "toiLine": {
+      "dat": true,
+      "ms": 91
+    }
+  },
+  "dat": true
+}

@@ -1,0 +1,301 @@
+{
+  "tag": "../.qa-dot54/chan/P",
+  "vp": "1600x900",
+  "luc": "2026-09-12T13:26:19.049Z",
+  "twin": {
+    "docScrollH": 900,
+    "innerH": 900,
+    "scrollYSauScrollTo": 0,
+    "khung": {
+      "top": 133,
+      "h": 743,
+      "day": 876,
+      "styleH": "calc(100vh - var(--twin-top, 5rem))",
+      "bien": [
+        "--twin-top=157px"
+      ]
+    },
+    "chuoiCha": [
+      {
+        "tag": "main",
+        "id": "main-content",
+        "pb": "24px",
+        "pt": "24px",
+        "ovY": "auto",
+        "h": 791,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": "root",
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "body",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      }
+    ],
+    "thapNhat": {
+      "day": 1661,
+      "tag": "li",
+      "tid": null,
+      "cls": ""
+    },
+    "main": {
+      "pb": "24px",
+      "scrollH": 791,
+      "clientH": 791,
+      "day": 900
+    },
+    "dat": true
+  },
+  "line": {
+    "docScrollH": 900,
+    "innerH": 900,
+    "scrollYSauScrollTo": 0,
+    "khung": {
+      "top": 80,
+      "h": 796,
+      "day": 876,
+      "styleH": "calc(100vh - var(--twin-line-top, 5rem))",
+      "bien": [
+        "--twin-line-top=104px"
+      ]
+    },
+    "chuoiCha": [
+      {
+        "tag": "main",
+        "id": "main-content",
+        "pb": "24px",
+        "pt": "24px",
+        "ovY": "auto",
+        "h": 844,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": "root",
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "body",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      }
+    ],
+    "thapNhat": {
+      "day": 900,
+      "tag": "div",
+      "tid": null,
+      "cls": ""
+    },
+    "main": {
+      "pb": "24px",
+      "scrollH": 844,
+      "clientH": 844,
+      "day": 900
+    },
+    "dat": true
+  },
+  "may": {
+    "docScrollH": 900,
+    "innerH": 900,
+    "scrollYSauScrollTo": 0,
+    "khung": {
+      "top": 80,
+      "h": 796,
+      "day": 876,
+      "styleH": "calc(100vh - var(--twin-may-top, 5rem))",
+      "bien": [
+        "--twin-may-top=104px"
+      ]
+    },
+    "chuoiCha": [
+      {
+        "tag": "main",
+        "id": "main-content",
+        "pb": "24px",
+        "pt": "24px",
+        "ovY": "auto",
+        "h": 844,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": "root",
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "body",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      }
+    ],
+    "thapNhat": {
+      "day": 1215,
+      "tag": "div",
+      "tid": null,
+      "cls": "space-y-4 p-1"
+    },
+    "main": {
+      "pb": "24px",
+      "scrollH": 844,
+      "clientH": 844,
+      "day": 900
+    },
+    "dat": true
+  },
+  "studio": {
+    "docScrollH": 900,
+    "innerH": 900,
+    "scrollYSauScrollTo": 0,
+    "khung": {
+      "top": 133,
+      "h": 743,
+      "day": 876,
+      "styleH": "calc(100vh - var(--twin-studio-top, 5rem))",
+      "bien": [
+        "--twin-studio-top=157px"
+      ]
+    },
+    "chuoiCha": [
+      {
+        "tag": "main",
+        "id": "main-content",
+        "pb": "24px",
+        "pt": "24px",
+        "ovY": "auto",
+        "h": 791,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "div",
+        "id": "root",
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      },
+      {
+        "tag": "body",
+        "id": null,
+        "pb": "0px",
+        "pt": "0px",
+        "ovY": "visible",
+        "h": 900,
+        "day": 900
+      }
+    ],
+    "thapNhat": {
+      "day": 900,
+      "tag": "div",
+      "tid": null,
+      "cls": ""
+    },
+    "main": {
+      "pb": "24px",
+      "scrollH": 791,
+      "clientH": 791,
+      "day": 900
+    },
+    "dat": true
+  }
+}

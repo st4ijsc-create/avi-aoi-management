@@ -1,0 +1,243 @@
+{
+  "url": "http://localhost:3054/twin-studio",
+  "lang": "en",
+  "canvas": {
+    "x": 492,
+    "y": 312,
+    "w": 541,
+    "h": 277,
+    "day": 589,
+    "phai": 1033
+  },
+  "soCanvas": 1,
+  "lopPhu": [
+    {
+      "t": "thanh-cong-cu-canh",
+      "cheNhan": 0,
+      "rect": {
+        "x": 931,
+        "y": 320,
+        "w": 94,
+        "h": 34,
+        "day": 354,
+        "phai": 1025
+      },
+      "z": 10
+    },
+    {
+      "t": "mini-map",
+      "cheNhan": 0,
+      "rect": {
+        "x": 905,
+        "y": 461,
+        "w": 120,
+        "h": 120,
+        "day": 581,
+        "phai": 1025
+      },
+      "z": 10
+    },
+    {
+      "t": "thu-vien-asset",
+      "cheNhan": 0,
+      "rect": {
+        "x": 305,
+        "y": 589,
+        "w": 934,
+        "h": 95,
+        "day": 683,
+        "phai": 1239
+      },
+      "z": 0
+    },
+    {
+      "t": "bang-thuoc-tinh",
+      "cheNhan": 0,
+      "rect": {
+        "x": 1034,
+        "y": 312,
+        "w": 205,
+        "h": 56,
+        "day": 368,
+        "phai": 1239
+      },
+      "z": 0
+    },
+    {
+      "t": "cay-phan-cap-twin",
+      "cheNhan": 0,
+      "rect": {
+        "x": 305,
+        "y": 312,
+        "w": 186,
+        "h": 277,
+        "day": 589,
+        "phai": 491
+      },
+      "z": 0
+    }
+  ],
+  "nhan": [],
+  "badge": [],
+  "chip": [],
+  "capChongNhan": 0,
+  "capChongBadge": 0,
+  "capChongNhanBadge": 0,
+  "badgeDoiCho": 0,
+  "cat": [
+    {
+      "t": "mo-ta-studio",
+      "tag": "p",
+      "cls": "hidden min-w-0 truncate text-sm text-muted-foregro",
+      "chu": "Build buildings and floors, import engineering dra",
+      "sw": 693,
+      "cw": 486,
+      "title": "Build buildings and floors, import engineering drawings, place machines, and publish a version for operations.",
+      "titleCha": "Build buildings and floors, import engineering drawings, place machines, and publish a version for operations.",
+      "ariaLabel": null,
+      "coChuTrucTiep": true,
+      "rect": {
+        "x": 495,
+        "y": 156,
+        "w": 486,
+        "h": 20,
+        "day": 176,
+        "phai": 981
+      }
+    },
+    {
+      "t": null,
+      "tag": "span",
+      "cls": "truncate",
+      "chu": "SIM-WS — Xưởng lắp ráp ảo (SIM)",
+      "sw": 185,
+      "cw": 144,
+      "title": "SIM-WS — Xưởng lắp ráp ảo (SIM)",
+      "titleCha": "SIM-WS — Xưởng lắp ráp ảo (SIM)",
+      "ariaLabel": null,
+      "coChuTrucTiep": false,
+      "rect": {
+        "x": 333,
+        "y": 369,
+        "w": 144,
+        "h": 16,
+        "day": 385,
+        "phai": 477
+      }
+    }
+  ],
+  "sel": [],
+  "tran": {
+    "docW": 1280,
+    "docH": 720,
+    "innerW": 1280,
+    "innerH": 720,
+    "manDay": 696,
+    "manRect": {
+      "x": 288,
+      "y": 133,
+      "w": 968,
+      "h": 563,
+      "day": 696,
+      "phai": 1256
+    }
+  },
+  "vien": {
+    "thanh-cong-cu-canh": {
+      "rect": {
+        "x": 931,
+        "y": 320,
+        "w": 94,
+        "h": 34,
+        "day": 354,
+        "phai": 1025
+      },
+      "chu": "",
+      "z": 10
+    },
+    "mini-map": {
+      "rect": {
+        "x": 905,
+        "y": 461,
+        "w": 120,
+        "h": 120,
+        "day": 581,
+        "phai": 1025
+      },
+      "chu": "",
+      "z": 10
+    },
+    "khoi-canh-3d": {
+      "rect": {
+        "x": 492,
+        "y": 312,
+        "w": 541,
+        "h": 277,
+        "day": 589,
+        "phai": 1033
+      },
+      "chu": "",
+      "z": 0
+    },
+    "vung-canvas": {
+      "rect": {
+        "x": 492,
+        "y": 312,
+        "w": 541,
+        "h": 277,
+        "day": 589,
+        "phai": 1033
+      },
+      "chu": "",
+      "z": 0
+    },
+    "thu-vien-asset": {
+      "rect": {
+        "x": 305,
+        "y": 589,
+        "w": 934,
+        "h": 95,
+        "day": 683,
+        "phai": 1239
+      },
+      "chu": "Asset libraryMachinesInfrastructureWarehousebuong kiem quang",
+      "z": 0
+    },
+    "bang-thuoc-tinh": {
+      "rect": {
+        "x": 1034,
+        "y": 312,
+        "w": 205,
+        "h": 56,
+        "day": 368,
+        "phai": 1239
+      },
+      "chu": "Select an object in the tree or in the 3D scene",
+      "z": 0
+    },
+    "cay-phan-cap-twin": {
+      "rect": {
+        "x": 305,
+        "y": 312,
+        "w": 186,
+        "h": 277,
+        "day": 589,
+        "phai": 491
+      },
+      "chu": "SIM-WS — Xưởng lắp ráp ảo (SIM)Unplaced machines (0)—Machine",
+      "z": 0
+    }
+  },
+  "font": {
+    "status": "loaded",
+    "soFace": 11,
+    "faceGeistLoaded": 3,
+    "faceMonoLoaded": 1,
+    "body": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Em",
+    "nhanFont": null
+  },
+  "nutThu": {},
+  "demNhan": null,
+  "demBadge": null,
+  "tuongPhan": {}
+}
