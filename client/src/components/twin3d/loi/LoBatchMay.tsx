@@ -119,6 +119,49 @@ export function LoBatchMay({
   // ── Bảng tra instanceId ↔ machineId. Dựng từ CÙNG mảng, CÙNG useMemo với lô. ──
   const bangTra = useMemo(() => dungBangTra(may.map((m) => m.machineId)), [may]);
 
+  /**
+   * ════════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 49 (mục B) — KHOÁ HÌNH HỌC: dựng lại lô khi HÌNH/VỊ TRÍ đổi, KHÔNG khi MÀU đổi
+   * ════════════════════════════════════════════════════════════════════════════
+   * `loMoi` phụ thuộc `[may]` — mà `may` là mảng MỚI mỗi khi trạng thái máy về (`mau`, `doMo`,
+   * `hien` đổi theo realtime). Bất biến §6.2 ghi rõ *"cập nhật realtime CHỈ được chạm
+   * `setColorAt`/`setVisibleAt`; không bao giờ dựng lại BatchedMesh vì một cập nhật trạng thái"*
+   * — nhưng deps `[may]` cưỡng chế ĐÚNG điều ngược lại: một gói ws đổi màu một máy ⇒ cấp phát
+   * lại buffer 43 máy, `addGeometry` lại 7 hình, `dispose` lô cũ. Docblock nói một đằng, deps
+   * làm một nẻo suốt 48 đợt.
+   *
+   * Khoá này là mô tả của thứ `loMoi` THẬT SỰ đọc: khối + kích thước + vị trí + góc xoay + cờ
+   * `chiHopBao`. Đổi màu/độ mờ/ẩn-hiện ⇒ khoá KHÔNG đổi ⇒ giữ nguyên lô, chỉ `setColorAt`.
+   * Đổi tập máy hoặc bố cục ⇒ khoá đổi ⇒ dựng lại, đúng như trước.
+   *
+   * ⚠ KHÔNG khoá bằng `JSON.stringify(may)`: `mau` nằm trong đó. Liệt kê trường là cách duy
+   *   nhất nói được "cái gì làm hình đổi" — và nếu mai thêm trường hình học mà quên thêm vào
+   *   đây thì lô không dựng lại; lưới `loBatchMay.hinhHoc.unit.test.ts` ghim cả hai chiều.
+   */
+  const khoaHinhHocLo = useMemo(
+    () =>
+      `${chiHopBao ? "hop" : "chitiet"}|` +
+      may
+        .map(
+          (m) =>
+            `${m.machineId}:${m.khoi}:${Math.round(m.kichThuocMm.rongMm)}x${Math.round(m.kichThuocMm.caoMm)}x${Math.round(m.kichThuocMm.sauMm)}` +
+            `@${m.viTri.x.toFixed(3)},${m.viTri.y.toFixed(3)},${m.viTri.z.toFixed(3)}~${m.gocXoayRad.toFixed(4)}`,
+        )
+        .join("|"),
+    [may, chiHopBao],
+  );
+  /**
+   * Bản chụp `may` tại lần dựng lô gần nhất. `loMoi` đọc mảng này, KHÔNG đọc `may` trực tiếp —
+   * nếu đọc `may` thì eslint đúng khi đòi `may` vào deps và ta quay lại chỗ cũ. Ghi TRONG
+   * `useMemo` của khoá (chạy trước `loMoi` trong cùng render) nên `loMoi` luôn thấy bản khớp khoá.
+   */
+  const mayHinhHocRef = useRef<MayTrongLo[]>(may);
+  const khoaDaDungRef = useRef<string | null>(null);
+  if (khoaDaDungRef.current !== khoaHinhHocLo) {
+    khoaDaDungRef.current = khoaHinhHocLo;
+    mayHinhHocRef.current = may;
+  }
+
   useEffect(() => {
     onBangTra?.(bangTra);
   }, [bangTra, onBangTra]);
@@ -129,6 +172,8 @@ export function LoBatchMay({
    * Đây chính là chỗ cưỡng chế bất biến §6.2: đổi trạng thái không đụng useMemo này.
    */
   const loMoi = useMemo(() => {
+    // ★ Đợt 49 (B) — đọc BẢN CHỤP khớp `khoaHinhHocLo`, không đọc `may` (xem docblock khoá).
+    const may = mayHinhHocRef.current;
     // Khoá geometry = khối + kích thước làm tròn mm. Hai máy AOI cùng số đo dùng
     // CHUNG một geometryId; khác số đo thì tách — đúng ý "AOI 1400 và AOI 2200
     // nhìn khác nhau ngay" của hinhKhoiMay.ts.
@@ -202,11 +247,24 @@ export function LoBatchMay({
     }
     mesh.computeBoundingSphere();
     return mesh;
-  }, [may, chiHopBao]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ★ Đợt 49 (B): `may` CỐ Ý không ở deps;
+    // `khoaHinhHocLo` là mô tả đầy đủ phần `may` mà khối này đọc (hình/kích thước/vị trí/góc).
+  }, [khoaHinhHocLo, chiHopBao]);
 
   // Gắn ref + RB-7: giải phóng lô CŨ khi useMemo sinh lô mới hoặc khi unmount.
   useEffect(() => {
     meshRef.current = loMoi;
+    /**
+     * ★ Đợt 49 (mục B) — ĐẾM SỐ LẦN DỰNG LÔ. Không có con số này thì "đã tách hình khỏi màu"
+     * là một lời khai: bất biến §6.2 đã viết trong docblock từ Đợt 5 mà deps vẫn dựng lại mỗi
+     * gói ws, và 2.424 lưới không ai kêu. Đếm ở SẢN PHẨM (không gác `laCheDoDo`) vì nó là một
+     * phép cộng số nguyên mỗi lần dựng — rẻ hơn chính việc dựng nhiều bậc.
+     */
+    if (typeof window !== "undefined") {
+      const w = window as Window & CuaSoDoTwin3d;
+      const cua = w.__demTuongTac ?? (w.__demTuongTac = {});
+      cua.soLanDungLo = (cua.soLanDungLo ?? 0) + 1;
+    }
     invalidate();
     return () => {
       // `BatchedMesh.dispose()` trả buffer chung; material và geometry gộp phải
@@ -254,6 +312,8 @@ export function LoBatchMay({
     const hop = new THREE.Box3();
     const mt = new THREE.Matrix4();
     const tam = new THREE.Vector3();
+    // ★ Đợt 49 (A) — `hitTai` của `KhungCanh` không biết bảng tra; nó hỏi qua hàm này.
+    cua.mayTuBatch = (batchId: number) => bangTra.mayTheoInstance[batchId] ?? null;
     const chieu = (machineId: number) => {
       const i = bangTra.instanceTheoMay.get(machineId);
       if (i === undefined) return null;
@@ -266,7 +326,19 @@ export function LoBatchMay({
       const trongKhung = tam.z < 1 && x >= 0 && y >= 0 && x <= size.width && y <= size.height;
       return { x, y, ndcX: tam.x, ndcY: tam.y, trongKhung };
     };
-    cua.tamMay = (machineId) => chieu(machineId);
+    /**
+     * ★★★ Đợt 49 (A) — `biChe`: TÂM khối chiếu ra px là điểm e2e bấm; nhưng tâm có thể bị máy
+     * khác (hoặc chính lớp nhãn) chiếm. Raycast từ camera qua đúng NDC ấy: giao ĐẦU TIÊN không
+     * phải máy này ⇒ trả id máy đang che. Đợt 48 chọn điểm bấm rồi mới phát hiện sai máy TỪ URL —
+     * tức phép đo biết sau khi đã bấm; đây là biết TRƯỚC, nên e2e chọn được điểm hợp lệ.
+     */
+    cua.tamMay = (machineId) => {
+      const c = chieu(machineId);
+      if (!c) return null;
+      const h = cua.hitTai?.(c.ndcX, c.ndcY) ?? null;
+      const idTrung = h?.machineId ?? null;
+      return { ...c, biChe: idTrung === null || idTrung === machineId ? null : idTrung };
+    };
     cua.dsMay = () =>
       may.flatMap((m) => {
         const c = chieu(m.machineId);
@@ -275,6 +347,7 @@ export function LoBatchMay({
     return () => {
       delete cua.tamMay;
       delete cua.dsMay;
+      delete cua.mayTuBatch;
     };
   }, [loMoi, bangTra, may, camera, size]);
 

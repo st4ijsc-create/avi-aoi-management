@@ -249,3 +249,81 @@ describe("LoBatchMay trên reconciler R3F thật — Đợt 47 N2", () => {
     expect(onClick, "R3F 9.5: click không tới object mới sau swap — nếu ca này đỏ, cơ chế swap đã đổi").toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * ★★★ ĐỢT 49 (mục B) — DỰNG LẠI LÔ CHỈ KHI HÌNH/VỊ TRÍ ĐỔI, KHÔNG KHI MÀU ĐỔI.
+ *
+ * Bất biến §6.2 ("cập nhật realtime CHỈ được chạm `setColorAt`/`setVisibleAt`") đã nằm trong
+ * docblock `LoBatchMay` từ Đợt 5, trong khi deps `useMemo` là `[may]` — và `may` là mảng MỚI mỗi
+ * gói ws. 48 đợt, 2.424 lưới, không ai kêu: không có lưới nào ĐẾM số lần dựng. Nhóm này đếm.
+ *
+ * Phép đo là `window.__demTuongTac.soLanDungLo` — chính con số QA sẽ đọc trên màn thật (60 s
+ * live), không phải một spy riêng cho test (một phép đo, hai nơi dùng).
+ */
+describe("Đợt 49 mục B — số lần dựng BatchedMesh", () => {
+  const soLan = () =>
+    (window as unknown as { __demTuongTac?: { soLanDungLo?: number } }).__demTuongTac?.soLanDungLo ?? 0;
+
+  it("★★★ ĐỔI MÀU (mảng `may` mới, cùng hình/vị trí) ⇒ KHÔNG dựng lại lô; đổi HÌNH/VỊ TRÍ ⇒ dựng lại", async () => {
+    const g = await dungGoc();
+    doiHuy.push(g.huy);
+    const ui = (ds: MayTrongLo[]) => (
+      <LoBatchMay may={ds} chon={TRANG_THAI_CHON_RONG} onChon={() => {}} onHover={() => {}} chiHopBao />
+    );
+    const store = await g.ve(ui([may(101, 0), may(102, 2)]));
+    const st = store.getState();
+    const lo1 = st.scene.getObjectByName(TEN_LO_MAY) as THREE.BatchedMesh;
+    const n0 = soLan();
+
+    // 5 "gói realtime": MẢNG MỚI mỗi lần, chỉ `mau`/`doMo`/`hien` đổi.
+    for (let i = 0; i < 5; i += 1) {
+      await g.ve(
+        ui([
+          { ...may(101, 0), mau: `#00ff0${i}`, doMo: 0.5 },
+          { ...may(102, 2), mau: "#0000ff", hien: true },
+        ]),
+      );
+    }
+    expect(soLan(), "5 gói đổi màu KHÔNG được dựng lại lô lần nào").toBe(n0);
+    expect(st.scene.getObjectByName(TEN_LO_MAY), "vẫn đúng object lô cũ").toBe(lo1);
+
+    // Màu THẬT SỰ đã đổi trên lô (không phải "không dựng vì không làm gì").
+    const c = new THREE.Color();
+    lo1.getColorAt(0, c);
+    expect(c.getHexString()).not.toBe("ffffff");
+
+    // Đổi KÍCH THƯỚC ⇒ hình đổi ⇒ PHẢI dựng lại.
+    await g.ve(ui([{ ...may(101, 0), kichThuocMm: { rongMm: 2000, caoMm: 1000, sauMm: 1000 } }, may(102, 2)]));
+    expect(soLan()).toBe(n0 + 1);
+    expect(st.scene.getObjectByName(TEN_LO_MAY)).not.toBe(lo1);
+
+    // Đổi VỊ TRÍ ⇒ dựng lại.
+    const lo2 = st.scene.getObjectByName(TEN_LO_MAY);
+    await g.ve(ui([{ ...may(101, 0), kichThuocMm: { rongMm: 2000, caoMm: 1000, sauMm: 1000 } }, may(102, 5)]));
+    expect(soLan()).toBe(n0 + 2);
+    expect(st.scene.getObjectByName(TEN_LO_MAY)).not.toBe(lo2);
+
+    // Đổi TẬP MÁY ⇒ dựng lại.
+    await g.ve(ui([{ ...may(101, 0), kichThuocMm: { rongMm: 2000, caoMm: 1000, sauMm: 1000 } }]));
+    expect(soLan()).toBe(n0 + 3);
+  });
+
+  it("★★★ sau khi bỏ dựng lại, BẤM MÁY vẫn tới đúng máy (handler + bảng tra không lệch với lô giữ lại)", async () => {
+    const g = await dungGoc();
+    doiHuy.push(g.huy);
+    const onChon = vi.fn();
+    const ui = (ds: MayTrongLo[]) => (
+      <LoBatchMay may={ds} chon={TRANG_THAI_CHON_RONG} onChon={onChon} onHover={() => {}} chiHopBao />
+    );
+    const store = await g.ve(ui([may(101, 0), may(102, 2)]));
+    const p101 = pxCua(store, new THREE.Vector3(0, 0.5, 0));
+    const p102 = pxCua(store, new THREE.Vector3(2, 0.5, 0));
+    const n0 = soLan();
+    await g.ve(ui([{ ...may(101, 0), mau: "#123456" }, { ...may(102, 2), mau: "#654321" }]));
+    expect(soLan()).toBe(n0);
+    bam(store, g.canvas, p101);
+    expect(onChon).toHaveBeenLastCalledWith(101);
+    bam(store, g.canvas, p102);
+    expect(onChon).toHaveBeenLastCalledWith(102);
+  });
+});
