@@ -34,6 +34,7 @@ const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 // the MOD_OT_CONTROL license gate. requirePermission("machine_control", …) composes on top.
 const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
 import { tasks, zones, zoneReservations, robots, robotTelemetry } from "../../drizzle/schema";
+import { traTelemetryMoiNhatTheoRobot } from "../db/telemetryMoiNhat"; // Đợt 50 mục E — một chỗ duy nhất
 import { operationCodes, operationProgramMap, programVariants, sharedResources, resourceReservations, chargerStations, batteryChargingPlans } from "../../drizzle/schema/fleetResource";
 import { fleetOrchEnabled, allocateTask, rebalanceDeviceTasks, deviceSupportsCapability } from "../services/fleet/taskAllocator";
 import { phamViCua } from "./_phamViNguoiXem";
@@ -51,24 +52,6 @@ async function db() {
   const d = await getDb();
   if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
-}
-
-/**
- * ĐỢT 50 mục A — bản ghi `robot_telemetry` MỚI NHẤT của MỘT robot (hoặc `undefined`).
- *
- * Một câu cho một robot, `ORDER BY "timestamp" DESC LIMIT 1`: hằng số `robotId` đi
- * vào kế hoạch nên ChunkAppend của Timescale chỉ chạm chunk mới nhất (9/10 chunk
- * "never executed" trong EXPLAIN ANALYZE) và trả về ĐÚNG 1 hàng. Đây là đường ĐỌC —
- * không ghi gì; lý lẽ đo đạc đầy đủ nằm ở chỗ gọi (`robotPositions`).
- */
-async function traTelemetryMoiNhat(d: Awaited<ReturnType<typeof db>>, robotId: number) {
-  const [hang] = await d
-    .select()
-    .from(robotTelemetry)
-    .where(eq(robotTelemetry.robotId, robotId))
-    .orderBy(desc(robotTelemetry.timestamp))
-    .limit(1);
-  return hang;
 }
 
 /** Guard mutating actions behind the flag (matches the orchestrationRouter discipline). */
@@ -259,17 +242,12 @@ export const fleetRouter = router({
        *   không có bản ghi nào" — KHÔNG thêm cửa sổ thời gian (robot im lặng 3 tháng
        *   vẫn phải trả về pose cuối cùng của nó, y như bản cũ).
        *
-       * ★ Chặn song song ở `BUOC_TELEMETRY` để N robot lớn không nuốt hết pool
-       *   (`DB_POOL_MAX` mặc định 25) — đây là đường ĐỌC của màn bản đồ, không được
-       *   phép làm đói các thủ tục khác.
+       * ★ ĐỢT 50 MỤC E — câu này KHÔNG chỉ có ở đây. `taskAllocator.ts` và
+       *   `trafficManager.ts` có BẢN SAO Y HỆT (G110: vá N chỗ mà không quét chỗ
+       *   N+1). Cả ba nay dùng CHUNG `server/db/telemetryMoiNhat.ts` — chặn song
+       *   song và hợp đồng nằm ở đó, không nhân bản lần thứ tư.
        */
-      const BUOC_TELEMETRY = 8;
-      const latest = new Map<number, Awaited<ReturnType<typeof traTelemetryMoiNhat>>>();
-      for (let i = 0; i < ids.length; i += BUOC_TELEMETRY) {
-        const lo = ids.slice(i, i + BUOC_TELEMETRY);
-        const ket = await Promise.all(lo.map((id) => traTelemetryMoiNhat(d, id)));
-        for (const [j, tel] of ket.entries()) if (tel) latest.set(lo[j], tel);
-      }
+      const latest = await traTelemetryMoiNhatTheoRobot(d, ids);
       return robotRows.map((r) => {
         const tel = latest.get(r.id);
         const pose = (tel?.poseJson ?? null) as Record<string, unknown> | null;
