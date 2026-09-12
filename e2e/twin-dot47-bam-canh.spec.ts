@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
+import { duongRaBangChung } from "./duongRaBangChung";
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -34,8 +35,14 @@ import fs from "node:fs";
  * QA Đợt 48 phải sao lưu/khôi phục tay rồi so md5 để cây không bẩn — một thủ tục thủ công mà
  * lần sau ai đó sẽ quên. `TWIN_E2E_ANH=<thư mục>` cho người đo ghi chỗ khác; mặc định giữ
  * nguyên đường cũ nên mọi lệnh đã ghi trong tài liệu vẫn đúng.
+ *
+ * ★★★ ĐỢT 51 (mục B) — VÀ NÓ ĐÃ KHÔNG CỨU ĐƯỢC. Đợt 50 chạy lại spec này KHÔNG đặt
+ * `TWIN_E2E_ANH`, mặc định trỏ thẳng `.qa-dot47/e2e` ⇒ 8 tệp tracked + 12 tệp untracked bị ghi
+ * đè, rồi vòng "khôi phục" làm rỗng thêm 103 tệp (G130). Bài học: **một ENV mà người chạy phải
+ * NHỚ đặt không phải hàng rào**. Từ Đợt 51, đường ra đi qua `duongRaBangChung()` — thư mục đích
+ * ĐÃ CÓ TỆP thì tự đổi sang `<đường>-lai-<mốc>` và kêu to, thay vì ghi đè im lặng.
  */
-const ANH = process.env.TWIN_E2E_ANH || ".qa-dot47/e2e";
+const ANH = duongRaBangChung("TWIN_E2E_ANH", ".qa-dot47/e2e");
 const TK = { username: "e2e_tai_loE", password: "E2eTaiLoE!2026" };
 const VP = [
   { width: 1600, height: 900 },

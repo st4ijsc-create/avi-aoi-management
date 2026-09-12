@@ -2,6 +2,15 @@
  * ĐỢT 24 — NGHIỆM THU THỊ GIÁC ba món. Vai KHÔNG-admin (G76).
  */
 import { test, expect, type Page } from "@playwright/test";
+import { duongRaBangChung } from "./duongRaBangChung";
+
+/**
+ * ĐỢT 51 (mục B) — đường ra bằng chứng KHÔNG còn ghim cứng.
+ * Trước: 8 chỗ ghi thẳng `.qa-dot24/…` ⇒ chạy lại spec là GHI ĐÈ bằng chứng
+ * của Đợt 24 (đúng lớp lỗi G130 đã làm mất 103 tệp ở Đợt 50). Xem `duongRaBangChung`.
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_DOT24", ".qa-dot24");
+
 
 const VP = { width: 1280, height: 720 };
 const CHI_XEM = { username: "operator1", password: "User@123" };
@@ -37,7 +46,7 @@ test("V1 — badge vỏ: operator1 (0 gán) KHÔNG khai số cảnh báo", async
   await page.goto("/twin");
   await choCanh(page);
   ra["V1-operator1-badge"] = await doBadge(page);
-  await page.screenshot({ path: ".qa-dot24/V1-operator1-badge.png", fullPage: false });
+  await page.screenshot({ path: `${ANH}/V1-operator1-badge.png`, fullPage: false });
 });
 
 test("V2 — badge vỏ: e2e_tai_loE (1 nhà máy) VẪN thấy cảnh báo của mình", async ({ page }) => {
@@ -46,7 +55,7 @@ test("V2 — badge vỏ: e2e_tai_loE (1 nhà máy) VẪN thấy cảnh báo củ
   await page.goto("/twin");
   await choCanh(page);
   ra["V2-e2e-badge"] = await doBadge(page);
-  await page.screenshot({ path: ".qa-dot24/V2-e2e-badge.png", fullPage: false });
+  await page.screenshot({ path: `${ANH}/V2-e2e-badge.png`, fullPage: false });
 });
 
 test("V3 — nút chỉ-nhãn-bất-thường: có mặt, bấm được, đổi URL và đổi SỐ NHÃN", async ({ page }) => {
@@ -62,7 +71,7 @@ test("V3 — nút chỉ-nhãn-bất-thường: có mặt, bấm được, đổi
     soNhan: await page.locator('[data-testid="nhan-may-twin3d"]').count(),
     url: page.url(),
   };
-  await page.screenshot({ path: ".qa-dot24/V3-truoc.png" });
+  await page.screenshot({ path: `${ANH}/V3-truoc.png` });
 
   await nut.click();
   await page.waitForTimeout(3_000);
@@ -71,7 +80,7 @@ test("V3 — nút chỉ-nhãn-bất-thường: có mặt, bấm được, đổi
     soNhan: await page.locator('[data-testid="nhan-may-twin3d"]').count(),
     url: page.url(),
   };
-  await page.screenshot({ path: ".qa-dot24/V3-sau.png" });
+  await page.screenshot({ path: `${ANH}/V3-sau.png` });
   ra["V3-nhan-bat-thuong"] = { truoc, sau };
 
   // ĐẦU RA PHẢI KHÁC ĐẦU VÀO (G5).
@@ -109,7 +118,7 @@ test("V4 — L-5: ?xem=machine:<id ngoài phạm vi> ⇒ /twin/may/<id> NÓI RA 
     lyDo: await chan.getAttribute("data-ly-do"),
     chu: (await chan.innerText()).trim().slice(0, 200),
   };
-  await page.screenshot({ path: ".qa-dot24/V4-ngoai-pham-vi.png" });
+  await page.screenshot({ path: `${ANH}/V4-ngoai-pham-vi.png` });
   expect(await chan.getAttribute("data-ly-do")).toBe("ngoaiPhamVi");
 });
 
@@ -152,7 +161,7 @@ test("V5 — operator1 (0 gán): /twin?xem=machine:1 ⇒ /twin/may/1 nói 'chưa
     // ĐO CÁI NHÌN THẤY: vỏ có khai con số cảnh báo nào không.
     badge: await doBadge(page),
   };
-  await page.screenshot({ path: ".qa-dot24/V5-operator1-pham-vi-rong.png" });
+  await page.screenshot({ path: `${ANH}/V5-operator1-pham-vi-rong.png` });
   // Màn PHẢI nói ra lý do (không im lặng) — và phải là câu "chưa được gán", KHÔNG phải "thiếu quyền".
   expect(await chan.getAttribute("data-ly-do")).toBe("chuaGanNhaMay");
   expect(/not assigned to any factory|chưa được gán/i.test(chu)).toBe(true);
@@ -172,13 +181,13 @@ test("V6 — ĐỐI CHỨNG: ?xem=machine:<id TRONG phạm vi> ⇒ /twin/may/1 v
     biChan: await chan.count(),
     coThan: await than.count(),
   };
-  await page.screenshot({ path: ".qa-dot24/V6-doi-chung-mo.png" });
+  await page.screenshot({ path: `${ANH}/V6-doi-chung-mo.png` });
   // Chống vá quá tay: máy hợp lệ KHÔNG được hiện câu chặn.
   expect(await chan.count()).toBe(0);
 });
 
 test.afterAll(async () => {
   const fs = await import("node:fs");
-  fs.writeFileSync(".qa-dot24/nghiem-thu.json", JSON.stringify(ra, null, 2), "utf-8");
+  fs.writeFileSync(`${ANH}/nghiem-thu.json`, JSON.stringify(ra, null, 2), "utf-8");
   console.log("KET QUA DO:", JSON.stringify(ra, null, 2));
 });

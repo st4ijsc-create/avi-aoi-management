@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
+import { duongRaBangChung } from "./duongRaBangChung";
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -22,7 +23,7 @@ import fs from "node:fs";
  *   2026-07-17. Nếu ai chèn nhịp tim mới cho máy 14, P3 đổi chiều — và ĐÓ là đúng (ca này đo sự thật, không đo hằng).
  */
 
-const ANH = ".qa-dot38/e2e";
+const ANH = duongRaBangChung("TWIN_E2E_ANH_DOT38", ".qa-dot38/e2e");
 const TK = { username: "e2e_tai_loE", password: "E2eTaiLoE!2026" };
 const VP = [
   { width: 1600, height: 900 },

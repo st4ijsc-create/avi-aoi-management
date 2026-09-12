@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import postgres from "postgres";
 import bcrypt from "bcryptjs";
+import { duongRaBangChung } from "./duongRaBangChung";
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -35,7 +36,11 @@ import bcrypt from "bcryptjs";
  */
 
 const VIEWPORT = { width: 1600, height: 900 };
-const ANH = ".qa-dot31";
+/**
+ * ĐỢT 51 (mục B) — đường ra bằng chứng lấy từ ENV, và KHÔNG ghi đè thư mục đã có tệp.
+ * (G130 — sự cố Đợt 50: chạy lại spec ghi đè bằng chứng của đợt cũ.)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_DOT31", ".qa-dot31");
 const MAY = 14;
 const MAY_NGOAI = 257;
 

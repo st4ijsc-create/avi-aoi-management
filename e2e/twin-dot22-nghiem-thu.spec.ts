@@ -1,5 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
+import { duongRaBangChung } from "./duongRaBangChung";
+
+/**
+ * ĐỢT 51 (mục B) — đường ra bằng chứng KHÔNG còn ghim cứng.
+ * Trước: 10 chỗ ghi thẳng `.qa-dot22/…` ⇒ chạy lại spec là GHI ĐÈ bằng chứng
+ * của Đợt 22 (đúng lớp lỗi G130 đã làm mất 103 tệp ở Đợt 50). Xem `duongRaBangChung`.
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_DOT22", ".qa-dot22");
+
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -189,7 +198,7 @@ test("A1 — /twin mac dinh (cap nha may), 1280x720, e2e_tai_loE", async ({ page
   console.log(`   [A1] canvas ${v.canvas?.w}x${v.canvas?.h} = ${tiLe(v.canvas, VP_720)}% vp`);
   console.log(`   [A1] panelTrai=${JSON.stringify(v.panelTrai)} panelPhai=${JSON.stringify(v.panelPhai)}`);
   console.log(`   [A1] cayKhoi=${JSON.stringify(v.cayKhoi)} soHangCay=${v.soHangCay}`);
-  await page.screenshot({ path: ".qa-dot22/A1-nhamay-720.png" });
+  await page.screenshot({ path: `${ANH}/A1-nhamay-720.png` });
 });
 
 test("A2 — /twin?pv=tang, cap tang", async ({ page }) => {
@@ -203,7 +212,7 @@ test("A2 — /twin?pv=tang, cap tang", async ({ page }) => {
   const v = await doVung(page);
   ra.A2 = { ...v, tiLeCanvas: tiLe(v.canvas, VP_720) };
   console.log(`   [A2] canvas ${v.canvas?.w}x${v.canvas?.h} = ${tiLe(v.canvas, VP_720)}% vp · hangCay=${v.soHangCay}`);
-  await page.screenshot({ path: ".qa-dot22/A2-tang-720.png" });
+  await page.screenshot({ path: `${ANH}/A2-tang-720.png` });
 });
 
 /*
@@ -224,7 +233,7 @@ test("A3 — /twin?pv=line:1 ⇒ redirect /twin/line/1 (QĐ-23), cap line co can
   expect(v.canvas?.hien, "cap line PHAI co canh").toBe(true);
   ra.A3 = { ...v, url: page.url(), tiLeCanvas: tiLe(v.canvas, VP_720) };
   console.log(`   [A3] ${new URL(page.url()).pathname} canvas ${v.canvas?.w}x${v.canvas?.h} = ${tiLe(v.canvas, VP_720)}% vp · oTram=${v.soOTram}`);
-  await page.screenshot({ path: ".qa-dot22/A3-line-720.png" });
+  await page.screenshot({ path: `${ANH}/A3-line-720.png` });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -250,7 +259,7 @@ test("A4 — /twin?xem=machine:2 ⇒ redirect /twin/may/2 (QĐ-23), panel may (N
   expect(v.cockpit?.hien, "cockpit 2D PHAI co mat").toBe(true);
   ra.A4 = { ...v, url: page.url(), tiLeCanvas: tiLe(v.canvas, VP_720) };
   console.log(`   [A4] ${new URL(page.url()).pathname} nganXuLy=${JSON.stringify(v.nganXuLy)} cockpit=${JSON.stringify(v.cockpit)} canvas=${JSON.stringify(v.canvas)}`);
-  await page.screenshot({ path: ".qa-dot22/A4-panel-may-720.png" });
+  await page.screenshot({ path: `${ANH}/A4-panel-may-720.png` });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -292,7 +301,7 @@ test("A7 — ngan Mo phong MO", async ({ page }) => {
   );
   ra.A7 = { ...v, coNganMoPhong: coNgan };
   console.log(`   [A7] coNganMoPhong=${coNgan} canvas=${JSON.stringify(v.canvas)}`);
-  await page.screenshot({ path: ".qa-dot22/A7-mo-phong-720.png" });
+  await page.screenshot({ path: `${ANH}/A7-mo-phong-720.png` });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -310,7 +319,7 @@ test("B1 — /twin mac dinh o 1920x1080", async ({ page }) => {
   ra.B1 = { ...v, tiLeCanvas: tiLe(v.canvas, VP_1080) };
   console.log(`   [B1] canvas ${v.canvas?.w}x${v.canvas?.h} = ${tiLe(v.canvas, VP_1080)}% vp`);
   console.log(`   [B1] panelTrai=${JSON.stringify(v.panelTrai)}`);
-  await page.screenshot({ path: ".qa-dot22/B1-nhamay-1080.png" });
+  await page.screenshot({ path: `${ANH}/B1-nhamay-1080.png` });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -365,7 +374,7 @@ test("Z4 — cay phan cap MO, roll-up hien so THAT", async ({ page }) => {
   console.log(`   [Z4] hangCay ${v.soHangCay} -> ${v2.soHangCay} (mo nhanh)`);
   console.log(`   [Z4] badgeMay=${v2.soBadgeMay} badgeCanhBao=${v2.soBadgeCanhBao} badgeMayDau="${v2.badgeMayDau}"`);
   console.log(`   [Z4] cay hop=${JSON.stringify(v2.cay)} danhSachMay=${JSON.stringify(v2.danhSachMay)}`);
-  await page.screenshot({ path: ".qa-dot22/Z4-cay-mo-1080.png" });
+  await page.screenshot({ path: `${ANH}/Z4-cay-mo-1080.png` });
 
   // ★ ĐIỀU HƯỚNG: bấm một node LINE phải đổi URL sang `?pv=line:`.
   const nodeLine = page.locator('[data-testid^="node-cay-line:"]').first();
@@ -375,7 +384,7 @@ test("Z4 — cay phan cap MO, roll-up hien so THAT", async ({ page }) => {
     const url = page.url();
     ra.Z4dieuHuong = url;
     console.log(`   [Z4] bam node line => URL = ${url}`);
-    await page.screenshot({ path: ".qa-dot22/Z4-sau-bam-line-1080.png" });
+    await page.screenshot({ path: `${ANH}/Z4-sau-bam-line-1080.png` });
   }
 });
 
@@ -417,9 +426,9 @@ test("C1 — operator1 thay MAN RONG: canh trong, cay 0 hang (chua duoc gan nha 
   ra.C1 = { ...v, ghiChu: "operator1 khong co user_factory_assignments" };
   console.log(`   [C1] operator1: soHangCay=${v.soHangCay} canvas=${JSON.stringify(v.canvas)}`);
   console.log(`   [C1] cayKhoi=${JSON.stringify(v.cayKhoi)} panelTrai=${JSON.stringify(v.panelTrai)}`);
-  await page.screenshot({ path: ".qa-dot22/C1-operator1-man-rong-720.png" });
+  await page.screenshot({ path: `${ANH}/C1-operator1-man-rong-720.png` });
 });
 
 test.afterAll(() => {
-  fs.writeFileSync(".qa-dot22/do-dot22.json", JSON.stringify(ra, null, 2));
+  fs.writeFileSync(`${ANH}/do-dot22.json`, JSON.stringify(ra, null, 2));
 });

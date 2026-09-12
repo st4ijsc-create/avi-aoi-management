@@ -1,5 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
+import { duongRaBangChung } from "./duongRaBangChung";
+
+/**
+ * ĐỢT 51 (mục B) — đường ra bằng chứng KHÔNG còn ghim cứng.
+ * Trước: 3 chỗ ghi thẳng `.qa-dot23/…` ⇒ chạy lại spec là GHI ĐÈ bằng chứng
+ * của Đợt 23 (đúng lớp lỗi G130 đã làm mất 103 tệp ở Đợt 50). Xem `duongRaBangChung`.
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_DOT23", ".qa-dot23");
+
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -122,14 +131,14 @@ test("Đ23-M1 — mật độ nhãn ĐỌC ĐƯỢC ở tư thế camera ghim", 
   ra["M1_thu_ca_hai"] = truoc;
   console.log("M1 (thu=trai,phai):", JSON.stringify(truoc, null, 2));
 
-  await page.screenshot({ path: ".qa-dot23/M1-nhan-thu-ca-hai.png", fullPage: false });
+  await page.screenshot({ path: `${ANH}/M1-nhan-thu-ca-hai.png`, fullPage: false });
 
   await page.goto("/twin");
   await choCanhSan(page);
   const macDinh = await doNhanNhinThay(page);
   ra["M1_mac_dinh"] = macDinh;
   console.log("M1 (mặc định):", JSON.stringify(macDinh, null, 2));
-  await page.screenshot({ path: ".qa-dot23/M1-nhan-mac-dinh.png", fullPage: false });
+  await page.screenshot({ path: `${ANH}/M1-nhan-mac-dinh.png`, fullPage: false });
 
-  fs.writeFileSync(".qa-dot23/M1-do-nhan.json", JSON.stringify(ra, null, 2));
+  fs.writeFileSync(`${ANH}/M1-do-nhan.json`, JSON.stringify(ra, null, 2));
 });

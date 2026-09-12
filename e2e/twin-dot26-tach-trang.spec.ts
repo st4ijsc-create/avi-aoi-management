@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
+import { duongRaBangChung } from "./duongRaBangChung";
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -31,7 +32,11 @@ import fs from "node:fs";
  */
 
 const VIEWPORT = { width: 1280, height: 720 };
-const ANH = ".qa-dot26";
+/**
+ * ĐỢT 51 (mục B) — đường ra bằng chứng lấy từ ENV, và KHÔNG ghi đè thư mục đã có tệp.
+ * (G130 — sự cố Đợt 50: chạy lại spec ghi đè bằng chứng của đợt cũ.)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_DOT26", ".qa-dot26");
 
 const CHI_XEM = { username: "operator1", password: "User@123" };
 const SUA_DUOC = { username: "engineer1", password: "User@123" };
