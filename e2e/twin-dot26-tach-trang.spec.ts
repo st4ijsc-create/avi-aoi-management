@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
-import { duongRaBangChung } from "./duongRaBangChung";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 
 /**
  * ════════════════════════════════════════════════════════════════════════════

@@ -32,24 +32,15 @@ import fs from "node:fs";
  */
 export function duongRaBangChung(tenEnv: string, macDinh: string): string {
   const tuEnv = (process.env[tenEnv] ?? "").trim();
-  if (tuEnv) {
-    const sach = tuEnv.split("\\").join("/").replace(/\/+$/, "");
-    fs.mkdirSync(sach, { recursive: true });
-    return sach;
-  }
+  if (tuEnv) return tuEnv.split("\\").join("/").replace(/\/+$/, "");
   if (process.env.QA_GHI_DE_BANG_CHUNG === "1") {
-    fs.mkdirSync(macDinh, { recursive: true });
     console.warn(`[bang-chung] QA_GHI_DE_BANG_CHUNG=1 - GHI DE co chu y vao ${macDinh}`);
     return macDinh;
   }
   const daCo = fs.existsSync(macDinh) ? fs.readdirSync(macDinh) : [];
-  if (daCo.length === 0) {
-    fs.mkdirSync(macDinh, { recursive: true });
-    return macDinh;
-  }
+  if (daCo.length === 0) return macDinh;
   const moc = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T", "-");
   const moi = `${macDinh}-lai-${moc}`;
-  fs.mkdirSync(moi, { recursive: true });
   console.warn(
     [
       "",
@@ -60,4 +51,17 @@ export function duongRaBangChung(tenEnv: string, macDinh: string): string {
     ].join("\n"),
   );
   return moi;
+}
+
+/**
+ * ★★★ VÌ SAO `duongRaBangChung` KHÔNG `mkdir` — lỗi của chính bản vá này, đo được rồi mới sửa.
+ * Bản đầu gọi `mkdirSync` ngay trong hàm. Hằng `const ANH = duongRaBangChung(...)` chạy lúc NẠP
+ * MODULE, mà Playwright nạp mọi spec kể cả khi chỉ `--list` ⇒ một lệnh `npx playwright test --list`
+ * đẻ ra **15 thư mục rỗng** `.qa-dotNN-lai-<mốc>` (3 lượt thu thập × 5 spec). Phép đo bắt được:
+ * `ls -d .qa-dot*-lai-*` sau `--list` = 15, mỗi thư mục 0 tệp.
+ * ⇒ Hàm trên chỉ TÍNH đường; `taoThuMuc()` mới tạo, và chỉ được gọi ngay trước khi GHI.
+ */
+export function taoThuMuc(d: string): string {
+  fs.mkdirSync(d, { recursive: true });
+  return d;
 }

@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import postgres from "postgres";
 import bcrypt from "bcryptjs";
-import { duongRaBangChung } from "./duongRaBangChung";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -124,7 +124,7 @@ test.afterAll(async () => {
   try {
     const xoa = await sql`delete from users where username = ${KHONG_QUYEN.username}`;
     const sau = (await sql`select count(*)::int n from users`)[0].n;
-    fs.writeFileSync(`${ANH}/user-tam.json`, JSON.stringify({ truoc: soUsersTruoc, daXoa: xoa.count, sau }, null, 2));
+    fs.writeFileSync(`${taoThuMuc(ANH)}/user-tam.json`, JSON.stringify({ truoc: soUsersTruoc, daXoa: xoa.count, sau }, null, 2));
     console.log(`   [user tam] xoa ${xoa.count} hang: users ${sau} (truoc ${soUsersTruoc})`);
     expect(sau, "users truoc = sau (user tam da xoa, DB nguyen)").toBe(soUsersTruoc);
   } finally {
@@ -185,7 +185,7 @@ test("A1 — /twin/may/14: bbox trong viewport, 1 canvas, cockpit 2D + NganXuLy 
     ...(await soCanvas(page)),
     viewport: VIEWPORT,
   };
-  fs.writeFileSync(`${ANH}/do-bbox-may.json`, JSON.stringify(do_, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/do-bbox-may.json`, JSON.stringify(do_, null, 2));
   await page.screenshot({ path: `${ANH}/A1-may-14.png`, fullPage: false });
 
   // ★★★ bbox — đáy ≤ viewport (G41), cảnh NHỎ có trần, cockpit là phần lớn.
@@ -232,7 +232,7 @@ test("A2 — /twin/may/257 (máy THẬT, nhà máy khác): màn NÓI RA `ngoaiPh
   await page.waitForTimeout(2_000);
   const lyDo = await page.getByTestId("may-khong-mo-duoc").getAttribute("data-ly-do");
   const canvas = await soCanvas(page);
-  fs.writeFileSync(`${ANH}/do-ngoai-pham-vi.json`, JSON.stringify({ lyDo, ...canvas }, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/do-ngoai-pham-vi.json`, JSON.stringify({ lyDo, ...canvas }, null, 2));
   await page.screenshot({ path: `${ANH}/A2-may-257-ngoai-pham-vi.png` });
   expect(lyDo).toBe("ngoaiPhamVi");
   expect(canvas.canvasDom, "khong con canvas nao khi man da noi ly do").toBe(0);
@@ -243,7 +243,7 @@ test("A3 — /twin/may/abc: id không hợp lệ ⇒ vỏ rẽ nhánh, KHÔNG ca
   await page.goto("/twin/may/abc", { waitUntil: "domcontentloaded" });
   await page.waitForSelector('[data-testid="may-id-khong-hop-le"]', { timeout: 60_000 });
   const canvas = await soCanvas(page);
-  fs.writeFileSync(`${ANH}/do-id-xau.json`, JSON.stringify(canvas, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/do-id-xau.json`, JSON.stringify(canvas, null, 2));
   await page.screenshot({ path: `${ANH}/A3-id-xau.png` });
   expect(canvas.__soCanvas, "khong canvas nao tung mount => bo dem chua bao gio duoc ghi").toBeNull();
   expect(canvas.canvasDom).toBe(0);
@@ -272,7 +272,7 @@ test("A4 — breadcrumb `‹ Line` ĐI THẬT: từ máy 14 tới /twin/line/2 (
     });
     return { canvas: cv ? r(cv) : null, lop: lop ? r(lop) : null, so: ds.length, tamTrong: ds.filter((d) => d.tamTrong).length, ds };
   });
-  fs.writeFileSync(`${ANH}/do-nhan-line.json`, JSON.stringify({ ...canvas, nhanLine }, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/do-nhan-line.json`, JSON.stringify({ ...canvas, nhanLine }, null, 2));
   await page.screenshot({ path: `${ANH}/A4-ve-man-line-2.png` });
   expect(page.url()).toContain("/twin/line/2");
   // ★ Đổi màn = canvas cũ thu dọn, canvas mới dựng — vẫn ĐÚNG MỘT (G87 vì ROUTER).
@@ -304,7 +304,7 @@ test("A5 — ★★★ G91 NỢ CÓ SẴN: bấm tab 3D của cockpit ⇒ 2 canv
     await page.waitForTimeout(5_000);
     sau = await soCanvas(page);
   }
-  fs.writeFileSync(`${ANH}/do-tab-3d.json`, JSON.stringify({ coTab, truoc, sau }, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/do-tab-3d.json`, JSON.stringify({ coTab, truoc, sau }, null, 2));
   await page.screenshot({ path: `${ANH}/A5-tab-3d-cockpit.png` });
   expect(coTab, "cockpit co tab 3D (MachineCockpit.tsx:281)").toBe(true);
   /*
@@ -338,7 +338,7 @@ test("B1 — operator1 (có `machine_status`, 0 nhà máy): QUA cổng route, th
   const cau = (await page.getByTestId("may-khong-mo-duoc").innerText()).replace(/\s+/g, " ").trim();
   const canvas = await soCanvas(page);
   const biChan = await page.locator("text=/Không có quyền truy cập|Access denied/").count();
-  fs.writeFileSync(`${ANH}/do-operator1.json`, JSON.stringify({ lyDo, cau, biChan, ...canvas }, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/do-operator1.json`, JSON.stringify({ lyDo, cau, biChan, ...canvas }, null, 2));
   await page.screenshot({ path: `${ANH}/B1-operator1.png` });
   expect(biChan, "operator1 KHONG bi RouteGuard chan (cong /twin, QD-18)").toBe(0);
   /*

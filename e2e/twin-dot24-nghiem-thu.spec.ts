@@ -2,7 +2,7 @@
  * ĐỢT 24 — NGHIỆM THU THỊ GIÁC ba món. Vai KHÔNG-admin (G76).
  */
 import { test, expect, type Page } from "@playwright/test";
-import { duongRaBangChung } from "./duongRaBangChung";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 
 /**
  * ĐỢT 51 (mục B) — đường ra bằng chứng KHÔNG còn ghim cứng.
@@ -188,6 +188,6 @@ test("V6 — ĐỐI CHỨNG: ?xem=machine:<id TRONG phạm vi> ⇒ /twin/may/1 v
 
 test.afterAll(async () => {
   const fs = await import("node:fs");
-  fs.writeFileSync(`${ANH}/nghiem-thu.json`, JSON.stringify(ra, null, 2), "utf-8");
+  fs.writeFileSync(`${taoThuMuc(ANH)}/nghiem-thu.json`, JSON.stringify(ra, null, 2), "utf-8");
   console.log("KET QUA DO:", JSON.stringify(ra, null, 2));
 });

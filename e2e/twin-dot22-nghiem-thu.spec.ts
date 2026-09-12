@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
-import { duongRaBangChung } from "./duongRaBangChung";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 
 /**
  * ĐỢT 51 (mục B) — đường ra bằng chứng KHÔNG còn ghim cứng.
@@ -430,5 +430,5 @@ test("C1 — operator1 thay MAN RONG: canh trong, cay 0 hang (chua duoc gan nha 
 });
 
 test.afterAll(() => {
-  fs.writeFileSync(`${ANH}/do-dot22.json`, JSON.stringify(ra, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/do-dot22.json`, JSON.stringify(ra, null, 2));
 });

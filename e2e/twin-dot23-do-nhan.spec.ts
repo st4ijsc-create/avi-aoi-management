@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
-import { duongRaBangChung } from "./duongRaBangChung";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 
 /**
  * ĐỢT 51 (mục B) — đường ra bằng chứng KHÔNG còn ghim cứng.
@@ -140,5 +140,5 @@ test("Đ23-M1 — mật độ nhãn ĐỌC ĐƯỢC ở tư thế camera ghim", 
   console.log("M1 (mặc định):", JSON.stringify(macDinh, null, 2));
   await page.screenshot({ path: `${ANH}/M1-nhan-mac-dinh.png`, fullPage: false });
 
-  fs.writeFileSync(`${ANH}/M1-do-nhan.json`, JSON.stringify(ra, null, 2));
+  fs.writeFileSync(`${taoThuMuc(ANH)}/M1-do-nhan.json`, JSON.stringify(ra, null, 2));
 });
