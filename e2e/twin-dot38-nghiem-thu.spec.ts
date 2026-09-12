@@ -10,7 +10,8 @@ import { duongRaBangChung } from "./duongRaBangChung";
  * Đo trên `dist` (server 3038, `PLAYWRIGHT_BASE_URL`), vai `e2e_tai_loE` (danh tính THẬT qua tRPC `auth.me` — G100),
  * hai viewport 1600×900 và 1280×720. Mọi số đọc bằng DOM thật; JSON thô ghi `.qa-dot38/e2e/` (G65 — không đụng
  * `test-results/`). Chạy: `PLAYWRIGHT_BASE_URL=http://localhost:3038 npx playwright test e2e/twin-dot38-nghiem-thu.spec.ts
- * --workers=1 --output .qa-dot38/pw-output`.
+ * --workers=1 --output .qa-dotNN/pw-output` — ĐỢT 51: NN = đợt ĐANG chạy, kèm `TWIN_E2E_ANH_DOT38=.qa-dotNN/e2e`;
+ * ghi vào `.qa-dot38/` là ghi đè bằng chứng của Đợt 38 (G130).
  *
  *   P5  Line/Máy/Studio: `documentElement.scrollHeight === innerHeight` (trước: 924/900 · 744/720, cuộn dọc 24 px)
  *   P4  `/twin/may/14` bấm tab "3D model": DOM canvas = `__soCanvas` = 1 ở ba trạng thái tab (trước: 2/1 — G99)

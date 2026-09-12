@@ -12,7 +12,7 @@ import { duongRaBangChung } from "./duongRaBangChung";
  * `e2e_tai_loE` (danh tính thật qua `auth.me` — G100), hai viewport. URL mang `?do=1` để mở `window.__demTuongTac`
  * (`KhungCanh`/`LoBatchMay`, chỉ DEV hoặc `?do=1`): tâm KHỐI máy → px canvas (không bấm nhãn), đếm object có handler.
  * JSON thô ghi `.qa-dot47/e2e/` (G65). Chạy:
- *   PLAYWRIGHT_BASE_URL=http://localhost:3047 npx playwright test e2e/twin-dot47-bam-canh.spec.ts --workers=1 --output .qa-dot47/pw-output
+ *   TWIN_E2E_ANH=.qa-dotNN/e2e PLAYWRIGHT_BASE_URL=http://localhost:30NN npx playwright test e2e/twin-dot47-bam-canh.spec.ts \n *     --workers=1 --output .qa-dotNN/pw-output     ← ĐỢT 51: ghi vào thư mục CỦA ĐỢT ĐANG CHẠY, không phải .qa-dot47
  *
  *   T1a  /twin và /twin/line/2 × 2 vp: `mouse.click` tâm khối máy ⇒ URL `/twin/may/:id` (đúng id), độ trễ trong trang
  *        (click DOM → pushState) ≤ 500 ms
