@@ -1,0 +1,6 @@
+=== DOT 56 — MUC 0 (cay) ===
+worktree : D:/SOURCES/_twin_wt
+nhanh    : feat/twin-3d-trung-tam
+HEAD     : f4e7449380b506377291be6cff758ee849b70631  == ky vong f4e74493  ⇒ TIEP TUC
+DB truoc : .qa-dot56/db-truoc.txt (khop dot55 baseline; mhh 217683 vs dot53 215079 — bang nay VAN DANG LON)
+cong rieng: 3056

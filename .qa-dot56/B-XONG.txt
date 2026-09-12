@@ -1,0 +1,75 @@
+════════ DOT 56 · MUC B — dua `e2e/` vao cong kieu ════════
+
+── XAC NHAN TIEN DE CUA BRIEF (dung) ─────────────────────────────────────────
+tsconfig.json       include = ["client/src/**/*","shared/**/*","server/**/*"]   ⇒ KHONG co e2e/
+tsconfig.tests.json include = (y het)                                          ⇒ KHONG co e2e/
+⇒ 30 spec Playwright chua tung duoc `tsc` nhin mot dong. Brief DUNG.
+
+── CACH CHON (it xao tron nhat) ──────────────────────────────────────────────
+Them "e2e/**/*" vao `include` cua **tsconfig.tests.json**, KHONG dung toi tsconfig.json.
+Ly do:
+  · `npm run check` (cong SAN PHAM) giu nguyen pham vi cu — khong nhan them no cua spec.
+  · tsconfig.tests.json da la "cong cho file test", e2e la test ⇒ dung cho.
+  · 0 tep cau hinh moi, 0 script npm moi, 0 doi CI. Mot dong `include`.
+Da bo them 6 dong binh luan tai cho giai thich vi sao (theo van phong san co cua tep).
+
+── 5 LOI CO SAN — do that ────────────────────────────────────────────────────
+Sau khi them e2e vao include: 27 -> 32 loi, DUNG 5 loi moi, ca 5 deu trong e2e/.
+So luong khop brief. NHUNG TEN TEP + SO DONG brief ghi SAI (xem "brief sai" o duoi):
+
+# | brief noi              | THAT SU la                          | ma      | cach va
+--+------------------------+-------------------------------------+---------+---------------------------
+1 | twin-lo-u.spec.ts:2    | e2e/twin-lo-u-tuong-tac.spec.ts:2   | TS7016  | e2e/pngjs.d.ts (khai kieu)
+2 | twin-lo-v.spec.ts:3    | e2e/twin-lo-v-tuong-tac.spec.ts:3   | TS7016  | e2e/pngjs.d.ts (khai kieu)
+3 | twin-studio...:129     | e2e/twin-studio-thiet-ke.spec.ts:143| TS2339  | them o helperLaObject3D
+4 | twin-studio...:132     | e2e/twin-studio-thiet-ke.spec.ts:146| TS2339  | them o helperTrongScene
+5 | twin-studio...:134     | e2e/twin-studio-thiet-ke.spec.ts:148| TS2339  | them o soConHelper
+
+VA #3-#5 — KHONG DOI MOT `expect` NAO. Goc re: khai kieu TAY trong spec cho
+`window.__gizmo` chi liet ke 3 o (daGanHelper/tenLopHelper/controlsLaObject3D), trong khi
+4 dong expect ben duoi doc them 3 o nua. Nguon su that co san va DAY DU la interface
+`CuaSoDoGizmo` tai client/src/components/twin3d/thiet-ke/GizmoBienDoi.tsx:90 (khai du 9 o).
+Ban khai tay trong spec la BAN SAO DA TROI. Da them dung 3 o thieu + tro ve nguon su that.
+(Khong `import type` tu client/ vi 0/30 spec hien nay lam vay — se la tien le moi, xao tron
+ hon muc brief cho phep. Ghi vao NO.md de chu so huu quyet.)
+
+VA #1-#2 — `@types/pngjs` KHONG co trong node_modules (dieu kien brief dat ra la SAI).
+⇒ khong cai mang. Thay bang `e2e/pngjs.d.ts`: khai kieu HEP, dung be mat dang dung
+  (`PNG.sync.read/write` + width/height/data), co ghi ro "khi them @types/pngjs that thi XOA".
+
+★★★ PHAT HIEN NGOAI BRIEF — `pngjs` LA PHU THUOC MA (phantom dependency):
+  grep package.json ⇒ pngjs KHONG co trong `dependencies` LAN `devDependencies`.
+  Nhung 17 cho goi trong 2 spec + ~10 script QA (.qa-dot30/do-anh.mjs … .qa-dot53/thigiac53.mjs)
+  deu import no. No dang ton tai chi nho la phu thuoc BAC CAU cua goi khac.
+  Mot lan `npm ci` ma cay phu thuoc doi la MOI phep do pixel cua du an chet cam.
+  `npm view @types/pngjs version` = 6.0.5 (mang THONG, khong bi chan).
+  ⇒ DE XUAT (can chu so huu duyet vi dong vao package.json/package-lock.json):
+      npm i -D pngjs@5.0.0 @types/pngjs@6.0.5
+    roi XOA e2e/pngjs.d.ts. Toi KHONG tu lam vi brief chi cho phep them @types/pngjs
+    "neu goi da co trong node_modules" — dieu kien ay khong dung.
+
+── KET QUA CONG KIEU ─────────────────────────────────────────────────────────
+                         TONG loi   trong e2e/   trong twin3d   so tep co loi
+truoc (e2e vo hinh)         27           0             0              8
+sau  (e2e trong cong)       27           0             0              8
+⇒ 5 loi e2e da dong, 0 loi moi o cho khac.
+CHUNG MINH KHONG DANH DOI: danh sach (tep:dong:ma TS) cua 27 loi truoc va sau
+  md5 GIONG HET = 103fbeaa91c9f34fb1732246074c2ba2
+  (mot dong khac nhau duy nhat trong van ban day du chi la cach tsc IN RA kieu suy
+   luan cua cung mot loi TS2345 tai requireAnyPermissionKhoiC.db.test.ts(36,10) —
+   cung tep, cung dong, cung ma.)
+
+`npx playwright test --list` ⇒ **Total: 151 tests in 30 files** (khop brief; e2e/pngjs.d.ts
+khong phai spec nen khong lam doi con so).
+
+── ABLATION 2 CHIEU (.qa-dot56/ablation-B.sh, co trap EXIT) ──────────────────
+A0 nguyen ban              : tong 27 · e2e 0
+A1 cai 1 loi kieu vao spec : tong 28 · e2e 1     ⇐ cong KEU
+A2 go loi ra               : tong 27 · e2e 0     ⇐ cong IM lai
+⇒ DAT ca hai chieu. Cong kieu e2e la CONG THAT, khong phai trang tri.
+  (trap da tra e2e/twin-lo-f.spec.ts ve nguyen ban — `git status` sach.)
+
+── TEP DA DOI ───────────────────────────────────────────────────────────────
+M tsconfig.tests.json                  (+1 muc include, +6 dong binh luan)
+M e2e/twin-studio-thiet-ke.spec.ts     (+3 o kieu, +11 dong binh luan, 0 expect doi)
+A e2e/pngjs.d.ts                       (moi, khai kieu hep)

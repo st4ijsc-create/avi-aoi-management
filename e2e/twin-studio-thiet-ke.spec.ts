@@ -115,10 +115,24 @@ test.describe("Twin Studio — màn Thiết kế Đợt 4", () => {
       () =>
         (
           window as unknown as {
+            /*
+             * ★ Đợt 56 (mục B) — BA Ô BỊ THIẾU, thêm vào vì `e2e/` nay có `tsc` canh.
+             *   Khai tay ở đây từng chỉ có 3 ô đầu, trong khi 4 dòng `expect` bên dưới
+             *   đọc `helperLaObject3D`, `helperTrongScene`, `soConHelper`. Vì `e2e/`
+             *   chưa từng nằm trong tsconfig nào (xem `tsconfig.tests.json`), 3 ô thiếu
+             *   ấy không hề báo lỗi — chúng lặng lẽ là `undefined` **về kiểu**, còn lúc
+             *   chạy thì có giá trị thật nên test vẫn xanh. Đúng lớp "xanh vì lý do sai".
+             *   KHÔNG đổi một `expect` nào — chỉ nói thật về hình dạng đã có sẵn.
+             *   Nguồn sự thật: `CuaSoDoGizmo` trong
+             *   `client/src/components/twin3d/thiet-ke/GizmoBienDoi.tsx:90`.
+             */
             __gizmo?: {
               daGanHelper: boolean;
               tenLopHelper: string;
               controlsLaObject3D: boolean;
+              helperLaObject3D: boolean;
+              helperTrongScene: boolean;
+              soConHelper: number;
             };
           }
         ).__gizmo,
