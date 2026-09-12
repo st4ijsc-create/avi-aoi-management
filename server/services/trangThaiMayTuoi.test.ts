@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import {
   NGUONG_TRANG_THAI_TUOI_MS,
+  VAN_HANH_XAP_XI_KET_NOI,
   dangKetNoi,
   isoCua,
   mapMachineStatus,
@@ -102,12 +103,50 @@ describe("mapMachineStatus — máy im lặng không còn là running/idle", () 
     expect(mapMachineStatus(CU, "stopped", NOW)).toBe("offline");
   });
   it("★ ĐỐI CHỨNG (G5): nhịp tim tươi ⇒ đúng bảng cũ — gate không giết máy sống", () => {
-    expect(mapMachineStatus(TUOI, null, NOW)).toBe("running");
+    // ★ Đợt 53 — ô `null` TÁCH ra `describe` riêng bên dưới: nó KHÔNG còn là "running".
     expect(mapMachineStatus(TUOI, "running", NOW)).toBe("running");
     expect(mapMachineStatus(TUOI, "warming_up", NOW)).toBe("running");
     expect(mapMachineStatus(TUOI, "stopped", NOW)).toBe("idle");
     expect(mapMachineStatus(TUOI, "error", NOW)).toBe("down");
     expect(mapMachineStatus(TUOI, "maintenance", NOW)).toBe("maintenance");
+  });
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 53 (QA lần 8, SAI #2) — THIẾU `operationStatus` ⇒ KHÔNG SUY RA "RUNNING"
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo trên dist 3053 với NHỊP TIM `now()` tạm cho máy 14 (`.qa-dot53/hd-truoc-co-hb/tong.json`):
+   * `overview` = **idle** (cột `machines."operationStatus" = 'stopped'`) trong khi
+   * `factoryCommand.machineDetail` = **running** và `assetCockpit.liveState.statusMapped` =
+   * **running**, vì `liveState.value.operationStatus = null` ⇒ `default: → running`.
+   * MỘT máy, MỘT giây, HAI chữ. Ô `null` từng là ô "running" trong chính lưới này (dòng cũ ở
+   * ĐỐI CHỨNG trên) — tức LƯỚI ĐÃ GHIM CHÍNH CÁI HÀNH VI SAI suốt 19 đợt.
+   */
+  it("★★★ operationStatus null/undefined/\"\" ⇒ IDLE, không phải running (fail-safe: câu YẾU hơn)", () => {
+    expect(mapMachineStatus(TUOI, null, NOW)).toBe("idle");
+    expect(mapMachineStatus(TUOI, undefined, NOW)).toBe("idle");
+    expect(mapMachineStatus(TUOI, "", NOW)).toBe("idle");
+  });
+  it("★ giá trị vận hành CÓ THẬT vẫn ra running — bản vá không giết nhánh đúng", () => {
+    for (const op of ["running", "warming_up", "changeover", "starved", "blocked"]) {
+      expect(mapMachineStatus(TUOI, op, NOW)).toBe("running");
+    }
+  });
+  it("★★★ BẤT BIẾN 'MỘT hợp đồng': cùng bằng chứng + cùng cột ⇒ overview và machineDetail cùng chữ", () => {
+    // Hai bề mặt = hai lời gọi khác nhau của CÙNG hàm. Đường `machineDetail` từng đánh rơi dữ kiện
+    // bằng `?? undefined`; ghim ở đây để một `?? undefined` mới ở bất kỳ đâu cũng không đổi được chữ.
+    for (const op of ["stopped", "running", "error", "maintenance"]) {
+      const overview = mapMachineStatus(TUOI, op, NOW);
+      const machineDetail = mapMachineStatus(TUOI, op ?? undefined, NOW);
+      expect(machineDetail).toBe(overview);
+    }
+    // …và ca THẬT SỰ đã vỡ: một bên có cột, bên kia đánh rơi ⇒ trước vá là "idle" ≠ "running".
+    expect(mapMachineStatus(TUOI, "stopped", NOW)).toBe("idle");
+    expect(mapMachineStatus(TUOI, (null as string | null) ?? undefined, NOW)).not.toBe("running");
+  });
+  it("xấp xỉ CHỈ khi người gọi KHAI — `VAN_HANH_XAP_XI_KET_NOI` là cửa duy nhất còn lại ra running", () => {
+    expect(mapMachineStatus(TUOI, VAN_HANH_XAP_XI_KET_NOI, NOW)).toBe("running");
+    // …và nó KHÔNG cứu được máy im lặng: bằng chứng kết nối vẫn quyết định trước.
+    expect(mapMachineStatus(CU, VAN_HANH_XAP_XI_KET_NOI, NOW)).toBe("offline");
   });
   it("log `offline` SAU nhịp tim ⇒ offline bất kể operationStatus", () => {
     expect(mapMachineStatus({ logStatus: "offline", logTs: NOW - 1_000, nhipTimTs: HB_TUOI }, "running", NOW)).toBe("offline");

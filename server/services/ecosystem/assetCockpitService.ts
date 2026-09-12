@@ -548,18 +548,33 @@ export async function machineDetail(machineId: number, scope?: PhamViDoc): Promi
        *   "Last heartbeat" của cockpit và "Updated … ago" của twin đọc cùng một số.
        */
       let hbMay: Date | string | null = null;
+      /*
+       * ★★★ ĐỢT 53 (QA lần 8, SAI #2) — ĐỌC LUÔN `operationStatus` TRONG CHÍNH TRUY VẤN NÀY.
+       *
+       * Bản cũ trả `operationStatus: null` CỨNG với lời khai *"`operationStatus` không có ở lớp này"* —
+       * lời khai ấy SAI: truy vấn ngay dưới đây đã mở đúng hàng `machines` cho đúng `machineId` để lấy
+       * `lastHeartbeat`. Thêm một CỘT vào cùng `select` tốn **0 truy vấn**, 0 round-trip.
+       *
+       * Cái giá của lời khai ấy, đo được (`.qa-dot53/hd-truoc-co-hb/tong.json`, máy 14 + nhịp tim tạm):
+       * `liveState.value.operationStatus = null` ⇒ `factoryCommandService:576` (`?? undefined`) mất dữ
+       * kiện ⇒ `machineDetail` nói **"running"** trong khi `overview` nói **"idle"** cho CÙNG máy, CÙNG
+       * giây; và `statusMapped` ngay tại đây cũng nói "running" cho MỌI máy đang kết nối.
+       */
+      let opStatus: string | null = null;
       try {
         const db = await getDb();
         if (db) {
           const r = await db
-            .select({ lastHeartbeat: machinesTable.lastHeartbeat })
+            .select({ lastHeartbeat: machinesTable.lastHeartbeat, operationStatus: machinesTable.operationStatus })
             .from(machinesTable)
             .where(eq(machinesTable.id, machineId))
             .limit(1);
           hbMay = (r[0]?.lastHeartbeat as Date | string | null | undefined) ?? null;
+          opStatus = (r[0]?.operationStatus as string | null | undefined) ?? null;
         }
       } catch {
         hbMay = null;
+        opStatus = null;
       }
       const now = Date.now();
       const { capNhatLuc: hbTs } = quyTuoiMay(
@@ -573,11 +588,13 @@ export async function machineDetail(machineId: number, scope?: PhamViDoc): Promi
         lastStatusChange: status?.timestamp ? new Date(status.timestamp).getTime() : null,
         heartbeatStatus: hb?.status ?? null,
         lastHeartbeat: hbTs,
-        operationStatus: null,
+        operationStatus: opStatus,
         connected,
-        // ★ Đợt 40 — CÙNG bằng chứng, CÙNG hàm với fleet (`getCommandMachineDetail`/`overview`); `operationStatus`
-        //   không có ở lớp này (null) ⇒ máy sống ra `running` như fleet khi không có gì khác — một từ điển.
-        statusMapped: mapMachineStatus(bangChung, null, now),
+        // ★ Đợt 40 — CÙNG bằng chứng, CÙNG hàm với fleet (`getCommandMachineDetail`/`overview`).
+        // ★★★ Đợt 53 — và nay CÙNG DỮ KIỆN: `opStatus` đọc từ `machines."operationStatus"`, đúng cột mà
+        //   `overview` (`factoryCommandService:369`) dùng. Trước đây chỗ này truyền `null` cứng ⇒ mọi máy
+        //   đang kết nối ra "running" bất kể cột nói gì (QA lần 8 chỉ đúng dòng này).
+        statusMapped: mapMachineStatus(bangChung, opStatus, now),
       };
     },
   );

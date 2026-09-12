@@ -113,11 +113,57 @@ export function dangKetNoi(bc: BangChungKetNoi, now: number): boolean {
 }
 
 /**
+ * ★★★ ĐỢT 53 — NGƯỜI GỌI KHAI: *"tôi KHÔNG CÓ `operationStatus`, và tôi chấp nhận xấp xỉ đã-kết-nối ⇒ `running`"*.
+ *
+ * Đây là cửa duy nhất còn lại để `mapMachineStatus` trả `running` mà không có dữ kiện vận hành, và nó
+ * phải được GÕ RA ở chỗ gọi. Lý do tồn tại: `trangThaiLichSuTaiMoc` (tua lại) — DB không lưu
+ * `operationStatus` theo thời gian (`twinCanh.LICH_SU_LA_XAP_XI`), nên ở ảnh lịch sử ta chỉ nói được
+ * "đã kết nối". Xấp xỉ ấy CÓ KHAI từ Đợt 38 và không đổi ở đợt này.
+ *
+ * ⚠ KHÔNG dùng hằng này cho đường LIVE. Một bề mặt live thiếu `operationStatus` là một đường ống bị
+ *   đứt (đúng ca `assetCockpit.liveState.operationStatus = null` của QA lần 8) — phải NỐI LẠI ống,
+ *   không phải dán nhãn "xấp xỉ" lên chỗ đứt.
+ */
+export const VAN_HANH_XAP_XI_KET_NOI = "__xap_xi_da_ket_noi__";
+
+/**
  * Map (bằng chứng kết nối ⊕ `machines.operationStatus`) → 5 trạng thái.
  *
  *   · không kết nối (`dangKetNoi` = false)                                 → `offline`
  *   · kết nối: `maintenance` → `maintenance` · `error` → `down` · `stopped` → `idle` ·
- *     còn lại (`running`/`warming_up`/`changeover`/`starved`/`blocked`/null) → `running`
+ *     THIẾU dữ kiện (`null`/`undefined`/`""`)                              → `idle`  ★ Đợt 53
+ *     còn lại (`running`/`warming_up`/`changeover`/`starved`/`blocked`)     → `running`
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 53 (QA lần 8, SAI #2) — THIẾU DỮ KIỆN KHÔNG ĐƯỢC SUY RA "RUNNING"
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đo được trên dist 3053 khi chèn NHỊP TIM `now()` cho máy 14 (`.qa-dot53/hd-truoc-co-hb/tong.json` —
+ * hàng tạm, `trap` xoá; DB 108 → 109 → 108):
+ *
+ *   | bề mặt                                   | chữ    |
+ *   |------------------------------------------|--------|
+ *   | `factoryCommand.overview`                | idle   | ← `machines."operationStatus" = 'stopped'`
+ *   | `socket twin:trangThai`                  | idle   |
+ *   | `/twin/may/14` chip                      | Idle   |
+ *   | **`factoryCommand.machineDetail`**       | **running** |
+ *   | **`assetCockpit.liveState.statusMapped`**| **running** |
+ *
+ * Hai bề mặt sau đi qua `assetCockpit.machineDetail`, nơi `liveState.value.operationStatus` **= null**
+ * (khoá CÓ, giá trị rỗng) ⇒ `factoryCommandService:576` `null ?? undefined` ⇒ `default: → running`.
+ * MỘT máy, MỘT giây, HAI chữ. Tám đợt trước không thấy vì mọi máy dev đều offline nên hai bề mặt
+ * tình cờ bằng nhau — đúng họ G105: bất đồng chỉ lộ khi máy THẬT SỰ kết nối (tức là ở production).
+ *
+ * Bản vá có HAI nửa, thiếu nửa nào cũng chưa đóng:
+ *   1. **Nối lại ống** — `assetCockpitService` đọc `machines."operationStatus"` trong ĐÚNG truy vấn nó
+ *      đã chạy cho `lastHeartbeat` (0 truy vấn thêm) và trả ra thật.
+ *   2. **Hàng rào ở tầng dùng chung (chỗ này)** — nếu ống lại đứt ở một đường thứ ba chưa ai quét
+ *      (G110), kết quả phải là `idle` ("đang kết nối, KHÔNG BIẾT làm gì"), không phải `running`
+ *      ("đang chạy") — một lời khai mạnh hơn dữ kiện. Fail-safe theo đúng nghĩa: chọn câu YẾU hơn.
+ *
+ * ⚠ Vì sao `idle` chứ không phải một tên thứ sáu: `CommandMachineStatus` là **danh sách ĐÓNG** (G67)
+ *   với bảng tra ở `factoryCommandPriority.ts`, `factory-scene/sceneTypes.ts`, `FactoryCommandView`
+ *   `STATUS_META`, `twin3d/van-hanh/kpiNoiLogic.ts`… — tên mới sẽ bị chúng nuốt im lặng. `idle` đã có
+ *   nghĩa "kết nối mà không sản xuất", và nó TRÙNG chữ mà `overview` trả cho cùng máy ấy.
  *
  * ★ Chọn `offline` thay vì thêm giá trị enum thứ sáu: `CommandMachineStatus` là **danh sách đóng**
  *   (G67) với consumer ở `factoryCommandPriority.ts`, `factory-scene/sceneTypes.ts`,
@@ -141,7 +187,13 @@ export function mapMachineStatus(
       return "down";
     case "stopped":
       return "idle";
+    // Người gọi KHAI TƯỜNG MINH rằng mình chấp nhận xấp xỉ (chỉ `trangThaiLichSuTaiMoc`).
+    case VAN_HANH_XAP_XI_KET_NOI:
+      return "running";
     default:
+      // ★★★ Đợt 53 — THIẾU dữ kiện ⇒ câu YẾU hơn. Không có `operationStatus` thì ta biết máy đang
+      //   kết nối, KHÔNG biết nó đang chạy; khai "running" là nói nhiều hơn cái mình đo được.
+      if (operationStatus == null || operationStatus === "") return "idle";
       return "running";
   }
 }
@@ -165,5 +217,8 @@ export function mapMachineStatus(
  */
 export function trangThaiLichSuTaiMoc(bc: BangChungKetNoi, mocMs: number): CommandMachineStatus | null {
   if (bc.logStatus == null && msCua(bc.nhipTimTs) == null) return null;
-  return mapMachineStatus(bc, null, mocMs);
+  // ★ Đợt 53 — xấp xỉ ĐƯỢC KHAI ở chỗ gọi thay vì ẩn trong `default:` của `mapMachineStatus`.
+  //   Hành vi KHÔNG đổi một bit so với Đợt 38; thứ đổi là nó không còn là hành vi MẶC ĐỊNH cho
+  //   mọi người gọi lỡ đánh rơi dữ kiện.
+  return mapMachineStatus(bc, VAN_HANH_XAP_XI_KET_NOI, mocMs);
 }
