@@ -1,0 +1,8 @@
+e52dfc7af16fa29d3de95ddf058e25d7 *.qa-dot47/e2e/t1a-man-twin-line-1280-sau-bam.png
+bfa6caee8b4f695f72795f957f809501 *.qa-dot47/e2e/t1a-man-twin-line-1280.json
+ad436571f6ec40649d1e0fa30d11464b *.qa-dot47/e2e/t1a-man-twin-line-1600-sau-bam.png
+569353d6626eef7ef711bf37b20303cf *.qa-dot47/e2e/t1a-man-twin-line-1600.json
+0823b384a19986a140883c3f2db69669 *.qa-dot47/e2e/t1a-man-twin-van-hanh-1280-sau-bam.png
+22ce9688fe55e7777bd05d2702c289e7 *.qa-dot47/e2e/t1a-man-twin-van-hanh-1280.json
+5aa3643d8c2384f904f3ffd93065348f *.qa-dot47/e2e/t1a-man-twin-van-hanh-1600-sau-bam.png
+15aa85b4f10bb665d8511c7a5e40965c *.qa-dot47/e2e/t1a-man-twin-van-hanh-1600.json

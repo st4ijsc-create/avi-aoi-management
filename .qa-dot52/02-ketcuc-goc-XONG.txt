@@ -1,0 +1,24 @@
+[Đợt 52 · mục 1] KẾT CỤC GỐC K8 — 2026-09-12T14:03:17+07:00
+Lệnh: node .qa-dot52/k8.mjs --base=http://localhost:3052 --vp=1280x720,1600x900 --so=5
+Thô: .qa-dot52/k8/*.json + PNG · log .qa-dot52/k8-run.log
+TỔNG: ĐẠT 46 · HỎNG 2 / 48 ca  (2 HỎNG = K8i-tang × 2 vp, LÝ DO DỮ LIỆU — xem dưới)
+
+Số cú bấm TÂM KHỐI MÁY thật (page.mouse.click trên canvas): 24
+  · /twin      @1280x720: máy 7, 17, 246, 6, 21      (7 và 17 có TÂM BỊ NHÃN MÁY 18 PHỦ)
+  · /twin/line/2 @1280x720: máy 22, 13, 18, 14, 20   (22 có tâm bị nhãn máy 21 phủ)
+  · /twin      @1600x900 : máy 246, 13, 247, 18, 21  (246 và 13 có tâm bị nhãn máy 3 phủ)
+  · /twin/line/2 @1600x900 : máy 13, 18, 14, 20, 21
+  · + 4 cú K8i-keo (sau kéo 60 px): 246 · 23 · (×2 vp)
+  ⇒ 24/24 tới ĐÚNG /twin/may/<đúng id>, 0 lần đi nhầm máy của nhãn.
+Trễ TRONG TRANG (click → history.pushState): 0 – 0,5 ms (ngưỡng brief 500 ms) — 24/24 đạt.
+Màn Máy vẽ xong sau mỗi cú: 2 209 – 2 320 ms · canvas 1/1 · __soCanvas 1 · may-dang-tai 0 · __thongKeVe.calls 3–5.
+K8c sàn trống ⇒ URL không đổi: 4/4 · K8d kéo ⇒ camera đổi & pathname giữ: 4/4
+K8e cursor: "pointer" trên máy, "auto" trên sàn: 4/4 · K8f bấm nhãn ⇒ đúng máy của nhãn + Back về màn gốc: 4/4
+K8g demObject {soObject:1, coHandler:1, trongScene:1, ten:["twin3d-lo-may-su-kien"]}: 4/4
+K8h đối chứng dương /factory-command 3D: 2/2 ĐẠT (cursor pointer, dialog 0→1, URL giữ)
+
+★ K8i-tang (2 ca) — N/A vì DỮ LIỆU, KHÔNG phải lỗi sản phẩm:
+  bộ chọn nạp trả về chon-nha-may 1 mục · chon-toa-nha 1 mục · chon-tang 1 mục.
+  DB dev: twin_toa_nha 1 hàng, twin_tang 1 hàng, 82/82 twin_dat_cho ở tầng 28.
+  ⇒ KHÔNG có tầng/toà thứ hai để đổi sang. Xếp N-A. Hệ quả: đường "đổi tầng rồi bấm máy"
+    CHƯA TỪNG được đo đầu-cuối trên DB này (G5: cổng xanh trên tập rỗng) — ghi vào CÒN MỞ.

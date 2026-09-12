@@ -1,0 +1,1229 @@
+{
+  "1600x900": {
+    "muc": {
+      "M1_twin": {
+        "ok": true,
+        "chi": "bong=0 giao-dòng-thời-gian=0px²"
+      },
+      "M2a": {
+        "ok": true,
+        "chi": "tràn=false nut-nap-lai:✓ nut-xuat-usd:✓ nut-che-2d:✓ nut-toan-man:✓ nut-chi-nhan-bat-thuong:✓ lien-ket-twin-studio:✓"
+      },
+      "M2c": {
+        "ok": true,
+        "chi": "trang-thai-ket-noi:✓ co-che-giao-so:✓ badge-xuat-xu:✓ do-tuoi-nen:✓ · viên trạng thái=354×29@1214,215"
+      },
+      "M2b": {
+        "ok": true,
+        "chi": "panel-phai w=0 thu=1 lyDo=trong · neo w=1000"
+      },
+      "M9": {
+        "ok": true,
+        "chi": "breadcrumb-tapDoan=\"Tập đoàn\" › breadcrumb-nhaMay=\"Nhà máy ảo (SIM)\" › breadcrumb-tang=\"Tầng\" anCap=false navTràn=false"
+      },
+      "M4": {
+        "ok": true,
+        "chi": "pressed=true nhãn=4 chip=\"chỉ tên máy bất thường · 41 tên khác ẩn\" theoCS=1 trongCanvas=true bịChe=[] chipRect={\"x\":821,\"y\":808,\"w\":222,\"h\":23,\"day\":830,\"phai\":1043} đệm=38"
+      },
+      "M8": {
+        "ok": true,
+        "chi": "cuộn={\"scrollH\":313,\"clientH\":176,\"cuonDuoc\":true,\"coBong\":true,\"bg\":\"linear-gradient(oklch(0.145 0.015 260) 3\"} tab={\"x\":288,\"y\":579,\"w\":287,\"h\":30,\"day\":609,\"phai\":575}"
+      },
+      "M1_line": {
+        "ok": true,
+        "chi": "bong=0 giao-dải-trạm=0px²"
+      },
+      "M3": {
+        "ok": true,
+        "chi": "nhãn=12 ngoàiKhung=0 ty=[0.58..0.71] TB=0.62"
+      },
+      "M1_may": {
+        "ok": true,
+        "chi": "bong=0 giao-ngăn-phải=0px²"
+      },
+      "M6": {
+        "ok": true,
+        "chi": "cảnh h=324 cockpit h=427"
+      },
+      "M11": {
+        "ok": true,
+        "chi": "co=true tràn=true cuonDuoc=1 mepPhai=1 nútPhải={\"x\":1256,\"y\":536,\"w\":28,\"h\":28,\"day\":564,\"phai\":1284}"
+      },
+      "M12": {
+        "ok": true,
+        "chi": "{\"chu\":\"Mất kết nối\",\"h\":32,\"lineH\":32,\"dong\":1,\"fontPx\":24,\"w\":135}"
+      },
+      "M1_studio": {
+        "ok": true,
+        "chi": "bong=0 giao-thư-viện=0px²"
+      },
+      "M5": {
+        "ok": true,
+        "chi": "giao-nút=0px² mini h=158 vùng h=457 (35 %) cạnh=148"
+      },
+      "M7": {
+        "ok": true,
+        "chi": "cảnh h=457 / màn h=743 = 61.5 % · header h=40 tabs y=193 · canvas đáy=769 vùng đáy=769"
+      },
+      "M1_ngoai": {
+        "ok": true,
+        "chi": "bong=1 url=http://localhost:3052/device-monitor?machine=14"
+      }
+    },
+    "tho": {
+      "twin": {
+        "hb": {
+          "x": 288,
+          "y": 133,
+          "w": 1288,
+          "h": 48,
+          "day": 181,
+          "phai": 1576
+        },
+        "headerTran": false,
+        "navTran": false,
+        "nut": [
+          {
+            "t": "nut-nap-lai",
+            "co": true,
+            "bbox": {
+              "x": 1108,
+              "y": 137,
+              "w": 36,
+              "h": 40,
+              "day": 177,
+              "phai": 1144
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "nut-xuat-usd",
+            "co": true,
+            "bbox": {
+              "x": 1152,
+              "y": 137,
+              "w": 111,
+              "h": 40,
+              "day": 177,
+              "phai": 1263
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "nut-che-2d",
+            "co": true,
+            "bbox": {
+              "x": 1271,
+              "y": 137,
+              "w": 67,
+              "h": 40,
+              "day": 177,
+              "phai": 1337
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "nut-toan-man",
+            "co": true,
+            "bbox": {
+              "x": 1345,
+              "y": 137,
+              "w": 38,
+              "h": 40,
+              "day": 177,
+              "phai": 1383
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "nut-chi-nhan-bat-thuong",
+            "co": true,
+            "bbox": {
+              "x": 1391,
+              "y": 137,
+              "w": 38,
+              "h": 40,
+              "day": 177,
+              "phai": 1429
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "lien-ket-twin-studio",
+            "co": true,
+            "bbox": {
+              "x": 1437,
+              "y": 137,
+              "w": 127,
+              "h": 40,
+              "day": 177,
+              "phai": 1564
+            },
+            "trongHeader": true
+          }
+        ],
+        "tt": [
+          {
+            "t": "trang-thai-ket-noi",
+            "co": true,
+            "bbox": {
+              "x": 1221,
+              "y": 220,
+              "w": 53,
+              "h": 19,
+              "day": 239,
+              "phai": 1275
+            },
+            "hien": true,
+            "chu": "Trực tiếp"
+          },
+          {
+            "t": "co-che-giao-so",
+            "co": true,
+            "bbox": {
+              "x": 1279,
+              "y": 220,
+              "w": 75,
+              "h": 19,
+              "day": 239,
+              "phai": 1354
+            },
+            "hien": true,
+            "chu": "đẩy + hỏi 30s"
+          },
+          {
+            "t": "badge-xuat-xu",
+            "co": true,
+            "bbox": {
+              "x": 1358,
+              "y": 220,
+              "w": 56,
+              "h": 19,
+              "day": 239,
+              "phai": 1414
+            },
+            "hien": true,
+            "chu": "SHADOW"
+          },
+          {
+            "t": "do-tuoi-nen",
+            "co": true,
+            "bbox": {
+              "x": 1418,
+              "y": 221,
+              "w": 117,
+              "h": 17,
+              "day": 238,
+              "phai": 1535
+            },
+            "hien": true,
+            "chu": "Cập nhật 21 ngày trước"
+          }
+        ],
+        "crumbs": [
+          {
+            "tid": "breadcrumb-tapDoan",
+            "chu": "Tập đoàn",
+            "bịCat": false,
+            "title": "Tập đoàn",
+            "w": 59
+          },
+          {
+            "tid": "breadcrumb-nhaMay",
+            "chu": "Nhà máy ảo (SIM)",
+            "bịCat": false,
+            "title": "Nhà máy ảo (SIM)",
+            "w": 104
+          },
+          {
+            "tid": "breadcrumb-tang",
+            "chu": "Tầng",
+            "bịCat": false,
+            "title": "Tầng",
+            "w": 35
+          }
+        ],
+        "nutAnCap": false,
+        "panelPhai": {
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "day": 0,
+            "phai": 0
+          },
+          "hidden": true,
+          "thu": "1",
+          "lyDo": "trong"
+        },
+        "neo": {
+          "x": 576,
+          "y": 207,
+          "w": 1000,
+          "h": 669,
+          "day": 876,
+          "phai": 1576
+        },
+        "cumTT": {
+          "x": 1214,
+          "y": 215,
+          "w": 354,
+          "h": 29,
+          "day": 244,
+          "phai": 1568
+        },
+        "nhan": {
+          "so": 4,
+          "ds": [
+            "SIM-L2-ROBOT · Không rõ",
+            "SIM-L2-CONVEYOR · Không rõ",
+            "SIM-L1-ICT · Không rõ",
+            "SIM-L1-AVI · Không rõ"
+          ],
+          "pressed": "true",
+          "chip": "chỉ tên máy bất thường · 41 tên khác ẩn",
+          "soAn": "41",
+          "chipRect": {
+            "x": 821,
+            "y": 808,
+            "w": 222,
+            "h": 23,
+            "day": 830,
+            "phai": 1043
+          },
+          "chipTheoCS": "1",
+          "cumChip": {
+            "x": 821,
+            "y": 808,
+            "w": 222,
+            "h": 23,
+            "day": 830,
+            "phai": 1043
+          },
+          "demDuoi": "38"
+        },
+        "canvasRect": {
+          "x": 288,
+          "y": 207,
+          "w": 1288,
+          "h": 669,
+          "day": 876,
+          "phai": 1576
+        },
+        "lopPhu": [
+          {
+            "t": "panel-trai",
+            "rect": {
+              "x": 288,
+              "y": 207,
+              "w": 288,
+              "h": 669,
+              "day": 876,
+              "phai": 576
+            }
+          },
+          {
+            "t": "bang-kpi-noi",
+            "rect": {
+              "x": 584,
+              "y": 215,
+              "w": 208,
+              "h": 220,
+              "day": 435,
+              "phai": 792
+            }
+          },
+          {
+            "t": "cum-trang-thai-du-lieu",
+            "rect": {
+              "x": 1214,
+              "y": 215,
+              "w": 354,
+              "h": 29,
+              "day": 244,
+              "phai": 1568
+            }
+          },
+          {
+            "t": "goi-y-chon-may",
+            "rect": {
+              "x": 1211,
+              "y": 255,
+              "w": 357,
+              "h": 27,
+              "day": 282,
+              "phai": 1568
+            }
+          },
+          {
+            "t": "lop-phu-dong-thoi-gian",
+            "rect": {
+              "x": 288,
+              "y": 838,
+              "w": 1288,
+              "h": 38,
+              "day": 876,
+              "phai": 1576
+            }
+          },
+          {
+            "t": "dai-hop-nhat",
+            "rect": {
+              "x": 288,
+              "y": 181,
+              "w": 1288,
+              "h": 26,
+              "day": 207,
+              "phai": 1576
+            }
+          }
+        ],
+        "cuon": {
+          "scrollH": 313,
+          "clientH": 176,
+          "cuonDuoc": true,
+          "coBong": true,
+          "bg": "linear-gradient(oklch(0.145 0.015 260) 3"
+        },
+        "tab": {
+          "x": 288,
+          "y": 579,
+          "w": 287,
+          "h": 30,
+          "day": 609,
+          "phai": 575
+        },
+        "pt": {
+          "x": 288,
+          "y": 207,
+          "w": 288,
+          "h": 669,
+          "day": 876,
+          "phai": 576
+        },
+        "goiY": {
+          "x": 1211,
+          "y": 255,
+          "w": 357,
+          "h": 27,
+          "day": 282,
+          "phai": 1568
+        },
+        "dongTG": {
+          "x": 288,
+          "y": 838,
+          "w": 1288,
+          "h": 38,
+          "day": 876,
+          "phai": 1576
+        },
+        "url": "http://localhost:3052/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+        "bongBong": {
+          "co": 0,
+          "bbox": null
+        }
+      },
+      "line": {
+        "cv": {
+          "x": 288,
+          "y": 125,
+          "w": 1288,
+          "h": 659,
+          "day": 784
+        },
+        "so": 12,
+        "ty": [
+          0.616,
+          0.616,
+          0.577,
+          0.712,
+          0.672,
+          0.616,
+          0.628,
+          0.577,
+          0.625,
+          0.586,
+          0.577,
+          0.665
+        ],
+        "tyMin": 0.5766312594840668,
+        "tyMax": 0.7116843702579666,
+        "tyTB": 0.622154779969651,
+        "ngoaiKhung": 0,
+        "dai": {
+          "x": 288,
+          "y": 784,
+          "w": 1288,
+          "h": 93,
+          "day": 876
+        },
+        "bongBong": {
+          "co": 0,
+          "bbox": null
+        }
+      },
+      "may": {
+        "canh": {
+          "x": 288,
+          "y": 125,
+          "w": 1000,
+          "h": 324,
+          "day": 449,
+          "phai": 1288
+        },
+        "cockpit": {
+          "x": 288,
+          "y": 449,
+          "w": 1000,
+          "h": 427,
+          "day": 876,
+          "phai": 1288
+        },
+        "pp": {
+          "x": 1288,
+          "y": 125,
+          "w": 288,
+          "h": 751,
+          "day": 876,
+          "phai": 1576
+        },
+        "tab": {
+          "co": true,
+          "cuonDuoc": "1",
+          "mepPhai": "1",
+          "mepTrai": "0",
+          "nutPhai": {
+            "x": 1256,
+            "y": 536,
+            "w": 28,
+            "h": 28,
+            "day": 564,
+            "phai": 1284
+          },
+          "tlW": 1455,
+          "oCuonW": 992,
+          "tran": true
+        },
+        "the": "ref: <Node>",
+        "theKq": {
+          "chu": "Mất kết nối",
+          "h": 32,
+          "lineH": 32,
+          "dong": 1,
+          "fontPx": 24,
+          "w": 135
+        },
+        "bongBong": {
+          "co": 0,
+          "bbox": null
+        }
+      },
+      "studio": {
+        "man": {
+          "x": 288,
+          "y": 133,
+          "w": 1288,
+          "h": 743,
+          "day": 876,
+          "phai": 1576
+        },
+        "canh": {
+          "x": 556,
+          "y": 312,
+          "w": 726,
+          "h": 457,
+          "day": 769,
+          "phai": 1283
+        },
+        "vung": {
+          "x": 556,
+          "y": 312,
+          "w": 726,
+          "h": 457,
+          "day": 769,
+          "phai": 1283
+        },
+        "mini": {
+          "x": 1117,
+          "y": 603,
+          "w": 158,
+          "h": 158,
+          "day": 761,
+          "phai": 1275
+        },
+        "tool": {
+          "x": 1181,
+          "y": 320,
+          "w": 94,
+          "h": 34,
+          "day": 354,
+          "phai": 1275
+        },
+        "tv": {
+          "x": 305,
+          "y": 769,
+          "w": 1254,
+          "h": 95,
+          "day": 863,
+          "phai": 1559
+        },
+        "header": {
+          "x": 304,
+          "y": 145,
+          "w": 1256,
+          "h": 40,
+          "day": 185,
+          "phai": 1560
+        },
+        "tabs": {
+          "x": 304,
+          "y": 193,
+          "w": 394,
+          "h": 36,
+          "day": 229,
+          "phai": 698
+        },
+        "miniCanh": "148",
+        "miniDataCanh": "148",
+        "canvasEl": {
+          "x": 556,
+          "y": 312,
+          "w": 726,
+          "h": 457,
+          "day": 769,
+          "phai": 1283
+        },
+        "bongBong": {
+          "co": 0,
+          "bbox": null
+        }
+      },
+      "ngoai": {
+        "url": "http://localhost:3052/device-monitor?machine=14",
+        "bongBong": {
+          "co": 1,
+          "bbox": {
+            "x": 1528,
+            "y": 828,
+            "w": 48,
+            "h": 48
+          }
+        }
+      }
+    }
+  },
+  "1280x720": {
+    "muc": {
+      "M1_twin": {
+        "ok": true,
+        "chi": "bong=0 giao-dòng-thời-gian=0px²"
+      },
+      "M2a": {
+        "ok": true,
+        "chi": "tràn=false nut-nap-lai:✓ nut-xuat-usd:✓ nut-che-2d:✓ nut-toan-man:✓ nut-chi-nhan-bat-thuong:✓ lien-ket-twin-studio:✓"
+      },
+      "M2c": {
+        "ok": true,
+        "chi": "trang-thai-ket-noi:✓ co-che-giao-so:✓ badge-xuat-xu:✓ do-tuoi-nen:✓ · viên trạng thái=354×29@894,215"
+      },
+      "M2b": {
+        "ok": true,
+        "chi": "panel-phai w=0 thu=1 lyDo=trong · neo w=744"
+      },
+      "M9": {
+        "ok": true,
+        "chi": "breadcrumb-an-cap=\"…\" › breadcrumb-nhaMay=\"Nhà máy ảo (SIM)\" › breadcrumb-tang=\"Tầng\" anCap=true navTràn=false"
+      },
+      "M4": {
+        "ok": true,
+        "chi": "pressed=true nhãn=3 chip=\"chỉ tên máy bất thường · 42 tên khác ẩn\" theoCS=1 trongCanvas=true bịChe=[] chipRect={\"x\":659,\"y\":628,\"w\":225,\"h\":23,\"day\":650,\"phai\":885} đệm=38"
+      },
+      "M8": {
+        "ok": true,
+        "chi": "cuộn={\"scrollH\":313,\"clientH\":86,\"cuonDuoc\":true,\"coBong\":true,\"bg\":\"linear-gradient(oklch(0.145 0.015 260) 3\"} tab={\"x\":288,\"y\":489,\"w\":223,\"h\":30,\"day\":519,\"phai\":511}"
+      },
+      "M1_line": {
+        "ok": true,
+        "chi": "bong=0 giao-dải-trạm=0px²"
+      },
+      "M3": {
+        "ok": true,
+        "chi": "nhãn=12 ngoàiKhung=0 ty=[0.54..0.71] TB=0.60"
+      },
+      "M1_may": {
+        "ok": true,
+        "chi": "bong=0 giao-ngăn-phải=0px²"
+      },
+      "M6": {
+        "ok": true,
+        "chi": "cảnh h=280 cockpit h=291"
+      },
+      "M11": {
+        "ok": true,
+        "chi": "co=true tràn=true cuonDuoc=1 mepPhai=1 nútPhải={\"x\":936,\"y\":492,\"w\":28,\"h\":28,\"day\":520,\"phai\":964}"
+      },
+      "M12": {
+        "ok": true,
+        "chi": "{\"chu\":\"Mất kết nối\",\"h\":32,\"lineH\":32,\"dong\":1,\"fontPx\":24,\"w\":135}"
+      },
+      "M1_studio": {
+        "ok": true,
+        "chi": "bong=0 giao-thư-viện=0px²"
+      },
+      "M5": {
+        "ok": true,
+        "chi": "giao-nút=0px² mini h=120 vùng h=277 (43 %) cạnh=110"
+      },
+      "M7": {
+        "ok": true,
+        "chi": "cảnh h=277 / màn h=563 = 49.2 % · header h=40 tabs y=193 · canvas đáy=589 vùng đáy=589"
+      },
+      "M1_ngoai": {
+        "ok": true,
+        "chi": "bong=1 url=http://localhost:3052/device-monitor?machine=14"
+      }
+    },
+    "tho": {
+      "twin": {
+        "hb": {
+          "x": 288,
+          "y": 133,
+          "w": 968,
+          "h": 48,
+          "day": 181,
+          "phai": 1256
+        },
+        "headerTran": false,
+        "navTran": false,
+        "nut": [
+          {
+            "t": "nut-nap-lai",
+            "co": true,
+            "bbox": {
+              "x": 949,
+              "y": 137,
+              "w": 36,
+              "h": 40,
+              "day": 177,
+              "phai": 985
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "nut-xuat-usd",
+            "co": true,
+            "bbox": {
+              "x": 993,
+              "y": 137,
+              "w": 38,
+              "h": 40,
+              "day": 177,
+              "phai": 1031
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "nut-che-2d",
+            "co": true,
+            "bbox": {
+              "x": 1039,
+              "y": 137,
+              "w": 67,
+              "h": 40,
+              "day": 177,
+              "phai": 1106
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "nut-toan-man",
+            "co": true,
+            "bbox": {
+              "x": 1114,
+              "y": 137,
+              "w": 38,
+              "h": 40,
+              "day": 177,
+              "phai": 1152
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "nut-chi-nhan-bat-thuong",
+            "co": true,
+            "bbox": {
+              "x": 1160,
+              "y": 137,
+              "w": 38,
+              "h": 40,
+              "day": 177,
+              "phai": 1198
+            },
+            "trongHeader": true
+          },
+          {
+            "t": "lien-ket-twin-studio",
+            "co": true,
+            "bbox": {
+              "x": 1206,
+              "y": 137,
+              "w": 38,
+              "h": 40,
+              "day": 177,
+              "phai": 1244
+            },
+            "trongHeader": true
+          }
+        ],
+        "tt": [
+          {
+            "t": "trang-thai-ket-noi",
+            "co": true,
+            "bbox": {
+              "x": 901,
+              "y": 220,
+              "w": 53,
+              "h": 19,
+              "day": 239,
+              "phai": 955
+            },
+            "hien": true,
+            "chu": "Trực tiếp"
+          },
+          {
+            "t": "co-che-giao-so",
+            "co": true,
+            "bbox": {
+              "x": 959,
+              "y": 220,
+              "w": 75,
+              "h": 19,
+              "day": 239,
+              "phai": 1034
+            },
+            "hien": true,
+            "chu": "đẩy + hỏi 30s"
+          },
+          {
+            "t": "badge-xuat-xu",
+            "co": true,
+            "bbox": {
+              "x": 1038,
+              "y": 220,
+              "w": 56,
+              "h": 19,
+              "day": 239,
+              "phai": 1094
+            },
+            "hien": true,
+            "chu": "SHADOW"
+          },
+          {
+            "t": "do-tuoi-nen",
+            "co": true,
+            "bbox": {
+              "x": 1098,
+              "y": 221,
+              "w": 117,
+              "h": 17,
+              "day": 238,
+              "phai": 1215
+            },
+            "hien": true,
+            "chu": "Cập nhật 21 ngày trước"
+          }
+        ],
+        "crumbs": [
+          {
+            "tid": "breadcrumb-an-cap",
+            "chu": "…",
+            "bịCat": false,
+            "title": "Tập đoàn",
+            "w": 15
+          },
+          {
+            "tid": "breadcrumb-nhaMay",
+            "chu": "Nhà máy ảo (SIM)",
+            "bịCat": false,
+            "title": "Nhà máy ảo (SIM)",
+            "w": 104
+          },
+          {
+            "tid": "breadcrumb-tang",
+            "chu": "Tầng",
+            "bịCat": false,
+            "title": "Tầng",
+            "w": 35
+          }
+        ],
+        "nutAnCap": true,
+        "panelPhai": {
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0,
+            "day": 0,
+            "phai": 0
+          },
+          "hidden": true,
+          "thu": "1",
+          "lyDo": "trong"
+        },
+        "neo": {
+          "x": 512,
+          "y": 207,
+          "w": 744,
+          "h": 489,
+          "day": 696,
+          "phai": 1256
+        },
+        "cumTT": {
+          "x": 894,
+          "y": 215,
+          "w": 354,
+          "h": 29,
+          "day": 244,
+          "phai": 1248
+        },
+        "nhan": {
+          "so": 3,
+          "ds": [
+            "SIM-L2-ROBOT · Không rõ",
+            "SIM-L2-CONVEYOR · Không rõ",
+            "SIM-L1-AVI · Không rõ"
+          ],
+          "pressed": "true",
+          "chip": "chỉ tên máy bất thường · 42 tên khác ẩn",
+          "soAn": "42",
+          "chipRect": {
+            "x": 659,
+            "y": 628,
+            "w": 225,
+            "h": 23,
+            "day": 650,
+            "phai": 885
+          },
+          "chipTheoCS": "1",
+          "cumChip": {
+            "x": 659,
+            "y": 628,
+            "w": 225,
+            "h": 23,
+            "day": 650,
+            "phai": 885
+          },
+          "demDuoi": "38"
+        },
+        "canvasRect": {
+          "x": 288,
+          "y": 207,
+          "w": 968,
+          "h": 489,
+          "day": 696,
+          "phai": 1256
+        },
+        "lopPhu": [
+          {
+            "t": "panel-trai",
+            "rect": {
+              "x": 288,
+              "y": 207,
+              "w": 224,
+              "h": 489,
+              "day": 696,
+              "phai": 512
+            }
+          },
+          {
+            "t": "bang-kpi-noi",
+            "rect": {
+              "x": 520,
+              "y": 215,
+              "w": 208,
+              "h": 220,
+              "day": 435,
+              "phai": 728
+            }
+          },
+          {
+            "t": "cum-trang-thai-du-lieu",
+            "rect": {
+              "x": 894,
+              "y": 215,
+              "w": 354,
+              "h": 29,
+              "day": 244,
+              "phai": 1248
+            }
+          },
+          {
+            "t": "goi-y-chon-may",
+            "rect": {
+              "x": 891,
+              "y": 255,
+              "w": 357,
+              "h": 27,
+              "day": 282,
+              "phai": 1248
+            }
+          },
+          {
+            "t": "lop-phu-dong-thoi-gian",
+            "rect": {
+              "x": 288,
+              "y": 658,
+              "w": 968,
+              "h": 38,
+              "day": 696,
+              "phai": 1256
+            }
+          },
+          {
+            "t": "dai-hop-nhat",
+            "rect": {
+              "x": 288,
+              "y": 181,
+              "w": 968,
+              "h": 26,
+              "day": 207,
+              "phai": 1256
+            }
+          }
+        ],
+        "cuon": {
+          "scrollH": 313,
+          "clientH": 86,
+          "cuonDuoc": true,
+          "coBong": true,
+          "bg": "linear-gradient(oklch(0.145 0.015 260) 3"
+        },
+        "tab": {
+          "x": 288,
+          "y": 489,
+          "w": 223,
+          "h": 30,
+          "day": 519,
+          "phai": 511
+        },
+        "pt": {
+          "x": 288,
+          "y": 207,
+          "w": 224,
+          "h": 489,
+          "day": 696,
+          "phai": 512
+        },
+        "goiY": {
+          "x": 891,
+          "y": 255,
+          "w": 357,
+          "h": 27,
+          "day": 282,
+          "phai": 1248
+        },
+        "dongTG": {
+          "x": 288,
+          "y": 658,
+          "w": 968,
+          "h": 38,
+          "day": 696,
+          "phai": 1256
+        },
+        "url": "http://localhost:3052/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+        "bongBong": {
+          "co": 0,
+          "bbox": null
+        }
+      },
+      "line": {
+        "cv": {
+          "x": 288,
+          "y": 125,
+          "w": 968,
+          "h": 479,
+          "day": 604
+        },
+        "so": 12,
+        "ty": [
+          0.593,
+          0.593,
+          0.539,
+          0.61,
+          0.555,
+          0.593,
+          0.712,
+          0.539,
+          0.601,
+          0.547,
+          0.647,
+          0.656
+        ],
+        "tyMin": 0.5386221294363257,
+        "tyMax": 0.7118997912317327,
+        "tyTB": 0.598643006263048,
+        "ngoaiKhung": 0,
+        "dai": {
+          "x": 288,
+          "y": 604,
+          "w": 968,
+          "h": 93,
+          "day": 696
+        },
+        "bongBong": {
+          "co": 0,
+          "bbox": null
+        }
+      },
+      "may": {
+        "canh": {
+          "x": 288,
+          "y": 125,
+          "w": 680,
+          "h": 280,
+          "day": 405,
+          "phai": 968
+        },
+        "cockpit": {
+          "x": 288,
+          "y": 405,
+          "w": 680,
+          "h": 291,
+          "day": 696,
+          "phai": 968
+        },
+        "pp": {
+          "x": 968,
+          "y": 125,
+          "w": 288,
+          "h": 571,
+          "day": 696,
+          "phai": 1256
+        },
+        "tab": {
+          "co": true,
+          "cuonDuoc": "1",
+          "mepPhai": "1",
+          "mepTrai": "0",
+          "nutPhai": {
+            "x": 936,
+            "y": 492,
+            "w": 28,
+            "h": 28,
+            "day": 520,
+            "phai": 964
+          },
+          "tlW": 1455,
+          "oCuonW": 672,
+          "tran": true
+        },
+        "the": "ref: <Node>",
+        "theKq": {
+          "chu": "Mất kết nối",
+          "h": 32,
+          "lineH": 32,
+          "dong": 1,
+          "fontPx": 24,
+          "w": 135
+        },
+        "bongBong": {
+          "co": 0,
+          "bbox": null
+        }
+      },
+      "studio": {
+        "man": {
+          "x": 288,
+          "y": 133,
+          "w": 968,
+          "h": 563,
+          "day": 696,
+          "phai": 1256
+        },
+        "canh": {
+          "x": 492,
+          "y": 312,
+          "w": 541,
+          "h": 277,
+          "day": 589,
+          "phai": 1033
+        },
+        "vung": {
+          "x": 492,
+          "y": 312,
+          "w": 541,
+          "h": 277,
+          "day": 589,
+          "phai": 1033
+        },
+        "mini": {
+          "x": 905,
+          "y": 461,
+          "w": 120,
+          "h": 120,
+          "day": 581,
+          "phai": 1025
+        },
+        "tool": {
+          "x": 931,
+          "y": 320,
+          "w": 94,
+          "h": 34,
+          "day": 354,
+          "phai": 1025
+        },
+        "tv": {
+          "x": 305,
+          "y": 589,
+          "w": 934,
+          "h": 95,
+          "day": 683,
+          "phai": 1239
+        },
+        "header": {
+          "x": 304,
+          "y": 145,
+          "w": 936,
+          "h": 40,
+          "day": 185,
+          "phai": 1240
+        },
+        "tabs": {
+          "x": 304,
+          "y": 193,
+          "w": 394,
+          "h": 36,
+          "day": 229,
+          "phai": 698
+        },
+        "miniCanh": "110",
+        "miniDataCanh": "110",
+        "canvasEl": {
+          "x": 492,
+          "y": 312,
+          "w": 541,
+          "h": 277,
+          "day": 589,
+          "phai": 1033
+        },
+        "bongBong": {
+          "co": 0,
+          "bbox": null
+        }
+      },
+      "ngoai": {
+        "url": "http://localhost:3052/device-monitor?machine=14",
+        "bongBong": {
+          "co": 1,
+          "bbox": {
+            "x": 1208,
+            "y": 648,
+            "w": 48,
+            "h": 48
+          }
+        }
+      }
+    }
+  }
+}

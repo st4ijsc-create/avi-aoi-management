@@ -1,0 +1,158 @@
+{
+  "role": "C",
+  "user": "e2e_dot32_khongquyen",
+  "vp": "1280x720",
+  "luc": "2026-09-12T07:54:38.358Z",
+  "ds": [
+    {
+      "duong": "/twin",
+      "url": "/twin",
+      "coMan": 0,
+      "biChan": 1,
+      "__soCanvas": null,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": null,
+      "matContext": null,
+      "__demNhan": null,
+      "lyDoMay": null,
+      "lineRong": 0,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "",
+        "activeApp": "active_app=production"
+      },
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "body": "Skip to content\nProduction (MES)\nShow advanced menu\nSimple\nE\nE2E Dot32 khong quyen\n-\nToggle Sidebar\nProduction (MES)\nAll sites\nSearch pages, commands…\n⌘K\nLive\n🇺🇸 English\nProduction\nMES\n3D Factory\nAccess denied\nYou don't have permission to access this page. Please contact an administrator if you th"
+    },
+    {
+      "duong": "/twin/line/2",
+      "url": "/twin/line/2",
+      "coMan": 0,
+      "biChan": 1,
+      "__soCanvas": null,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": null,
+      "matContext": null,
+      "__demNhan": null,
+      "lyDoMay": null,
+      "lineRong": 0,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "",
+        "activeApp": "active_app=production"
+      },
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "body": "Skip to content\nProduction (MES)\nShow advanced menu\nSimple\nE\nE2E Dot32 khong quyen\n-\nToggle Sidebar\nProduction (MES)\nAll sites\nSearch pages, commands…\n⌘K\nLive\n🇺🇸 English\nAccess denied\nYou don't have permission to access this page. Please contact an administrator if you think this is a mistake.\nBac"
+    },
+    {
+      "duong": "/twin/may/14",
+      "url": "/twin/may/14",
+      "coMan": 0,
+      "biChan": 1,
+      "__soCanvas": null,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": null,
+      "matContext": null,
+      "__demNhan": null,
+      "lyDoMay": null,
+      "lineRong": 0,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "",
+        "activeApp": "active_app=production"
+      },
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "body": "Skip to content\nProduction (MES)\nShow advanced menu\nSimple\nE\nE2E Dot32 khong quyen\n-\nToggle Sidebar\nProduction (MES)\nAll sites\nSearch pages, commands…\n⌘K\nLive\n🇺🇸 English\nAccess denied\nYou don't have permission to access this page. Please contact an administrator if you think this is a mistake.\nBac"
+    },
+    {
+      "duong": "/twin-studio",
+      "url": "/twin-studio",
+      "coMan": 0,
+      "biChan": 1,
+      "__soCanvas": null,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": null,
+      "matContext": null,
+      "__demNhan": null,
+      "lyDoMay": null,
+      "lineRong": 0,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "",
+        "activeApp": "active_app=production"
+      },
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "body": "Skip to content\nProduction (MES)\nShow advanced menu\nSimple\nE\nE2E Dot32 khong quyen\n-\nToggle Sidebar\nProduction (MES)\nAll sites\nSearch pages, commands…\n⌘K\nLive\n🇺🇸 English\nProduction\nMES\n3D Factory Design\nAccess denied\nYou don't have permission to access this page. Please contact an administrator if"
+    }
+  ],
+  "probe": {
+    "status": 403,
+    "appCode": "PERMISSION_DENIED",
+    "code": -32003,
+    "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"settings_factory, machine_control, analytics_oee, machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":403,\"path\":\"twinCanh.danhSachToaNha\",\"stack\":null,\"appCode\":\"PERMISSION_DENIED\",\"appParams\":{\"action\":\"canView\"}"
+  }
+}

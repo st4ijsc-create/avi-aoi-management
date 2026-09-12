@@ -1,0 +1,28 @@
+{
+  "role": "B",
+  "user": "operator1",
+  "vp": "1280x720",
+  "tag": "../.qa-dot52/chan/E",
+  "luc": "2026-09-12T08:19:07.860Z",
+  "url": "/twin/line/2",
+  "coMan": true,
+  "__soCanvas": 0,
+  "canvasDom": 0,
+  "canvasDs": [],
+  "drawCalls": null,
+  "__demNhan": null,
+  "__tuTheCamera": null,
+  "lineKhongMoDuoc": {
+    "co": 1,
+    "lyDo": "chuaGanNhaMay",
+    "chu": "Cannot open line #2\nYour account is not assigned to any factory yet. Ask an administrator to assign one, then open this machine again.\nFactory"
+  },
+  "lineRong": 0,
+  "demMay": "Machines —",
+  "demTram": "Stations —",
+  "body": "Factory\n›\nLine 2\nMachines —\nStations —\nWIP —\nCannot open line #2\nYour account is not assigned to any factory yet. Ask an administrator to assign one, then open this machine again.\nFactory",
+  "biChan": 0,
+  "e8": {
+    "dat": true
+  }
+}

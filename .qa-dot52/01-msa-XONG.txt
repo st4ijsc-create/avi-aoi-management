@@ -1,0 +1,35 @@
+[Đợt 52 · bước 0] HỆ ĐO (MSA — Bước 0 PDCA)  —  2026-09-12T14:02:50+07:00
+
+1. THỨ ĐANG CHẠY = THỨ VỪA BUILD?
+   build 52a: 914 tệp, bundle assets/index-C9m3IM7B.js  (.qa-dot52/build-52a.log)
+   build 52b (lặp): 914 tệp, md5 914/914 KHỚP TUYỆT ĐỐI sau khi bỏ tên thư mục  ⇒ G120 ĐẠT
+   index.html do 3052 phục vụ trỏ assets/index-C9m3IM7B.js
+   md5 bundle trên đĩa   = cba23e4e379202576597b0576f19bbf7
+   md5 bundle 3052 trả về = cba23e4e379202576597b0576f19bbf7  ⇒ BYTE-Y-HỆT
+   outDir = /d/SOURCES/_twin_wt/.qa-dot52/dist-52a  (TUYỆT ĐỐI, ngoài client/) · dist/ KHÔNG bị chạm
+
+2. PHÉP ĐO CÓ TỰ THOẢ KHÔNG?
+   auth.me trả content-type application/json (G100: trước kia trả HTML 200 ⇒ e2e chưa từng kiểm vai)
+   K8 đọc đích bằng URL của trình duyệt + trạng thái DOM màn Máy — ĐỘC LẬP với chỗ phát click.
+   Đo DB bằng SQL thô (postgres.js) — đường độc lập với tRPC (BG-127).
+
+3. AI ĐANG SỬA DỞ VÙNG NÀY?
+   HEAD nhảy 389fa9b3 → 33c68607 lúc 13:54 (phiên khác, docs-only). Ghi ở 00-head-XONG.txt.
+   Cổng 3000/3001/3008/8080 do phiên khác giữ — KHÔNG đụng. Cổng của tôi: 3052.
+
+4. CÓ CACHE Ở GIỮA KHÔNG?
+   Server có Redis+Memory cache (log: "[Redis] SET: stats:dashboard:overview TTL 300s").
+   ⇒ F1 chạy ≥7 lượt và ghi điều kiện tải từng lượt; lượt 1 là lượt NGUỘI, không loại bỏ.
+   Trình duyệt: mỗi lượt F1 mở context MỚI (f1-fonts.mjs) ⇒ cache HTTP không bắc cầu giữa lượt.
+
+5. TRẠNG THÁI TRƯỚC (bất biến phải giữ)
+   DB 11 khoá : {"db":{"d":"aoi_management","n":"2026-09-12T06:53:38.072Z","tz":"Etc/UTC"},"factories":2,"twin_dat_cho":82,"stations":37,"machines_active":42,"users":10,"andon":7,"andon_raised":0,"hb":108,"msl":7814,"permissions":104,"ufa":3}
+   DB 6 khoá  : {"hb":108,"msl":7814,"users":10,"andon":7,"factories":2,"datcho":82}
+   5 ảnh test-results md5 : .qa-dot52/md5-testresults-truoc.txt
+   .qa-dot47/ : 616 tệp, 103 tệp 0 byte (sự cố Đợt 50) — md5 ở .qa-dot52/md5-dot47-truoc.txt. KHÔNG đắp, KHÔNG xoá.
+   index QĐ-27 idx_health_machine_created_desc CÓ THẬT trong DB dev (.qa-dot52/probe-db.txt, 8 index trên machine_health_history)
+
+6. ★ PHÁT HIỆN VỀ DỮ LIỆU ĐO (ảnh hưởng phạm vi nghiệm thu)
+   twin_toa_nha = 1 hàng (id 24) · twin_tang = 1 hàng (id 28) · 82/82 twin_dat_cho ở tầng 28.
+   ⇒ Bộ chọn nạp (BoChonNapUI: chon-nha-may/chon-toa-nha/chon-tang) chỉ có ĐÚNG 1 mục mỗi ô
+     trên DB dev ⇒ ca K8i "đổi tầng/toà nhà" KHÔNG CÓ DỮ LIỆU để đo (N/A, không phải SAI).

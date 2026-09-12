@@ -1,0 +1,105 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+ ✓ server/services/ai/robotBehaviorAnomaly.test.ts (12 tests) 21ms
+ ✓ server/services/robot/drivers/fanuc.test.ts (13 tests) 474ms
+ ✓ server/services/robot/drivers/delta.test.ts (14 tests) 598ms
+ ✓ server/services/robot/drivers/mitsubishi.test.ts (14 tests) 607ms
+ ✓ server/services/robot/drivers/techman.test.ts (11 tests) 611ms
+ ✓ server/services/robot/robotCommandDispatcher.test.ts (7 tests) 169ms
+ ✓ server/services/robot/robotCommandDispatcher.policy.test.ts (6 tests) 177ms
+ ✓ server/services/programming/robot/robotTmAdapter.test.ts (8 tests) 13ms
+ ✓ server/services/robot/ursimBridge.test.ts (12 tests) 2283ms
+   ✓ UrsimBridgeDriver > runJob sends URScript over the secondary interface when control is ENABLED 2090ms
+ ✓ server/services/robot/vendorRegistry.test.ts (4 tests) 5ms
+stderr | server/services/robot/robotIngest.test.ts > ingestRobotState — U3-live socket emit > is error-isolated — a throwing emit does not break ingest
+[Robot] telemetry emit failed for "R-4": socket down
+
+ ✓ server/services/andon/andonRobotDispatch.test.ts (6 tests) 7ms
+ ✓ server/services/robot/robotIngest.test.ts (3 tests) 5ms
+stdout | server/db/twinAnToanRobot.db.test.ts > §11 #26 — E-STOP: đường dữ liệu robot ra tới tóm tắt an toàn > cầu chì: phải CÓ robot đang bật trong nhà máy đo, nếu không mọi ca dưới xanh giả
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+ ✓ server/services/robot/ursim/ursimDeploy.test.ts (4 tests) 6ms
+stdout | server/services/fleet/fleet.g1.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/services/fleet/trafficSpaceTime.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/services/fleet/rlShadow.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/services/fleet/fleetOrchestrator.multistep.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/services/fleet/fleet.g2.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+ ✓ server/db/twinAnToanRobot.db.test.ts (7 tests) 443ms
+stdout | client/src/pages/robotCockpitAnKhongDisable.dom.test.tsx
+🌐 i18next is made possible by our own product, Locize — consider powering your project with managed localization (AI, CDN, integrations): https://locize.com 💙
+
+ ✓ server/services/robot/ursim/ursim.test.ts (7 tests) 4133ms
+   ✓ UrsimClient > sends a URScript over the primary socket 2102ms
+   ✓ validateUrscriptOnUrsim > happy path: sent + accepted + running against a RUNNING mock controller 2021ms
+Sourcemap for "D:/SOURCES/_twin_wt/node_modules/node-cron/dist/esm/node-cron.js" points to missing source files
+ ✓ server/services/fleet/rlShadow.test.ts (2 tests) 3ms
+stdout | server/services/fleet/fleetOrchestrator.multistep.test.ts > decomposeOrderToTasks — gated FLEET_MULTISTEP_DECOMP_ENABLED > cờ ON → 3 task pick→transport→dock, dependency tuyến tính bằng trạng thái
+[Fleet] order 9 → multi-step decomposition: 3 task(s) (pick→transport→dock)
+
+stdout | server/services/fleet/fleetOrchestrator.multistep.test.ts > promoteBlockedSuccessors — tuần tự hóa + saga hủy bước kế > predecessor completed → successor pending; chuỗi tiến từng bước một
+[Fleet] order 9 → multi-step decomposition: 3 task(s) (pick→transport→dock)
+[Fleet] multistep: task 2 unblocked (predecessor 1 completed)
+[Fleet] allocateTask 2: no eligible device
+[Fleet] multistep: task 3 unblocked (predecessor 2 completed)
+[Fleet] allocateTask 3: no eligible device
+
+stdout | server/services/fleet/fleetOrchestrator.multistep.test.ts > promoteBlockedSuccessors — tuần tự hóa + saga hủy bước kế > predecessor failed → successors bị cancel (không chạy bước kế mù)
+[Fleet] order 9 → multi-step decomposition: 3 task(s) (pick→transport→dock)
+[Fleet] multistep: task 2 cancelled (predecessor 1 failed)
+[Fleet] multistep: task 3 cancelled (predecessor 2 cancelled)
+
+ ✓ server/services/fleet/fleetOrchestrator.multistep.test.ts (6 tests) 6ms
+ ✓ server/services/fleet/trafficSpaceTime.test.ts (4 tests) 2ms
+stdout | server/services/fleet/fleet.g2.test.ts > resourceManager claim/conflict/release+promote (flag-gated) > flag ON → first device claims (active), second is queued, release promotes the waiter
+[Fleet] resource 1 in use → device 2 QUEUED
+[Fleet] device 1 released 1 resource claim(s), promoted 1 waiter(s)
+
+stdout | server/services/fleet/fleet.g2.test.ts > sweepChargingPlans (flag-gated) > flag ON → schedules a plan when projected battery < floor
+[Fleet] charging plan for device 1: projected 8% < floor 20% after 4 task(s) → charger unassigned (~33min)
+
+ ✓ server/services/fleet/fleet.g2.test.ts (22 tests) 11ms
+stdout | server/services/fleet/fleet.g1.test.ts > allocateTask + rebalanceDeviceTasks (flag-gated) > flag ON → allocates a pending task to an eligible robot
+[Fleet] task 1 → device 1 (score 300)
+
+stdout | server/services/fleet/fleet.g1.test.ts > allocateTask + rebalanceDeviceTasks (flag-gated) > flag ON → allocator reads the LATEST telemetry per robot (batched, no N+1)
+[Fleet] task 1 → device 2 (score 300)
+
+stdout | server/services/fleet/fleet.g1.test.ts > allocateTask + rebalanceDeviceTasks (flag-gated) > flag ON → drainPendingTasks re-allocates stuck pending tasks (highest priority first)
+[Fleet] task 2 → device 1 (score 450)
+[Fleet] task 1 → device 1 (score 100)
+[Fleet] pending-drain: 2/2 pending task(s) assigned
+
+stdout | server/services/fleet/fleet.g1.test.ts > allocateTask + rebalanceDeviceTasks (flag-gated) > flag ON → rebalancing reassigns an offline robot's tasks to a peer
+[Fleet] rebalance device 1: 1 reassigned, 0 left pending (robot_estop)
+
+stdout | server/services/fleet/fleet.g1.test.ts > reserveZone (concurrency + conflict) > enforces max_concurrent_robots: 2nd device into a cap-1 zone is queued
+[Fleet] zone 10 full (1/1) → device 2 QUEUED
+
+stdout | server/services/fleet/fleet.g1.test.ts > releaseZone (atomic free + promote) > frees the active slot and promotes the oldest queued waiter, in ONE transaction
+[Fleet] zone 20 full (1/1) → device 2 QUEUED
+[Fleet] device 1 released 1 reservation(s), promoted 1 waiter(s)
+
+stdout | server/services/fleet/fleet.g1.test.ts > releaseZone (atomic free + promote) > does NOT over-promote past capacity when nothing is queued
+[Fleet] device 1 released 1 reservation(s), promoted 0 waiter(s)
+
+ ✓ server/services/fleet/fleet.g1.test.ts (21 tests) 15ms
+ ✓ client/src/pages/robotCockpitAnKhongDisable.dom.test.tsx (4 tests) 87ms
+
+ Test Files  21 passed (21)
+      Tests  187 passed (187)
+   Start at  15:02:11
+   Duration  7.43s (transform 7.95s, setup 1.02s, collect 52.23s, tests 9.68s, environment 1.74s, prepare 4.43s)
+

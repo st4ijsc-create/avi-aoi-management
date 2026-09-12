@@ -1,0 +1,105 @@
+{
+ "toa": [
+  {
+   "id": 24,
+   "factoryId": 1,
+   "ma": "TN-SEED-1",
+   "ten": "Xuong lap rap ao (SIM)",
+   "viTriXMm": "0.000",
+   "viTriYMm": "0.000",
+   "viTriZMm": "0.000",
+   "rongMm": "38400.000",
+   "sauMm": "29600.000",
+   "caoMm": "8000.000",
+   "quatX": "0.000000000",
+   "quatY": "0.000000000",
+   "quatZ": "0.000000000",
+   "quatW": "1.000000000",
+   "modelVoId": null,
+   "donViNguon": null,
+   "nguon": "sinh",
+   "isActive": true,
+   "createdAt": "2026-09-06T06:58:33.614Z",
+   "updatedAt": "2026-09-06T12:51:36.766Z"
+  }
+ ],
+ "tang": [
+  {
+   "id": 28,
+   "toaNhaId": 24,
+   "capSo": 1,
+   "ten": "Tang tret",
+   "caoDoMm": "0.000",
+   "caoThongThuyMm": "7000.000",
+   "daiMm": "38400.000",
+   "rongMm": "29600.000",
+   "nguonHinhHoc": "sinh",
+   "anhNenUrl": null,
+   "anhNenKey": null,
+   "tiLeMmMoiPx": null,
+   "daHieuChuan": false,
+   "nguon": "sinh",
+   "isActive": true,
+   "createdAt": "2026-09-06T06:58:33.616Z",
+   "updatedAt": "2026-09-06T12:51:36.768Z"
+  }
+ ],
+ "datcho": [
+  {
+   "tangId": 28,
+   "n": 82
+  }
+ ],
+ "ufa": [
+  {
+   "id": 1,
+   "userId": 51,
+   "factoryCode": "SIM-FAC",
+   "assignedBy": 51,
+   "createdAt": "2026-07-31T13:04:40.272Z",
+   "username": "engineer1"
+  },
+  {
+   "id": 2,
+   "userId": 51,
+   "factoryCode": "SIM-FAC",
+   "assignedBy": 51,
+   "createdAt": "2026-07-31T13:56:41.163Z",
+   "username": "engineer1"
+  },
+  {
+   "id": 13,
+   "userId": 21075,
+   "factoryCode": "SIM-FAC",
+   "assignedBy": 21075,
+   "createdAt": "2026-09-06T22:09:11.271Z",
+   "username": "e2e_tai_loE"
+  }
+ ],
+ "idx": [
+  {
+   "indexname": "idx_health_machine"
+  },
+  {
+   "indexname": "idx_health_machine_code"
+  },
+  {
+   "indexname": "idx_health_machine_created_desc"
+  },
+  {
+   "indexname": "idx_health_machine_time"
+  },
+  {
+   "indexname": "idx_health_score"
+  },
+  {
+   "indexname": "idx_health_timestamp"
+  },
+  {
+   "indexname": "machine_health_history_pkey"
+  },
+  {
+   "indexname": "uq_machine_health_history_machine_ts"
+  }
+ ]
+}

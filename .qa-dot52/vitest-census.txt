@@ -1,0 +1,13 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+ ✓ server/routers/phamViDocCensus.test.ts (17 tests) 6063ms
+   ✓ §7 — ĐỘT BIẾN THẬT: cổng có ĐỎ khi thêm một lượt đọc tenant KHÔNG LỌC không > ★★★ router rò MỚI ⇒ nhóm A + KHÔNG có trong sổ nợ; bản đã lọc ⇒ nhóm S 6041ms
+ ✓ server/routers/phamViTuyenCensus.test.ts (20 tests) 7169ms
+   ✓ §7 — ĐỘT BIẾN THẬT: cổng có ĐỎ khi thêm một tuyến đọc tenant KHÔNG LỌC không > ★★★ tuyến rò MỚI ⇒ nhóm A + KHÔNG có trong sổ nợ; bản đã lọc ⇒ nhóm S 7164ms
+
+ Test Files  2 passed (2)
+      Tests  37 passed (37)
+   Start at  15:02:20
+   Duration  15.15s (transform 372ms, setup 33ms, collect 14.45s, tests 13.23s, environment 0ms, prepare 179ms)
+

@@ -1,0 +1,98 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1280x720",
+  "tag": "../.qa-dot52/chan/E",
+  "luc": "2026-09-12T08:17:53.762Z",
+  "url": "/twin-studio",
+  "coMan": true,
+  "truocTab": {
+    "man": {
+      "x": 288,
+      "y": 133,
+      "w": 968,
+      "h": 563,
+      "day": 696,
+      "phai": 1256
+    },
+    "topBien": "157px"
+  },
+  "__soCanvas": 1,
+  "canvasDom": 1,
+  "canvasDs": [
+    {
+      "x": 492,
+      "y": 312,
+      "w": 541,
+      "h": 277,
+      "day": 589,
+      "chaTestId": "khoi-canh-3d"
+    }
+  ],
+  "drawCalls": 3,
+  "__demNhan": null,
+  "__tuTheCamera": null,
+  "bbox": {
+    "man": {
+      "x": 288,
+      "y": 133,
+      "w": 968,
+      "h": 563,
+      "day": 696,
+      "phai": 1256
+    },
+    "khoiCanh": {
+      "x": 492,
+      "y": 312,
+      "w": 541,
+      "h": 277,
+      "day": 589,
+      "phai": 1033
+    },
+    "vungCanvas": {
+      "x": 492,
+      "y": 312,
+      "w": 541,
+      "h": 277,
+      "day": 589,
+      "phai": 1033
+    },
+    "thuVienAsset": {
+      "x": 305,
+      "y": 589,
+      "w": 934,
+      "h": 95,
+      "day": 683,
+      "phai": 1239
+    },
+    "cayPhanCap": {
+      "x": 305,
+      "y": 312,
+      "w": 186,
+      "h": 277,
+      "day": 589,
+      "phai": 491
+    },
+    "bangThuocTinh": {
+      "x": 1034,
+      "y": 312,
+      "w": 205,
+      "h": 56,
+      "day": 368,
+      "phai": 1239
+    },
+    "xuong": {
+      "x": 305,
+      "y": 246,
+      "w": 934,
+      "h": 437,
+      "day": 683,
+      "phai": 1239
+    }
+  },
+  "cuonDoc": {
+    "docScrollH": 720,
+    "innerH": 720,
+    "bodyScrollH": 720
+  }
+}

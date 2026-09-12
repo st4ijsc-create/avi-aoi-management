@@ -1,0 +1,430 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "luc": "2026-09-12T07:33:01.279Z",
+  "url": "/twin/line/2",
+  "coMan": true,
+  "coCanvas": true,
+  "__soCanvas": 1,
+  "canvasDom": 1,
+  "canvasDs": [
+    {
+      "x": 288,
+      "y": 125,
+      "w": 1288,
+      "h": 659,
+      "day": 784,
+      "chaTestId": "khoi-canh-3d",
+      "w_attr": 1288,
+      "h_attr": 658
+    }
+  ],
+  "drawCalls": 6,
+  "matContext": 0,
+  "__demNhan": {
+    "ve": 12,
+    "tong": 12,
+    "ngoaiKhung": 0,
+    "chongLap": 0,
+    "vuotTran": 0,
+    "tran": 30,
+    "biGiau": 0,
+    "vuotMep": 0,
+    "biChe": 0,
+    "deKhoiKhac": 0,
+    "deKhoiKhacDoLai": 0,
+    "soHopKhoi": 12,
+    "soVungCam": 4,
+    "soLopPhuDom": 2,
+    "soHopBadge": 2,
+    "suCoNgoaiKhung": 0,
+    "capConChong": 0
+  },
+  "nhan": {
+    "canvas": {
+      "x": 288,
+      "y": 125,
+      "w": 1288,
+      "h": 659
+    },
+    "lop": {
+      "x": 288,
+      "y": 125,
+      "w": 1288,
+      "h": 659
+    },
+    "soBiChe": 0,
+    "phuBox": [
+      {
+        "t": "bang-kpi-noi",
+        "x": 296,
+        "y": 133,
+        "w": 246,
+        "h": 220
+      },
+      {
+        "t": "khoi-dai-line",
+        "x": 288,
+        "y": 784,
+        "w": 1288,
+        "h": 93
+      },
+      {
+        "t": "dai-line",
+        "x": 288,
+        "y": 784,
+        "w": 1288,
+        "h": 93
+      },
+      {
+        "t": "thanh-tren-line",
+        "x": 288,
+        "y": 80,
+        "w": 1288,
+        "h": 45
+      }
+    ],
+    "lopTrungCanvas": true,
+    "so": 12,
+    "tamTrong": 12,
+    "tronVen": 12,
+    "chipNhanAn": null,
+    "ds": [
+      {
+        "text": "CONVEYOR · Unknown",
+        "x": 816,
+        "y": 519,
+        "w": 144,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "ROBOT · Unknown",
+        "x": 1263,
+        "y": 519,
+        "w": 119,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "FCT · Unknown",
+        "x": 751,
+        "y": 493,
+        "w": 101,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "PWR · Unknown",
+        "x": 922,
+        "y": 582,
+        "w": 105,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "ASSY · Unknown",
+        "x": 1005,
+        "y": 556,
+        "w": 109,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "ICT · Unknown",
+        "x": 667,
+        "y": 519,
+        "w": 97,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "SCREW · Unknown",
+        "x": 1085,
+        "y": 527,
+        "w": 122,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "PACK · Unknown",
+        "x": 1181,
+        "y": 493,
+        "w": 110,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "AVI · Unknown",
+        "x": 530,
+        "y": 525,
+        "w": 97,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "AOI · Unknown",
+        "x": 496,
+        "y": 499,
+        "w": 99,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "AGV · Unknown",
+        "x": 1358,
+        "y": 493,
+        "w": 103,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "SPI · Unknown",
+        "x": 411,
+        "y": 551,
+        "w": 97,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      }
+    ]
+  },
+  "lienKet": {
+    "hrefLine": [],
+    "hrefMay": [],
+    "studio": 0
+  },
+  "bbox": {
+    "man": {
+      "x": 288,
+      "y": 80,
+      "w": 1288,
+      "h": 796,
+      "day": 876,
+      "phai": 1576
+    },
+    "thanhTren": {
+      "x": 288,
+      "y": 80,
+      "w": 1288,
+      "h": 45,
+      "day": 125,
+      "phai": 1576
+    },
+    "daiLine": {
+      "x": 288,
+      "y": 784,
+      "w": 1288,
+      "h": 93,
+      "day": 876,
+      "phai": 1576
+    },
+    "kpi": {
+      "x": 296,
+      "y": 133,
+      "w": 246,
+      "h": 220,
+      "day": 353,
+      "phai": 542
+    }
+  },
+  "oTram": [
+    {
+      "tid": "o-tram-13",
+      "y": 811,
+      "day": 866,
+      "text": "SPI-ST1 machine121WIP#1"
+    },
+    {
+      "tid": "o-tram-14",
+      "y": 811,
+      "day": 866,
+      "text": "AOI-ST1 machine116WIP#2"
+    },
+    {
+      "tid": "o-tram-15",
+      "y": 811,
+      "day": 866,
+      "text": "AVI-ST1 machine113WIP#3"
+    },
+    {
+      "tid": "o-tram-16",
+      "y": 811,
+      "day": 866,
+      "text": "ICT-ST1 machine112WIP#4"
+    },
+    {
+      "tid": "o-tram-17",
+      "y": 811,
+      "day": 866,
+      "text": "FCT-ST1 machine111WIP#5"
+    },
+    {
+      "tid": "o-tram-18",
+      "y": 811,
+      "day": 866,
+      "text": "CONVEYOR-ST1 machine107WIP#7"
+    },
+    {
+      "tid": "o-tram-19",
+      "y": 811,
+      "day": 866,
+      "text": "PWR-ST1 machine109WIP#6"
+    },
+    {
+      "tid": "o-tram-20",
+      "y": 811,
+      "day": 866,
+      "text": "ASSY-ST1 machine105WIP#8"
+    },
+    {
+      "tid": "o-tram-21",
+      "y": 811,
+      "day": 866,
+      "text": "SCREW-ST1 machine105WIP#8"
+    },
+    {
+      "tid": "o-tram-22",
+      "y": 811,
+      "day": 866,
+      "text": "PACK-ST1 machine102WIP#11"
+    },
+    {
+      "tid": "o-tram-23",
+      "y": 811,
+      "day": 866,
+      "text": "ROBOT-ST1 machine103WIP#10"
+    },
+    {
+      "tid": "o-tram-24",
+      "y": 811,
+      "day": 866,
+      "text": "AGV-ST1 machine100WIP#12"
+    }
+  ],
+  "dauLine": {
+    "ten": "Dây chuyền ảo 2",
+    "may": "Machines 12",
+    "tram": "Stations 12",
+    "wip": "WIP 1304",
+    "nhip": "Takt: 2.4s"
+  },
+  "kpiChu": "Metrics\n12 machines\nDây chuyền ảo 2\nRunning\n0\nDown\n0\nMaintenance\n0\nOffline\n12\nRunning rate\n0%\nAverage OEE\n—\nMachines w/ andon\n2\nPdM risk\n0\nOEE measured on 0/12 machines",
+  "rong": 0,
+  "vo": {
+    "coSidebar": true,
+    "coContent": true,
+    "soLink": 0,
+    "links": [],
+    "tieuDeApp": "Production (MES)",
+    "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+    "activeApp": "active_app=production"
+  },
+  "htmlLang": "en",
+  "sauClick": {
+    "url": "/twin/may/14",
+    "nganXuLy": 1,
+    "dialog": 0,
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "day": 449,
+        "chaTestId": "khoi-canh-3d",
+        "w_attr": 1000,
+        "h_attr": 324
+      }
+    ],
+    "drawCalls": 5,
+    "matContext": 0,
+    "__demNhan": {
+      "ve": 1,
+      "tong": 1,
+      "ngoaiKhung": 0,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 0,
+      "vuotMep": 0,
+      "biChe": 0,
+      "deKhoiKhac": 0,
+      "deKhoiKhacDoLai": 0,
+      "soHopKhoi": 3,
+      "soVungCam": 1,
+      "soLopPhuDom": 1,
+      "soHopBadge": 0,
+      "suCoNgoaiKhung": 0,
+      "capConChong": 0
+    },
+    "nhan": {
+      "canvas": null,
+      "lop": null,
+      "soBiChe": 0,
+      "phuBox": [
+        {
+          "t": "chip-may",
+          "x": 296,
+          "y": 415,
+          "w": 313,
+          "h": 26
+        },
+        {
+          "t": "thanh-tren-may",
+          "x": 288,
+          "y": 80,
+          "w": 1288,
+          "h": 45
+        }
+      ],
+      "lopTrungCanvas": false,
+      "so": 0,
+      "tamTrong": 0,
+      "tronVen": 0,
+      "chipNhanAn": null,
+      "ds": []
+    }
+  },
+  "camGiu": {
+    "url": "/twin/line/2?cam=10,5,10,0,0"
+  }
+}

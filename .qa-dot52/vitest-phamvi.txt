@@ -1,0 +1,74 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/routers/factoryCommandAssetCockpitPhamVi.db.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/routers/digitalTwinPhamVi.db.test.ts > Q1 — `digitalTwinRouter` lọc theo phạm vi tenant, hai chiều > twinState > ★★★ CHIỀU (+) — người gán A đọc được máy của A
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/routers/digitalTwinPhamVi.db.test.ts > Q1 — `digitalTwinRouter` lọc theo phạm vi tenant, hai chiều > twinState > ★★★ CHIỀU (+) — người gán A đọc được máy của A
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stderr | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable.
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[OAuth] Initialized with baseURL: 
+
+stdout | server/routers/factoryCommandAssetCockpitPhamVi.db.test.ts > Đợt 40 — factoryCommand + assetCockpit lọc theo phạm vi tenant, hai chiều > factoryCommand.overview — nguồn sự thật của ba màn twin > ★★★ CHIỀU (+) — người gán A hỏi A ⇒ thấy máy của A; danh sách nhà máy CHỈ có A
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stderr | server/routers/maintenanceAndonPhamVi.db.test.ts
+[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable.
+
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts
+[OAuth] Initialized with baseURL: 
+
+ ✓ server/routers/digitalTwinPhamVi.db.test.ts (15 tests) 924ms
+   ✓ Q1 — `digitalTwinRouter` lọc theo phạm vi tenant, hai chiều > twinState > ★★★ CHIỀU (+) — người gán A đọc được máy của A 526ms
+Sourcemap for "D:/SOURCES/_twin_wt/node_modules/node-cron/dist/esm/node-cron.js" points to missing source files
+ ✓ server/routers/factoryCommandAssetCockpitPhamVi.db.test.ts (22 tests) 1404ms
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts
+[Presence] REDIS_URL not set — machine presence store is in-memory (single instance).
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[Presence] REDIS_URL not set — machine presence store is in-memory (single instance).
+
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts
+[Email Service] SMTP not configured, email notifications disabled
+[Email Service] Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD (or SMTP_PASS) to enable
+
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts > L-1 — đường GHI lọc theo phạm vi tenant, hai chiều > maintenance.createWorkOrder — LỖ L-1 CHÍNH > ★★★ CHIỀU (+) — người gán A TẠO ĐƯỢC phiếu cho máy của A, và hàng CÓ THẬT trong CSDL
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+ ✓ server/routers/maintenanceAndonPhamVi.db.test.ts (28 tests) 460ms
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[Email Service] SMTP not configured, email notifications disabled
+[Email Service] Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD (or SMTP_PASS) to enable
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[SmartAlert] ALERT_RENOTIFY_COOLDOWN_MINUTES: thô=(chưa đặt) → hiệu lực=240 phút
+[SmartAlert] ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES: thô=(chưa đặt) → hiệu lực=0 phút
+[SmartAlert] ROUTE_ALERT_MAX_PER_WINDOW: thô=(chưa đặt) → hiệu lực=200 lượt/cửa sổ
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts > Đợt 42 — thủ tục bốn màn twin gọi × vai × nhà máy (lưới tự động, G116) > §1 'andon.active' > (0) người 0 gán — hỏi A lẫn B ⇒ chặn/rỗng, thân KHÔNG có mã của bất kỳ nhà máy nào
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+ ✓ server/routers/twinBonManApiVaiPhamVi.db.test.ts (115 tests) 1365ms
+
+ Test Files  4 passed (4)
+      Tests  180 passed (180)
+   Start at  15:01:53
+   Duration  11.07s (transform 6.21s, setup 70ms, collect 16.86s, tests 4.15s, environment 1ms, prepare 528ms)
+

@@ -1,0 +1,1342 @@
+{
+  "luc": "2026-09-12T07:23:39.185Z",
+  "base": "http://localhost:3052",
+  "ca": [
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "may": 18,
+      "url": "http://localhost:3052/twin/may/18?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Không rõ",
+          "rect": {
+            "x": 694,
+            "y": 132,
+            "w": 188,
+            "h": 24,
+            "phai": 882,
+            "day": 156
+          },
+          "z": 20
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 716,
+            "y": 145,
+            "w": 144,
+            "h": 17,
+            "phai": 861,
+            "day": 162
+          },
+          "z": 30
+        }
+      ],
+      "capNhanBadge": [
+        {
+          "nhan": "SIM-L2-CONVEYOR · Không rõ",
+          "nhanId": 18,
+          "badge": "badge-canh-bao-11",
+          "badgeChu": "◆SIM-L2-CONVEYOR➤",
+          "px2": 1595,
+          "tiLeNhan": 0.354,
+          "badgeTren": true
+        }
+      ],
+      "soCapNhanBadge": 1,
+      "tongPx2": 1595,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "biChe": 0,
+        "doiCho": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "may": 22,
+      "url": "http://localhost:3052/twin/may/22?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 22,
+          "chu": "SIM-L2-PACK · Không rõ",
+          "rect": {
+            "x": 711,
+            "y": 183,
+            "w": 154,
+            "h": 24,
+            "phai": 865,
+            "day": 207
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "may": 14,
+      "url": "http://localhost:3052/twin/may/14?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 14,
+          "chu": "SIM-L2-AOI · Không rõ",
+          "rect": {
+            "x": 716,
+            "y": 155,
+            "w": 143,
+            "h": 24,
+            "phai": 859,
+            "day": 179
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "may": 246,
+      "url": "http://localhost:3052/twin/may/246?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 246,
+          "chu": "SN-SIMVERIFY-01 · Không rõ",
+          "rect": {
+            "x": 599,
+            "y": 144,
+            "w": 179,
+            "h": 24,
+            "phai": 779,
+            "day": 168
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "may": 13,
+      "url": "http://localhost:3052/twin/may/13?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 13,
+          "chu": "SIM-L2-SPI · Không rõ",
+          "rect": {
+            "x": 717,
+            "y": 149,
+            "w": 141,
+            "h": 24,
+            "phai": 859,
+            "day": 173
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "may": 20,
+      "url": "http://localhost:3052/twin/may/20?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 20,
+          "chu": "SIM-L2-ASSY · Không rõ",
+          "rect": {
+            "x": 712,
+            "y": 163,
+            "w": 153,
+            "h": 24,
+            "phai": 865,
+            "day": 187
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "may": 21,
+      "url": "http://localhost:3052/twin/may/21?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 21,
+          "chu": "SIM-L2-SCREW · Không rõ",
+          "rect": {
+            "x": 705,
+            "y": 144,
+            "w": 166,
+            "h": 24,
+            "phai": 871,
+            "day": 168
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "may": 7,
+      "url": "http://localhost:3052/twin/may/7?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 7,
+          "chu": "SIM-L1-PWR · Không rõ",
+          "rect": {
+            "x": 796,
+            "y": 156,
+            "w": 147,
+            "h": 24,
+            "phai": 943,
+            "day": 180
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "may": 18,
+      "url": "http://localhost:3052/twin/may/18?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Không rõ",
+          "rect": {
+            "x": 638,
+            "y": 150,
+            "w": 188,
+            "h": 24,
+            "phai": 826,
+            "day": 174
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 556,
+            "y": 145,
+            "w": 144,
+            "h": 17,
+            "phai": 700,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [
+        {
+          "nhan": "SIM-L2-CONVEYOR · Không rõ",
+          "nhanId": 18,
+          "badge": "badge-canh-bao-11",
+          "badgeChu": "◆SIM-L2-CONVEYOR➤",
+          "px2": 744,
+          "tiLeNhan": 0.165,
+          "badgeTren": true
+        }
+      ],
+      "soCapNhanBadge": 1,
+      "tongPx2": 744,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "biChe": 0,
+        "doiCho": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "may": 22,
+      "url": "http://localhost:3052/twin/may/22?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 22,
+          "chu": "SIM-L2-PACK · Không rõ",
+          "rect": {
+            "x": 551,
+            "y": 172,
+            "w": 154,
+            "h": 24,
+            "phai": 705,
+            "day": 196
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "may": 14,
+      "url": "http://localhost:3052/twin/may/14?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 14,
+          "chu": "SIM-L2-AOI · Không rõ",
+          "rect": {
+            "x": 557,
+            "y": 147,
+            "w": 143,
+            "h": 24,
+            "phai": 699,
+            "day": 171
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "may": 246,
+      "url": "http://localhost:3052/twin/may/246?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 246,
+          "chu": "SN-SIMVERIFY-01 · Không rõ",
+          "rect": {
+            "x": 439,
+            "y": 138,
+            "w": 179,
+            "h": 24,
+            "phai": 619,
+            "day": 162
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "may": 13,
+      "url": "http://localhost:3052/twin/may/13?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 13,
+          "chu": "SIM-L2-SPI · Không rõ",
+          "rect": {
+            "x": 557,
+            "y": 142,
+            "w": 141,
+            "h": 24,
+            "phai": 699,
+            "day": 166
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "may": 20,
+      "url": "http://localhost:3052/twin/may/20?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 20,
+          "chu": "SIM-L2-ASSY · Không rõ",
+          "rect": {
+            "x": 552,
+            "y": 155,
+            "w": 153,
+            "h": 24,
+            "phai": 705,
+            "day": 179
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "may": 21,
+      "url": "http://localhost:3052/twin/may/21?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 21,
+          "chu": "SIM-L2-SCREW · Không rõ",
+          "rect": {
+            "x": 545,
+            "y": 138,
+            "w": 166,
+            "h": 24,
+            "phai": 711,
+            "day": 162
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "may": 7,
+      "url": "http://localhost:3052/twin/may/7?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 7,
+          "chu": "SIM-L1-PWR · Không rõ",
+          "rect": {
+            "x": 635,
+            "y": 149,
+            "w": 147,
+            "h": 24,
+            "phai": 783,
+            "day": 173
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "may": 18,
+      "url": "http://localhost:3052/twin/may/18?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Unknown",
+          "rect": {
+            "x": 692,
+            "y": 132,
+            "w": 191,
+            "h": 24,
+            "phai": 884,
+            "day": 156
+          },
+          "z": 20
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 716,
+            "y": 145,
+            "w": 144,
+            "h": 17,
+            "phai": 860,
+            "day": 162
+          },
+          "z": 30
+        }
+      ],
+      "capNhanBadge": [
+        {
+          "nhan": "SIM-L2-CONVEYOR · Unknown",
+          "nhanId": 18,
+          "badge": "badge-canh-bao-11",
+          "badgeChu": "◆SIM-L2-CONVEYOR➤",
+          "px2": 1584,
+          "tiLeNhan": 0.346,
+          "badgeTren": true
+        }
+      ],
+      "soCapNhanBadge": 1,
+      "tongPx2": 1584,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "biChe": 0,
+        "doiCho": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "may": 22,
+      "url": "http://localhost:3052/twin/may/22?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 22,
+          "chu": "SIM-L2-PACK · Unknown",
+          "rect": {
+            "x": 710,
+            "y": 183,
+            "w": 156,
+            "h": 24,
+            "phai": 866,
+            "day": 207
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "may": 14,
+      "url": "http://localhost:3052/twin/may/14?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 14,
+          "chu": "SIM-L2-AOI · Unknown",
+          "rect": {
+            "x": 715,
+            "y": 155,
+            "w": 146,
+            "h": 24,
+            "phai": 861,
+            "day": 179
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "may": 246,
+      "url": "http://localhost:3052/twin/may/246?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 246,
+          "chu": "SN-SIMVERIFY-01 · Unknown",
+          "rect": {
+            "x": 597,
+            "y": 144,
+            "w": 182,
+            "h": 24,
+            "phai": 779,
+            "day": 168
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "may": 13,
+      "url": "http://localhost:3052/twin/may/13?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 13,
+          "chu": "SIM-L2-SPI · Unknown",
+          "rect": {
+            "x": 716,
+            "y": 149,
+            "w": 144,
+            "h": 24,
+            "phai": 860,
+            "day": 173
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "may": 20,
+      "url": "http://localhost:3052/twin/may/20?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 20,
+          "chu": "SIM-L2-ASSY · Unknown",
+          "rect": {
+            "x": 710,
+            "y": 163,
+            "w": 156,
+            "h": 24,
+            "phai": 866,
+            "day": 187
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "may": 21,
+      "url": "http://localhost:3052/twin/may/21?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 21,
+          "chu": "SIM-L2-SCREW · Unknown",
+          "rect": {
+            "x": 704,
+            "y": 144,
+            "w": 169,
+            "h": 24,
+            "phai": 873,
+            "day": 168
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "may": 7,
+      "url": "http://localhost:3052/twin/may/7?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 7,
+          "chu": "SIM-L1-PWR · Unknown",
+          "rect": {
+            "x": 795,
+            "y": 156,
+            "w": 150,
+            "h": 24,
+            "phai": 945,
+            "day": 180
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "may": 18,
+      "url": "http://localhost:3052/twin/may/18?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Unknown",
+          "rect": {
+            "x": 637,
+            "y": 150,
+            "w": 191,
+            "h": 24,
+            "phai": 829,
+            "day": 174
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 556,
+            "y": 145,
+            "w": 144,
+            "h": 17,
+            "phai": 700,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [
+        {
+          "nhan": "SIM-L2-CONVEYOR · Unknown",
+          "nhanId": 18,
+          "badge": "badge-canh-bao-11",
+          "badgeChu": "◆SIM-L2-CONVEYOR➤",
+          "px2": 756,
+          "tiLeNhan": 0.165,
+          "badgeTren": true
+        }
+      ],
+      "soCapNhanBadge": 1,
+      "tongPx2": 756,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "biChe": 0,
+        "doiCho": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "may": 22,
+      "url": "http://localhost:3052/twin/may/22?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 22,
+          "chu": "SIM-L2-PACK · Unknown",
+          "rect": {
+            "x": 550,
+            "y": 172,
+            "w": 156,
+            "h": 24,
+            "phai": 706,
+            "day": 196
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "may": 14,
+      "url": "http://localhost:3052/twin/may/14?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 14,
+          "chu": "SIM-L2-AOI · Unknown",
+          "rect": {
+            "x": 555,
+            "y": 147,
+            "w": 146,
+            "h": 24,
+            "phai": 701,
+            "day": 171
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "may": 246,
+      "url": "http://localhost:3052/twin/may/246?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 246,
+          "chu": "SN-SIMVERIFY-01 · Unknown",
+          "rect": {
+            "x": 437,
+            "y": 138,
+            "w": 182,
+            "h": 24,
+            "phai": 619,
+            "day": 162
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "may": 13,
+      "url": "http://localhost:3052/twin/may/13?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 13,
+          "chu": "SIM-L2-SPI · Unknown",
+          "rect": {
+            "x": 556,
+            "y": 142,
+            "w": 144,
+            "h": 24,
+            "phai": 700,
+            "day": 166
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "may": 20,
+      "url": "http://localhost:3052/twin/may/20?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 20,
+          "chu": "SIM-L2-ASSY · Unknown",
+          "rect": {
+            "x": 550,
+            "y": 155,
+            "w": 156,
+            "h": 24,
+            "phai": 706,
+            "day": 179
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "may": 21,
+      "url": "http://localhost:3052/twin/may/21?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 21,
+          "chu": "SIM-L2-SCREW · Unknown",
+          "rect": {
+            "x": 544,
+            "y": 138,
+            "w": 169,
+            "h": 24,
+            "phai": 713,
+            "day": 162
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "may": 7,
+      "url": "http://localhost:3052/twin/may/7?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 7,
+          "chu": "SIM-L1-PWR · Unknown",
+          "rect": {
+            "x": 635,
+            "y": 149,
+            "w": 150,
+            "h": 24,
+            "phai": 785,
+            "day": 173
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null
+    }
+  ]
+}

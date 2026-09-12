@@ -1,0 +1,131 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "luc": "2026-09-12T07:40:30.152Z",
+  "overview": {
+    "status": 200,
+    "m14": {
+      "id": 14,
+      "code": "SIM-L2-AOI",
+      "name": "SIM-L2 AOI",
+      "machineType": "AOI",
+      "lineId": 2,
+      "lineName": "Dây chuyền ảo 2",
+      "status": "offline",
+      "tsTrangThai": "2026-07-17T01:26:09.833Z",
+      "oeePercent": null,
+      "positionX": 0,
+      "positionY": 0,
+      "positionZ": 0,
+      "width": 100,
+      "height": 80,
+      "depth": 60,
+      "rotation": 0,
+      "andonActive": false,
+      "pdmRiskHigh": false
+    },
+    "iss14": [
+      {
+        "id": "workorder-23",
+        "kind": "workorder",
+        "machineId": 14,
+        "machineCode": "SIM-L2-AOI",
+        "severity": "critical",
+        "label": "WO quá hạn: WO-PDM-14-1784901074670 — Predictive maintenance — máy SIM-L2-AOI",
+        "ageMinutes": 67002
+      },
+      {
+        "id": "offline-14",
+        "kind": "offline",
+        "machineId": 14,
+        "machineCode": "SIM-L2-AOI",
+        "severity": "warning",
+        "label": "Máy offline: SIM-L2-AOI",
+        "ageMinutes": 82454
+      }
+    ],
+    "tongMay": 41,
+    "tongIssue": 67,
+    "keys": [
+      "factories",
+      "machines",
+      "issues",
+      "oeeDefinitionVersion"
+    ]
+  },
+  "andon": {
+    "status": 200,
+    "so": 7,
+    "cuaMay14": [],
+    "dsStatus": [
+      "25:acknowledged",
+      "21:acknowledged",
+      "22:acknowledged",
+      "23:acknowledged",
+      "24:acknowledged",
+      "12:acknowledged",
+      "11:acknowledged"
+    ]
+  },
+  "sucKhoe": {
+    "status": 200,
+    "sk14": [
+      {
+        "machineId": 14,
+        "ma": "SIM-L2-AOI",
+        "diem": 61,
+        "nguyCo": 0,
+        "mucKhan": "LOW",
+        "hanBaoTri": null,
+        "mocMs": 1789173127183
+      }
+    ]
+  },
+  "cockpit": {
+    "status": 200,
+    "identity": {
+      "id": 14,
+      "code": "SIM-L2-AOI",
+      "name": "SIM-L2 AOI",
+      "machineType": "AOI",
+      "model": "SIM-AOI",
+      "manufacturer": "ST4I-SIM",
+      "stationId": 14,
+      "stationCode": "SIM-L2-AOI-ST",
+      "lineId": 2,
+      "lineName": "Dây chuyền ảo 2",
+      "factoryId": 1,
+      "factoryName": "Nhà máy ảo (SIM)",
+      "corporateCode": "SIM",
+      "isActive": true
+    },
+    "liveState": {
+      "value": {
+        "status": "online",
+        "lastStatusChange": 1788720682637,
+        "heartbeatStatus": "running",
+        "lastHeartbeat": 1784251569833,
+        "operationStatus": null,
+        "connected": false,
+        "statusMapped": "offline"
+      },
+      "source": "db/machine.getLatestMachineStatus + getLatestMachineHeartbeat",
+      "available": true
+    },
+    "keys": [
+      "identity",
+      "resolvedCapability",
+      "liveState",
+      "health",
+      "oee",
+      "alarms",
+      "recipes",
+      "programs",
+      "genealogy",
+      "model3d",
+      "gatedActions"
+    ],
+    "tho": "{\"result\":{\"data\":{\"json\":{\"identity\":{\"id\":14,\"code\":\"SIM-L2-AOI\",\"name\":\"SIM-L2 AOI\",\"machineType\":\"AOI\",\"model\":\"SIM-AOI\",\"manufacturer\":\"ST4I-SIM\",\"stationId\":14,\"stationCode\":\"SIM-L2-AOI-ST\",\"lineId\":2,\"lineName\":\"Dây chuyền ảo 2\",\"factoryId\":1,\"factoryName\":\"Nhà máy ảo (SIM)\",\"corporateCode\":\""
+  }
+}

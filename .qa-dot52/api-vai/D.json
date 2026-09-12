@@ -1,0 +1,887 @@
+{
+  "vai": "D",
+  "user": "e2e_dot36_oee",
+  "base": "http://localhost:3052",
+  "luc": "2026-09-12T07:26:03.989Z",
+  "login": 200,
+  "me": {
+    "id": 24976,
+    "ten": "e2e_dot36_oee",
+    "role": "user"
+  },
+  "ds": [
+    {
+      "ten": "factory.list",
+      "proc": "factory.list",
+      "input": null,
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 1,
+      "bytes": 546,
+      "coSIM": true,
+      "coT12": false,
+      "ms": 9,
+      "tho": "{\"result\":{\"data\":{\"json\":[{\"id\":1,\"corporateCode\":\"SIM\",\"code\":\"SIM-FAC\",\"name\":\"Nhà máy ảo (SIM)\",\"description\":\"Nhà máy mô phỏng cho đánh",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.danhSachToaNha(1)",
+      "proc": "twinCanh.danhSachToaNha",
+      "input": {
+        "factoryId": 1
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 1,
+      "bytes": 517,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 11,
+      "tho": "{\"result\":{\"data\":{\"json\":[{\"id\":24,\"factoryId\":1,\"ma\":\"TN-SEED-1\",\"ten\":\"Xuong lap rap ao (SIM)\",\"viTriXMm\":\"0.000\",\"viTriYMm\":\"0.000\",\"viT",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.danhSachToaNha(18)",
+      "proc": "twinCanh.danhSachToaNha",
+      "input": {
+        "factoryId": 18
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 0,
+      "bytes": 31,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 10,
+      "tho": "{\"result\":{\"data\":{\"json\":[]}}}",
+      "ghi": "NM18 KHONG co toa nha twin => rong ca khi khong rao"
+    },
+    {
+      "ten": "twinCanh.chiTietToaNha(24)",
+      "proc": "twinCanh.chiTietToaNha",
+      "input": {
+        "id": 24
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 2,
+      "bytes": 887,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 13,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"toaNha\":{\"id\":24,\"factoryId\":1,\"ma\":\"TN-SEED-1\",\"ten\":\"Xuong lap rap ao (SIM)\",\"viTriXMm\":0,\"viTriYMm\":0,\"viTriZ",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.canhThietKe(1,[28])",
+      "proc": "twinCanh.canhThietKe",
+      "input": {
+        "factoryId": 1,
+        "tangIds": [
+          28
+        ]
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 42,
+      "bytes": 36104,
+      "coSIM": true,
+      "coT12": false,
+      "ms": 28,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"xuong\":[{\"id\":1,\"ma\":\"SIM-WS\",\"ten\":\"Xưởng lắp ráp ảo (SIM)\",\"factoryId\":1}],\"chuyen\":[{\"id\":1,\"ma\":\"SIM-L1\",\"te",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.canhThietKe(18)",
+      "proc": "twinCanh.canhThietKe",
+      "input": {
+        "factoryId": 18
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 0,
+      "bytes": 2062,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 11,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"xuong\":[],\"chuyen\":[],\"tram\":[],\"may\":[],\"datCho\":[],\"kichThuoc\":[{\"loaiMay\":\"AVI\",\"rongMm\":1200,\"caoMm\":1500,\"s",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.anToanRobot(1)",
+      "proc": "twinCanh.anToanRobot",
+      "input": {
+        "factoryId": 1
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 3,
+      "bytes": 383,
+      "coSIM": true,
+      "coT12": false,
+      "ms": 18,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"robot\":[{\"id\":2,\"ma\":\"ROB-UR-01\",\"ten\":\"UR cobot (test)\",\"status\":\"online\",\"estop\":null,\"capNhatLuc\":null},{\"id\"",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.anToanRobot(18)",
+      "proc": "twinCanh.anToanRobot",
+      "input": {
+        "factoryId": 18
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 3,
+      "bytes": 73,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 9,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"robot\":[],\"bayGio\":1789197964100,\"tong\":0}}}}",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.sucKhoeMay(1)",
+      "proc": "twinCanh.sucKhoeMay",
+      "input": {
+        "factoryId": 1
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 5,
+      "bytes": 4903,
+      "coSIM": true,
+      "coT12": false,
+      "ms": 15,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"khai\":[{\"machineId\":1,\"ma\":\"SIM-L1-SPI\",\"diem\":86,\"nguyCo\":0,\"mucKhan\":\"LOW\",\"hanBaoTri\":1791986894519,\"mocMs\":1",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.sucKhoeMay(18)",
+      "proc": "twinCanh.sucKhoeMay",
+      "input": {
+        "factoryId": 18
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 5,
+      "bytes": 113,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 8,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"khai\":[],\"bayGio\":1789197964123,\"mocMoiNhat\":null,\"tong\":0,\"tongMayTrongPhamVi\":0}}}}",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.anhLichSu(1)",
+      "proc": "twinCanh.anhLichSu",
+      "input": {
+        "factoryId": 1,
+        "moc": 1789197963989
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 42,
+      "bytes": 9290,
+      "coSIM": true,
+      "coT12": false,
+      "ms": 19,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"may\":[{\"machineId\":246,\"ma\":\"SN-SIMVERIFY-01\",\"ten\":\"SIM Verify Screwdriver\",\"loaiMay\":\"SCREWDRIVE\",\"isActive\":t",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.anhLichSu(18)",
+      "proc": "twinCanh.anhLichSu",
+      "input": {
+        "factoryId": 18,
+        "moc": 1789197963989
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 0,
+      "bytes": 108,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 9,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"may\":[],\"bayGio\":1789197963989,\"capNhatMoiNhat\":null,\"tong\":0,\"laXapXi\":true}}}}",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.trangThaiHangLoat(1)",
+      "proc": "twinCanh.trangThaiHangLoat",
+      "input": {
+        "factoryId": 1
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 42,
+      "bytes": 9275,
+      "coSIM": true,
+      "coT12": false,
+      "ms": 19,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"may\":[{\"machineId\":246,\"ma\":\"SN-SIMVERIFY-01\",\"ten\":\"SIM Verify Screwdriver\",\"loaiMay\":\"SCREWDRIVE\",\"isActive\":t",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.trangThaiHangLoat(18)",
+      "proc": "twinCanh.trangThaiHangLoat",
+      "input": {
+        "factoryId": 18
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 0,
+      "bytes": 93,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 7,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"may\":[],\"bayGio\":1789197964176,\"capNhatMoiNhat\":null,\"tong\":0}}}}",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.demVatThe([28])",
+      "proc": "twinCanh.demVatThe",
+      "input": {
+        "tangIds": [
+          28
+        ]
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"settings_factory, machine_control\"",
+      "n": 0,
+      "bytes": 315,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"settings_factory, machine_control\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDD",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.danhSachBanGhi([28])",
+      "proc": "twinCanh.danhSachBanGhi",
+      "input": {
+        "tangIds": [
+          28
+        ]
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"settings_factory, machine_control\"",
+      "n": 0,
+      "bytes": 320,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 7,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"settings_factory, machine_control\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDD",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.xemTruocSinh(1,[28])",
+      "proc": "twinCanh.xemTruocSinh",
+      "input": {
+        "factoryId": 1,
+        "tangIds": [
+          28
+        ]
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"settings_factory, machine_control\"",
+      "n": 0,
+      "bytes": 318,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"settings_factory, machine_control\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDD",
+      "ghi": ""
+    },
+    {
+      "ten": "twinCanh.danhSachModel()",
+      "proc": "twinCanh.danhSachModel",
+      "input": null,
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"settings_factory, machine_control\"",
+      "n": 0,
+      "bytes": 319,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"settings_factory, machine_control\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDD",
+      "ghi": ""
+    },
+    {
+      "ten": "factoryCommand.overview(1)",
+      "proc": "factoryCommand.overview",
+      "input": {
+        "factoryId": 1
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_status\"",
+      "n": 0,
+      "bytes": 301,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":40",
+      "ghi": ""
+    },
+    {
+      "ten": "factoryCommand.overview(18)",
+      "proc": "factoryCommand.overview",
+      "input": {
+        "factoryId": 18
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_status\"",
+      "n": 0,
+      "bytes": 301,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":40",
+      "ghi": ""
+    },
+    {
+      "ten": "factoryCommand.machineDetail(14)",
+      "proc": "factoryCommand.machineDetail",
+      "input": {
+        "machineId": 14
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_status\"",
+      "n": 0,
+      "bytes": 306,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":40",
+      "ghi": ""
+    },
+    {
+      "ten": "factoryCommand.machineDetail(257)",
+      "proc": "factoryCommand.machineDetail",
+      "input": {
+        "machineId": 257
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_status\"",
+      "n": 0,
+      "bytes": 306,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 5,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":40",
+      "ghi": ""
+    },
+    {
+      "ten": "assetCockpit.machineDetail(14)",
+      "proc": "assetCockpit.machineDetail",
+      "input": {
+        "machineId": 14
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_status\"",
+      "n": 0,
+      "bytes": 304,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":40",
+      "ghi": ""
+    },
+    {
+      "ten": "assetCockpit.machineDetail(257)",
+      "proc": "assetCockpit.machineDetail",
+      "input": {
+        "machineId": 257
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_status\"",
+      "n": 0,
+      "bytes": 304,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 5,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":40",
+      "ghi": ""
+    },
+    {
+      "ten": "assetCockpit.machineAlarms(14)",
+      "proc": "assetCockpit.machineAlarms",
+      "input": {
+        "machineId": 14
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_status\"",
+      "n": 0,
+      "bytes": 304,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 5,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":40",
+      "ghi": ""
+    },
+    {
+      "ten": "assetCockpit.machineAlarms(257)",
+      "proc": "assetCockpit.machineAlarms",
+      "input": {
+        "machineId": 257
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_status\"",
+      "n": 0,
+      "bytes": 304,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 5,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":40",
+      "ghi": ""
+    },
+    {
+      "ten": "assetCockpit.robotDetail(1)",
+      "proc": "assetCockpit.robotDetail",
+      "input": {
+        "robotId": 1
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_status\"",
+      "n": 0,
+      "bytes": 302,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_status\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":40",
+      "ghi": "robot mo coi (stationId null)"
+    },
+    {
+      "ten": "andon.active",
+      "proc": "andon.active",
+      "input": null,
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"andon\"",
+      "n": 0,
+      "bytes": 281,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 5,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"andon\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":403,\"path\":",
+      "ghi": "7 su kien deu NM1 (line 1/2)"
+    },
+    {
+      "ten": "digitalTwin.wipFlowState(line 2)",
+      "proc": "digitalTwin.wipFlowState",
+      "input": {
+        "lineId": 2
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 12,
+      "bytes": 33059,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 10,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"stations\":[{\"stationId\":15,\"wipCount\":113,\"serials\":[\"BENCH-2607170008-14-14\",\"BENCH-2607170008-14-16\",\"BENCH-26",
+      "ghi": ""
+    },
+    {
+      "ten": "digitalTwin.wipFlowState(line 11)",
+      "proc": "digitalTwin.wipFlowState",
+      "input": {
+        "lineId": 11
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 0,
+      "bytes": 93,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"stations\":[],\"totalWip\":0,\"stationCount\":0,\"ts\":1789197964278}}}}",
+      "ghi": "line NM18"
+    },
+    {
+      "ten": "wip.lineBalance(line 2)",
+      "proc": "wip.lineBalance",
+      "input": {
+        "lineId": 2
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 16,
+      "bytes": 6529,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 10,
+      "tho": "{\"result\":{\"data\":{\"json\":[{\"id\":19,\"lineId\":2,\"periodStart\":\"2026-07-17T00:00:00.000Z\",\"periodEnd\":\"2026-07-17T01:00:00.000Z\",\"taktTimeMs\":",
+      "ghi": "line_balance_metrics: line 2 co 16 hang; wipRouter 0 tham chieu scope"
+    },
+    {
+      "ten": "wip.lineBalance(line 11)",
+      "proc": "wip.lineBalance",
+      "input": {
+        "lineId": 11
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 0,
+      "bytes": 31,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 7,
+      "tho": "{\"result\":{\"data\":{\"json\":[]}}}",
+      "ghi": "line NM18: 0 hang trong DB => rong ca khi khong rao"
+    },
+    {
+      "ten": "dashboard.getMachineStats(14)",
+      "proc": "dashboard.getMachineStats",
+      "input": {
+        "machineId": 14
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 11,
+      "bytes": 177,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 7,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"total\":0,\"ok\":0,\"ng\":0,\"ntf\":0,\"yieldRate\":0,\"fpy\":0,\"firstPass\":0,\"firstTotal\":0,\"scopeApplied\":true,\"scopeEmpt",
+      "ghi": ""
+    },
+    {
+      "ten": "dashboard.getMachineStats(257)",
+      "proc": "dashboard.getMachineStats",
+      "input": {
+        "machineId": 257
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 11,
+      "bytes": 177,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 7,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"total\":0,\"ok\":0,\"ng\":0,\"ntf\":0,\"yieldRate\":0,\"fpy\":0,\"firstPass\":0,\"firstTotal\":0,\"scopeApplied\":true,\"scopeEmpt",
+      "ghi": ""
+    },
+    {
+      "ten": "maintenance.listWorkOrders(m14)",
+      "proc": "maintenance.listWorkOrders",
+      "input": {
+        "machineId": 14
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_monitoring\"",
+      "n": 0,
+      "bytes": 308,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 7,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_monitoring\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus",
+      "ghi": "WO 23 thuoc may 14"
+    },
+    {
+      "ten": "maintenance.listWorkOrders(m257)",
+      "proc": "maintenance.listWorkOrders",
+      "input": {
+        "machineId": 257
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_monitoring\"",
+      "n": 0,
+      "bytes": 308,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_monitoring\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus",
+      "ghi": ""
+    },
+    {
+      "ten": "maintenance.listPartsForWorkOrder(23)",
+      "proc": "maintenance.listPartsForWorkOrder",
+      "input": {
+        "workOrderId": 23
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_monitoring\"",
+      "n": 0,
+      "bytes": 315,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 6,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_monitoring\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus",
+      "ghi": ""
+    },
+    {
+      "ten": "machine.checkCapabilities(14)",
+      "proc": "machine.checkCapabilities",
+      "input": {
+        "id": 14
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 5,
+      "bytes": 269,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 11,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"machineId\":14,\"machineType\":\"AOI\",\"enforced\":false,\"stored\":null,\"fresh\":{\"checkedAt\":\"2026-09-12T07:26:04.339Z\"",
+      "ghi": ""
+    },
+    {
+      "ten": "machine.checkCapabilities(257)",
+      "proc": "machine.checkCapabilities",
+      "input": {
+        "id": 257
+      },
+      "status": 404,
+      "code": "NOT_FOUND",
+      "appCode": "ENTITY_NOT_FOUND",
+      "msg": "Machine not found",
+      "n": 0,
+      "bytes": 266,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 8,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Machine not found\",\"code\":-32004,\"data\":{\"code\":\"NOT_FOUND\",\"httpStatus\":404,\"path\":\"machine.checkCapabilities\"",
+      "ghi": ""
+    },
+    {
+      "ten": "sensor.listTypes(m1)",
+      "proc": "sensor.listTypes",
+      "input": {
+        "machineId": 1
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 0,
+      "bytes": 58,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 8,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"available\":true,\"types\":[]}}}}",
+      "ghi": "may 1 co 72 hang machine_sensor_readings; sensorRouter khong nhan ctx"
+    },
+    {
+      "ten": "sensor.listTypes(m257)",
+      "proc": "sensor.listTypes",
+      "input": {
+        "machineId": 257
+      },
+      "status": 404,
+      "code": "NOT_FOUND",
+      "appCode": "ENTITY_NOT_FOUND",
+      "msg": "Machine 257 not found",
+      "n": 0,
+      "bytes": 261,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 7,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Machine 257 not found\",\"code\":-32004,\"data\":{\"code\":\"NOT_FOUND\",\"httpStatus\":404,\"path\":\"sensor.listTypes\",\"sta",
+      "ghi": "may 257: 0 hang sensor"
+    },
+    {
+      "ten": "sensor.readSeries(m1,temperature)",
+      "proc": "sensor.readSeries",
+      "input": {
+        "machineId": 1,
+        "sensorType": "temperature"
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 10,
+      "bytes": 201,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 8,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"available\":false,\"machineId\":1,\"sensorType\":\"temperature\",\"feature\":\"temperature\",\"unit\":null,\"windowHours\":24,\"",
+      "ghi": ""
+    },
+    {
+      "ten": "mqttClient.getDowntimeHistory(m14)",
+      "proc": "mqttClient.getDowntimeHistory",
+      "input": {
+        "machineId": 14
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 4,
+      "bytes": 1231,
+      "coSIM": true,
+      "coT12": false,
+      "ms": 11,
+      "tho": "{\"result\":{\"data\":{\"json\":[{\"id\":\"943\",\"machineId\":14,\"machineCode\":\"SIM-L2-AOI\",\"startTime\":\"2026-07-03T09:35:00.000Z\",\"endTime\":\"2026-07-0",
+      "ghi": "downtime_events may 14: 4 hang"
+    },
+    {
+      "ten": "orchestration.listWorkflows",
+      "proc": "orchestration.listWorkflows",
+      "input": null,
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_monitoring\"",
+      "n": 0,
+      "bytes": 309,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 7,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_monitoring\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus",
+      "ghi": "bang toan cuc, khong co cot nha may"
+    },
+    {
+      "ten": "user.assignableTechnicians",
+      "proc": "user.assignableTechnicians",
+      "input": null,
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền create cho module \"machine_monitoring\"",
+      "n": 0,
+      "bytes": 312,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 12,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền create cho module \\\"machine_monitoring\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStat",
+      "ghi": "tra MOI user isActive (id+name) — khong loc nha may"
+    },
+    {
+      "ten": "twin.usdExport(1)",
+      "proc": "twin.usdExport",
+      "input": {
+        "factoryId": 1
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_monitoring\"",
+      "n": 0,
+      "bytes": 296,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 7,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_monitoring\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus",
+      "ghi": "twinRouter.ts:316 requirePermission(machine_monitoring) — buildFactoryUsda(factoryId) KHONG scope"
+    },
+    {
+      "ten": "twin.usdExport(18)",
+      "proc": "twin.usdExport",
+      "input": {
+        "factoryId": 18
+      },
+      "status": 403,
+      "code": "FORBIDDEN",
+      "appCode": "PERMISSION_DENIED",
+      "msg": "Bạn không có quyền view cho module \"machine_monitoring\"",
+      "n": 0,
+      "bytes": 296,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 8,
+      "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền view cho module \\\"machine_monitoring\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus",
+      "ghi": ""
+    },
+    {
+      "ten": "digitalTwin.whatIf(tram 44)",
+      "proc": "digitalTwin.whatIf",
+      "input": {
+        "stations": [
+          {
+            "stationId": 44,
+            "cycleTimeSec": 10
+          }
+        ],
+        "horizonHours": 1
+      },
+      "status": 200,
+      "code": null,
+      "appCode": null,
+      "msg": "",
+      "n": 6,
+      "bytes": 224,
+      "coSIM": false,
+      "coT12": false,
+      "ms": 5,
+      "tho": "{\"result\":{\"data\":{\"json\":{\"bottleneckStationId\":44,\"bottleneckCycleSec\":10,\"theoreticalUnits\":360,\"effectiveUnits\":360,\"lineBalanceRatePct\"",
+      "ghi": "tinh thuan, khong doc DB"
+    }
+  ]
+}

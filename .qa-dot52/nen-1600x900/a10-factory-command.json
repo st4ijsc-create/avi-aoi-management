@@ -1,0 +1,145 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "luc": "2026-09-12T07:40:46.558Z",
+  "url": "/factory-command",
+  "coNut3d": true,
+  "coCanvas": true,
+  "__soCanvas": 1,
+  "canvasDom": 1,
+  "canvasDs": [
+    {
+      "x": 289,
+      "y": 195,
+      "w": 954,
+      "h": 710,
+      "day": 904,
+      "chaTestId": "khoi-canh-3d",
+      "w_attr": 954,
+      "h_attr": 709
+    }
+  ],
+  "drawCalls": 3,
+  "matContext": 0,
+  "__demNhan": {
+    "ve": 6,
+    "tong": 6,
+    "ngoaiKhung": 0,
+    "chongLap": 0,
+    "vuotTran": 0,
+    "tran": 30,
+    "biGiau": 0,
+    "vuotMep": 0,
+    "biChe": 0,
+    "deKhoiKhac": 0,
+    "deKhoiKhacDoLai": 0,
+    "soHopKhoi": 0,
+    "soVungCam": 0,
+    "soLopPhuDom": 0,
+    "soHopBadge": 0,
+    "suCoNgoaiKhung": 0,
+    "capConChong": 0
+  },
+  "nhan": {
+    "canvas": {
+      "x": 289,
+      "y": 195,
+      "w": 954,
+      "h": 710
+    },
+    "lop": {
+      "x": 289,
+      "y": 195,
+      "w": 954,
+      "h": 710
+    },
+    "soBiChe": 0,
+    "phuBox": [],
+    "lopTrungCanvas": true,
+    "so": 6,
+    "tamTrong": 6,
+    "tronVen": 6,
+    "chipNhanAn": null,
+    "ds": [
+      {
+        "text": "SIM-L1-AVI · Offline",
+        "x": 762,
+        "y": 272,
+        "w": 126,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "SIM-L1-SPI · Offline",
+        "x": 751,
+        "y": 243,
+        "w": 126,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "SIM-L1-ICT · Offline",
+        "x": 729,
+        "y": 213,
+        "w": 126,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "SIM-L1-AOI · Offline",
+        "x": 707,
+        "y": 312,
+        "w": 128,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "SIM-L2-CONVEYOR · Offline",
+        "x": 522,
+        "y": 252,
+        "w": 176,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      },
+      {
+        "text": "SIM-L2-ROBOT · Offline",
+        "x": 539,
+        "y": 224,
+        "w": 151,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      }
+    ]
+  },
+  "bbox": {
+    "khoiCanh": {
+      "x": 289,
+      "y": 195,
+      "w": 954,
+      "h": 710,
+      "day": 904,
+      "phai": 1243
+    }
+  },
+  "biChan": 0,
+  "body": "Skip to content\nMachine Monitoring\nShow advanced menu\nSimple\nD\nDo tai lo E\n-\nToggle Sidebar\nMachine Monitoring\nAll sites\nSearch pages, commands…\n⌘K\nFactory\n›\nLine\n›\nMachine\n7\nLive\n🇺🇸 English\nDevices & Monitoring\nMonitoring\nFactory command\n—\nFACTORY OEE\n0\nRUNNING\n0\nIDLE\n0\nDOWN/STOPPED\n—\nNG THIS SHIFT\n67\nOPEN ISSUES\n2D\n3D\nStatus\nSIM-L1-AVI · Offline\nSIM-L1-SPI · Offline\nSIM-L1-ICT · Offline\nSIM-L1-AOI · Offline\nSIM-L2-CONVEYOR · Offline\nSIM-L2-ROBOT · Offline\nOpen issues\n67\nFilter\nSIM-L3-ROBOT\n1516g51ph\nWO quá hạn: WO-PDM-35-1783723832672 — Predictive maintenance — máy SIM-L3-ROBOT\nSIM-L3-ASSY"
+}

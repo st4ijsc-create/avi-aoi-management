@@ -1,0 +1,11 @@
+
+> synapse-platform@1.0.0 ext:check
+> npm run check --prefix vscode-extension
+
+
+> avi-ai-local@0.1.0 check
+> tsc --noEmit -p .
+
+error TS2688: Cannot find type definition file for 'vscode'.
+  The file is in the program because:
+    Entry point of type library 'vscode' specified in compilerOptions

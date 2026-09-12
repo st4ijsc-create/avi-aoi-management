@@ -1,0 +1,242 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1280x720",
+  "tag": "../.qa-dot52/chan/E",
+  "luc": "2026-09-12T08:18:11.277Z",
+  "url": "/twin/line/2",
+  "nhan": {
+    "canvas": {
+      "x": 288,
+      "y": 125,
+      "w": 968,
+      "h": 479
+    },
+    "lop": {
+      "x": 288,
+      "y": 125,
+      "w": 968,
+      "h": 479
+    },
+    "lopTrungCanvas": true,
+    "phu": [
+      {
+        "t": "bang-kpi-noi",
+        "che": true,
+        "x": 296,
+        "y": 133,
+        "w": 246,
+        "h": 220
+      },
+      {
+        "t": "ngan-mo-phong",
+        "che": true,
+        "x": 1008,
+        "y": 133,
+        "w": 240,
+        "h": 28
+      },
+      {
+        "t": "khoi-dai-line",
+        "che": false,
+        "x": 288,
+        "y": 604,
+        "w": 968,
+        "h": 93
+      },
+      {
+        "t": "thanh-tren-line",
+        "che": false,
+        "x": 288,
+        "y": 80,
+        "w": 968,
+        "h": 45
+      }
+    ],
+    "so": 12,
+    "soTamNgoaiCanvas": 0,
+    "soKhongTronVen": 0,
+    "soTamDuoiPhu": 0,
+    "soBiChe": 0,
+    "chipNhanAn": null,
+    "chipSuCo": null,
+    "__demNhan": {
+      "ve": 12,
+      "tong": 12,
+      "ngoaiKhung": 0,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 0,
+      "vuotMep": 0,
+      "biChe": 0,
+      "deKhoiKhac": 1,
+      "deKhoiKhacDoLai": 1,
+      "soHopKhoi": 12,
+      "soVungCam": 4,
+      "soLopPhuDom": 2,
+      "soHopBadge": 2,
+      "suCoNgoaiKhung": 0,
+      "capConChong": 0
+    },
+    "ds": [
+      {
+        "text": "CONVEYOR · Unknown",
+        "x": 669,
+        "y": 397,
+        "w": 144,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "ROBOT · Unknown",
+        "x": 989,
+        "y": 397,
+        "w": 119,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "FCT · Unknown",
+        "x": 629,
+        "y": 371,
+        "w": 101,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "PWR · Unknown",
+        "x": 865,
+        "y": 405,
+        "w": 105,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "ASSY · Unknown",
+        "x": 868,
+        "y": 379,
+        "w": 109,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "ICT · Unknown",
+        "x": 570,
+        "y": 397,
+        "w": 97,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "SCREW · Unknown",
+        "x": 863,
+        "y": 454,
+        "w": 122,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "PACK · Unknown",
+        "x": 992,
+        "y": 371,
+        "w": 110,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "AVI · Unknown",
+        "x": 457,
+        "y": 401,
+        "w": 97,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "AOI · Unknown",
+        "x": 449,
+        "y": 375,
+        "w": 99,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "AGV · Unknown",
+        "x": 1116,
+        "y": 423,
+        "w": 103,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      },
+      {
+        "text": "SPI · Unknown",
+        "x": 334,
+        "y": 427,
+        "w": 97,
+        "h": 24,
+        "tamTrongCanvas": true,
+        "tronVen": true,
+        "cheBoi": [],
+        "tamDuoiPhu": []
+      }
+    ]
+  },
+  "mep": {
+    "canvas": {
+      "x": 288,
+      "y": 125,
+      "w": 968,
+      "h": 479
+    },
+    "caoDai": 4,
+    "mauTroi": [
+      7,
+      10,
+      16
+    ],
+    "pixelLa": 0,
+    "cotLa": [],
+    "phuLoaiTru": 0
+  },
+  "e4": {
+    "tongUngVien": 12,
+    "ngoaiKhung": 0,
+    "ve": 12,
+    "biGiau": 0,
+    "chipNhanAn": null,
+    "pixelLaMepTren": 0
+  }
+}

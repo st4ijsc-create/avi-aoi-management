@@ -1,0 +1,10 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+ ✓ server/services/programming/fleetRollout.test.ts (13 tests) 6ms
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  15:03:10
+   Duration  1.69s (transform 477ms, setup 22ms, collect 1.12s, tests 6ms, environment 0ms, prepare 114ms)
+
