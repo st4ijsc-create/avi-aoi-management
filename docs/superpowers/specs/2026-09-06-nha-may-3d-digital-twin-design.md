@@ -7009,6 +7009,28 @@ HEAD `389fa9b3`, 5 commit đã push `fresh`. Tôi đo lại: `vitest twin3d` **1
 
 **Còn mở sau nghiệm thu (không chặn):** production chưa áp index QĐ-27 (chờ chủ sở hữu, cửa sổ bảo trì) · `check:tests` 5 lỗi TS trong `twin3d/van-hanh` (Đợt 55) · `kb:operational-cards:test` / `ext:check` / `npm test` đỏ sẵn **ngoài Twin** · `test:e2e` toàn bộ chưa chạy · bộ chọn tầng chưa đo được (DB dev 1 toà/1 tầng) · 41 cặp nhãn ∩ khối máy khác (G128, kết cục click đã đúng) · 26 chỗ `DISTINCT ON` ngoài đường Twin chưa đo EXPLAIN.
 
+### 14q.34 Đợt 55 — dọn nợ trong Twin, và hai phát hiện lớn hơn chính việc dọn (2026-09-12, 3 commit `5edf090f…f4e74493`)
+
+**Tiền đề:** `git diff --name-only 7ecd11e8..HEAD` trừ test/e2e/config ⇒ **RỖNG** — Đợt 55 đổi **0 byte mã sản phẩm**.
+
+**A `check:tests` 32 → 27 lỗi, 0 lỗi trong `twin3d`.** Vá 2 lỗi `tangId` **làm lộ thêm 3 lỗi TS2740** brief không có (`DatChoDauVao` thiếu 16 cột) ⇒ sửa fixture cho **đúng kiểu thật**: helper `datChoMay()` đủ 16 cột, fake `hinhKhoiCho` trả `KhoiKey` thật, `khoi:"k"` → `"tram_chung"`. **0 `as any`, 0 `@ts-expect-error`, 0 nới kiểu sản phẩm**; chứng minh không đổi nghĩa bằng cách chỉ ra `dungCayThietKe` không đọc `xuong.tangId` và 0 assertion nhắc `khoi`.
+
+**B — G136 thành lưới cho MỌI máy có cảnh báo** (`badgeMoiMayVaoSo.unit.test.ts`, 22 ca). Tập máy **suy từ dữ liệu** bằng đúng vị từ `andon.active` (`andonRouter.ts:356`, `isNull(resolvedAt)`): **7 hàng / 6 máy {1, 2×2, 3, 4, 18, 23}**, cả 6 đều đứng trong cảnh 41 máy. ⚠ `andon_raised = 0` vì cả 7 hàng đã `acknowledged` — **lưới nào lọc `status='raised'` sẽ thấy 0 máy**. Số thật: máy 18 = 1 584 / 744 px², máy **23 = 2 057 / 1 573 px² (nặng hơn)**; sau vá 0/0/0/0. **Ablation THẬT trên mã sản phẩm** (`trap` + md5): gỡ `hopManHinh` ⇒ **9/22 ĐỎ**; hạ đường ghi sổ `LopCanhBao` về bản cũ ⇒ **11/22 ĐỎ**, bất biến kêu bằng con số **vẽ 7 / vào sổ 0**.
+
+**C — đường ra bằng chứng: 7/22 → 22/22 spec đi qua hàng rào**, 15 spec được vá, 0 assertion bị chạm. ★★★ **Phát hiện lớn hơn chính mục C:** `playwright.config.ts` **không đặt `outputDir`** ⇒ mặc định `test-results/`, mà **Playwright dọn sạch `outputDir` mỗi lượt chạy**. Đo trực tiếp: đặt `sentinel.txt` rồi chạy với `--output=<thư mục ấy>` ⇒ **sentinel biến mất** ⇒ `npm run test:e2e` ở HEAD cũ sẽ **xoá 5 ảnh lô C đã commit**. Đã vá: `outputDir: ".qa-pw-output"`.
+
+★★★ **Phát hiện 2 — `dist/` KHÔNG phải bản dựng của HEAD.** Dựng 2026-09-12 03:52 từ cây **trước Đợt 49**, cũ hơn HEAD ≥ 6 đợt; `dist/` bị `.gitignore` nên lai lịch vô hình. Đối chứng dương/âm trong cùng phép đo: `soHopBadge`, `__demNhan` **có** trong bundle (⇒ tên thuộc tính được giữ), còn `hopKhoiMay` (Đợt 49), `hopManHinh` (Đợt 53), `hopNhanDaVe` **vắng hoàn toàn**. Chuỗi nhân quả 4 ca e2e đỏ: `twin-dot47-bam-canh.spec.ts:399` đọc `hopKhoiMay()` → `[]` → `soKhoi=0` → `:435` đỏ. Với **0 byte sản phẩm đổi**, 4 ca ấy là **đo sai nhị phân, không phải hồi quy**. Hệ quả: **3001/3008 đang phục vụ bản thiếu mọi bản vá Đợt 49–54** ⇒ chủ sở hữu duyệt dựng lại `dist/` (Đợt 56 mục C), có báo trước cho phiên giữ hai cổng.
+
+**Brief tôi sai 5 chỗ**, đáng kể: "cả 18 và 23" — dữ liệu nói **6 máy** có andon chưa resolved; "26 chỗ `DISTINCT ON` ngoài đường Twin" — đo được **42 chỗ / 17 tệp**, và **8 trong `factoryCommandService.ts` nằm TRÊN đường người dùng cả 3 màn Twin** (`useTrangThaiSong.ts:87`), tức **bản sao thứ hai của lớp lỗi QĐ-27 chưa vá**; "việc còn lại: kiểm spec" — thực tế 15 spec chưa qua hàng rào và mối nguy lớn nhất nằm ở `playwright.config.ts`; và brief giả định có `dist` chạy được ở HEAD — không có.
+
+**Lỗi của agent — 4, nặng nhất L-1:** bản nháp lưới B định nghĩa `soMoi` **ngay trong tệp test** rồi so `so.length === kq.ve.length` ⇒ **không thể sai**; ablation A1 vẫn đỏ (do hộp suy biến) nên suýt nhận nhầm là "thiết bị đo biết kêu". Sửa bằng cách **bóc biểu thức ghi sổ từ `LopCanhBao.tsx` rồi tra bảng** (không `eval`), và A2 mới là phép đo thật của "vẽ == vào sổ".
+
+> #### ★★★ G140 - **CÔNG CỤ KIỂM CÓ THỂ XOÁ BẰNG CHỨNG: `outputDir` mặc định của Playwright là `test-results/` VÀ NÓ DỌN SẠCH THƯ MỤC ĐÓ MỖI LƯỢT.**
+> Năm ảnh nghiệm thu lô C nằm trong `test-results/` và đã commit; `npm run test:e2e` (cổng chưa ai chạy bao giờ — G108) sẽ xoá chúng. Đo bằng sentinel, không bằng suy luận. **Mọi công cụ ghi ra thư mục phải được khai đường ra tường minh trong cấu hình, và thư mục chứa bằng chứng đã commit không bao giờ được là đường ra mặc định của bất kỳ công cụ nào.**
+
+> #### ★★★ G141 - **`dist/` KHÔNG CÓ LAI LỊCH: thứ đang phục vụ người dùng có thể cũ hơn HEAD nhiều đợt mà không ai thấy.**
+> Bản dựng bị `.gitignore`, không mang commit hash, không ai đo — nên 4 ca e2e đỏ suýt bị đọc là hồi quy trong khi **0 byte mã sản phẩm đổi**. Cách đọc đúng: **grep tên biểu tượng mới trong bundle** (có `soHopBadge` = đối chứng dương, thiếu `hopManHinh`/`hopKhoiMay` = kết luận), đối chiếu với commit đưa biểu tượng ấy vào. **Trước mọi phép đo trên `dist`, chứng minh `dist` là bản dựng của commit đang đo** (md5 build lặp + grep biểu tượng); và nên nhúng commit hash vào bản dựng.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
