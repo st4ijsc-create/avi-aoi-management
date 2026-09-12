@@ -133,6 +133,8 @@ export interface CanhVanHanhProps {
   chuNhanAnTheoChinhSach?: (n: number) => string;
   /** ★ Đợt 35 (Pareto #5) — chữ ĐÃ dịch cho chip "N sự cố ngoài khung" (máy bất thường ngoài frustum). */
   chuSuCoNgoaiKhung?: (n: number) => string;
+  /** ★ Đợt 49 (mục D) — chữ ĐÃ dịch cho chip "còn N cảnh báo ẩn" (badge bị lớp phủ che / hết chỗ). */
+  chuCanhBaoAn?: (n: number) => string;
   chuMatContext: string;
   ariaLabel: string;
   /** Báo camera vừa đổi — tầng trên ghi vào URL bằng `replaceState` (§9.4). */
@@ -590,6 +592,12 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         chuNhanAn={chuNhanAn}
         chuNhanAnTheoChinhSach={props.chuNhanAnTheoChinhSach}
         chuSuCoNgoaiKhung={props.chuSuCoNgoaiKhung}
+        /* ★ Đợt 49 (D) — chip "còn N cảnh báo ẩn" (số do `LopCanhBao` ghi sổ chung ở cùng khung). */
+        chuCanhBaoAn={props.chuCanhBaoAn}
+        /* ★★★ Đợt 49 (A) — CÙNG mảng `may` đã đưa cho `LoBatchMay`: nhãn né hình chiếu thân máy KHÁC.
+           Một nguồn, hai người đọc — chép tay danh sách máy sang đây là cách chắc chắn để hai nơi
+           lệch nhau một máy rồi im lặng (G5). Bỏ prop này = bản GỠ VÁ của ablation mục A. */
+        khoiMay={may}
         /* ★ Đợt 47 (N2) — bấm lên NHÃN cũng chọn máy (nhãn pointer-events:none, LopNhan tự hit-test hộp thật). */
         onChonNhan={khiChon}
       />
@@ -626,7 +634,12 @@ type PropsDuLieu = Pick<
 >;
 type PropsHam = Pick<
   CanhVanHanhProps,
-  "onChonMay" | "onCameraDoi" | "chuNhanAn" | "chuNhanAnTheoChinhSach" | "chuSuCoNgoaiKhung"
+  | "onChonMay"
+  | "onCameraDoi"
+  | "chuNhanAn"
+  | "chuNhanAnTheoChinhSach"
+  | "chuSuCoNgoaiKhung"
+  | "chuCanhBaoAn"
 >;
 
 /** Khoá giá trị của một prop dữ liệu — `undefined` và `null` phân biệt (bỏ trống ≠ tắt). */
@@ -655,6 +668,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuNhanAn: props.chuNhanAn,
     chuNhanAnTheoChinhSach: props.chuNhanAnTheoChinhSach,
     chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
+    chuCanhBaoAn: props.chuCanhBaoAn,
   });
   hamRef.current = {
     onChonMay: props.onChonMay,
@@ -662,6 +676,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuNhanAn: props.chuNhanAn,
     chuNhanAnTheoChinhSach: props.chuNhanAnTheoChinhSach,
     chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
+    chuCanhBaoAn: props.chuCanhBaoAn,
   };
   const onChonMay = useCallback((id: number | null) => hamRef.current.onChonMay(id), []);
   const onCameraDoi = useCallback(
@@ -678,6 +693,10 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     [],
   );
   const chuSuCoOnDinh = useCallback((n: number) => hamRef.current.chuSuCoNgoaiKhung?.(n) ?? "", []);
+  // ★ Đợt 49 (D) — G5: prop mới phải qua ĐỦ BA chỗ (kiểu `PropsHam`, `hamRef`, trampoline + chỗ
+  //   truyền xuống). Thiếu một chỗ ⇒ prop "có mặt" mà không bao giờ tới `LopNhan`; Đợt 45 đã dính.
+  const coChuCanhBaoAn = props.chuCanhBaoAn !== undefined;
+  const chuCanhBaoAnOnDinh = useCallback((n: number) => hamRef.current.chuCanhBaoAn?.(n) ?? "", []);
 
   return (
     <CanhVanHanhOnDinh
@@ -695,6 +714,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       chuNhanAn={coChuNhanAn ? chuNhanAnOnDinh : undefined}
       chuNhanAnTheoChinhSach={coChuNhanAnTheoChinhSach ? chuNhanAnTheoChinhSachOnDinh : undefined}
       chuSuCoNgoaiKhung={coChuSuCo ? chuSuCoOnDinh : undefined}
+      chuCanhBaoAn={coChuCanhBaoAn ? chuCanhBaoAnOnDinh : undefined}
       sanRongM={props.sanRongM}
       sanSauM={props.sanSauM}
       tatNhan={props.tatNhan}

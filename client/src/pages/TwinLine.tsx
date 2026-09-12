@@ -1004,6 +1004,8 @@ export function ThanManLine({
               chuSuCoNgoaiKhung={(n) =>
                 t("twin3d.vanHanh.suCoNgoaiKhung", "{{n}} sự cố ngoài khung", { n })
               }
+              /* ★ Đợt 49 (mục D): chip "còn N cảnh báo ẩn" — badge bị lớp phủ che / hết chỗ dời. */
+              chuCanhBaoAn={(n) => t("twin3d.vanHanh.canhBaoBiAn", "còn {{n}} cảnh báo ẩn", { n })}
               chuMatContext={t("twin3d.loi.matContext")}
               ariaLabel={t("twin3d.line.ariaCanh", "Cảnh 3D của {{ten}}", { ten: tenLine })}
             />

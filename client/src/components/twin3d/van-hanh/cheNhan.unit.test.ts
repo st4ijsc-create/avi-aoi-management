@@ -74,7 +74,12 @@ describe("★★★ ② LopNhan — bỏ biên ±10 %, truyền khung canvas + v
     expect(LOP_NHAN).toMatch(/chuSuCoNgoaiKhung && soSuCoNgoai > 0 \? \(/);
     expect(LOP_NHAN).toMatch(/data-testid="chip-su-co-ngoai-khung"\s+data-so=\{soSuCoNgoai\}/);
     // số sự cố đi vào CHỮ KÝ setState — xoay camera đưa máy ra/vào khung phải đổi chip ngay.
-    expect(LOP_NHAN).toMatch(/`\$\{kq\.soBiGiau\}#\$\{kq\.soBatThuongNgoaiKhung\}#`/);
+    // ★ Đợt 49 (mục D) — chữ ký nay có thêm `soAnBadge` (số CẢNH BÁO bị giấu, đọc từ sổ chung
+    //   `docSoAn`): badge cuối cùng tìm được chỗ mà tập nhãn không đổi thì chip phải tắt ngay,
+    //   không chờ một khung khác. Ba số, một chữ ký — đúng lý do `soBiGiau` đã ở đây từ Đợt 23.
+    expect(LOP_NHAN).toMatch(
+      /`\$\{kq\.soBiGiau\}#\$\{kq\.soBatThuongNgoaiKhung\}#\$\{soAnBadge\}#`/,
+    );
   });
 });
 

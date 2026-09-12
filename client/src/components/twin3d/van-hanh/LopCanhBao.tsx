@@ -39,7 +39,7 @@ import * as THREE from "three";
 
 import { giaiMauCanh } from "../mauTrangThai";
 import { TAM_CANVAS, layVungCam } from "../loi/LopNhan";
-import { LOP_BADGE, ghiHopDaVe, xoaHopDaVe } from "../loi/hopDaVe";
+import { LOP_BADGE, ghiHopDaVe, ghiSoAn, xoaHopDaVe, xoaSoAn } from "../loi/hopDaVe";
 import type { HinhChuNhat } from "../loi/locNhan";
 import {
   demCapChongLapBadge,
@@ -123,7 +123,13 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
   const [hienThi, setHienThi] = useState<BadgeDaChieu[]>([]);
 
   // ★ Đợt 47 (N5) — rời cảnh thì rút hộp khỏi sổ chung, nhãn không phải né bóng ma.
-  useEffect(() => () => xoaHopDaVe(gl.domElement, LOP_BADGE), [gl]);
+  useEffect(
+    () => () => {
+      xoaHopDaVe(gl.domElement, LOP_BADGE);
+      xoaSoAn(gl.domElement, LOP_BADGE);
+    },
+    [gl],
+  );
   const [soAn, setSoAn] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
@@ -265,6 +271,16 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
     //   chính thuật toán tính ra); phép nghiệm thu dùng `capConChong` bên dưới —
     //   số cặp CÒN chồng ở ĐẦU RA, đo bằng hàm độc lập `demCapChongLapBadge`.
     const an = kq.soAn;
+    /*
+     * ★★★ ĐỢT 49 (mục D) — GHI SỐ CẢNH BÁO BỊ GIẤU VÀO SỔ CHUNG.
+     * `/twin`@1280 đo được `soAn 2 · biChe 2` mà màn không nói gì: `data-so-an` chỉ DOM đọc
+     * được, còn chip đáy canvas (`LopNhan`) đếm TÊN MÁY ẩn chứ không đếm cảnh báo. Ghi ở đây,
+     * `LopNhan` đọc ở CÙNG khung (nó chạy sau trong cây — hợp đồng thứ tự của `hopDaVe`) và vẽ
+     * chung một cụm chip; hai cụm chip riêng là hai cụm chồng nhau.
+     * ⚠ Ghi CẢ khi 0: "chưa ai ghi" và "ghi 0" phải cùng nghĩa, nếu không chip sẽ in số cũ khi
+     *   cảnh báo cuối cùng hiện ra được.
+     */
+    ghiSoAn(gl.domElement, LOP_BADGE, an);
 
     // Cửa sổ đo cho e2e (luật G11). Ghi CẢ khi 0 badge — "không đo được" phải
     // khác "đo được 0". `capConChong` là đại lượng ĐỘC LẬP với `locBadge`: nó

@@ -3169,6 +3169,11 @@ export function ThanTwinVanHanh() {
               chuSuCoNgoaiKhung={(n) =>
                 t("twin3d.vanHanh.suCoNgoaiKhung", "{{n}} sự cố ngoài khung", { n })
               }
+              /* ★ Đợt 49 (mục D): chip "còn N cảnh báo ẩn" — badge bị lớp phủ che / hết chỗ dời.
+                 Đo `/twin`@1280 (QA lần 7): soAn 2 / tong 7 mà màn KHÔNG có chỉ báo nào. */
+              chuCanhBaoAn={(n) =>
+                t("twin3d.vanHanh.canhBaoBiAn", "còn {{n}} cảnh báo ẩn", { n })
+              }
               /* ★ ĐỢT 24 VIỆC 2 — chỗ gọi THẬT của `chiNhanBatThuong`. Trước
                  dòng này `grep` ra 0 người truyền `true` (G16). */
               chiNhanBatThuong={chiNhanBatThuong}

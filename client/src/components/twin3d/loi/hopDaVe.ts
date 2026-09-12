@@ -51,3 +51,38 @@ export function docHopDaVeTru(khoa: object, tru: string): HinhChuNhat[] {
 export function xoaHopDaVe(khoa: object, lop: string): void {
   so.get(khoa)?.delete(lop);
 }
+
+/**
+ * ★★★ ĐỢT 49 (mục D) — SỔ SỐ ĐẾM dùng chung, cùng khoá canvas với sổ hộp ở trên.
+ *
+ * Vì sao cần: `/twin`@1280 đo được `tong 7 · ve 5 · soAn 2 · biChe 2` — hai cảnh báo bị GIẤU và
+ * màn KHÔNG nói ra (chip đáy canvas chỉ đếm TÊN MÁY ẩn; thuộc tính `data-so-an` chỉ DOM đọc
+ * được). Chip phải nói cả "còn N cảnh báo ẩn". Nhưng con số ấy do `LopCanhBao` tính, còn chip
+ * do `LopNhan` vẽ (nó đã giữ ngân sách đáy canvas `demDuoiChoChip` và đã nghiệm thu "chip trong
+ * canvas, không bị che" — G122). Vẽ chip thứ hai ở lớp badge là cách chắc chắn để hai cụm chip
+ * đè nhau, tức chữa một lỗi thị giác bằng một lỗi thị giác.
+ *
+ * ★ THỨ TỰ TRONG KHUNG LÀ HỢP ĐỒNG — y như sổ hộp: `CanhVanHanh` đặt `<LopCanhBao>` TRƯỚC
+ *   `<LopNhan>`, nên số ghi ở khung này được đọc ngay ở khung này. Đảo hai dòng ⇒ chip trễ một khung.
+ */
+const soDem = new WeakMap<object, Map<string, number>>();
+
+/** Ghi số của một lớp cho canvas `khoa`. */
+export function ghiSoAn(khoa: object, lop: string, n: number): void {
+  let m = soDem.get(khoa);
+  if (!m) {
+    m = new Map();
+    soDem.set(khoa, m);
+  }
+  m.set(lop, n);
+}
+
+/** Số của một lớp. Chưa ai ghi ⇒ 0 (và "ghi 0" cùng nghĩa với người đọc). */
+export function docSoAn(khoa: object, lop: string): number {
+  return soDem.get(khoa)?.get(lop) ?? 0;
+}
+
+/** Xoá số của một lớp (cleanup unmount). */
+export function xoaSoAn(khoa: object, lop: string): void {
+  soDem.get(khoa)?.delete(lop);
+}

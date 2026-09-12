@@ -178,8 +178,16 @@ export interface CauHinhLocBadge {
 
 /** Khe hở giữa badge và hộp kề khi dời chỗ, px. */
 export const KHE_BADGE_PX = 2;
-/** Số bước dời tối đa mỗi hướng cho badge THƯỜNG. Badge đỏ không bị giới hạn này. */
-export const SO_BUOC_DOI_CHO = 3;
+/**
+ * Số bước dời tối đa mỗi hướng cho badge THƯỜNG. Badge đỏ không bị giới hạn này.
+ *
+ * ★★★ ĐỢT 49 (mục D) — 3 → 6. Đo được ở `/twin`@1280 (QA lần 7, mục 4.2): `tong 7 · ve 5 ·
+ * soAn 2 · biChe 2` — hai cảnh báo bị GIẤU vì chạm lớp phủ DOM và 3 bước theo bốn hướng thẳng
+ * không thoát được panel. Ngân sách gấp đôi + thêm bốn hướng CHÉO (xem `ungVienDoiCho`) mở
+ * thêm chỗ mà không đổi luật ưu tiên nào: badge đỏ vẫn được quét cả canvas, badge thường vẫn
+ * dừng ở ngân sách (không trôi tuỳ tiện ra khỏi máy của nó).
+ */
+export const SO_BUOC_DOI_CHO = 6;
 
 function dichHop(h: HinhChuNhat, dx: number, dy: number): HinhChuNhat {
   return { trai: h.trai + dx, phai: h.phai + dx, tren: h.tren + dy, duoi: h.duoi + dy };
@@ -215,6 +223,13 @@ function* ungVienDoiCho(hop: HinhChuNhat): Generator<HinhChuNhat> {
     yield dichHop(hop, k * buocNgang, 0);
     yield dichHop(hop, -k * buocNgang, 0);
     yield dichHop(hop, 0, k * buocDoc);
+    // ★ Đợt 49 (mục D) — CHÉO sau bốn hướng thẳng CÙNG BƯỚC: một panel chắn cả hàng và cả cột
+    //   (góc màn) thì bốn hướng thẳng không có đường nào; chéo là ô trống gần nhất còn lại mà
+    //   không phải nhảy sang `oTrongGanNhat` (đặc quyền của badge đỏ).
+    yield dichHop(hop, k * buocNgang, -k * buocDoc);
+    yield dichHop(hop, -k * buocNgang, -k * buocDoc);
+    yield dichHop(hop, k * buocNgang, k * buocDoc);
+    yield dichHop(hop, -k * buocNgang, k * buocDoc);
   }
 }
 

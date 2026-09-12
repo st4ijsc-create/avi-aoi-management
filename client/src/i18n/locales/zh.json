@@ -20212,6 +20212,7 @@
       "donViGiay": "{{n}} 秒",
       "nhanBiAn": "另有 {{n}} 个名称被隐藏",
       "suCoNgoaiKhung": "{{n}} 个告警在视野外",
+      "canhBaoBiAn": "另有 {{n}} 个告警被隐藏",
       "chiNhanBatThuongMoTa": "仅显示异常设备（及所选设备）的名称",
       "hienMoiNhanMoTa": "当前仅显示异常设备名称 — 点击显示全部名称",
       "breadcrumbAnCap": "上级层级",

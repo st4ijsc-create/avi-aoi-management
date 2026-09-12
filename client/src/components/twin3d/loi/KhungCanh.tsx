@@ -98,9 +98,41 @@ export interface CuaSoDoTwin3d {
    */
   __demTuongTac?: {
     demObject?: () => { soObject: number; coHandler: number; trongScene: number; ten: string[] };
-    hitTai?: (ndcX: number, ndcY: number) => { ten: string; batchId: number | null; khoangCach: number } | null;
-    tamMay?: (machineId: number) => { x: number; y: number; ndcX: number; ndcY: number; trongKhung: boolean } | null;
+    /**
+     * ★ Đợt 49 (A) — trả thêm `machineId` (đã đổi `batchId` → id máy qua bảng tra của `LoBatchMay`)
+     * và `domTai` (phần tử DOM TRÊN CÙNG tại điểm ấy). Đợt 48 phải tự đổi id ngoài trang và không
+     * biết lớp phủ nào đang nằm trên — hai bước suy diễn mà phép đo tự làm được.
+     */
+    hitTai?: (
+      ndcX: number,
+      ndcY: number,
+    ) => {
+      ten: string;
+      batchId: number | null;
+      machineId: number | null;
+      khoangCach: number;
+      domTai: { the: string; testid: string | null; machineId: number | null } | null;
+    } | null;
+    /** ★ Đợt 49 — `batchId` (chỉ số instance trong lô) → id máy. `LoBatchMay` gắn; `hitTai` dùng. */
+    mayTuBatch?: (batchId: number) => number | null;
+    /**
+     * ★ Đợt 49 (mục B) — SỐ LẦN `LoBatchMay` dựng lại `BatchedMesh` từ lúc tải trang. Bất biến
+     * §6.2 nói "không dựng lại vì một cập nhật trạng thái"; số này là cách duy nhất biết nó đúng.
+     * Đếm ở SẢN PHẨM (không gác `laCheDoDo`): một phép cộng số nguyên mỗi lần dựng.
+     */
+    soLanDungLo?: number;
+    /**
+     * ★ Đợt 49 (A) — thêm `biChe`: raycast camera→TÂM khối; giao đầu tiên KHÔNG phải máy này ⇒ id
+     * máy đang che (tâm không bấm được). `null` = tâm thấy được.
+     */
+    tamMay?: (
+      machineId: number,
+    ) => { x: number; y: number; ndcX: number; ndcY: number; trongKhung: boolean; biChe: number | null } | null;
     dsMay?: () => Array<{ machineId: number; x: number; y: number; trongKhung: boolean }>;
+    /** ★ Đợt 49 (A) — hộp THẬT của các nhãn đang vẽ (`LopNhan` gắn), px gốc canvas. */
+    hopNhanDaVe?: () => Array<{ machineId: number; hop: { trai: number; phai: number; tren: number; duoi: number } }>;
+    /** ★ Đợt 49 (A) — hình chiếu màn hình của KHỐI 3D từng máy (`LopNhan` gắn), px gốc canvas. */
+    hopKhoiMay?: () => Array<{ machineId: number; hop: { trai: number; phai: number; tren: number; duoi: number } }>;
   };
 }
 
@@ -325,13 +357,34 @@ function CuaSoDoTuongTac() {
       st.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), st.camera);
       const hits = st.raycaster.intersectObjects(st.internal.interaction.filter(coHandler), true);
       const h = hits[0] as (THREE.Intersection & { batchId?: number }) | undefined;
-      return h
-        ? {
-            ten: h.object.name || h.object.type,
-            batchId: typeof h.batchId === "number" ? h.batchId : null,
-            khoangCach: h.distance,
-          }
-        : null;
+      if (!h) return null;
+      const batchId = typeof h.batchId === "number" ? h.batchId : null;
+      // ★ Đợt 49 — phần tử DOM TRÊN CÙNG tại đúng điểm ấy: NDC → px client qua bbox canvas thật.
+      let domTai: { the: string; testid: string | null; machineId: number | null } | null = null;
+      try {
+        const r = st.gl.domElement.getBoundingClientRect();
+        const el = document.elementFromPoint(
+          r.left + ((ndcX + 1) / 2) * r.width,
+          r.top + ((1 - ndcY) / 2) * r.height,
+        );
+        if (el) {
+          const idAttr = el.closest("[data-machine-id]")?.getAttribute("data-machine-id") ?? null;
+          domTai = {
+            the: el.tagName,
+            testid: el.getAttribute("data-testid"),
+            machineId: idAttr === null ? null : Number(idAttr),
+          };
+        }
+      } catch {
+        domTai = null;
+      }
+      return {
+        ten: h.object.name || h.object.type,
+        batchId,
+        machineId: batchId === null ? null : (cua.mayTuBatch?.(batchId) ?? null),
+        khoangCach: h.distance,
+        domTai,
+      };
     };
     return () => {
       delete cua.demObject;

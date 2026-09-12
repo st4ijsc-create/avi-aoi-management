@@ -19,6 +19,7 @@ import * as THREE from "three";
 
 import {
   demCapChongLap,
+  demNhanDeKhoiMayKhac,
   locNhan,
   TRAN_NHAN_DOM,
   demDuoiChoChip,
@@ -26,8 +27,11 @@ import {
   type NhanUngVien,
   uocLuongRongNhanPx,
 } from "./locNhan";
-import { LOP_BADGE, docHopDaVe } from "./hopDaVe";
+import { LOP_BADGE, docHopDaVe, docSoAn } from "./hopDaVe";
 import { laBam, lechPx } from "./phanBietBamKeo";
+import { laCheDoDo } from "./cheDoDo";
+import type { MayTrongLo } from "./LoBatchMay";
+import type { CuaSoDoTwin3d } from "./KhungCanh";
 
 /**
  * ★★★ ĐỢT 35 (Pareto #5) — VÙNG CẤM LẤY TỪ DOM THẬT, MỖI KHUNG ĐƯỢC VẼ.
@@ -120,6 +124,30 @@ export interface LopNhanProps {
    */
   chuSuCoNgoaiKhung?: (n: number) => string;
   /**
+   * ★★★ ĐỢT 49 (mục D) — chữ ĐÃ QUA `t()` cho chip **"còn N cảnh báo ẩn"**.
+   *
+   * Đo được `/twin`@1280 (QA lần 7, 4.2): `tong 7 · ve 5 · soAn 2 · biChe 2` — hai cảnh báo bị
+   * GIẤU và màn không có chỉ báo nào; chip cũ chỉ nói về TÊN MÁY. NT-3 (*"không có dữ liệu ≠
+   * bình thường"*) áp cho alarm còn gắt hơn cho tên. Số lấy từ sổ chung do `LopCanhBao` ghi ở
+   * cùng khung (`docSoAn`), nên chip nằm TRONG cụm chip đã nghiệm thu "trong canvas, không bị
+   * che" (G122) thay vì dựng một cụm thứ hai đè lên nó.
+   * `undefined` ⇒ KHÔNG render chip (người gọi chưa nối — không có chuỗi rác).
+   */
+  chuCanhBaoAn?: (n: number) => string;
+  /**
+   * ★★★ ĐỢT 49 (mục A) — KHỐI 3D của MỌI máy đang vẽ, để nhãn **không đè thân máy KHÁC**.
+   *
+   * Kết cục đo được (QA Đợt 48): bấm TÂM KHỐI máy 246 ở `/twin`@1600 mở `/twin/may/1`, bấm tâm
+   * khối máy 23 ở Line@1280 mở `/twin/may/21` — vì `khiBam` dưới đây nhận điểm nằm trong hộp
+   * nhãn của máy khác và `stopPropagation()`. Nhãn bấm được là ĐÚNG (Đợt 47 N5); nhãn nằm ĐÈ
+   * thân máy khác là sai. Truyền `may` của cùng cảnh ⇒ `locNhan` coi hình chiếu khối máy khác
+   * là VÙNG TRÁNH MỀM. Bỏ trống ⇒ hành vi Đợt 47 y nguyên (bản GỠ VÁ của ablation mục A).
+   *
+   * ⚠ Đây là `MayTrongLo` NGUYÊN VẸN của `LoBatchMay`, KHÔNG phải một danh sách chép tay: chép
+   *   tay là cách chắc chắn để hai nơi lệch nhau một máy rồi không ai biết (G5).
+   */
+  khoiMay?: readonly MayTrongLo[];
+  /**
    * ★★★ Đợt 47 (N2) — BẤM LÊN NHÃN cũng chọn máy.
    *
    * Nhãn là chỉ báo `pointer-events: none` THEO THIẾT KẾ (kéo xoay camera phải xuyên
@@ -158,6 +186,62 @@ function chieu(
   return { x: ((v.x + 1) / 2) * rong, y: ((1 - v.y) / 2) * cao };
 }
 
+/** 8 góc của hộp đơn vị, hệ cục bộ của khối máy (nửa cạnh ±0,5 — `hinhHocDonViTuMoTa`). */
+const GOC_HOP_DON_VI: readonly (readonly [number, number, number])[] = [
+  [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5],
+  [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [0.5, 0.5, 0.5],
+];
+
+/**
+ * ★★★ ĐỢT 49 (mục A) — HÌNH CHIẾU MÀN HÌNH (AABB) của KHỐI 3D một máy.
+ *
+ * Dùng ĐÚNG phép đặt của `maTranDatMay` (`hinhHocTuMoTa.ts:105`): tâm ở
+ * `(x, y + cao/2, z)`, xoay quanh trục đứng `gocXoayRad`, tỉ lệ = kích thước mét. Viết lại ở đây
+ * chứ không gọi `maTranDatMay` vì ta cần 8 GÓC chứ không cần ma trận, và vì hàm này chạy mỗi
+ * khung: tránh dựng `Object3D` tạm 43 lần/khung.
+ *
+ * ⚠ Trả `null` khi BẤT KỲ góc nào ở sau lưng camera: một hộp có góc sau lưng camera chiếu ra
+ *   hình chữ nhật LẬT (toạ độ nhảy sang phía đối diện) — dùng nó làm vùng tránh thì nhãn né một
+ *   cái bóng không tồn tại. Không đo được thì không cấm, chứ không đoán.
+ */
+export function hopChieuKhoiMay(
+  m: Pick<MayTrongLo, "viTri" | "kichThuocMm" | "gocXoayRad">,
+  camera: THREE.Camera,
+  rong: number,
+  cao: number,
+  tam = new THREE.Vector3(),
+): HinhChuNhat | null {
+  const rM = m.kichThuocMm.rongMm / 1000;
+  const cM = m.kichThuocMm.caoMm / 1000;
+  const sM = m.kichThuocMm.sauMm / 1000;
+  const cosG = Math.cos(m.gocXoayRad);
+  const sinG = Math.sin(m.gocXoayRad);
+  let trai = Infinity;
+  let phai = -Infinity;
+  let tren = Infinity;
+  let duoi = -Infinity;
+  for (const [gx, gy, gz] of GOC_HOP_DON_VI) {
+    const lx = gx * rM;
+    const ly = gy * cM;
+    const lz = gz * sM;
+    // Xoay quanh Y rồi tịnh tiến về tâm khối.
+    tam.set(
+      m.viTri.x + lx * cosG + lz * sinG,
+      m.viTri.y + cM / 2 + ly,
+      m.viTri.z - lx * sinG + lz * cosG,
+    );
+    tam.project(camera);
+    if (!Number.isFinite(tam.x) || !Number.isFinite(tam.y) || tam.z > 1) return null;
+    const px = ((tam.x + 1) / 2) * rong;
+    const py = ((1 - tam.y) / 2) * cao;
+    if (px < trai) trai = px;
+    if (px > phai) phai = px;
+    if (py < tren) tren = py;
+    if (py > duoi) duoi = py;
+  }
+  return { trai, phai, tren, duoi };
+}
+
 export function LopNhan({
   nhan,
   dangChon,
@@ -168,6 +252,8 @@ export function LopNhan({
   chuNhanAn,
   chuNhanAnTheoChinhSach,
   chuSuCoNgoaiKhung,
+  chuCanhBaoAn,
+  khoiMay,
   onChonNhan,
 }: LopNhanProps) {
   // ★ Đợt 45 — một chỗ chọn câu cho chip: theo chính sách khi bật (và có câu), không thì câu chật chỗ.
@@ -178,6 +264,9 @@ export function LopNhan({
   const invalidate = useThree((s) => s.invalidate);
   /** ★ Đợt 47 — hộp THẬT (đã xếp tầng, kích thước đo được) của các nhãn đang vẽ, cho phép bấm-lên-nhãn. */
   const hopDaVeRef = useRef<{ machineId: number; hop: HinhChuNhat }[]>([]);
+  /** ★ Đợt 49 (A) — hình chiếu khối 3D từng máy ở KHUNG VỪA TÍNH; cửa sổ đo đọc đúng thứ bộ lọc đã dùng. */
+  const hopKhoiRef = useRef<{ khoa: string; machineId: number; hop: HinhChuNhat }[]>([]);
+  const khoiTamRef = useRef(new THREE.Vector3());
   const onChonNhanRef = useRef(onChonNhan);
   onChonNhanRef.current = onChonNhan;
   const coOnChonNhan = onChonNhan !== undefined;
@@ -202,6 +291,39 @@ export function LopNhan({
         (v) => x >= v.hop.trai && x <= v.hop.phai && y >= v.hop.tren && y <= v.hop.duoi,
       );
       if (!trung) return;
+      /*
+       * ══════════════════════════════════════════════════════════════════════
+       * ★★★ ĐỢT 49 (mục A) — NHÃN KHÔNG ĐƯỢC CƯỚP CLICK CỦA **KHỐI MÁY KHÁC**
+       * ══════════════════════════════════════════════════════════════════════
+       * Đợt 47 cho nhãn thắng "máy phía sau" vì nhãn nằm TRÊN về thị giác. Điều đó đúng khi
+       * máy phía sau là CHÍNH máy của nhãn (nhãn neo trên nóc nó). QA lần 7 đo được vế còn
+       * lại: sau khi xoay camera, nhãn máy A trôi lên THÂN máy B; người dùng nhắm vào thân B,
+       * bấm, và mở A — `/twin`@1600 máy 246 ⇒ `/twin/may/1`; Line@1280 máy 23 ⇒ `/twin/may/21`;
+       * census 13 lượt/212 tâm, bấm thử 2/2 ra máy của nhãn.
+       *
+       * `locNhan` (vùng tránh mềm) làm giảm số chỗ đè, nhưng hợp đồng của nó là *"hết chỗ thì
+       * GIỮ nhãn"* — nên vẫn còn chỗ đè, và ở đúng những chỗ ấy cú bấm vẫn sai. Hình học một
+       * mình không đóng được kết cục; quyền ƯU TIÊN phải nói ra ở chỗ quyết định.
+       *
+       * Luật: điểm bấm nằm trong hộp nhãn A **và** trong hình chiếu khối của một máy B ≠ A ⇒
+       * NHƯỜNG. Không `stopPropagation`, không gọi `onChonNhan`; cú click đi tiếp tới R3F,
+       * raycast chọn đúng thứ người dùng đang nhìn. Nhãn vẫn bấm được ở mọi chỗ nó KHÔNG đè
+       * thân máy khác (Đợt 47 N5 nguyên vẹn — e2e T1c/K7f canh điều đó).
+       *
+       * ⚠ Dùng hộp chiếu (AABB) chứ không raycast lại: hộp là thứ `locNhan` vừa dùng ở CÙNG
+       *   khung này, nên quyết định nhường và quyết định xếp chỗ không bao giờ nói khác nhau.
+       *   AABB rộng hơn khối thật một chút ⇒ nhường hơi sớm, và nhường sớm là phía an toàn:
+       *   mất một lối tắt (bấm nhãn) chứ không mở nhầm máy.
+       */
+      const deKhoiMayKhac = hopKhoiRef.current.some(
+        (k) =>
+          k.machineId !== trung.machineId &&
+          x >= k.hop.trai &&
+          x <= k.hop.phai &&
+          y >= k.hop.tren &&
+          y <= k.hop.duoi,
+      );
+      if (deKhoiMayKhac) return;
       // Nhãn thắng máy phía sau: chặn `click` nổi lên div bọc canvas nơi R3F đang nghe (`events.connected`).
       ev.stopPropagation();
       onChonNhanRef.current?.(trung.machineId);
@@ -220,6 +342,8 @@ export function LopNhan({
   const [soSuCoNgoai, setSoSuCoNgoai] = useState(0);
   /** ★ Đợt 45 — đệm dưới (px) để cụm chip đáy-giữa nhô lên trên lớp phủ chạm mép dưới canvas. */
   const [demDuoiPx, setDemDuoiPx] = useState(0);
+  /** ★ Đợt 49 (D) — số CẢNH BÁO bị giấu, do `LopCanhBao` ghi vào sổ chung ở cùng khung. */
+  const [soCanhBaoAn, setSoCanhBaoAn] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
   /**
@@ -286,14 +410,33 @@ export function LopNhan({
     //   CỘNG VÀO vùng cấm: MỘT ngân sách hình chữ nhật cho nhãn + badge, không phải hai bộ khử chồng độc lập
     //   (QA Đợt 46: nhãn đè badge 344–1.819 px²). Badge là alarm nên badge giữ chỗ, nhãn nhường — và nhường
     //   bằng cách ĐẨY TẦNG (`locNhan` Đợt 47), không phải biến mất.
+    const soAnBadge = docSoAn(gl.domElement, LOP_BADGE);
     const hopBadge = docHopDaVe(gl.domElement, LOP_BADGE);
     for (const h of hopBadge) vungCam.push(h);
     setDemDuoiPx((cu) => (cu === demDuoi ? cu : demDuoi));
+    // ★★★ Đợt 49 (A) — hình chiếu KHỐI 3D từng máy = vùng tránh MỀM (xem `CauHinhLocNhan.hopKhoiMay`).
+    //   Khoá phải TRÙNG `khoa` của nhãn cùng máy, nếu không khối của chính máy lại thành vùng tránh
+    //   của nhãn nó — máy không có nhãn dùng khoá `khoi:<id>` không đụng ai.
+    const khoaTheoMay = new Map<number, string>();
+    for (const n of nhan) khoaTheoMay.set(n.machineId, n.khoa);
+    const hopKhoiMay: { khoa: string; machineId: number; hop: HinhChuNhat }[] = [];
+    if (khoiMay) {
+      for (const m of khoiMay) {
+        if (m.hien === false) continue;
+        const h = hopChieuKhoiMay(m, camera, size.width, size.height, khoiTamRef.current);
+        if (h) hopKhoiMay.push({ khoa: khoaTheoMay.get(m.machineId) ?? `khoi:${m.machineId}`, machineId: m.machineId, hop: h });
+      }
+    }
+    hopKhoiRef.current = hopKhoiMay;
     const kq = locNhan(ungVien, {
       tranNhan,
       chiNhanBatThuong,
       khungCanvas: { rong: size.width, cao: size.height },
       vungCam,
+      // ★ Đợt 49 (A) — nhãn né thân máy KHÁC (mềm: hết chỗ thì giữ nhãn, đếm `soDeKhoiMayKhac`).
+      hopKhoiMay,
+      // ★ Đợt 49 (A+C) — dọc hết đường thì dời NGANG trước khi bỏ (mục C: 3/6 nhãn bất thường @1600 chưa hiện).
+      doiNgang: true,
       // ★ Đợt 35 — xếp tầng nhãn chồng (12 nóc máy cùng hàng sau khi khớp khung ⇒ 7/12 bị bỏ nếu không).
       xepTang: true,
       // ★ Đợt 38 — lên hết đường (panel Metrics đè ngay trên hàng máy @1280) thì đẩy XUỐNG trước khi bỏ.
@@ -317,6 +460,12 @@ export function LopNhan({
         // ★ Đợt 35 — ba đại lượng mới: hộp thò mép, bị lớp phủ che, và SỰ CỐ ngoài frustum.
         vuotMep: kq.soVuotMep,
         biChe: kq.soBiChe,
+        // ★ Đợt 49 (A) — hai đại lượng KHÁC NHAU, cố ý để cạnh nhau: `deKhoiKhac` là lời khai của
+        //   thuật toán ("phải dùng phương án chót"), `deKhoiKhacDoLai` là đếm lại từ KẾT QUẢ.
+        //   Lệch nhau ⇒ một trong hai sai; đó là điều ta muốn nghe, không phải điều muốn giấu.
+        deKhoiKhac: kq.soDeKhoiMayKhac,
+        deKhoiKhacDoLai: demNhanDeKhoiMayKhac(kq.ve, hopKhoiMay),
+        soHopKhoi: hopKhoiMay.length,
         soVungCam: vungCam.length,
         soLopPhuDom,
         soHopBadge: hopBadge.length,
@@ -348,12 +497,13 @@ export function LopNhan({
     hopDaVeRef.current = kq.ve.map((v) => ({ machineId: theoKhoa.get(v.khoa)!.machineId, hop: v.hop }));
 
     const chuKy =
-      `${kq.soBiGiau}#${kq.soBatThuongNgoaiKhung}#` +
+      `${kq.soBiGiau}#${kq.soBatThuongNgoaiKhung}#${soAnBadge}#` +
       kq.ve.map((v) => `${v.khoa}:${Math.round(v.x)}:${Math.round(v.y)}`).join("|");
     if (chuKy === chuKyRef.current) return;
     chuKyRef.current = chuKy;
     setSoAn(kq.soBiGiau);
     setSoSuCoNgoai(kq.soBatThuongNgoaiKhung);
+    setSoCanhBaoAn(soAnBadge);
 
     setHienThi(
       kq.ve.map((v) => {
@@ -381,16 +531,37 @@ export function LopNhan({
     tat,
     tranNhan,
     chiNhanBatThuong,
+    khoiMay,
     hienThi.length,
     soAn,
     soSuCoNgoai,
+    soCanhBaoAn,
   ]);
+
+  /**
+   * ★★★ ĐỢT 49 (mục A) — CỬA SỔ ĐO: hộp THẬT của nhãn đã vẽ + hình chiếu khối từng máy, của CÙNG
+   * một khung. QA Đợt 48 phải suy hộp nhãn từ DOM và không có hộp khối nào để so — nên "nhãn đè
+   * khối máy khác" chỉ đo được gián tiếp qua TÂM máy (13/212). Hai hàm này cho census đếm ĐÚNG
+   * đại lượng bản vá hứa: số cặp (nhãn máy A ∩ khối máy B, A≠B) và diện tích giao.
+   * Chỉ gắn ở `laCheDoDo()`; sản phẩm không đổi.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined" || !laCheDoDo()) return;
+    const w = window as Window & CuaSoDoTwin3d;
+    const cua = w.__demTuongTac ?? (w.__demTuongTac = {});
+    cua.hopNhanDaVe = () => hopDaVeRef.current.map((v) => ({ machineId: v.machineId, hop: { ...v.hop } }));
+    cua.hopKhoiMay = () => hopKhoiRef.current.map((v) => ({ machineId: v.machineId, hop: { ...v.hop } }));
+    return () => {
+      delete cua.hopNhanDaVe;
+      delete cua.hopKhoiMay;
+    };
+  }, []);
 
   // Chiếu lại mỗi khung ĐƯỢC VẼ. Với `frameloop="demand"` đây KHÔNG phải 60fps:
   // hàm chỉ chạy khi có ai đó gọi `invalidate()` (xoay camera, đổi dữ liệu).
   useFrame(tinhLai);
 
-  if (tat || (hienThi.length === 0 && soAn === 0 && soSuCoNgoai === 0)) return null;
+  if (tat || (hienThi.length === 0 && soAn === 0 && soSuCoNgoai === 0 && soCanhBaoAn === 0)) return null;
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -443,7 +614,9 @@ export function LopNhan({
           ★ `pointer-events:none` như mọi thứ trong lớp này: nó là chỉ báo,
             không phải nút. Đổi mật độ nhãn là việc của thanh công cụ.
         */}
-        {(chuNhanAn && soAn > 0) || (chuSuCoNgoaiKhung && soSuCoNgoai > 0) ? (
+        {(chuNhanAn && soAn > 0) ||
+        (chuSuCoNgoaiKhung && soSuCoNgoai > 0) ||
+        (chuCanhBaoAn && soCanhBaoAn > 0) ? (
           <div
             data-testid="cum-chip-nhan"
             data-dem-duoi-px={demDuoiPx}
@@ -485,6 +658,34 @@ export function LopNhan({
                 }}
               >
                 {chuSuCoNgoaiKhung(soSuCoNgoai)}
+              </div>
+            ) : null}
+            {/*
+              ★★★ ĐỢT 49 (mục D) — CHIP "CÒN N CẢNH BÁO ẨN".
+              Đo `/twin`@1280 (QA lần 7): `tong 7 · ve 5 · soAn 2 · biChe 2` — hai cảnh báo bị
+              GIẤU vì chạm lớp phủ DOM, và chỉ báo duy nhất là thuộc tính `data-so-an` mà chỉ
+              DOM đọc được. Chip nhãn bên dưới nói về TÊN MÁY, không nói về alarm; người vận
+              hành đếm 5 badge và tin đó là tất cả. Đứng NGAY DƯỚI chip "sự cố ngoài khung" vì
+              cùng loại khai báo (alarm không nhìn thấy được) và TRÊN chip tên máy vì alarm
+              quan trọng hơn tên. Viền đỏ, nền trung tính: nó nói về alarm nhưng bản thân nó
+              không phải một alarm mới.
+            */}
+            {chuCanhBaoAn && soCanhBaoAn > 0 ? (
+              <div
+                data-testid="chip-canh-bao-bi-an"
+                data-so={soCanhBaoAn}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  background: "var(--muted, rgba(15,23,42,0.78))",
+                  color: "var(--destructive, #ef4444)",
+                  border: "1px solid var(--destructive, #ef4444)",
+                }}
+              >
+                {chuCanhBaoAn(soCanhBaoAn)}
               </div>
             ) : null}
             {chuChipAn && soAn > 0 ? (
@@ -581,6 +782,12 @@ export interface WindowCoDo extends Window {
      * ★ Đợt 35 — số vùng cấm ở khung này. ★ Đợt 47 — = lớp phủ DOM + hộp badge đã vẽ (`soLopPhuDom` +
      * `soHopBadge`); 0 ⇒ màn chưa đánh dấu lớp phủ nào VÀ không có badge.
      */
+    /** ★ Đợt 49 (A) — số nhãn ĐÃ VẼ còn đè khối máy khác, theo lời khai của `locNhan`. */
+    deKhoiKhac: number;
+    /** ★ Đợt 49 (A) — ĐẾM LẠI từ kết quả bằng `demNhanDeKhoiMayKhac`. Phải bằng `deKhoiKhac`. */
+    deKhoiKhacDoLai: number;
+    /** ★ Đợt 49 (A) — số khối máy chiếu được ở khung này (0 = người gọi không truyền `khoiMay`). */
+    soHopKhoi: number;
     soVungCam: number;
     /** ★ Đợt 47 (N5) — riêng số lớp phủ DOM (`[data-che-nhan]`) — con số Đợt 35 của `soVungCam`. */
     soLopPhuDom: number;
