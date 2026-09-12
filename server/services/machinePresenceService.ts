@@ -137,21 +137,47 @@ export async function sweepPresenceFromTelemetry(): Promise<{ checked: number; c
   if (!db) return { checked: 0, changed: 0 };
 
   const ttl = ttlSeconds();
-  // MAX(ts) mỗi máy dùng index idx_ot_telemetry_machine_ts; chỉ máy active + có telemetry.
-  const res = await db.execute(sql`
-    SELECT m.id AS "machineId", t.max_ts AS "lastTs"
-    FROM machines m
-    JOIN (
-      SELECT "machineId", MAX(ts) AS max_ts
-      FROM ot_telemetry
-      WHERE "machineId" IS NOT NULL
-      GROUP BY "machineId"
-    ) t ON t."machineId" = m.id
-    WHERE m."isActive" = true
-  `);
-
-  const rows: Array<{ machineId: number; lastTs: string | Date | null }> =
-    ((res as any).rows ?? res ?? []) as any;
+  /*
+   * ★★★ ĐỢT 50 MỤC C — HỎI TỪNG MÁY MỘT HÀNG MỚI NHẤT, KHÔNG `GROUP BY` CẢ KHO.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Bản cũ khai "MAX(ts) mỗi máy dùng index idx_ot_telemetry_machine_ts" — LỜI KHAI
+   * ẤY SAI, đo bằng EXPLAIN ANALYZE ngày 2026-09-12 (`.qa-dot50/C-do.json`):
+   * `GROUP BY "machineId"` KHÔNG có `WHERE` nào chọn được máy nên Postgres quét
+   * TOÀN BỘ `ot_telemetry` (33.504.873 hàng, 10 chunk — VectorAgg + Parallel Seq
+   * Scan trên từng chunk nén) rồi mới JOIN bỏ đi tất cả trừ 42 máy active:
+   *     CŨ   881,3 / 1.011,5 / 1.217,7 / 1.127,1 ms
+   *     MỚI   43,5 /   52,0 /   70,4 /  121,6 ms      (nguội 121,6)
+   * ⇒ ~20× nhanh hơn với ĐẦU RA GIỐNG TỪNG BYTE: md5 `e19a6309…` cho cả hai hình
+   *   dạng chạy trong CÙNG một snapshot `REPEATABLE READ`, cùng 42 máy.
+   *
+   * ★ Vì sao đây KHÔNG phải "phải có index": index `idx_ot_telemetry_machine_ts`
+   *   (`"machineId", ts DESC`) ĐÃ CÓ trên mọi chunk. Cái thiếu là một HẰNG SỐ
+   *   `machineId` trong kế hoạch để dùng được nó — `GROUP BY` toàn bảng không cho.
+   *   Với một máy, EXPLAIN cho `Index Only Scan … Index Cond: ("machineId" = 1)`
+   *   và 9/10 chunk "never executed". KHÔNG cần migration, KHÔNG cần index mới.
+   *
+   * ★ Hợp đồng GIỮ NGUYÊN: chỉ máy `isActive` VÀ CÓ ít nhất một hàng ot_telemetry
+   *   mới xuất hiện — máy chưa từng gửi telemetry vẫn bị BỎ QUA (không bịa
+   *   'offline'), y như `JOIN` cũ đã làm. Cũng KHÔNG thêm cửa sổ thời gian vào
+   *   `WHERE`: TTL phải so với mốc telemetry THẬT CUỐI CÙNG, kể cả khi nó cũ hơn
+   *   TTL rất nhiều — đó chính là bằng chứng để kết luận 'offline'.
+   *
+   * ★ Chặn song song ở `BUOC_MAY` để nhà máy nhiều máy không nuốt hết pool nền.
+   */
+  const BUOC_MAY = 8;
+  const resMay = await db.execute(sql`SELECT id FROM machines WHERE "isActive" = true ORDER BY id`);
+  const dsMay: Array<{ id: number }> = ((resMay as any).rows ?? resMay ?? []) as any;
+  const rows: Array<{ machineId: number; lastTs: string | Date | null }> = [];
+  for (let i = 0; i < dsMay.length; i += BUOC_MAY) {
+    const lo = dsMay.slice(i, i + BUOC_MAY);
+    const ket = await Promise.all(
+      lo.map((m) => db.execute(sql`SELECT ts FROM ot_telemetry WHERE "machineId" = ${m.id} ORDER BY ts DESC LIMIT 1`)),
+    );
+    for (const [j, r] of ket.entries()) {
+      const hang: Array<{ ts: string | Date | null }> = ((r as any).rows ?? r ?? []) as any;
+      if (hang[0]) rows.push({ machineId: Number(lo[j].id), lastTs: hang[0].ts });
+    }
+  }
 
   const nowMs = Date.now();
   const thresholdMs = ttl * 1000;
