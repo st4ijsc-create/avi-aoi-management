@@ -363,6 +363,16 @@ export function LopNhan({
 
   const tinhLai = useCallback(() => {
     if (tat || nhan.length === 0) {
+      /*
+       * ★★★ ĐỢT 49 (mục A, lớp lỗi cùng họ) — XOÁ SỔ HỘP KHI KHÔNG CÒN NHÃN.
+       * Nhánh này có từ Đợt 47 và chỉ dọn STATE; hai `ref` hộp thì không. Nhưng `khiBam` đọc
+       * `hopDaVeRef` — nên ở bậc mật độ `tat_nhan` (hoặc khi tập nhãn về rỗng), cú bấm vào chỗ
+       * một nhãn TỪNG ĐỨNG vẫn bị nhận là "bấm nhãn" và điều hướng tới máy của cái nhãn đã biến
+       * mất. Đúng một họ với K7a/K7b: một hộp vô hình cướp click. Không lưới nào bắt vì cả hai
+       * lưới nhãn đều chạy ở bậc mật độ mặc định.
+       */
+      hopDaVeRef.current = [];
+      hopKhoiRef.current = [];
       if (hienThi.length !== 0) setHienThi([]);
       if (soAn !== 0) setSoAn(0);
       if (soSuCoNgoai !== 0) setSoSuCoNgoai(0);

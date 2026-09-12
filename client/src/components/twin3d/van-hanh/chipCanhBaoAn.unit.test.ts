@@ -151,3 +151,25 @@ describe("D.3 — NỐI DÂY đủ bốn chặng (G5: prop 'có mặt' mà khôn
     }
   });
 });
+
+describe("Đợt 49 — nhánh `tat`/0 nhãn phải DỌN SỔ HỘP (hộp vô hình không được cướp click)", () => {
+  it("★★★ `tinhLai` xoá `hopDaVeRef` và `hopKhoiRef` trước khi return ở nhánh tắt nhãn", () => {
+    const i = LOP_NHAN.indexOf("if (tat || nhan.length === 0) {");
+    expect(i, "nhánh tắt nhãn phải còn tồn tại").toBeGreaterThan(-1);
+    const than = LOP_NHAN.slice(i, LOP_NHAN.indexOf("return;", i));
+    expect(than).toContain("hopDaVeRef.current = []");
+    expect(than).toContain("hopKhoiRef.current = []");
+  });
+
+  it("★★★ `khiBam` NHƯỜNG khi điểm bấm nằm trong hình chiếu khối của máy KHÁC", () => {
+    expect(LOP_NHAN).toMatch(/const deKhoiMayKhac = hopKhoiRef\.current\.some\(/);
+    expect(LOP_NHAN).toMatch(/k\.machineId !== trung\.machineId/);
+    // Nhường = KHÔNG stopPropagation và KHÔNG gọi onChonNhan — phải đứng TRƯỚC cả hai.
+    const iN = LOP_NHAN.indexOf("if (deKhoiMayKhac) return;");
+    const iS = LOP_NHAN.indexOf("ev.stopPropagation();", iN);
+    const iC = LOP_NHAN.indexOf("onChonNhanRef.current?.(trung.machineId)", iN);
+    expect(iN).toBeGreaterThan(-1);
+    expect(iS).toBeGreaterThan(iN);
+    expect(iC).toBeGreaterThan(iS);
+  });
+});
