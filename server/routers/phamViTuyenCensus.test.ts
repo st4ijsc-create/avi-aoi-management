@@ -75,7 +75,14 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
  *   (D 72 · tong 224) ĐÃ ĐỎ TRƯỚC đợt này — độ trôi của lô khác. Tôi chỉ đổi A/S đúng **2** phần của mình,
  *   **để nguyên** D/tong/§1 cho bên đó ký (cùng luật Đợt 40 ở `phamViDocCensus.test.ts`).
  */
-const GHIM = { A: 81, C: 38, D: 71, S: 17, U: 16, tong: 223 } as const;
+// ★★★ ĐỢT 49 (mục E) — **D 71→72 · tong 223→224**, và bề mặt tĩnh ghim `index.ts:653` → `:650`.
+// Cùng một gốc với census thủ tục (xem docblock GHIM ở `phamViDocCensus.test.ts`): số ghim được
+// cộng tay trên chú thích chứ không đo lại. Bằng chứng cho riêng dòng `:653`: `app.use("/uploads",
+// express.static(uploadsRoot))` là CÙNG MỘT tuyến, chỉ bị dời 3 dòng lên khi vùng trên nó gọn lại
+// giữa `2cb1f771` và `34c4be3d` (đo: chuỗi mốc trong `index.ts` ở dòng 609 tại `2cb1f771`, dòng 606
+// tại `34c4be3d`/`d7a6a6c7`/HEAD). Không có tuyến tĩnh nào MỚI được mở ra web — điều mà ô ghim này
+// sinh ra để bắt. `git diff d7a6a6c7..HEAD -- server/` RỖNG ⇒ độ lệch có từ trước baseline.
+const GHIM = { A: 81, C: 38, D: 72, S: 17, U: 16, tong: 224 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -123,7 +130,7 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     //   THẬT bằng socket thô (ghi trong báo cáo). Ghim danh sách để một lượt gắn thư mục MỚI ra
     //   web vẫn phải được ký tên.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:653",
+      "server/_core/index.ts:650",
       "server/_core/vite.ts:58",
     ]);
   });

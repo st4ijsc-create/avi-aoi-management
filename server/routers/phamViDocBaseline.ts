@@ -307,11 +307,13 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.getActive",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions",
-  // ── server/routers/maintenanceRouter.ts (4) ────────────────────────────────────────────────
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.getWorkOrder",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.listWorkOrders",
+  // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
+  // ★ Đợt 49 (mục E) — XOÁ 3 dòng `getWorkOrder` · `listWorkOrders` · `summary`: bộ quét xếp cả ba
+  //   vào nhóm **S** (đã lọc phạm vi) từ trước baseline `d7a6a6c7`, nên §5 ("sổ nợ không được hoá
+  //   thạch") đỏ suốt từ Đợt 40. Trả nợ = XOÁ DÒNG, nhìn thấy được trong diff — không phải nới §5.
+  //   ⚠ Xoá khỏi sổ KHÔNG đổi dân số nhóm A (A do bộ quét đếm trên mã, sổ chỉ là danh sách miễn
+  //     trừ): đo A = 342 cả trước lẫn sau lượt xoá này.
   "server/routers/maintenanceRouter.ts#maintenanceRouter.partsBelowReorder",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.summary",
   // ── server/routers/maintenanceScheduleRouter.ts (2) ────────────────────────────────────────
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.get",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",

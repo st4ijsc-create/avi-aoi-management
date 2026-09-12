@@ -351,7 +351,39 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   và §5 vẫn 3 mục `maintenanceRouter` — §3/§5 ĐÃ ĐỎ TRƯỚC đợt này (không đổi từ Đợt 40). Sau vá
 //   (`.qa-dot42/census-sau-va.log`): A 342 · S 324, phần còn lại y nguyên. Tôi chỉ hạ A đúng **4** phần
 //   của mình và **để nguyên** C/D/S/tong + 3 mục kia cho bên đó ký — cùng luật Đợt 40.
-const GHIM = { A: 342, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 49 (mục E) — **C 472→474 · D 1101→1119 · S 290→324 · tong 2234→2267.** VÀ LÝ DO KHÔNG
+//     PHẢI "ĐỘ TRÔI CỦA LÔ KHÁC" NHƯ BỐN KHỐI CHÚ THÍCH TRÊN ĐÃ VIẾT.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// Brief Đợt 49 hỏi đúng câu cần hỏi: *vì sao dân số đổi khi 0 commit chạm `server/` từ baseline
+// `d7a6a6c7`?* Đo, không đoán — chạy CHÍNH bộ quét này trên bốn cây `git archive` rời nhau
+// (`.qa-dot49/dem-census.mts`, thư mục tạm, KHÔNG đo trên worktree dùng chung):
+//
+//     2cb1f771 → A 363 · B 8 · C 470 · D 1097 · S 286 · tong 2224   (cây mà GHIM tự nhận là của nó)
+//     34c4be3d → A 351 · B 8 · C 474 · D 1119 · S 315 · tong 2267
+//     6eec818f → A 346 · B 8 · C 474 · D 1119 · S 320 · tong 2267
+//     d7a6a6c7 → A 342 · B 8 · C 474 · D 1119 · S 324 · tong 2267   (= HEAD hôm nay, `git diff
+//                 d7a6a6c7..HEAD -- server/` RỖNG)
+//
+// Hai điều đọc thẳng ra từ bảng này:
+//  1. **Không có gì trôi từ `d7a6a6c7`.** C/D/S/tong ở HEAD y hệt baseline. Tiền đề "dân số đổi"
+//     sai; thứ sai là GHIM, và nó đã sai TRƯỚC baseline.
+//  2. ★★★ **GHIM chưa bao giờ là một PHÉP ĐO.** Ở `2cb1f771` — cây mà chính chú thích GHIM viện
+//     dẫn — bộ quét cho C 470 · D 1097 · S 286 · tong 2224, KHÔNG phải 472/1101/290/2234. Con số
+//     ghim được sinh bằng **số học trên chú thích**: mỗi đợt cộng tay "+1 D", "+4 S" vào literal
+//     rồi ghi lý do, mà không lần nào chạy lại bộ quét. Sai số cộng dồn, và mỗi đợt sau lại giải
+//     thích phần dư bằng câu *"độ trôi của lô khác — để bên đó ký"* (bốn khối chú thích ở trên,
+//     từ Đợt 14 tới Đợt 42). Không ai ký, vì không có gì để ký: khoản nợ ấy không tồn tại.
+//
+// ⇒ Từ đây GHIM = SỐ ĐO ĐƯỢC trên cây HEAD, cả năm nhóm. A/B giữ nguyên (342/8) vì chúng đã được
+//   đo đúng ở Đợt 42. Nếu lượt sau thấy ô này đỏ: **chạy `.qa-dot49/dem-census.mts` trên cây
+//   COMMIT trước đã** — nếu số đo khác GHIM thì có thủ tục mới thật; nếu bằng thì cái sai là
+//   phép cộng tay của ai đó, như suốt Đợt 14→42.
+// ⚠ Brief Đợt 49 còn dặn "xoá 3 mục `maintenanceRouter` khỏi sổ nợ rồi HẠ `GHIM.A` tương ứng".
+//   Vế sau SAI: `GHIM.A` là dân số nhóm A do bộ quét ĐẾM trên mã, còn sổ nợ là danh sách miễn trừ;
+//   ba mục ấy đã rời nhóm A từ trước (§5 đỏ vì thế), nên xoá chúng khỏi sổ **không đổi A**. Đo:
+//   A = 342 trước và sau khi xoá. Hạ A xuống 339 mới đúng là "sửa cho xanh".
+const GHIM = { A: 342, B: 8, C: 474, D: 1119, S: 324, tong: 2267 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
