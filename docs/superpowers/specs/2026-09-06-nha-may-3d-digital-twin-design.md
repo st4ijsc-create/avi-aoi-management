@@ -6922,6 +6922,11 @@ EXPLAIN: `DISTINCT ON` 703–827 ms (Seq Scan 3 chunk chưa nén + external merg
 **Còn mở:** (1) **2–3/44 đột biến của Đợt 50 vẫn chưa có nguyên nhân** — không định vị được vì không tái hiện; muốn đóng phải bắt được điều kiện sinh ra chúng trước. (2) `check:tests` 32 lỗi TS nợ có sẵn. (3) `capChuoiVarcharDuongIngestMacDinh.test.ts` 4 đỏ — neo cứng, đề xuất neo theo lời gọi. (4) **Index MỚI chỉ có trên DEV**; production cần cửa sổ bảo trì, thủ tục 3 bước ghi ở cuối `drizzle/0356`. (5) 67 harness trong `.qa-dot30…50/` vẫn ghi sang thư mục của ĐỢT KHÁC (`.qa-dot51/B-quet-SAU.json`) — không sửa tệp đợt cũ, nhưng ai dùng lại phải `grep -n "qa-dot"` trước.
 
 
+#### 14q.30.1 Đo lại độc lập (chủ dự án)
+HEAD `389fa9b3`, 5 commit đã push `fresh`. Tôi đo lại: `vitest twin3d` **103 tệp / 2 452 xanh** · `npm run check` exit 0 · **`npm run check:tests` exit 2 / 32 lỗi TS** (xác nhận nợ có sẵn agent báo — từ nay vào cổng thường trực) · index **`idx_health_machine_created_desc` 6 616 kB CÓ THẬT trong DB dev** (`pg_indexes`, cạnh 7 index cũ) · md5 5 ảnh `test-results/` 5/5 · DB 6 khoá y trước · cổng 3051 tắt, 3000/3001/3008/8080 nguyên · `.qa-dot47/` vẫn **103/616 tệp 0 byte** — không đắp, không xoá (G130). Cây mã sạch, index git rỗng.
+
+**Đợt 52 = QA lần 8 NGHIỆM THU CUỐI** (chủ sở hữu chọn): chấm yêu cầu gốc + *tối ưu · nhanh · đẹp · trực quan* + QĐ-18/19/21/23/24/25/27, bấm tâm khối máy ≥ 5 máy/màn/vp **kể cả máy bị nhãn phủ**, F1 ≥ 7 lượt, `[SLOW QUERY]` đọc từ **stderr**, 22 trạng thái vi+en, D-4 6 vai, và **chạy MỌI script kiểm trong `package.json`** (G108 đã cắn 4 lần).
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
