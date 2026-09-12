@@ -7031,6 +7031,30 @@ HEAD `389fa9b3`, 5 commit đã push `fresh`. Tôi đo lại: `vitest twin3d` **1
 > #### ★★★ G141 - **`dist/` KHÔNG CÓ LAI LỊCH: thứ đang phục vụ người dùng có thể cũ hơn HEAD nhiều đợt mà không ai thấy.**
 > Bản dựng bị `.gitignore`, không mang commit hash, không ai đo — nên 4 ca e2e đỏ suýt bị đọc là hồi quy trong khi **0 byte mã sản phẩm đổi**. Cách đọc đúng: **grep tên biểu tượng mới trong bundle** (có `soHopBadge` = đối chứng dương, thiếu `hopManHinh`/`hopKhoiMay` = kết luận), đối chiếu với commit đưa biểu tượng ấy vào. **Trước mọi phép đo trên `dist`, chứng minh `dist` là bản dựng của commit đang đo** (md5 build lặp + grep biểu tượng); và nên nhúng commit hash vào bản dựng.
 
+### 14q.35 Đợt 56 — vá 0/4, và bản dựng đang phục vụ hoá ra có lỗ rò tenant (2026-09-12, 2 commit `f8e853e1`, `9a786e03` + restart)
+
+**A — "8 chỗ `DISTINCT ON` chưa vá" là SAI: SQL thật có 4, và vá 0/4.** 9 dòng grep nhưng **5 là bình luận** (G106 lặp lại). Bốn câu thật, tất cả trên đường `overview` → `factoryCommandRouter.ts:50` → `van-hanh/useTrangThaiSong.ts:87` → ba màn Twin (5–30 s/lượt):
+
+| dòng | bảng | EXPLAIN **ấm** | phán quyết |
+|---|---|---|---|
+| 252 | `machine_status_logs` | Seq Scan 7 814 hàng → **quicksort trong RAM 498 kB**, 0 đọc đĩa, **3,3 ms** | không vá (0/3 tiêu chí) |
+| 264 | `machine_heartbeats` | hypertable SkipScan + ColumnarScan, ra 36 hàng, **0,8 ms** | không vá |
+| 277 | `machine_positions` | bảng **0 hàng**, **0,7 ms** | không vá (bước luôn rỗng) |
+| 317 | `machine_health_history` | SkipScan → Index Scan `idx_health_machine_created_desc`, quét thật **43/217 683 hàng**, **0,8 ms** | **đã vá từ Đợt 53** |
+
+Ngưỡng `[SLOW QUERY]` = **200 ms** (`queryMonitor.ts:40`); câu chậm nhất = 3,3 ms = **1,7 % ngưỡng** ⇒ chưa câu nào từng sinh một dòng log chậm. **Không xin index nào.** Pareto thật của thủ tục (ấm 22,4 ms / 41 máy): **OEE chiếm 34,4 %**, lớn hơn cả bốn câu `DISTINCT ON` cộng lại (25 %). ★ Số "136,7 ms / external merge 8 824 kB" mà sổ nợ Đợt 55 và brief tôi chép lại **mô tả bản mã đã chết** (`:289` trước khi Đợt 53 vá) — G83 lần thứ 25.
+
+**B — `e2e/` lần đầu được `tsc` nhìn tới.** Thêm `"e2e/**/*"` vào `include` của `tsconfig.tests.json` (giữ nguyên phạm vi cổng sản phẩm). `check:tests` 27 → 32 → **27 lỗi, 0 trong `e2e/`, 0 trong `twin3d`**, và **danh sách 27 lỗi còn lại md5 giống hệt trước/sau** ⇒ không đánh đổi lỗi này lấy lỗi kia. Ablation 2 chiều: cài một lỗi kiểu vào spec ⇒ 28 (e2e 1), gỡ ⇒ 27 (e2e 0) — cổng thật. ⚠ `@types/pngjs` **không có trong `node_modules`** (brief tôi đoán có) ⇒ khai kiểu hẹp tại `e2e/pngjs.d.ts` thay vì cài mạng; `pngjs` là **phụ thuộc ma**: 17 chỗ gọi mà `package.json` không khai.
+
+**C — dựng lại `dist/` (chủ sở hữu duyệt).** md5 toàn thư mục `423b4e86…` (03:52) → `8e48c933…` (22:21), **922 tệp**, build hai lần **md5 khớp tuyệt đối 922/922**. Ba dấu Đợt 49+ (`hopKhoiMay`, `hopManHinh`, `hopNhanDaVe`): **0/3 → 3/3**. Bốn phép đo Đợt 55 nợ nay chạy được và sạch: e2e bấm cảnh **16/16** (Đợt 55: 12/16 — 4 ca T1g đỏ đúng vì nhị phân cũ, thông báo đỏ chính là `hopKhoiMay = 0`), thị giác **24/24 vi + 24/24 en**, bbox **34/34**, 4 lưới phạm vi **180/180**.
+
+★★★ **Phát hiện ngoài mọi brief — bản dựng đang phục vụ có LỖ RÒ TENANT.** Gọi `overview` bằng hai vai trên cả hai nhị phân: bản **cũ** trả `operator1` **41 máy** với md5 **giống hệt** vai supervisor; bản **mới** trả **0 máy**. DB xác nhận `operator1` (id=48) có **0** hàng `user_factory_assignments`. Đây đúng là G113 — vá từ **Đợt 40**, nhưng **chưa bao giờ vào nhị phân đang chạy**: suốt 16 đợt, hai cổng 3001/3008 phục vụ một bản có lỗ rò mà mọi phép đo bảo mật (D-4, 180/180, 0/299 ô lệch) đều xanh vì chúng đo trên `dist` **dựng riêng trong phiên**, không phải trên thứ đang chạy.
+
+**Xử lý (chủ dự án):** tôi khởi động lại hai tiến trình — chúng hoá ra **là của chính phiên tôi** từ 07/09 và 09/09 trên `_twin_wt` (phiên bạn kia đọc `Win32_Process` và đính chính; suốt 20+ đợt tôi vẫn xếp chúng vào "cổng phiên khác, cấm chạm"). PID cũ 37128/38472 → mới **23980 (3001) / 32584 (3008)**, cả hai trả 200, bundle `index-Bqq-JPgM.js` → `index-hIeKtQvc.js`, chunk Twin `KhungCanh-USiPFzIl.js` + `sucKhoeMay-CnBDef6Z.js` chứa đủ 3 dấu. ⚠ Phép đo đầu của tôi grep 3 dấu trong **chunk entry** và ra 0/3 — sai vì code-splitting; **đối chứng dương `soHopBadge` cũng = 0** mới lộ ra là thiết bị đo hỏng chứ không phải bundle thiếu (G139 áp dụng cho chính tôi).
+
+> #### ★★★ G142 - **"ĐÃ VÁ" CHỈ ĐÚNG VỚI CÂY MÃ; THỨ ĐANG PHỤC VỤ NGƯỜI DÙNG LÀ MỘT BẢN KHÁC, PHẢI ĐO RIÊNG.**
+> Lỗ rò tenant G113 vá ở Đợt 40 và được 6 lần QA xác nhận đóng — nhưng mọi lần đều đo trên `dist` dựng riêng trong phiên, trong khi hai cổng thật vẫn chạy nhị phân trước bản vá **suốt 16 đợt**. Cổng nghiệm thu phải có một ca **gọi thẳng vào cổng đang chạy** (không phải bản dựng của phép đo), và bản dựng nên nhúng commit hash để so được. Hệ quả tổ chức: **mọi tiến trình mình khởi động phải có sổ chủ sở hữu** — 20 đợt tôi né hai cổng vì tưởng của phiên khác, hoá ra là của mình.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
