@@ -107,8 +107,29 @@ export interface BadgeDuocVe extends BadgeUngVien {
   doiCho: boolean;
   xGoc: number;
   yGoc: number;
-  /** Hộp ĐÃ DÙNG để khử chồng — cho sổ `hopDaVe` (lớp nhãn nhường) và e2e đối chiếu. `null` khi ngoài khung (miễn). */
+  /** Hộp ĐÃ DÙNG để khử chồng BADGE×BADGE và e2e đối chiếu. `null` khi ngoài khung (được MIỄN phép khử chồng). */
   hop: HinhChuNhat | null;
+  /**
+   * ★★★ ĐỢT 53 (QA lần 8, SAI #1) — HỘP THẬT SỰ CHIẾM PIXEL TRÊN MÀN. LUÔN có, kể cả `ngoaiKhung`.
+   *
+   * Vì sao phải là MỘT TRƯỜNG KHÁC `hop`, không phải "bỏ `null` đi": hai câu hỏi khác nhau đi qua
+   * cùng một trường và đã trộn vào nhau suốt 6 đợt.
+   *   1. *"badge này có được tính khi khử chồng badge×badge không?"* → `hop` (`null` = MIỄN, vì badge
+   *      bị kẹp rìa chồng nhau là hành vi ĐÚNG theo §10.3 luật 3 — thà chồng còn hơn biến mất).
+   *   2. *"badge này che mất bao nhiêu pixel của lớp KHÁC?"* → `hopManHinh`. Badge kẹp rìa **vẫn vẽ
+   *      bằng DOM, vẫn z-index 30, vẫn đè lên nhãn bên dưới**. Nó được miễn câu 1, KHÔNG được miễn câu 2.
+   *
+   * Đo được (`.qa-dot53/probe/truoc/tong.json`, dist trên 3053, `e2e_tai_loE`): `/twin/may/18` — máy
+   * ĐANG có 1 cảnh báo mở — badge `badge-canh-bao-11` có `data-ngoai-khung="1"` ⇒ `hop = null` ⇒
+   * `LopCanhBao` lọc nó khỏi sổ `hopDaVe` ⇒ `LopNhan.__demNhan.soHopBadge = **0**` trong khi
+   * `__demBadge.ve = **1**`. Lớp nhãn KHÔNG BIẾT badge tồn tại ⇒ không nhường ⇒ badge (z 30) đè nhãn
+   * tên máy (z 20) **1 584 px² = 35 %** @1600 và **744 px² = 17 %** @1280, cả vi lẫn en (4/4 ca).
+   *
+   * ⚠ Đối chứng trong CÙNG phép đo, thứ bác bỏ giả thuyết "màn Máy thiếu chính sách": `/twin` cho
+   *   `soHopBadge = 7` = `__demBadge.ve = 7` và Line cho `2 = 2` — chính sách CÓ ĐỦ ở cả ba màn; thứ
+   *   thiếu là HỘP của badge bị kẹp rìa. Ở `/twin`/Line hôm nay không badge nào bị kẹp nên lỗi câm.
+   */
+  hopManHinh: HinhChuNhat;
 }
 
 /**
@@ -312,7 +333,16 @@ export function locBadge(
     //   cũng KHÔNG góp hộp vào `hopDaGiu` — nếu góp, một chùm badge bị kẹp ở rìa
     //   sẽ dựng một bức tường vô hình giết các badge TRONG khung đi ngang qua đó.
     if (b.ngoaiKhung) {
-      ve.push({ ...b, doiCho: false, xGoc: b.x, yGoc: b.y, hop: null });
+      // ★ Đợt 53 — `hop` vẫn `null` (miễn khử chồng badge×badge, §10.3 luật 3) NHƯNG `hopManHinh` có
+      //   thật: badge kẹp rìa vẫn chiếm pixel và vẫn đè lớp nhãn. Sổ `hopDaVe` đọc `hopManHinh`.
+      ve.push({
+        ...b,
+        doiCho: false,
+        xGoc: b.x,
+        yGoc: b.y,
+        hop: null,
+        hopManHinh: hopBadge(b, rongMacDinh, caoMacDinh),
+      });
       continue;
     }
 
@@ -350,6 +380,7 @@ export function locBadge(
       xGoc: b.x,
       yGoc: b.y,
       hop: hopVe,
+      hopManHinh: hopVe,
     });
     hopDaGiu.push(hopVe);
     if (doiCho) soDoiCho += 1;

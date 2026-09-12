@@ -40,7 +40,6 @@ import * as THREE from "three";
 import { giaiMauCanh } from "../mauTrangThai";
 import { TAM_CANVAS, layVungCam } from "../loi/LopNhan";
 import { LOP_BADGE, ghiHopDaVe, ghiSoAn, xoaHopDaVe, xoaSoAn } from "../loi/hopDaVe";
-import type { HinhChuNhat } from "../loi/locNhan";
 import {
   demCapChongLapBadge,
   locBadge,
@@ -250,11 +249,18 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
       vungCam,
       doiCho: true,
     });
-    // ★ Đợt 47 (N5) — ghi hộp đã vẽ vào sổ chung: `LopNhan` (chạy SAU trong cùng khung) nhường chỗ này.
+    /*
+     * ★ Đợt 47 (N5) — ghi hộp đã vẽ vào sổ chung: `LopNhan` (chạy SAU trong cùng khung) nhường chỗ này.
+     * ★★★ Đợt 53 (QA lần 8, SAI #1) — ghi `hopManHinh`, KHÔNG phải `hop`. `hop` là `null` cho badge bị
+     *   KẸP RÌA (miễn khử chồng badge×badge theo §10.3 luật 3) và bản cũ `filter(h !== null)` đã ném
+     *   đúng những badge ấy ra khỏi sổ — trong khi chúng vẫn vẽ, vẫn z 30, vẫn đè nhãn. Đo được trên
+     *   `/twin/may/18`: `__demBadge.ve = 1` mà `__demNhan.soHopBadge = 0` ⇒ nhãn tên máy bị đè 17–35 %.
+     *   `hopManHinh` LUÔN có ⇒ không còn `filter` nào có thể làm rỗng sổ một cách câm lặng.
+     */
     ghiHopDaVe(
       gl.domElement,
       LOP_BADGE,
-      kq.ve.map((u) => u.hop).filter((h): h is HinhChuNhat => h !== null),
+      kq.ve.map((u) => u.hopManHinh),
     );
 
     // Dựng lại danh sách BadgeDaChieu theo thứ tự `locBadge` đã chọn; badge bị DỜI mang toạ độ mới
