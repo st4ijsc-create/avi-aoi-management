@@ -284,13 +284,40 @@ export async function getFactoryCommandOverview(params?: {
   const posByMachine = new Map<number, (typeof posRows)[number]>();
   for (const r of posRows) posByMachine.set(Number(r.machine_id), r);
 
-  // 5) PdM risk mới nhất / máy (DISTINCT ON timestamp — machine_health_history).
+  /*
+   * 5) PdM risk mới nhất / máy (`DISTINCT ON` — `machine_health_history`).
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 53 (mục C) — SẮP THEO `createdAt`, KHÔNG `timestamp`: BẢN SAO THỨ HAI CỦA QĐ-27
+   * ════════════════════════════════════════════════════════════════════════
+   * QĐ-27 (Đợt 50/51) đã chữa đúng bệnh này cho `traSucKhoeMay` (`db/twinCanh.ts:2186`) bằng index
+   * `idx_health_machine_created_desc ("machineId","createdAt" DESC)`. Câu NÀY — cùng bảng, cùng hình
+   * dạng, **cùng đường người dùng** — bị bỏ sót (G110: vá một lớp lỗi ở một nơi mà không quét nơi
+   * thứ hai). Index cũ `idx_health_machine_time` là `("machineId","timestamp")` **ASC**, còn câu cần
+   * `machineId ASC + timestamp DESC` ⇒ planner không dùng được, phải quét cả bảng rồi sắp trên đĩa.
+   *
+   * Đo trên DB dev, `EXPLAIN (ANALYZE, BUFFERS)` ×6 (`.qa-dot53/explain-truoc.txt`, 215 079 hàng):
+   *   · `ORDER BY "timestamp" DESC`  → Seq Scan 215 079 hàng → Sort **external merge Disk 8 864 kB**
+   *                                    → **103,9 – 126,1 ms**
+   *   · `ORDER BY "createdAt" DESC`  → **Index Scan** `idx_health_machine_created_desc`, 43 hàng
+   *                                    → **0,098 – 0,418 ms**  (≈ 800× nhanh hơn, 0 byte ghi đĩa)
+   * ĐỐI CHỨNG ĐẦU RA: hai câu trả **43 hàng GIỐNG HỆT nhau theo byte** (`chuan(A) === chuan(B)` =
+   * true) — bản vá đổi ĐƯỜNG ĐI, không đổi CÂU TRẢ LỜI.
+   *
+   * ★ KHÔNG tạo index mới. Index đã có từ QĐ-27; đây chỉ là dùng đúng cột mà nó phủ.
+   *
+   * ⚠ `createdAt` ≠ `timestamp` VỀ NGHĨA (`timestamp` = mốc KỲ ĐO, `createdAt` = lúc hàng được GHI)
+   *   và `twinCanh.ts:2188` đã nói thẳng sự khác ấy. Chọn `createdAt` ở đây là chọn **cùng câu trả
+   *   lời với `traSucKhoeMay`** — hai bề mặt cùng đọc "lời khai PdM mới nhất" thì không được sắp theo
+   *   hai cột khác nhau. Rủi ro còn lại có khai: nếu về sau có hàng BACKFILL (đo cũ, ghi mới) thì cả
+   *   hai đường sẽ cùng chọn hàng ghi-sau — sai giống nhau, còn hơn lệch nhau câm.
+   */
   const healthRows = executeRows(
     await db.execute(sql`
       SELECT DISTINCT ON ("machineId") "machineId" AS machine_id,
         "predictedFailureRisk" AS risk, "maintenanceUrgency" AS urgency, "timestamp" AT TIME ZONE 'UTC' AS ts
       FROM machine_health_history
-      ORDER BY "machineId", "timestamp" DESC
+      ORDER BY "machineId", "createdAt" DESC
     `),
   ) as Array<{ machine_id: number; risk: number | null; urgency: string | null; ts: string }>;
   const healthByMachine = new Map<number, { risk: number | null; urgency: string | null; ts: string }>();
