@@ -27,7 +27,15 @@ import fs from "node:fs";
  *   XANH — đường bấm-nhãn đi qua hit-test DOM của `LopNhan`, độc lập với handler R3F. (Dự đoán đầu "T1c đỏ" là sai.)
  */
 
-const ANH = ".qa-dot47/e2e";
+/**
+ * ★★★ ĐỢT 49 (mục F) — THƯ MỤC ẢNH LẤY TỪ ENV.
+ *
+ * `.qa-dot47/e2e` có 8 tệp ĐÃ COMMIT (bằng chứng Đợt 47). Chạy lại spec là GHI ĐÈ tệp tracked:
+ * QA Đợt 48 phải sao lưu/khôi phục tay rồi so md5 để cây không bẩn — một thủ tục thủ công mà
+ * lần sau ai đó sẽ quên. `TWIN_E2E_ANH=<thư mục>` cho người đo ghi chỗ khác; mặc định giữ
+ * nguyên đường cũ nên mọi lệnh đã ghi trong tài liệu vẫn đúng.
+ */
+const ANH = process.env.TWIN_E2E_ANH || ".qa-dot47/e2e";
 const TK = { username: "e2e_tai_loE", password: "E2eTaiLoE!2026" };
 const VP = [
   { width: 1600, height: 900 },
@@ -66,8 +74,21 @@ type MayPx = { machineId: number; x: number; y: number; trongKhung: boolean };
 type CuaSo = Window & {
   __demTuongTac?: {
     demObject?: () => { soObject: number; coHandler: number; trongScene: number; ten: string[] };
-    hitTai?: (x: number, y: number) => { ten: string; batchId: number | null } | null;
-    tamMay?: (id: number) => { x: number; y: number; ndcX: number; ndcY: number; trongKhung: boolean } | null;
+    hitTai?: (
+      x: number,
+      y: number,
+    ) => {
+      ten: string;
+      batchId: number | null;
+      machineId?: number | null;
+      domTai?: { the: string; testid: string | null; machineId: number | null } | null;
+    } | null;
+    tamMay?: (
+      id: number,
+    ) => { x: number; y: number; ndcX: number; ndcY: number; trongKhung: boolean; biChe?: number | null } | null;
+    /** ★ Đợt 49 (A) — hộp THẬT của nhãn đang vẽ / hình chiếu khối từng máy, CÙNG một khung. */
+    hopNhanDaVe?: () => Array<{ machineId: number; hop: { trai: number; phai: number; tren: number; duoi: number } }>;
+    hopKhoiMay?: () => Array<{ machineId: number; hop: { trai: number; phai: number; tren: number; duoi: number } }>;
     dsMay?: () => MayPx[];
   };
   __tuTheCamera?: { x: number; y: number; z: number; mucX: number; mucZ: number };
@@ -115,6 +136,12 @@ async function mayBamDuoc(page: Page, man: string): Promise<{ id: number; X: num
       if (!t) continue;
       const hit = w.__demTuongTac?.hitTai?.(t.ndcX, t.ndcY);
       if (!hit || hit.ten !== "twin3d-lo-may") continue;
+      // ★ Đợt 49 (A) — điểm bấm phải là điểm mà CƠ CHẾ nói sẽ chọn ĐÚNG máy này: raycast trúng
+      //   chính nó (`machineId`), và DOM trên cùng tại đó là canvas. Đợt 47 chỉ đòi "trúng lô",
+      //   nên chọn phải một tâm bị nhãn máy khác đè là chuyện may rủi của hình học camera —
+      //   đúng cách spec 12/12 xanh trong khi QA bấm cùng loại điểm lại ra sai máy (K7a/K7b).
+      if (typeof hit.machineId === "number" && hit.machineId !== m.machineId) continue;
+      if (hit.domTai && hit.domTai.the !== "CANVAS") continue;
       return { id: m.machineId, X, Y, cv: { x: cv.left, y: cv.top } };
     }
     return null;
@@ -221,6 +248,27 @@ for (const vp of VP) {
       expect(new URL(page.url()).pathname).toBe(`/twin/may/${id}`);
       expect(treTrongTrang, "độ trễ trong trang click → pushState").not.toBeNull();
       expect(treTrongTrang!).toBeLessThanOrEqual(TRE_TOI_DA_MS);
+      /*
+       * ★★★ ĐỢT 49 (mục F) — CHỤP SAU KHI MÀN MÁY ĐÃ VẼ XONG.
+       * QA lần 7 đọc 4 PNG "sau-bam" đã commit ở Đợt 47: tất cả là SPINNER. Spec chụp ngay sau
+       * `waitForURL`, tức chụp lúc URL đã đổi mà màn chưa vẽ ⇒ "màn Máy hiển thị" CHƯA BAO GIỜ là
+       * bằng chứng của spec này, dù 12/12 xanh. Chờ đúng ba tín hiệu của màn Máy rồi mới chụp.
+       */
+      const veXong = await page
+        .waitForFunction(
+          () => {
+            const man = document.querySelector('[data-testid="man-twin-may"]');
+            if (!man) return false;
+            if (document.querySelector('[data-testid="may-dang-tai"]')) return false;
+            if (!man.querySelector("canvas")) return false;
+            const tk = (window as unknown as { __thongKeVe?: { calls?: number } }).__thongKeVe;
+            return (tk?.calls ?? 0) > 0;
+          },
+          { timeout: 15_000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      expect(veXong, "màn Máy phải VẼ XONG trước khi chụp — ảnh spinner không chứng minh gì").toBe(true);
       await page.screenshot({ path: `${ANH}/t1a-${man}-${vp.width}-sau-bam.png` });
     });
 
@@ -287,6 +335,104 @@ for (const vp of VP) {
       expect(new URL(page.url()).pathname, "kéo xoay không được điều hướng").toBe(new URL(urlTruoc).pathname);
       expect(camSau, "camera phải ghi tư thế sau khi kéo (OrbitControls 'end')").not.toBeNull();
       expect(JSON.stringify(camSau)).not.toBe(JSON.stringify(camTruoc));
+    });
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ★★★ T1g (ĐỢT 49, mục A) — TÂM KHỐI MÁY BỊ NHÃN MÁY KHÁC ĐÈ
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Ca này là thứ Đợt 47 KHÔNG có và vì thế 12/12 xanh trong khi kết cục gốc sai: spec cũ bấm ở
+     * tư thế camera MẶC ĐỊNH và lấy máy ĐẦU TIÊN hợp lệ, nên không bao giờ gặp chỗ nhãn đè. QA lần
+     * 7 KÉO 60 px trước rồi bấm ⇒ `/twin`@1600 máy 246 mở `/twin/may/1`, Line@1280 máy 23 mở
+     * `/twin/may/21`; census 13 lượt/212 tâm ở 5/8 khung.
+     *
+     * Hai khẳng định, ở hai tầng:
+     *   (1) HÌNH HỌC — số nhãn đang vẽ mà đè hình chiếu khối của MÁY KHÁC (đọc hộp THẬT của cùng
+     *       một khung qua `hopNhanDaVe`/`hopKhoiMay`). Ghi số; không đòi 0 tuyệt đối vì hợp đồng
+     *       của `locNhan` là "hết chỗ thì GIỮ nhãn".
+     *   (2) KẾT CỤC — với MỌI máy có tâm nằm trong hộp nhãn của máy khác, bấm tâm ấy phải mở ĐÚNG
+     *       máy ấy. Đây mới là điều người dùng gặp, và là điều bản vá hứa.
+     * Kéo 60 px trước khi đo — đúng thao tác QA đã dùng để lộ lỗi.
+     */
+    test(`T1g — ${nhan}: bấm TÂM KHỐI của máy bị NHÃN MÁY KHÁC đè ⇒ vẫn mở đúng máy ấy`, async ({ page }) => {
+      test.setTimeout(240_000);
+      await moMan(page, duong, man, vp);
+      // Kéo 60 px: tư thế camera mặc định là tư thế duy nhất spec Đợt 47 từng đo.
+      const mocKeo = await mayBamDuoc(page, man);
+      expect(mocKeo, "cần một máy để bắt đầu cú kéo").not.toBeNull();
+      await page.mouse.move(mocKeo!.X, mocKeo!.Y, { steps: 3 });
+      await page.mouse.down({ button: "left" });
+      for (let i = 1; i <= 6; i++) {
+        await page.mouse.move(mocKeo!.X + i * 10, mocKeo!.Y, { steps: 1 });
+        await page.waitForTimeout(16);
+      }
+      await page.mouse.up({ button: "left" });
+      await page.waitForTimeout(1_200);
+
+      const dinh = await page.evaluate((manTid) => {
+        const w = window as unknown as CuaSo;
+        const canvas = document.querySelector<HTMLCanvasElement>(`[data-testid="${manTid}"] canvas`)!;
+        const cv = canvas.getBoundingClientRect();
+        const hopNhan = w.__demTuongTac?.hopNhanDaVe?.() ?? [];
+        const hopKhoi = w.__demTuongTac?.hopKhoiMay?.() ?? [];
+        const giao = (a: { trai: number; phai: number; tren: number; duoi: number }, b: typeof a) =>
+          Math.max(0, Math.min(a.phai, b.phai) - Math.max(a.trai, b.trai)) *
+          Math.max(0, Math.min(a.duoi, b.duoi) - Math.max(a.tren, b.tren));
+        // (1) cặp nhãn máy A ∩ khối máy B (A ≠ B) + tổng diện tích giao.
+        let soCap = 0;
+        let dienTich = 0;
+        for (const n of hopNhan) {
+          for (const k of hopKhoi) {
+            if (k.machineId === n.machineId) continue;
+            const d = giao(n.hop, k.hop);
+            if (d > 0) {
+              soCap += 1;
+              dienTich += d;
+            }
+          }
+        }
+        // (2) máy có TÂM nằm trong hộp nhãn của máy KHÁC, và tâm ấy bấm được (DOM là canvas).
+        const biPhu: Array<{ machineId: number; boiNhanCua: number; X: number; Y: number }> = [];
+        for (const m of (w.__demTuongTac?.dsMay?.() ?? []).filter((v) => v.trongKhung)) {
+          const X = cv.left + m.x;
+          const Y = cv.top + m.y;
+          if (document.elementFromPoint(X, Y) !== canvas) continue;
+          const n = hopNhan.find(
+            (v) =>
+              v.machineId !== m.machineId &&
+              m.x >= v.hop.trai &&
+              m.x <= v.hop.phai &&
+              m.y >= v.hop.tren &&
+              m.y <= v.hop.duoi,
+          );
+          if (n) biPhu.push({ machineId: m.machineId, boiNhanCua: n.machineId, X, Y });
+        }
+        return { soNhan: hopNhan.length, soKhoi: hopKhoi.length, soCap, dienTich: Math.round(dienTich), biPhu };
+      }, man);
+
+      expect(dinh.soKhoi, "cửa sổ đo hopKhoiMay phải có — nếu 0 thì `khoiMay` chưa nối tới LopNhan").toBeGreaterThan(0);
+
+      // Bấm TỪNG tâm bị phủ (tối đa 3 — mỗi lần phải quay lại màn gốc).
+      const ketCuc: Array<{ machineId: number; boiNhanCua: number; duongSau: string; dung: boolean }> = [];
+      for (const m of dinh.biPhu.slice(0, 3)) {
+        await page.mouse.move(m.X, m.Y, { steps: 4 });
+        await page.waitForTimeout(120);
+        await page.mouse.click(m.X, m.Y);
+        await page.waitForTimeout(1_200);
+        const duongSau = new URL(page.url()).pathname;
+        ketCuc.push({ ...m, duongSau, dung: duongSau === `/twin/may/${m.machineId}` });
+        if (duongSau !== duong) {
+          await page.goBack({ waitUntil: "domcontentloaded" });
+          await page.waitForTimeout(1_500);
+        }
+      }
+      luu(`t1g-${man}-${vp.width}`, { duong, vp, dinh, ketCuc });
+      for (const k of ketCuc) {
+        expect(
+          k.dung,
+          `bấm TÂM KHỐI máy ${k.machineId} (đang bị nhãn máy ${k.boiNhanCua} đè) phải mở /twin/may/${k.machineId}, đo được ${k.duongSau}`,
+        ).toBe(true);
+      }
     });
   }
 }

@@ -240,9 +240,18 @@ function DenCoBan({
 /**
  * Bơm `renderer.info.render` ra `window.__thongKeVe` SAU mỗi khung được vẽ.
  *
- * ⚠ Ưu tiên -1 để chạy SAU mọi `useFrame` khác trong cùng khung: đọc `info.render`
- * trước khi render xong cho ra số của khung TRƯỚC. Sai lệch một khung là đủ để
- * một phép đo "≤ 150 draw calls" báo đạt trên một cảnh chưa vẽ gì.
+ * ★★★ ĐỢT 49 (mục F) — CHÚ THÍCH CŨ NÓI NGƯỢC CƠ CHẾ. Nguyên văn: *"Ưu tiên -1 để chạy SAU mọi
+ * `useFrame` khác trong cùng khung"*. Đọc bundle R3F 9.5 (`events-5a94e5eb.esm.js:1085` và
+ * `:16008-16016`): `internal.subscribers` được `sort((a, b) => a.priority - b.priority)` — TĂNG
+ * DẦN — rồi chạy theo thứ tự ấy, và `gl.render(scene, camera)` chạy SAU TOÀN BỘ vòng lặp đó.
+ * Nghĩa là ưu tiên -1 chạy **ĐẦU TIÊN**, và **trước** cả lần render của khung này.
+ *
+ * ⇒ `__thongKeVe` luôn mang số của khung TRƯỚC (trễ đúng một khung) — chính điều chú thích cũ
+ *   tuyên bố đã tránh được. Giữ nguyên hành vi có chủ đích: `useFrame` KHÔNG có cách nào chạy
+ *   sau lần render tự động (mọi ưu tiên > 0 làm R3F giao quyền render cho người gọi —
+ *   `!state.internal.priority` ở dòng 16016 — tức tắt hẳn việc vẽ của cảnh). Trễ một khung vô
+ *   hại cho công dụng thật của ô này ("cảnh đã vẽ chưa": `calls > 0`), nhưng ai đọc nó như số
+ *   của KHUNG HIỆN TẠI (ví dụ ngưỡng "≤ 150 draw calls" ngay sau một thao tác) sẽ đọc nhầm.
  */
 function BomThongKe() {
   const gl = useThree((s) => s.gl);

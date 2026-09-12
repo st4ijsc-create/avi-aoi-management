@@ -529,6 +529,13 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
    *   màn Vận hành đặt cursor (chỉ `CanhNhaMay.tsx:317` của `/factory-command` có), nên
    *   "cursor luôn `auto`" của QA Đợt 46 đo đúng — máy bấm được mà không có dấu hiệu nào
    *   nói thế. Rời máy ⇒ trả về mặc định (không đổi cách cảnh trông khi không rê).
+   *
+   * ★ Đợt 49 (mục F) — CHƯA THỐNG NHẤT với `CanhNhaMay.tsx:317` (`"grab"` khi không rê), CÓ LÝ DO:
+   *   `CanhNhaMay` chỉ có MỘT người gọi là `FactoryCommandView` (`/factory-command`) — màn cũ,
+   *   ngoài phạm vi được sửa. Còn kéo cả hai màn về `"grab"` là đổi hành vi đã nghiệm thu ở đây
+   *   (e2e T1b + K7e đo "rời máy ⇒ KHÔNG pointer"; `"grab"` cũng không pointer nên lưới vẫn xanh —
+   *   tức lưới KHÔNG canh được hướng này) mà không có phép đo nào nói bên nào đúng. Ghi ra chỗ
+   *   lệch thay vì chọn bừa một bên rồi gọi đó là "thống nhất".
    */
   const gl = useThree((s) => s.gl);
   useEffect(() => {
