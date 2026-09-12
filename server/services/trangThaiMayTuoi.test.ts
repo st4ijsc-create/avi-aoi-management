@@ -139,9 +139,12 @@ describe("mapMachineStatus — máy im lặng không còn là running/idle", () 
       const machineDetail = mapMachineStatus(TUOI, op ?? undefined, NOW);
       expect(machineDetail).toBe(overview);
     }
-    // …và ca THẬT SỰ đã vỡ: một bên có cột, bên kia đánh rơi ⇒ trước vá là "idle" ≠ "running".
+    // …và ca THẬT SỰ đã vỡ: một bên có cột (`stopped` ⇒ idle), bên kia đánh rơi dữ kiện.
+    // Trước vá hai vế cho "idle" ≠ "running"; sau vá cả hai cho "idle".
+    const danhRoi: string | null | undefined = null; // = `liveState.value.operationStatus` của cockpit
     expect(mapMachineStatus(TUOI, "stopped", NOW)).toBe("idle");
-    expect(mapMachineStatus(TUOI, (null as string | null) ?? undefined, NOW)).not.toBe("running");
+    expect(mapMachineStatus(TUOI, danhRoi ?? undefined, NOW)).not.toBe("running");
+    expect(mapMachineStatus(TUOI, danhRoi ?? undefined, NOW)).toBe(mapMachineStatus(TUOI, "stopped", NOW));
   });
   it("xấp xỉ CHỈ khi người gọi KHAI — `VAN_HANH_XAP_XI_KET_NOI` là cửa duy nhất còn lại ra running", () => {
     expect(mapMachineStatus(TUOI, VAN_HANH_XAP_XI_KET_NOI, NOW)).toBe("running");
