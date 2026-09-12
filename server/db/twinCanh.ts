@@ -1513,18 +1513,48 @@ export async function traAnToanRobot(
   if (hangRobot.length === 0) return [];
 
   const ids = hangRobot.map((r) => r.id);
-  const hangTele = executeRows(
-    await d.execute(sql`
-      SELECT DISTINCT ON ("robotId")
-             "robotId" AS robot_id, estop, "timestamp" AT TIME ZONE 'UTC' AS ts
-      FROM robot_telemetry
-      WHERE "robotId" IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
-      ORDER BY "robotId", "timestamp" DESC
-    `),
-  ) as Array<{ robot_id: number; estop: boolean | null; ts: Date | null }>;
-
+  /*
+   * ★★★ ĐỢT 50 MỤC B — MỘT CÂU `LIMIT 1` CHO MỖI ROBOT, KHÔNG `DISTINCT ON` CẢ BẢNG.
+   * ══════════════════════════════════════════════════════════════════════════
+   * `DISTINCT ON ("robotId") … ORDER BY "robotId","timestamp" DESC` buộc Postgres
+   * sắp TOÀN BỘ hàng của các robot ấy trước khi bỏ đi tất cả trừ hàng đầu mỗi nhóm.
+   * 7 chunk ĐÃ NÉN đi đường SkipScan (1 hàng/0,03 ms — rẻ), nhưng 3 chunk CHƯA NÉN
+   * thì Seq Scan + `Sort Method: external merge Disk` 3.424 + 7.664 + 3.344 kB trên
+   * 566.167 hàng. Đo trên DB dev 2026-09-12 (`.qa-dot50/B-do.json`):
+   *     CŨ   (DISTINCT ON)      190,4 – 206,7 ms   · EXPLAIN Execution 264,0 ms
+   *     MỚI  (LIMIT 1/robot)     0,9 – 16,2 ms     · EXPLAIN 9/10 chunk "never executed"
+   *     (đối chứng UNION ALL     1,6 – 2,3 ms — cùng md5, không chọn vì dựng chuỗi SQL)
+   * ⇒ ĐẦU RA GIỐNG TỪNG BYTE: md5 `f61c1d63…` cho CẢ BA hình dạng chạy trong CÙNG
+   *   một snapshot `REPEATABLE READ` (bảng đang được sim ghi thêm — so ngoài
+   *   transaction sẽ là so hai tập dữ liệu khác nhau, không phải so hai câu).
+   *
+   * ★ `AT TIME ZONE 'UTC'` GIỮ NGUYÊN ở từng câu (G104 — `db.execute` thô đọc
+   *   `timestamp` naive lệch −7 h nếu bỏ). Lưới `naiveTimestampQuaExecute.db.test.ts`
+   *   ca (5) đo đúng `capNhatLuc` của hàm này bằng hàng `now()` chèn thật.
+   *
+   * ★ Hợp đồng KHÔNG đổi: robot không có telemetry vẫn vắng khỏi `teleTheoId`
+   *   ⇒ `estop: null` ("CHƯA ĐỌC ĐƯỢC"), không phải `false`.
+   */
+  const BUOC_TELE = 8;
   const teleTheoId = new Map<number, { estop: boolean | null; ts: Date | null }>();
-  for (const r of hangTele) teleTheoId.set(Number(r.robot_id), { estop: r.estop, ts: r.ts });
+  for (let i = 0; i < ids.length; i += BUOC_TELE) {
+    const lo = ids.slice(i, i + BUOC_TELE);
+    const ket = await Promise.all(
+      lo.map((id) =>
+        d.execute(sql`
+          SELECT "robotId" AS robot_id, estop, "timestamp" AT TIME ZONE 'UTC' AS ts
+          FROM robot_telemetry
+          WHERE "robotId" = ${id}
+          ORDER BY "timestamp" DESC
+          LIMIT 1
+        `),
+      ),
+    );
+    for (const kq of ket) {
+      const hang = executeRows(kq) as Array<{ robot_id: number; estop: boolean | null; ts: Date | null }>;
+      for (const r of hang) teleTheoId.set(Number(r.robot_id), { estop: r.estop, ts: r.ts });
+    }
+  }
 
   return hangRobot.map((r) => {
     const t = teleTheoId.get(r.id);
