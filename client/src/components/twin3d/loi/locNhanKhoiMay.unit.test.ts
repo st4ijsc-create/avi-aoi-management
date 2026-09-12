@@ -191,3 +191,21 @@ describe("Tương thích ngược — bản GỠ VÁ phải y hệt Đợt 38", 
     expect(v.hop.duoi).toBeCloseTo(mong.duoi - v.tang * (CAO + KHE_TANG_PX), 6);
   });
 });
+
+describe("Đợt 49 — `soDeKhoiMayKhac` là ĐẾM NHÃN ĐƯỢC VẼ, không phải đếm lượt dùng phương án chót", () => {
+  it("★★★ nhãn phải dùng phương án chót NHƯNG bị cửa `tranNhan` chặn ⇒ KHÔNG được tính", () => {
+    // 3 nhãn rời nhau; trần 2 ⇒ nhãn thứ ba bị `soVuotTran`. Khối máy khác phủ chỗ của cả ba.
+    const uv = [
+      nhan("machine:A", 200, 300, { khoangCachMet: 1 }),
+      nhan("machine:B", 500, 300, { khoangCachMet: 2 }),
+      nhan("machine:C", 800, 300, { khoangCachMet: 3 }),
+    ];
+    const khoiMay = [khoi("machine:Z", 600, 300, 1200, 600)];
+    const kq = locNhan(uv, { ...NEN, tranNhan: 2, hopKhoiMay: khoiMay, doiNgang: true });
+    expect(kq.ve).toHaveLength(2);
+    expect(kq.soVuotTran).toBe(1);
+    // Hai đại lượng ĐO CÙNG MỘT THỨ — chúng phải bằng nhau, luôn.
+    expect(kq.soDeKhoiMayKhac).toBe(demNhanDeKhoiMayKhac(kq.ve, khoiMay));
+    expect(kq.soDeKhoiMayKhac).toBe(2);
+  });
+});

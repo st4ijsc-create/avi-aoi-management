@@ -596,7 +596,6 @@ export function locNhan(
       tang = duPhong.t;
       lechNgangPx = duPhong.g * buocNgang;
       deKhoiMayKhac = true;
-      soDeKhoiMayKhac += 1;
     }
     if (hopVe === null) {
       // Gốc rễ của việc không vẽ được: tầng 0 bị vùng cấm che ⇒ `soBiChe`; còn lại là chồng nhãn.
@@ -608,6 +607,11 @@ export function locNhan(
       soVuotTran += 1;
       continue;
     }
+    // ★ Đợt 49 — ĐẾM Ở ĐÂY, KHÔNG ở chỗ chọn `duPhong`. Bản đầu cộng ngay khi dùng phương án chót,
+    //   nên một nhãn bị cửa `tranNhan` chặn ngay sau đó vẫn được tính ⇒ `soDeKhoiMayKhac` >
+    //   `demNhanDeKhoiMayKhac(ve, …)`. Hai đại lượng ĐO CÙNG MỘT THỨ mà lệch nhau là đúng lớp lỗi
+    //   `soBiChongLap` vs `capConChong` mà tệp này đã phải vá một lần. Chỉ đếm nhãn THẬT SỰ được vẽ.
+    if (deKhoiMayKhac) soDeKhoiMayKhac += 1;
     ve.push({
       khoa: n.khoa,
       x: n.x + lechNgangPx,
