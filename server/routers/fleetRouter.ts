@@ -53,6 +53,24 @@ async function db() {
   return d;
 }
 
+/**
+ * ĐỢT 50 mục A — bản ghi `robot_telemetry` MỚI NHẤT của MỘT robot (hoặc `undefined`).
+ *
+ * Một câu cho một robot, `ORDER BY "timestamp" DESC LIMIT 1`: hằng số `robotId` đi
+ * vào kế hoạch nên ChunkAppend của Timescale chỉ chạm chunk mới nhất (9/10 chunk
+ * "never executed" trong EXPLAIN ANALYZE) và trả về ĐÚNG 1 hàng. Đây là đường ĐỌC —
+ * không ghi gì; lý lẽ đo đạc đầy đủ nằm ở chỗ gọi (`robotPositions`).
+ */
+async function traTelemetryMoiNhat(d: Awaited<ReturnType<typeof db>>, robotId: number) {
+  const [hang] = await d
+    .select()
+    .from(robotTelemetry)
+    .where(eq(robotTelemetry.robotId, robotId))
+    .orderBy(desc(robotTelemetry.timestamp))
+    .limit(1);
+  return hang;
+}
+
 /** Guard mutating actions behind the flag (matches the orchestrationRouter discipline). */
 function requireFlag() {
   if (!fleetOrchEnabled()) {
@@ -218,13 +236,40 @@ export const fleetRouter = router({
         .where(and(eq(robots.isEnabled, true), ...(idsNhaMay === null ? [] : [robotFactoryGate(idsNhaMay)])));
       if (robotRows.length === 0) return [];
       const ids = robotRows.map((r) => r.id);
-      const telRows = await d
-        .select()
-        .from(robotTelemetry)
-        .where(inArray(robotTelemetry.robotId, ids))
-        .orderBy(desc(robotTelemetry.timestamp));
-      const latest = new Map<number, (typeof telRows)[number]>();
-      for (const tel of telRows) if (!latest.has(tel.robotId)) latest.set(tel.robotId, tel);
+      /*
+       * ★★★ ĐỢT 50 MỤC A — MỘT HÀNG MỚI NHẤT **MỖI ROBOT**, KHÔNG KÉO CẢ BẢNG VỀ NODE.
+       * ════════════════════════════════════════════════════════════════════════
+       * Bản cũ: `select().from(robotTelemetry).where(inArray(...)).orderBy(desc(timestamp))`
+       * — KHÔNG `LIMIT`. Postgres sắp TOÀN BỘ lịch sử telemetry của các robot trong
+       * phạm vi rồi gửi hết về Node, chỉ để vòng `for` bên dưới giữ lại hàng đầu tiên
+       * của mỗi robot. Đo trên DB dev 2026-09-12 (`.qa-dot50/A-drizzle.json`, đúng tầng
+       * drizzle+postgres.js mà thủ tục này dùng):
+       *     CŨ  1.377.398 hàng về Node · 5.959 / 5.761 / 5.646 / 6.072 / 6.182 / 8.457 / 8.701 ms
+       *     MỚI         1 hàng về Node ·     4,3 (nguội) / 2,3 / 2,0 / 2,0 / 1,9 / 2,3 / 2,1 ms
+       * ⇒ ~2.800× nhanh hơn, ĐẦU RA GIỐNG TỪNG BYTE (md5 `7fcbb5de…` cho cả CŨ-trước,
+       *   MỚI, CŨ-sau chạy nối tiếp trên cùng dữ liệu — xem `A-drizzle.json.doiChung`).
+       *
+       * ★ Vì sao KHÔNG `DISTINCT ON` / `LATERAL` (đã đo, không đoán):
+       *   `DISTINCT ON ("robotId")` = 703–827 ms (Seq Scan 3 chunk chưa nén + external
+       *   merge), `JOIN LATERAL` = 198–317 ms (biến tương quan `rid` chặn ChunkAppend
+       *   loại chunk lúc chạy). Câu-rời-mỗi-robot để hằng số `robotId` vào kế hoạch ⇒
+       *   ChunkAppend chỉ chạm chunk mới nhất (EXPLAIN: 9/10 chunk "never executed").
+       *
+       * ★ Không đổi hợp đồng: vẫn là "bản ghi telemetry mới nhất của robot đó, hoặc
+       *   không có bản ghi nào" — KHÔNG thêm cửa sổ thời gian (robot im lặng 3 tháng
+       *   vẫn phải trả về pose cuối cùng của nó, y như bản cũ).
+       *
+       * ★ Chặn song song ở `BUOC_TELEMETRY` để N robot lớn không nuốt hết pool
+       *   (`DB_POOL_MAX` mặc định 25) — đây là đường ĐỌC của màn bản đồ, không được
+       *   phép làm đói các thủ tục khác.
+       */
+      const BUOC_TELEMETRY = 8;
+      const latest = new Map<number, Awaited<ReturnType<typeof traTelemetryMoiNhat>>>();
+      for (let i = 0; i < ids.length; i += BUOC_TELEMETRY) {
+        const lo = ids.slice(i, i + BUOC_TELEMETRY);
+        const ket = await Promise.all(lo.map((id) => traTelemetryMoiNhat(d, id)));
+        for (const [j, tel] of ket.entries()) if (tel) latest.set(lo[j], tel);
+      }
       return robotRows.map((r) => {
         const tel = latest.get(r.id);
         const pose = (tel?.poseJson ?? null) as Record<string, unknown> | null;
