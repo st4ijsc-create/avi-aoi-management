@@ -6980,6 +6980,35 @@ HEAD `389fa9b3`, 5 commit đã push `fresh`. Tôi đo lại: `vitest twin3d` **1
 
 **Đợt 54 (giao tiếp — QA lần 9, xác nhận):** chấm lại riêng 5 SAI của QA lần 8 (4 ca badge×nhãn ở máy CÓ cảnh báo + 1 ca hợp đồng trạng thái trên **dữ liệu sống**), kiểm mục C bằng `[SLOW QUERY]` từ stderr + EXPLAIN ấm, và toàn bộ hồi quy + bảng cổng `package.json` (ghi rõ `kb:operational-cards:test` có tác dụng phụ — chạy hay không là quyết định có khai). Nếu 5/5 đóng và 0 hồi quy ⇒ **"đẹp" ĐẠT ⇒ nghiệm thu cuối đủ 5/5 tiêu chí**.
 
+### 14q.33 Đợt 54 — QA lần 9 XÁC NHẬN: **nghiệm thu cuối ĐẠT 5/5 tiêu chí** (2026-09-12, commit `a65af5a5`)
+
+**625 ca đo · 0 SAI · 0 HỎNG · 13 CHẶN-ĐÚNG · 2 N/A.** Mỗi món đo **hai lần**: trên HEAD và trên build ablation `dist-54z` dựng lại từ `9f6da8ca` — bundle hash **trùng khít** bản Đợt 52 ⇒ đúng là nền của QA lần 8.
+
+| Món | HEAD | Ablation (nền QA lần 8) | Phán quyết |
+|---|---|---|---|
+| S1–S4 badge đè nhãn (máy CÓ cảnh báo) | **0/20 cặp · 0 px²** | **8/20 cặp · 11 928 px²** | ĐÓNG |
+| G136 badge VẼ vs VÀO SỔ | **20/20 + 48/48 bằng nhau** | máy 18 & 23: vẽ 1 / sổ **0** | ĐÓNG |
+| S5 sáu bề mặt trên dữ liệu sống | **6/6 nói một chữ** (`idle`) | **2/6 sai** (`running`, `operationStatus=null`) | ĐÓNG |
+| S5b thiếu dữ kiện (tầng hàm) | `null`/`undefined`/`""` → **idle** | cả ba → **running** | ĐÓNG |
+| S-C `[SLOW QUERY]` (stderr) + EXPLAIN ấm | **0 câu** `DISTINCT ON` · **0,10 ms** | **2 câu** (259,9 / 202,0 ms) · **114–153 ms** | ĐÓNG |
+
+★ **Phát hiện ngoài cả hai đợt trước:** máy **23 (SIM-L2-ROBOT)** cũng có andon chưa resolved và cũng dính lỗi — **nặng hơn máy 18: 52 % vs 35 %**. QA lần 8 và Đợt 53 chỉ mở `/twin/may/18`, nên con số nền "4/16" ở §14q.32 là **đếm thiếu** (thật: 8/20). Bản vá ở **cơ chế** (`hopManHinh`) đóng luôn ca chưa ai nhìn thấy — đúng lý do phải vá cơ chế thay vì vá ca.
+
+**Phán quyết nghiệm thu:** Yêu cầu gốc **ĐẠT** (24/24 bấm tâm khối máy + 6/6 chọn Line + e2e 16/16) · Tối ưu **ĐẠT** (1 canvas/màn, 0 khung/40 s × 3 màn, đối chứng kéo 87/76/83 khung) · Nhanh **ĐẠT** · **Đẹp ĐẠT** (khoảng cách duy nhất của QA lần 8 đã đóng) · Trực quan **ĐẠT** · QĐ-18/19/21/23/24/25 **ĐẠT** · **QĐ-27 ĐẠT trên dev — production vẫn CHƯA áp index**.
+
+**Hồi quy 0.** F1 tuần tự lệch nền 52 ⇒ QA **chạy xen kẽ 4 lô hai build** (đúng bài học Đợt 53): 54a `p50 1 181 / p90 1 579 / max 2 107 / **0 đột biến**` vs 54z `1 161 / 1 754 / 4 495 / 2` ⇒ bản có vá **không chậm hơn và là bản duy nhất 0 đột biến**. D-1 cột 54 y hệt cột 53 · D-2 60 ĐẠT + 4 đối chứng trượt đúng · D-4 lệch **0/288** với **6/6 vai đăng nhập được** (bác lời khai Đợt 53 "4/6 vai bị xoá") · `twin3d` 104/2 461 · phạm vi 180/180 · bbox 34/34 · `nc` 41 = nền.
+
+**Bảng cổng:** `check` 0 · `i18n:check` / `lint:tokens` / `i18n:audit` / `kb:stale-check` / `vision:validate` / `lake:verify` 0 · `check:tests` **32 lỗi nền, 5 nằm trong `twin3d/van-hanh`** (`cayVanHanh.unit.test.ts:38,91` thiếu `tangId`; `hopNhatCanh.unit.test.ts:54,216,239` sai kiểu `KhoiKey`) · `ext:check` 2 (môi trường) · `kb:operational-cards:test` 1 (194≠164) · `npm test` 97 tệp/205 ca đỏ, **0 tệp `twin3d`**. **G138 thực hành:** QA có chạy `kb:operational-cards:test`, đo tác dụng phụ bằng md5 (**365/367 tệp byte y hệt**, 2 tệp đổi) và **không khôi phục** vì `knowledge/` đang do phiên khác làm dở.
+
+**Brief tôi sai 4 chỗ:** "4 ca badge" → thật **8** (thiếu máy 23) · "ca thiếu dữ kiện trên dữ liệu sống" **không dựng được** (`machines."operationStatus"` là ENUM NOT NULL — chặn `NULL` 23502 và `''` 22P02), phải đo ở tầng hàm · "Đợt 53 báo 4/6 vai bị xoá" **sai**, 6/6 vai đăng nhập 200 · "24 trạng thái" thực là 12 trạng thái × 2 vp.
+
+**Lỗi của QA — 6, đều ở thiết bị đo, 4/6 do đọc CHUỖI thay vì đọc CẤU TRÚC:** 3 lần ra "toàn 0" giả (MSYS đổi `/twin` thành đường dẫn Windows; gom thị giác nhầm khoá; gom `nc` nhầm khoá ⇒ "0 = 0" khớp giả) và 1 lần **báo động giả "225 tệp đỏ, 7 tệp twin3d"** (thật 97 tệp, **0** twin3d). Vì vậy **mọi kết luận "0" trong báo cáo đều kèm ablation chứng minh thiết bị đo biết kêu khác 0** — kể cả lưới thị giác (chạy trên 54z ⇒ kêu đúng 1 cặp chồng).
+
+> #### ★★★ G139 - **MỘT KẾT LUẬN "0" CHỈ CÓ GIÁ TRỊ KHI CÙNG THIẾT BỊ ĐO ĐÓ KÊU KHÁC 0 TRÊN NỀN CŨ — VÀ NỀN PHẢI ĐƯỢC CHỨNG MINH LÀ NỀN (bundle hash trùng khít).**
+> QA lần 9 dựng lại `dist-54z` từ commit trước vá, đối chiếu **bundle hash trùng khít bản Đợt 52**, rồi chạy **cùng một harness** trên cả hai: HEAD 0/20 cặp chồng, nền 8/20 · HEAD 0 câu chậm, nền 2 câu · HEAD 6/6 bề mặt đồng thuận, nền 2/6 sai. Không có bước này thì "0" chỉ là lời khai của một thiết bị đo đã 4 lần cho "toàn 0" giả trong cùng phiên. **Ablation không phải thủ tục cuối cùng — nó là cách duy nhất đọc được số 0.**
+
+**Còn mở sau nghiệm thu (không chặn):** production chưa áp index QĐ-27 (chờ chủ sở hữu, cửa sổ bảo trì) · `check:tests` 5 lỗi TS trong `twin3d/van-hanh` (Đợt 55) · `kb:operational-cards:test` / `ext:check` / `npm test` đỏ sẵn **ngoài Twin** · `test:e2e` toàn bộ chưa chạy · bộ chọn tầng chưa đo được (DB dev 1 toà/1 tầng) · 41 cặp nhãn ∩ khối máy khác (G128, kết cục click đã đúng) · 26 chỗ `DISTINCT ON` ngoài đường Twin chưa đo EXPLAIN.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
