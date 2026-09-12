@@ -4,7 +4,7 @@ import { demMayTrucTiep, dieuHuongTuKhoa, lineCuaMay, tapChonTuUrl } from "./cay
 // ★★★ Và import CHÍNH `ropCanhBao` mà component dùng — nếu test tự viết một
 //     phép cộng riêng thì nó đo phép cộng CỦA NÓ, không đo cái đang giao hàng.
 import { ropCanhBao } from "../thiet-ke/cayPhanCapLogic";
-import { dungCayThietKe, khoaNode } from "../thiet-ke/trangThaiThietKe";
+import { dungCayThietKe, khoaNode, type DatChoDauVao } from "../thiet-ke/trangThaiThietKe";
 
 /**
  * Đợt 22 · Z4 (G-7) — cây phân cấp đa site có roll-up cho màn **Vận hành**.
@@ -24,6 +24,37 @@ import { dungCayThietKe, khoaNode } from "../thiet-ke/trangThaiThietKe";
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 /**
+ * Một hàng `twin_dat_cho` ĐỦ CỘT như hợp đồng `DatChoDauVao` khai.
+ *
+ * ★ `dungCayThietKe` chỉ đọc `loaiThucThe` + `thucTheId` của hàng này, nên các
+ *   cột toạ độ/kích thước dưới đây KHÔNG đổi kết quả ca nào — chúng có mặt vì
+ *   giáo cụ phải mang đúng HÌNH DẠNG dữ liệu thật, không phải một mảnh cắt xén
+ *   mà chỉ `as any` mới nuốt trôi.
+ */
+function datChoMay(thucTheId: number): DatChoDauVao {
+  return {
+    id: thucTheId * 10,
+    tangId: 1,
+    loaiThucThe: "machine",
+    thucTheId,
+    viTriXMm: 1000,
+    viTriYMm: 2000,
+    viTriZMm: 0,
+    rongMm: 1200,
+    caoMm: 1800,
+    sauMm: 800,
+    kichThuocDaDo: false,
+    quatX: 0,
+    quatY: 0,
+    quatZ: 0,
+    quatW: 1,
+    daKhoa: false,
+    hienThi: true,
+    nguon: "sinh",
+  };
+}
+
+/**
  * Cây mẫu, cố ý KHÔNG cân:
  *
  *   xưởng 1 ─┬─ line 1 ─┬─ trạm 1 ── máy 1, máy 2      (2 máy)
@@ -35,7 +66,7 @@ import { dungCayThietKe, khoaNode } from "../thiet-ke/trangThaiThietKe";
  */
 function cayMau() {
   return dungCayThietKe(
-    [{ id: 1, ma: "X1", ten: "Xuong 1", factoryId: 1 }],
+    [{ id: 1, ma: "X1", ten: "Xuong 1", factoryId: 1, tangId: 1 }],
     [
       { id: 1, ma: "L1", ten: "Line 1", workshopId: 1 },
       { id: 2, ma: "L2", ten: "Line 2", workshopId: 1 },
@@ -54,9 +85,9 @@ function cayMau() {
       { id: 9, ma: "M9", ten: "May 9", loaiMay: "aoi", isActive: true, stationId: 3 },
     ],
     [
-      { loaiThucThe: "machine", thucTheId: 1 },
-      { loaiThucThe: "machine", thucTheId: 2 },
-      { loaiThucThe: "machine", thucTheId: 3 },
+      datChoMay(1),
+      datChoMay(2),
+      datChoMay(3),
     ],
   );
 }
@@ -88,7 +119,7 @@ describe("Z4 · demMayTrucTiep + ropCanhBao — roll-up SỐ MÁY", () => {
   it("★★★ CA ÂM (G8) — cây KHÔNG máy nào cho roll-up **0 ở mọi cấp**", () => {
     // Chỉ báo chỉ biết nói "có" thì không đo gì. Ca này ghim vế "không".
     const rong = dungCayThietKe(
-      [{ id: 1, ma: "X1", ten: "X", factoryId: 1 }],
+      [{ id: 1, ma: "X1", ten: "X", factoryId: 1, tangId: 1 }],
       [{ id: 1, ma: "L1", ten: "L", workshopId: 1 }],
       [{ id: 1, ma: "T1", ten: "T", lineId: 1, thuTu: 1 }],
       [],

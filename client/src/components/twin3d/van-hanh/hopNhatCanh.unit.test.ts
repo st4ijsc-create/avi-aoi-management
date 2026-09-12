@@ -51,7 +51,7 @@ const congCu: CongCuMau = {
     khoaNhan: `nhan.${tt ?? "khong_ro"}`,
     laBatThuong: tt === "loi",
   }),
-  hinhKhoiCho: (loai) => `khoi:${loai}`,
+  hinhKhoiCho: (loai) => (loai === "aoi" ? "buong_kiem_quang" : "tram_chung"),
 };
 
 const datCho = (o: Partial<DatChoVaoCanh> = {}): DatChoVaoCanh => ({
@@ -213,7 +213,7 @@ describe("idMayChuaDat — phủ định CHÍNH XÁC của điều kiện vẽ",
 describe("mepMatBang", () => {
   const m = (x: number, z: number): MayDaDung => ({
     machineId: 1,
-    khoi: "k",
+    khoi: "tram_chung",
     kichThuocMm: CO_DU_PHONG,
     viTri: { x, y: 0, z },
     gocXoayRad: 0,
@@ -236,7 +236,7 @@ describe("mepMatBang", () => {
 describe("neoTrenNoc — CHỈ trục ĐỘ CAO được cộng", () => {
   const m: MayDaDung = {
     machineId: 1,
-    khoi: "k",
+    khoi: "tram_chung",
     kichThuocMm: { rongMm: 1000, caoMm: 2000, sauMm: 1000 },
     viTri: { x: 10, y: 20, z: 30 },
     gocXoayRad: 0,
