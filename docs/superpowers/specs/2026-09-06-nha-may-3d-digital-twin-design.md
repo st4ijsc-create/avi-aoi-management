@@ -6863,6 +6863,34 @@ Commit QA `3709be0d`: **216 tệp, tất cả trong `.qa-dot48/`** (14,0 MB, 56 
 
 **Đợt 50 (giao tiếp — kỹ thuật, tự quyết; KHÔNG migration/không đổi schema):** vá 3 truy vấn mục H (fleetRouter `robotPositions` per-robot `LIMIT 1`; `twinCanh.ts:1518`; `machinePresenceService.ts:142`) với **đối chứng đầu ra bằng byte** trước/sau + đo EXPLAIN/thời gian ấm-nguội; `CanhNhaMay.tsx:317` chỉ ghi docblock; sau đó **Đợt 51 QA lần 8** (nghiệm thu cuối). Thiết kế 10–13 vẫn chờ chủ sở hữu.
 
+### 14q.29 Đợt 50 — năm truy vấn chậm bị vá, kết cục gốc CHƯA ĐẠT, và một sự cố mất dữ liệu đo (2026-09-12, 5 commit `65f96c91…bab5943a`)
+
+**Đo qua CHÍNH thủ tục (`createCaller`), không SQL thô** — nguội / ấm ×5, và đối chứng đầu ra bằng md5 JSON:
+
+| | trước | sau | md5 đầu ra |
+|---|---|---|---|
+| A `fleet.robotPositions` | **5 927 / 5 830–6 161 ms**, kéo **1 377 398 hàng** | **34–169 / 3,7–83 ms**, kéo **1 hàng** | khớp (admin) · khớp (operator1 ⇒ `[]`) |
+| B `twin.anToanRobot` (`twinCanh.ts:1518`) | 276 / 270–335 ms | **11,3 / 7,7–9,0 ms** | khớp cả 3 hình dạng trong một snapshot `REPEATABLE READ` |
+| C `sweepPresenceFromTelemetry` (`machinePresenceService.ts:142`) | 584 / 472–510 ms | **104 / 17–25 ms**, `checked=42 changed=0` | khớp |
+
+EXPLAIN: `DISTINCT ON` 703–827 ms (Seq Scan 3 chunk chưa nén + external merge **3 424+7 664+3 344 kB** / 566 167 hàng) · `LATERAL` 198–317 ms · **`LIMIT 1`/robot 1,9–4,3 ms** (9/10 chunk *never executed*) · C: `GROUP BY` quét **33 504 873 hàng** → per-máy `Index Only Scan` trên index **đã có sẵn**. **Không index mới, không migration.** Đối chứng dương G104 ở B: chèn hàng `now()` cho robot 2 ⇒ `estop true`, `capNhatLuc` lệch **2 ms (0 h)**; xoá ⇒ trở lại `null`.
+
+★★★ **Mục E — ngoài brief, và là nguồn thật của đột biến.** Đo lại F1 **sau** A/B/C: đột biến **không hết, còn tệ hơn** (3/28 → 6/26); log server vẫn có `select … robot_telemetry …` **10,1 / 11,0 / 12,1 / 16,0 giây**. Mục A chỉ vá **1 trong 3 bản sao** cùng câu (G110): `server/services/fleet/taskAllocator.ts:297` (chạy theo **nhịp sweep 60 s**) và `trafficManager.ts:635`. Nhân quả đo được: **số lượt sweep khớp 1:1 số câu > 2 s** (4/4 trước, 6/6 sau). Vá bằng một chỗ dùng chung `server/db/telemetryMoiNhat.ts`. ★ Chính số liệu QA lần 7 đã chỉ đúng chỗ mà brief tôi đọc sai: *"robot state select 74×/85′"* ≈ 1 lượt/69 s = nhịp sweep, **không phải** màn bản đồ — `robotPositions` chỉ được gọi từ `/fleet-orchestration`, **0 màn twin nào gọi**.
+
+**Kết cục gốc CHƯA ĐẠT (nói thẳng).** F1 `chan` 1600×900, 7 lượt × 4 màn: trước `4215c526` p50 **1 233** / p90 **3 908** / max 6 856, đột biến **3/28**; sau A+B+C p50 1 353 / p90 4 936 / max 5 887, **6/26**; sau A+B+C+E p50 **1 231** / p90 **2 443** (−37 %) / max 6 217, **2/28** (3/44 phép). Hồ sơ server: câu chậm nhất **15 992 → 487 ms**, số câu chậm **128 → 32**, câu "kéo cả bảng" **0**. Đột biến vẫn còn.
+
+**D**: docblock đối chiếu cursor đã có sẵn ở `CanhVanHanh.tsx:527` (Đợt 49) — brief tưởng chưa; agent thêm bản đối xứng ở `CanhNhaMay.tsx`, người gọi duy nhất vẫn là `FactoryCommandView.tsx:518` ⇒ giữ `"grab"`. 41 cặp nhãn ∩ khối máy **giống hệt Đợt 49 từng trạng thái** (10/13/0/0/9/7/2/0) — chỉ đo (G128).
+
+**Hồi quy:** `twin3d` 103/2 452 · phạm vi 4 lưới 180 · fleet+robot 22/200 · presence 11 · twinCanh 7 · e2e bấm cảnh **16/16** · bbox 34/34 · R3F 40 s ×3 = 0 khung · thị giác vi+en 22×2 khớp từng dòng Đợt 49 · **D-4 288 ca × 6 vai lệch 0** · D-1 ✓35/✗0 · census `git archive` 2267 y hệt hai cây · `check` 0 · `i18n` 0 · DB 11+6 khoá bất biến · md5 5/5 · hàng tạm 0. Test đỏ của agent: 0. **Chủ dự án đo lại:** `phamViDocCensus` + `phamViTuyenCensus` **XANH** (bác nghi ngờ "không tái lập được 540/540"); còn `server/contracts/capChuoiVarcharDuongIngestMacDinh.test.ts` **4 ca đỏ** — tệp sửa lần cuối 2026-09-03, Đợt 50 không chạm ⇒ nợ có sẵn (Đợt 51 xác nhận bằng `git archive`).
+
+> #### ★★★ G130 - **`cmd > "$f"` VÀ `open(p,'wb')` CẮT TỆP TRƯỚC KHI LỆNH CHẠY — MỘT VÒNG "KHÔI PHỤC" LÀM MẤT 103 TỆP KHÔNG CÓ TRONG GIT.**
+> Agent Đợt 50 chạy spec Đợt 47 (đường ra ảnh **ghim cứng** `.qa-dot47/e2e/`) ⇒ ghi đè bằng chứng; vòng khôi phục `git show HEAD:"$f" > "$f"` cắt sạch tệp **trước** khi git báo "tệp untracked" ⇒ **103 tệp thô của Đợt 47 thành 0 byte, mất hẳn** (99 tệp depth-1 + 4 `t1g-*.json`); cùng bẫy trong Python làm rỗng thêm 4 tệp **mã nguồn** (đã khôi phục đúng byte từ git, `tsc` 0, vitest xanh). **Luật:** mọi khôi phục ghi ra **tệp tạm rồi `mv`**; trước khi chạy harness cũ phải `grep -n "qa-dot4[0-9]"` kiểm đường ra và chuyển sang ENV; **không đắp tệp cùng tên từ đợt khác** (bịa bằng chứng). Agent đã tự khai đầy đủ và **không** đắp — đó là hành vi đúng.
+
+> #### ★★ G131 - **"NẶNG NHẤT" KHÔNG PHẢI "TRÊN ĐƯỜNG NGƯỜI DÙNG": ĐỌC AI GỌI TRƯỚC KHI XẾP PARETO.**
+> `robotPositions` nặng nhất (12,6 s) nhưng **0 màn twin nào gọi** ⇒ vá nó một mình không xoá được đột biến; thủ phạm là hai bản sao cùng câu chạy theo **nhịp nền 60 s**. Số "74 lượt/85′" trong báo cáo QA đã nói đúng điều đó ngay từ đầu. Xếp Pareto theo **đường gọi thật × tần suất**, không theo ms của một câu.
+
+**QĐ-27 (chủ sở hữu, 2026-09-12):** **duyệt tạo index mới `machine_health_history ("machineId","createdAt" DESC)` — CHỈ trên DB dev**, đo trước/sau + đối chứng đầu ra byte, production để sau trong cửa sổ bảo trì. Lý do: `traSucKhoeMay` (`twinCanh.ts:2196`) chiếm **24/32** câu chậm còn lại và **đổi hình dạng câu không cứu được** (per-máy UNION ALL 233–412 ms *tệ hơn* DISTINCT ON 126–154 ms) vì bảng chỉ có index `("machineId","timestamp")` còn câu sắp theo `"createdAt"`. Chủ sở hữu cũng chốt bước kế tiếp là **QA lần 8 nghiệm thu cuối** sau khi index xong.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
