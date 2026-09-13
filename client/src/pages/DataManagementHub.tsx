@@ -8,20 +8,38 @@
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HubLauncher, type HubCategory } from "@/components/workspace";
-import { getRequiredPermissionForHref } from "@/lib/navigation";
+import { getAcceptedPermissionsForHref } from "@/lib/navigation";
 import {
   Package, Sparkles, Link as LinkIcon, Cpu, Tags, Users, History, ShieldCheck, BookOpen,
   Database, LayoutTemplate, Building2, Workflow,
 } from "lucide-react";
 
-// Lô 5 Mục 2 (lớp lỗi "một lối vào rồi TỪ CHỐI", -46) — tile "/layout" từng khai
-// requiredPermission: "settings_factory" trong khi đích thật (sau Khối D Task 1) là
-// <Redirect> vào "/digital-twin?tab=layout", route đòi "analytics_oee" (navigation.tsx).
-// Người có settings_factory mà không có analytics_oee vẫn THẤY tile, bấm vào bị RouteGuard
-// của hub từ chối. Điều kiện hiển thị PHẢI = quyền của ĐÍCH — lấy từ navGroups (một nguồn),
-// không hand-copy chuỗi quyền tay lần hai.
-const LAYOUT_TILE_HREF = "/layout";
-const LAYOUT_TILE_PERMISSION = getRequiredPermissionForHref("/digital-twin") ?? "analytics_oee";
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 62 mục A — Ô "Sơ đồ bố trí": HREF VÀ CỔNG QUYỀN LÀ **MỘT BIẾN**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Lô 5 Mục 2 đã chữa lớp lỗi "một lối vào rồi TỪ CHỐI" một lần (bỏ chuỗi quyền
+ * chép tay, hỏi `navGroups`), nhưng nó hỏi về **`/digital-twin`** — một route
+ * NAY CHỈ CÒN LÀ REDIRECT. Đích thật của ô này từ Đợt 61 là `/twin-studio`
+ * (`App.tsx`: `/layout` → `<Redirect to="/twin-studio" />`), và `/twin-studio`
+ * gate bằng `settings_factory` **HOẶC** `machine_control` — không phải
+ * `analytics_oee`. Hai cổng rời nhau ⇒ hỏng HAI CHIỀU, đo trên cổng 3062:
+ *
+ *   · vai chỉ có `analytics_oee`          → THẤY ô, bấm vào **bị TỪ CHỐI**
+ *   · `engineer1` (seed THẬT, settings_factory) → VÀO ĐƯỢC, mà **không thấy ô**
+ *
+ * ⇒ Bản vá không phải "đổi chuỗi quyền cho đúng" (lần sau lại lệch), mà là làm
+ *   cho hai thứ ấy **không thể lệch**: href của ô và href dùng để tra quyền là
+ *   CÙNG MỘT HẰNG. Và tra bằng `getAcceptedPermissionsForHref` — `/twin-studio`
+ *   khai `requiredPermissionAny`, nên hàm một-quyền cũ trả `undefined`, tức
+ *   "route không gán quyền": SAI một cách CÂM.
+ *
+ * ⚠ KHÔNG có fallback chuỗi cứng. Nếu mục nav của `/twin-studio` biến mất, tập
+ *   trả về là `[]` và `HubLauncher` **ẩn ô** (fail-closed) thay vì rơi về một
+ *   quyền đoán mò — đúng thứ đã đẻ ra chính lỗi này.
+ */
+const LAYOUT_TILE_HREF = "/twin-studio";
+const LAYOUT_TILE_PERMISSION_ANY = getAcceptedPermissionsForHref(LAYOUT_TILE_HREF);
 
 const CATEGORIES: readonly HubCategory[] = [
   {
@@ -55,7 +73,7 @@ const CATEGORIES: readonly HubCategory[] = [
       { icon: Database, label: "dataHub.datasettings", blurb: "dataHub.datasettingsBlurb", href: "/datasettings", requiredPermission: "settings_factory" },
       { icon: LayoutTemplate, label: "dataHub.workstationManagement", blurb: "dataHub.workstationManagementBlurb", href: "/workstation-management", requiredPermission: "settings_factory" },
       { icon: Workflow, label: "dataHub.processManagement", blurb: "dataHub.processManagementBlurb", href: "/process-management", requiredPermission: "settings_factory" },
-      { icon: LayoutTemplate, label: "dataHub.layout", blurb: "dataHub.layoutBlurb", href: LAYOUT_TILE_HREF, requiredPermission: LAYOUT_TILE_PERMISSION },
+      { icon: LayoutTemplate, label: "dataHub.layout", blurb: "dataHub.layoutBlurb", href: LAYOUT_TILE_HREF, requiredPermissionAny: LAYOUT_TILE_PERMISSION_ANY },
     ],
   },
 ];

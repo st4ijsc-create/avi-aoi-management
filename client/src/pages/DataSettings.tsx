@@ -41,7 +41,7 @@ import {
   ShieldCheck,
   Ticket
 } from "lucide-react";
-import { navItems, getRequiredPermissionForHref } from "@/lib/navigation";
+import { navItems, getAcceptedPermissionsForHref } from "@/lib/navigation";
 // doc 47 IA Đợt 2 — "Tổng quan": cây mô hình nhà máy + bảng kiểm tra cấu hình.
 import { FactoryTree } from "@/components/factoryConfig/FactoryTree";
 import { ConfigHealthPanel } from "@/components/factoryConfig/ConfigHealthPanel";
@@ -786,18 +786,28 @@ export default function DataSettings() {
   // doc 47 IA Đợt 1 — the hub LINKS OUT to config pages that have their own single home
   // (instead of re-embedding their managers, which caused menu/route duplication).
   //
-  // Lô 5 Mục 2 (lớp lỗi "một lối vào rồi TỪ CHỐI", -46) — "layout" trỏ tới "/layout", từ
-  // Khối D Task 1 route đó chỉ còn <Redirect> vào "/digital-twin?tab=layout" (gate
-  // analytics_oee, xem navigation.tsx). Trang DataSettings này tự nó đã gate
-  // settings_factory (canViewFactoryConfig ở trên) — một người có settings_factory mà
-  // KHÔNG có analytics_oee vẫn vào được trang, thấy link, bấm thì bị RouteGuard của hub
-  // từ chối. Điều kiện hiển thị RIÊNG link này phải = quyền của ĐÍCH, lấy từ navGroups
-  // (một nguồn — getRequiredPermissionForHref), không hand-copy chuỗi quyền tay.
-  const layoutLinkPermission = getRequiredPermissionForHref("/digital-twin") ?? "analytics_oee";
-  const canOpenLayoutQuickLink = isAdmin || hasPermission(layoutLinkPermission, "canView");
+  // ★★★ ĐỢT 62 mục A — liên kết nhanh "Bố cục nhà máy": HREF VÀ CỔNG QUYỀN LÀ MỘT BIẾN.
+  //
+  // Lô 5 Mục 2 đã bỏ chuỗi quyền chép tay, nhưng hỏi quyền của "/digital-twin" — route
+  // NAY CHỈ CÒN LÀ REDIRECT. Đích thật từ Đợt 61 là "/twin-studio", gate bằng
+  // settings_factory HOẶC machine_control. Hậu quả ĐO ĐƯỢC trên cổng 3062 (vai seed
+  // THẬT, không phải mock): `engineer1` có settings_factory ⇒ VÀO ĐƯỢC /twin-studio,
+  // nhưng KHÔNG có analytics_oee ⇒ **liên kết này bị ẩn khỏi chính người được phép**.
+  // Đó là lớp lỗi "một lối vào rồi TỪ CHỐI" chạy chiều NGƯỢC, và nó câm hơn chiều xuôi.
+  //
+  // ⚠ Không fallback chuỗi cứng: tập rỗng (mục nav biến mất) ⇒ ẨN liên kết (fail-closed),
+  //   không rơi về một quyền đoán mò — chính cái fallback ấy đã đẻ ra lỗi này.
+  // ⚠ Trang này tự gate settings_factory, tức MỌI người thấy được trang đều nằm trong
+  //   tập chấp nhận của /twin-studio ⇒ sau bản vá liên kết hiện cho tất cả họ. Đó là
+  //   kết quả ĐÚNG, không phải nới cổng: cổng nay = cổng của đích.
+  const LAYOUT_QUICKLINK_HREF = "/twin-studio";
+  const layoutQuyenChapNhan = getAcceptedPermissionsForHref(LAYOUT_QUICKLINK_HREF);
+  const canOpenLayoutQuickLink =
+    isAdmin ||
+    (layoutQuyenChapNhan.length > 0 && layoutQuyenChapNhan.some((m) => hasPermission(m, "canView")));
   const quickLinks = [
     ...(canOpenLayoutQuickLink
-      ? [{ href: "/layout", title: t("dataSettings.quickLinks.layout"), description: t("dataSettings.quickLinks.layoutDesc"), icon: <Factory className="h-5 w-5" /> }]
+      ? [{ href: LAYOUT_QUICKLINK_HREF, title: t("dataSettings.quickLinks.layout"), description: t("dataSettings.quickLinks.layoutDesc"), icon: <Factory className="h-5 w-5" /> }]
       : []),
     { href: "/workstation-management", title: t("dataSettings.quickLinks.workstation"), description: t("dataSettings.quickLinks.workstationDesc"), icon: <Warehouse className="h-5 w-5" /> },
     { href: "/process-management", title: t("dataSettings.quickLinks.process"), description: t("dataSettings.quickLinks.processDesc"), icon: <Workflow className="h-5 w-5" /> },
