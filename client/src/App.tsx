@@ -350,8 +350,25 @@ function Router() {
           import** ⇒ nó là MÃ CHẾT, không phải "màn cũ chạy song song". Đợt 61 đã
           **XOÁ** `TwinHub` + 5 màn con chỉ nó gọi (`DigitalTwinDashboard`,
           `CellTwinPlayer`, `FactoryLiveMap3D`+`FactoryFloor3D`, `FactoryFloorEditor`).
-          `DigitalTwinCenter` **CÒN TRÊN ĐĨA** (giữ `twin.replay`/`twin.status` chưa
-          di trú — Đợt 62). `RfTestCellSim` và `Layout` sống nhờ route riêng.
+          `RfTestCellSim` và `Layout` sống nhờ route riêng.
+
+        ★★★ ĐỢT 62 — `DigitalTwinCenter` (938 dòng) + `ArticulatedRobot` (196) **ĐÃ XOÁ**.
+          Câu Đợt 61 ("còn trên đĩa, giữ `twin.replay`/`twin.status` chưa di trú") hết hạn
+          sau khi ĐO từng tính năng thay vì suy từ tên thủ tục:
+            · USD export ......... ĐÃ có ở `TwinVanHanh.tsx:2213` + `SystemHealth.tsx:592`
+            · cảnh 3D + KPI ...... `/twin` và `/command-center` đã có, giàu hơn
+            · băng "trực tiếp" ... `/twin` có 5 trạng thái + huy hiệu NGUỒN SỐ (mạnh hơn
+                                   banner 3 trạng thái của trang cũ)
+            · replay máy ......... `twin.replay` đọc `packml_state`/`position_*`: ĐO trên DB
+                                   dev = **20 hàng mỗi loại, tất cả trong 2 phút ngày
+                                   2026-09-06, 0 hàng trong 24 h** ⇒ trang trả RỖNG. `/twin`
+                                   có `DongThoiGian` 24 h (xấp xỉ CÓ KHAI).
+            · cánh tay robot FK .. dữ liệu THẬT (1,46 triệu hàng `robot_telemetry`), nhưng
+                                   `/robot/:id` đã đọc đúng dữ liệu ấy bằng thanh 2D — một
+                                   lựa chọn CÓ CHỦ Ý (`RobotCockpit.tsx:15`).
+          **KHÔNG thủ tục server nào bị xoá** — `twin.replay`/`twin.status`/`twin.usdExport`
+          còn nguyên trong `twinRouter`; sổ nợ + đường hồi sinh ở spec §14r, lưới ghim ở
+          `client/src/components/twin3d/noTwinDot62.unit.test.ts`.
 
         ★★★ `<Redirect>` DƯỚI ĐÂY KHÔNG ĐƯỢC XOÁ THEO. Cái bị bỏ là **mã của vỏ**,
           không phải **lối vào bằng URL**: bookmark/link cũ vẫn phải tới đúng đích.

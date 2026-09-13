@@ -9157,6 +9157,46 @@ Session dọn cổng i18n (`a9049f26`) làm xanh **2 cổng** `entityDictionaryC
 2. **3 tệp locale là tệp dùng chung.** Dọn ~359 khoá cần một session **không có phiên nào ghi song
    song** — xem luật G2.
 
+## 15c. SỔ NỢ Đợt 62 — cái bị BỎ khi xoá `DigitalTwinCenter`, và đường hồi sinh
+
+Đợt 62 xoá `client/src/pages/DigitalTwinCenter.tsx` (938 dòng, md5
+`77d3c16d486239f665db85b63b604964`) + `client/src/components/twin/ArticulatedRobot.tsx`
+(196 dòng, md5 `b15b0fab313245a81d66923548251ea4`). Cả hai **0 importer**, route
+`/digital-twin-center` chỉ còn `<Redirect to="/twin">`. **Không thủ tục server nào bị xoá.**
+
+Quyết theo BẰNG CHỨNG, từng tính năng một — không suy từ tên thủ tục:
+
+| Tính năng của trang cũ | Bằng chứng đo được | Quyết |
+|---|---|---|
+| USD export (`twin.usdExport`) | Còn **2 chỗ gọi sống**: `TwinVanHanh.tsx:2213`, `SystemHealth.tsx:592`. Lý do giữ trang cũ ("chỗ gọi duy nhất") ĐÃ SAI | **BỎ UI** — đã di trú xong từ trước |
+| Cảnh 3D + KPI + inspector | `/twin`, `/twin/line/:id`, `/twin/may/:id`, `/command-center` (`twin.sceneGraph` ở `CommandCenter.tsx:557`) đều giàu hơn | **BỎ UI** |
+| Băng "trực tiếp/poll/cờ tắt" (`twin.status`) | `/twin` có **5 trạng thái kết nối** + huy hiệu **NGUỒN SỐ** riêng (`TwinVanHanh.tsx:3360`) — mạnh hơn banner 3 trạng thái | **BỎ UI**; `twin.status` nay **0 consumer UI** |
+| Replay máy (`twin.replay`) | `STATE_METRICS` = `packml_state`/`packml`/`state`/`operation_status`. ĐO trên DB dev: `packml_state` **20 hàng**, `position_x` **20**, `position_y` **20** — **tất cả trong 2 phút ngày 2026-09-06**, **0 hàng trong 24 h**. ⇒ trang trả cảnh RỖNG cho mọi cửa sổ thực tế. `/twin` có `DongThoiGian` 24 h | **BỎ UI**, **GIỮ thủ tục**; nợ ghi dưới |
+| Cánh tay robot khớp nối 3D (FK) | Dữ liệu THẬT: `robot_telemetry` **1.460.075 hàng**, **48.132 hàng/24 h**, 3 robot, `poseJson.joints` 6 trục. Nhưng dữ liệu ấy ĐÃ có consumer sống: `/robot/:id` tab Joints đọc đúng nó bằng **thanh 2D**, là lựa chọn CÓ CHỦ Ý (`RobotCockpit.tsx:15`) | **BỎ UI**, ghi nợ |
+
+**Ba món nợ, kèm đúng chỗ để bắt đầu lại:**
+
+1. **`twin.replay` là đường DUY NHẤT trong mã đọc lịch sử `packml_state` + khớp robot.**
+   `twinCanh.anhLichSu` (thứ `/twin` dùng) **tự khai** là mình không dựng được chế độ vận
+   hành (`LICH_SU_LA_XAP_XI = true`, `server/db/twinCanh.ts:1324`) — nó suy `running` từ
+   NHỊP TIM. ⇒ Ngày cần tua-lại-thật, chỗ bắt đầu là `twin.replay`, không phải viết mới.
+   ★ **Món rẻ nhất và có thể là gốc rễ**: `ot_telemetry` có **8.950.434 hàng `machine_state`**
+   (`RUNNING`/`IDLE`, 43 máy) mà `STATE_METRICS` (`server/services/twin/twinReplay.ts:69`)
+   **không liệt kê `machine_state`** ⇒ replay bỏ qua 8,95 triệu hàng đang có và đọc 20 hàng
+   không có. Đây là giả thuyết CHƯA ĐO HẾT (chưa kiểm `machineId` có khớp `deviceId` của
+   `foldSnapshots` không) — phải đo trước khi vá.
+2. **`twin.status` 0 consumer UI.** Nó chỉ khai cờ `TWIN_LIVE` của đường ống CŨ; đường ống
+   mới (`twin:trangThai`) không đi qua cờ ấy. Giữ vì rẻ; xoá được sau khi xác nhận không
+   script/e2e nào đọc.
+3. **`client/src/lib/kinematics.ts` nay 0 consumer RUNTIME** (chỉ còn
+   `kinematics.unit.test.ts`). **CỐ Ý GIỮ**: nó chính là thứ một bản FK 3D tương lai cần, và
+   `client/src/components/twin3d/hinhKhoiMay.ts:365` đã ghi sẵn đường hồi sinh ("dùng lại
+   ArticulatedRobot khi có dữ liệu khớp"). Xoá nó là xoá đường lui, không phải dọn rác.
+
+**Lưới giữ sổ nợ:** `client/src/components/twin3d/noTwinDot62.unit.test.ts` — ghim (a) hai tệp
+đã đi và không ai import lại, (b) `status`/`replay`/`usdExport` CÒN trong `twinRouter`,
+(c) `usdExport` còn ≥1 consumer UI sống. Ablation: đổi tên `replay:` ⇒ lưới ĐỎ đúng ô ấy.
+
 ## 16. Ngoài phạm vi (YAGNI)
 
 - ❌ Photoreal / PBR / HDRI / raytracing — con đường nhanh nhất biến twin thành đồ trang trí.
