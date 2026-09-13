@@ -197,3 +197,51 @@ Bảng đã có sẵn 6 index, **hai cái trông như đúng cái ta cần** —
 **`createdAt`**, một cột **khác** và khác **có chủ ý**: `timestamp` là mốc của KỲ ĐO, `createdAt` là
 lúc hàng được GHI. Đó là lý do sáu index không cứu được gì, và là lý do phải đọc `pg_get_indexdef`
 chứ không đọc tên index.
+
+---
+
+## 7. Diễn tập trên bản sao — **ĐÃ ĐO, CHƯA CHẠY DDL** (và vì sao)
+
+Brief Đợt 57 giả định môi trường này *"có thể không có DB test"*. **Đo lại thì có**:
+`aoi_management_test` nằm ngay trên cùng instance dev (`127.0.0.1:5434`) — liệt kê bằng
+`pg_database`. Nên bước diễn tập là **làm được**, chỉ bị chặn bởi một ràng buộc khác.
+
+**Đã làm (chỉ đọc):** chạy `scripts/do-index-suc-khoe.mjs` lên `aoi_management_test`
+(`.qa-dot57/B-do-index-DBTEST.txt`). Kết quả cho một bài học đáng đưa vào chính runbook này:
+
+| | dev `aoi_management` (chưa index — mô phỏng `--khong-index`) | test `aoi_management_test` (**thật sự** chưa có index) |
+|---|---|---|
+| số hàng | 220 681 | **30 633** |
+| số máy trong `IN` | 43 | **1 466** |
+| `Sort Method` | **`external merge  Disk: 8 144 kB`** | **`quicksort  Memory: 2 248 kB`** |
+| ấm p50 | 160,74 ms | **19,96 ms** |
+| 7 tiêu chí | TRƯỢT T1–T5 | TRƯỢT T2/T3/T4/T6/T7, **ĐẠT T1 + T5** |
+
+> ### ★ Bệnh này phụ thuộc **KÍCH CỠ**, không phụ thuộc hình dạng câu.
+> Cùng một câu `DISTINCT ON`, cùng một bảng thiếu đúng một index, nhưng ở 30 k hàng
+> Postgres sắp **trong RAM** (`quicksort`) nên **T1 và T5 vẫn ĐẠT** — chỉ T2/T3 lộ ra.
+> Ở 220 k hàng nó tràn `work_mem` và rơi xuống **`external merge` ra đĩa**, và thời gian
+> nhảy **×8**. Hệ quả cho người vận hành: **một môi trường staging nhỏ sẽ báo "không sao"
+> cho đúng cái bệnh đang giết production.** Khi đọc bảng tiêu chí, **T2/T3 là tín hiệu
+> sớm; T1/T4/T5 chỉ kêu sau khi đã đủ lớn.**
+
+**Chưa làm (DDL):** không chạy `CREATE INDEX` trên `aoi_management_test`. Lệnh giao việc
+của Đợt 57 có **hai câu mâu thuẫn nhau** — *"diễn tập trên DB test nếu có"* và *"**tuyệt đối
+không** chạy DDL lên bất kỳ DB nào ngoài DB dev đã được duyệt ở QĐ-27"*. Khi một lệnh cấm
+tuyệt đối va vào một lệnh cho phép, phần cấm thắng, và người giao việc là người gỡ — không
+phải người thực thi tự nới quyền của mình.
+
+**Muốn diễn tập thì chạy đúng ba lệnh này** (cần owner `aoi`, DB test là bản dùng-rồi-bỏ):
+
+```bash
+T='postgres://aoi:***@127.0.0.1:5434/aoi_management_test'
+DATABASE_URL=$T node scripts/do-index-suc-khoe.mjs --json > dientap-truoc.txt   # bước 1
+DATABASE_URL=$T node scripts/migrate-standalone.mjs                            # bước 2
+DATABASE_URL=$T node scripts/do-index-suc-khoe.mjs --json > dientap-sau.txt     # bước 3
+```
+
+⚠ Diễn tập ở **30 633 hàng** chỉ đo được *thủ tục* (migration chạy trót lọt, `CONCURRENTLY`
+không nổ `25001`, index hợp lệ) — **không** đo được *thời gian build ở cỡ production*, và theo
+đúng bảng trên, **không** tái hiện được `external merge`. Muốn ước cửa sổ bảo trì thì nhân
+thời gian build dev (**115–147 ms cho 220 k hàng**) theo số hàng THẬT của production, lấy từ
+mục 1 của script chạy trên chính production.
