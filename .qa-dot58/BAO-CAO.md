@@ -316,7 +316,10 @@ Ngoài `package.json` còn các thước QA rời đã chạy: `scripts/kiem-vo-
 **Tác dụng phụ ghi vào cây mà TÔI đã gây (khai đủ):** ① `.qa-pw-output/` (outputDir cấu hình sẵn,
 G140 — đúng chỗ, không phải `test-results/`); ② `.qa-dot44/mang-ngoai/25888.json` — `f1-fonts.mjs`
 ghim đường ra `.qa-dot44`, tôi thêm **1 tệp** vào thư mục KHÔNG tracked của đợt cũ (không xoá gì);
-③ `.qa-dot58/**` của chính tôi. **KHÔNG chạy `kb:operational-cards:test`** ⇒ 169 tệp `knowledge/`
+③ `.qa-dot58/**` của chính tôi; ④ `.qa-dot47/e2e-lai-20260913-073148/` — **do chính spec e2e tự đổi
+đường ra để KHÔNG đè bằng chứng cũ** (103 tệp 0 byte của `.qa-dot47` đếm lại vẫn **103**); ⑤
+`.qa-dot44/58a/`, `.qa-dot44/mang-ngoai/*.json`, `.qa-dot44/chan/E/e9-*.json` — harness cũ ghim đường ra.
+Danh sách đầy đủ: `.qa-dot58/05-tac-dung-phu-XONG.txt`. **KHÔNG chạy `kb:operational-cards:test`** ⇒ 169 tệp `knowledge/`
 trong `git status` là **của phiên trước, tôi không đụng và không khôi phục** (đúng lệnh G138).
 
 ---
