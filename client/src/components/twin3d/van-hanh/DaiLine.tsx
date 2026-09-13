@@ -101,16 +101,16 @@ export function DaiLine({
   return (
     <div className="shrink-0 border-t bg-card px-3 py-1.5" data-testid="dai-line">
       <div className="mb-1 flex items-center gap-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-2">
           {t("twin3d.vanHanh.daiLine", "Dải chuyền")}
         </h2>
-        <span className="text-[10px] text-muted-foreground">
+        <span className="text-[10px] text-text-2">
           {t("twin3d.vanHanh.soTram", "{{n}} trạm", { n: hienSo(daSap.length) })}
         </span>
         {/* ★ Đợt 38 — tiền tố đã rút khỏi từng ô, in MỘT lần ở đây (luật 4 `maNgan.ts`): rút để đọc, không để giấu. */}
         {tienTo ? (
           <span
-            className="text-[10px] text-muted-foreground"
+            className="text-[10px] text-text-2"
             data-testid="dai-line-tien-to"
             title={t(
               "twin3d.vanHanh.tienToChungMoTa",
@@ -124,12 +124,12 @@ export function DaiLine({
           ★★★ §11 #36 — NHỊP CHUYỀN BẰNG SỐ, cạnh mũi tên động của 3D.
           Mũi tên nói "nhanh hơn"; con số này nói "nhanh hơn bao nhiêu".
         */}
-        <span className="text-[10px] text-muted-foreground" data-testid="dai-line-nhip">
+        <span className="text-[10px] text-text-2" data-testid="dai-line-nhip">
           {t("twin3d.vanHanh.nhipChuyen", "Nhịp")}: <b>{nhanNhip(nhipChuyenMs)}</b>
         </span>
         {/* Tổng WIP — chỉ hiện khi CÓ phép đo; `—` khi chưa đo được (NT-3). */}
         {coWip ? (
-          <span className="text-[10px] text-muted-foreground" data-testid="dai-line-tong-wip">
+          <span className="text-[10px] text-text-2" data-testid="dai-line-tong-wip">
             {t("twin3d.vanHanh.tongWip", "WIP")}: <b>{tongWip == null ? "—" : hienSo(tongWip)}</b>
           </span>
         ) : null}
@@ -158,7 +158,7 @@ export function DaiLine({
               {/* Mũi tên nối — hướng dòng chảy, đọc được kể cả khi 3D tắt.
                   ★ Đợt 38: `px-0` — 11 mũi tên × 4 px đệm là 44 px của 25 px cuộn ngang ở 1280 (đo `.qa-dot38/`). */}
               {i > 0 ? (
-                <span aria-hidden="true" className="px-0 text-[10px] text-muted-foreground">
+                <span aria-hidden="true" className="px-0 text-[10px] text-text-2">
                   →
                 </span>
               ) : null}
@@ -189,7 +189,7 @@ export function DaiLine({
                     className="inline-block h-1.5 w-1.5 rounded-full"
                     style={{ background: mau, opacity: kieu.doMo }}
                   />
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-[10px] text-text-2">
                     {/*
                       ★ ĐỢT 36 (Pareto #8) — SỐ NHIỀU: QA Đợt 32/36 đo **"1 machines"** ×12 ở en. `count` để
                         i18next tra `soMayNgan_one`/`soMayNgan_other` (en.json); vi/zh không có dạng số nhiều
@@ -218,7 +218,7 @@ export function DaiLine({
                     >
                       {s.soWip == null ? "—" : hienSo(s.soWip)}
                     </span>
-                    <span className="text-[9px] uppercase text-muted-foreground">
+                    <span className="text-[9px] uppercase text-text-2">
                       {t("twin3d.vanHanh.wipNgan", "WIP")}
                     </span>
                     {/*
@@ -227,7 +227,7 @@ export function DaiLine({
                       trạm mình không biết gì là bịa).
                     */}
                     {s.hang != null ? (
-                      <span className="text-[9px] text-muted-foreground">#{hienSo(s.hang)}</span>
+                      <span className="text-[9px] text-text-2">#{hienSo(s.hang)}</span>
                     ) : null}
                   </span>
                 ) : null}

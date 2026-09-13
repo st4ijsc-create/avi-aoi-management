@@ -224,7 +224,7 @@ function Hang({
             con số vô nghĩa che mất badge cảnh báo. */}
         {soMay > 0 && coCon ? (
           <span
-            className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground"
+            className="rounded bg-muted px-1 text-[10px] font-medium text-text-2"
             data-testid={`so-may-${node.khoa}`}
             title={`${soMay}`}
           >
@@ -473,24 +473,24 @@ export function CayPhanCap({
         }}
       >
         {daLoc.length === 0 && khuChoLoc.length === 0 ? (
-          <p className="p-2 text-xs text-muted-foreground">{t("twin3d.cay.khongKhop")}</p>
+          <p className="p-2 text-xs text-text-2">{t("twin3d.cay.khongKhop")}</p>
         ) : null}
 
         {ve(hangChinh)}
 
         {/* ★★★ §7.1 — KHU CHỜ XẾP CHỖ. Hiện CẢ KHI RỖNG (xem docblock đầu tệp). */}
         <div className="mt-3 border-t pt-2" data-testid="khu-cho-xep-cho">
-          <p className="px-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="px-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-2">
             {t("twin3d.khuChoXepCho")} ({soChoXepCho})
           </p>
           {khuChoLoc.length === 0 ? (
-            <p className="px-1.5 text-[11px] text-muted-foreground">
+            <p className="px-1.5 text-[11px] text-text-2">
               {soChoXepCho === 0 ? "—" : t("twin3d.cay.khongKhop")}
             </p>
           ) : (
             ve(hangKhuCho)
           )}
-          <p className="px-1.5 pt-1 text-[10px] leading-tight text-muted-foreground">
+          <p className="px-1.5 pt-1 text-[10px] leading-tight text-text-2">
             {t("twin3d.khuChoXepChoMoTa")}
           </p>
         </div>

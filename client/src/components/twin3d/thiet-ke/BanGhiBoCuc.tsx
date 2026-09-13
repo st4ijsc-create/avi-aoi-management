@@ -167,7 +167,7 @@ export function BanGhiBoCuc({ tangId, layAnhChup, onKhoiPhuc }: BanGhiBoCucProps
 
   return (
     <div className="border-t p-2" data-testid="khoi-ban-ghi">
-      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+      <p className="mb-1.5 text-[11px] font-medium text-text-2">
         {t("twin3d.banGhi.tieuDe")}
       </p>
 
@@ -200,9 +200,9 @@ export function BanGhiBoCuc({ tangId, layAnhChup, onKhoiPhuc }: BanGhiBoCucProps
       {/* ★ NT-3.5 — "đếm rỗng khác đếm bằng 0": đang tải hiện "—", không hiện
           "chưa có bản ghi nào". Hai câu đó nói về hai thế giới khác nhau. */}
       {dsQ.isLoading ? (
-        <p className="mt-1.5 text-[10px] text-muted-foreground">—</p>
+        <p className="mt-1.5 text-[10px] text-text-2">—</p>
       ) : ds.length === 0 ? (
-        <p className="mt-1.5 text-[10px] text-muted-foreground" data-testid="chua-co-ban-ghi">
+        <p className="mt-1.5 text-[10px] text-text-2" data-testid="chua-co-ban-ghi">
           {t("twin3d.banGhi.chuaCo")}
         </p>
       ) : (

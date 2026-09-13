@@ -64,7 +64,7 @@ function OThamSo({
 }) {
   return (
     <div className="grid gap-1">
-      <Label className="text-[11px] text-muted-foreground">{nhan}</Label>
+      <Label className="text-[11px] text-text-2">{nhan}</Label>
       <Input
         className="h-8 text-xs"
         inputMode="decimal"
@@ -170,7 +170,7 @@ export function HopThoaiSinh({
             <p className="mt-2 font-semibold text-emerald-700 dark:text-emerald-400" data-testid="tong-ket-giu-nguyen">
               {t("twin3d.sinh.giuNguyen", { n: tongKet.giuNguyen })}
             </p>
-            <p className="text-[11px] leading-tight text-muted-foreground">
+            <p className="text-[11px] leading-tight text-text-2">
               {t("twin3d.sinh.giuNguyenGiaiThich")}
             </p>
 

@@ -89,7 +89,7 @@ function OChon({
      *   xếp cạnh nhau theo thứ tự phân cấp.
      * ⚠ Ai sửa lại thành nhãn hiện: ĐO `header.height` sau đó. Nó phải ở 48.
      */
-    <label className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+    <label className="flex min-w-0 items-center gap-1 text-[11px] text-text-2">
       <span className="sr-only">{nhan}</span>
       <select
         /* ★ Đợt 45 (mục 2) — chế độ GỌN (header < 1100 px): ô hẹp hơn để breadcrumb còn chỗ; vẫn 3 ô. */

@@ -334,7 +334,7 @@ export function ThuVienAsset({
   return (
     <div className="border-t px-3 py-1.5" data-testid="thu-vien-asset">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-medium text-muted-foreground">
+        <span className="text-[11px] font-medium text-text-2">
           {t("twin3d.thuVien.tieuDe")}
         </span>
         <Tabs value={nhom} onValueChange={(v) => setNhom(v as Nhom)}>
@@ -521,7 +521,7 @@ export function ThuVienAsset({
           <The key={x.id} nhan={x.nhan} testId={`the-asset-${x.id}`} />
         ))}
       </div>
-      <p className="mt-1 text-[10px] text-muted-foreground">{t("twin3d.thuVien.keoVaoCanh")}</p>
+      <p className="mt-1 text-[10px] text-text-2">{t("twin3d.thuVien.keoVaoCanh")}</p>
     </div>
   );
 }

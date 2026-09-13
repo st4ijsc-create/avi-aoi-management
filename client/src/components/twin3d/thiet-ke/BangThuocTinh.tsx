@@ -90,7 +90,7 @@ function OSo({
 }) {
   return (
     <div className="grid gap-1">
-      <Label className="text-[11px] text-muted-foreground">{nhan}</Label>
+      <Label className="text-[11px] text-text-2">{nhan}</Label>
       <Input
         type="text"
         inputMode="decimal"
@@ -128,7 +128,7 @@ export function BangThuocTinh({
 
   if (soDangChon > 1) {
     return (
-      <div className="p-3 text-xs text-muted-foreground" data-testid="bang-thuoc-tinh">
+      <div className="p-3 text-xs text-text-2" data-testid="bang-thuoc-tinh">
         {t("twin3d.thuocTinh.nhieuVatThe", { n: soDangChon })}
       </div>
     );
@@ -136,7 +136,7 @@ export function BangThuocTinh({
 
   if (!node) {
     return (
-      <div className="p-3 text-xs text-muted-foreground" data-testid="bang-thuoc-tinh">
+      <div className="p-3 text-xs text-text-2" data-testid="bang-thuoc-tinh">
         {t("twin3d.thuocTinh.chuaChon")}
       </div>
     );
@@ -158,11 +158,11 @@ export function BangThuocTinh({
     <div className="flex h-full min-h-0 flex-col overflow-auto p-3" data-testid="bang-thuoc-tinh">
       <div className="mb-2">
         <p className="text-xs font-semibold">{node.nhan}</p>
-        <p className="text-[11px] text-muted-foreground">{node.loai}</p>
+        <p className="text-[11px] text-text-2">{node.loai}</p>
       </div>
 
       {node.choXepCho || !datCho ? (
-        <p className="rounded border border-dashed p-2 text-[11px] text-muted-foreground">
+        <p className="rounded border border-dashed p-2 text-[11px] text-text-2">
           {t("twin3d.khuChoXepChoMoTa")}
         </p>
       ) : chiDoc ? (
@@ -218,7 +218,7 @@ export function BangThuocTinh({
             </Tooltip>
           ) : null}
 
-          <p className="mb-2 text-[10px] leading-tight text-muted-foreground">
+          <p className="mb-2 text-[10px] leading-tight text-text-2">
             {t("twin3d.thuocTinh.oNhapLaNguonSuThat")}
           </p>
 
@@ -248,7 +248,7 @@ export function BangThuocTinh({
           </div>
 
           <div className="mb-3 grid gap-1">
-            <Label className="text-[11px] text-muted-foreground">
+            <Label className="text-[11px] text-text-2">
               {t("twin3d.thuocTinh.xoayDo")}
             </Label>
             <Input
@@ -335,7 +335,7 @@ export function BangThuocTinh({
             </label>
           </div>
 
-          <div className="mb-3 text-[11px] text-muted-foreground">
+          <div className="mb-3 text-[11px] text-text-2">
             {/* ★ Đợt 36: khoá TƯỜNG MINH — dạng `"twin3d.nguon." + x` làm `i18n:check` đọc thành khoá `twin3d.nguon.` (báo THIẾU giả). */}
             {t(datCho.nguon === "tay" ? "twin3d.nguon.tay" : "twin3d.nguon.sinh")}
           </div>

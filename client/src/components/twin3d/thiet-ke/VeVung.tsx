@@ -396,7 +396,7 @@ export function VeVung({
         /* ★ NT-3 — "chưa có vùng nào" phải là một CÂU, không phải một khoảng
              trống. Đo được trước Đợt 8: `twin_vat_the` có 0 hàng `'vung'`, nên
              đây là trạng thái mặc định của mọi nhà máy hiện tại. */
-        <p className="px-1 text-[11px] text-muted-foreground" data-testid="ve-vung-trong">
+        <p className="px-1 text-[11px] text-text-2" data-testid="ve-vung-trong">
           {t("twin3d.vung.chuaCoVung")}
         </p>
       ) : (

@@ -249,7 +249,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
         >
           {/* ══ #30 — WHAT-IF NĂNG SUẤT ═════════════════════════════════ */}
           <section aria-labelledby="tieu-de-what-if" className="space-y-1.5">
-            <h3 id="tieu-de-what-if" className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <h3 id="tieu-de-what-if" className="text-[11px] font-semibold uppercase tracking-wide text-text-2">
               {t("twin3d.moPhong.whatIf", "Năng suất what-if")}
             </h3>
 
@@ -261,7 +261,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
             */}
             {!dv.chay ? (
               <p
-                className="rounded border border-dashed px-2 py-1.5 text-[11px] leading-snug text-muted-foreground"
+                className="rounded border border-dashed px-2 py-1.5 text-[11px] leading-snug text-text-2"
                 data-testid="mo-phong-ly-do"
                 data-ly-do={dv.lyDo}
               >
@@ -283,7 +283,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
               <>
                 <div className="flex flex-wrap items-end gap-2">
                   <label className="pointer-events-auto flex flex-col gap-0.5">
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-[10px] text-text-2">
                       {t("twin3d.moPhong.horizon", "Khoảng (giờ)")}
                     </span>
                     <input
@@ -297,7 +297,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
                     />
                   </label>
                   <label className="pointer-events-auto flex flex-col gap-0.5">
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-[10px] text-text-2">
                       {t("twin3d.moPhong.heSo", "Hệ số cycle")}
                     </span>
                     <input
@@ -328,7 +328,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
                     một `cycleTimeSec` và bảng `perStation` sẽ trông "cân bằng
                     hoàn hảo" một cách giả tạo. Người xem phải biết điều đó.
                 */}
-                <p className="text-[10px] leading-snug text-muted-foreground" data-testid="mo-phong-nguon">
+                <p className="text-[10px] leading-snug text-text-2" data-testid="mo-phong-nguon">
                   {t(
                     "twin3d.moPhong.nguon",
                     "Nhịp {{nhip}} s/chiếc của CẢ CHUYỀN (wip.lineBalance), áp chung cho {{n}} trạm{{tuoi}}",
@@ -398,7 +398,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
                     </table>
                   </>
                 ) : (
-                  <p className="text-[11px] text-muted-foreground" data-testid="what-if-chua-chay">
+                  <p className="text-[11px] text-text-2" data-testid="what-if-chua-chay">
                     {p.dangChayWhatIf
                       ? t("twin3d.moPhong.dangChay", "Đang mô phỏng…")
                       : t("twin3d.moPhong.bamChay", "Bấm Chạy để ước lượng năng suất.")}
@@ -420,13 +420,13 @@ export function NganMoPhong(p: NganMoPhongProps) {
             <section aria-labelledby="tieu-de-phat-lai" className="space-y-1.5 border-t pt-2">
               <h3
                 id="tieu-de-phat-lai"
-                className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                className="text-[11px] font-semibold uppercase tracking-wide text-text-2"
               >
                 {t("twin3d.moPhong.phatLai", "Phát lại quy trình")}
               </h3>
 
               {p.workflow.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground" data-testid="phat-lai-rong">
+                <p className="text-[11px] text-text-2" data-testid="phat-lai-rong">
                   {t("twin3d.moPhong.khongCoWorkflow", "Chưa có quy trình nào được triển khai.")}
                 </p>
               ) : (
@@ -447,7 +447,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
                   </select>
 
                   {p.dangChayPhatLai ? (
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-[11px] text-text-2">
                       {t("twin3d.moPhong.dangChay", "Đang mô phỏng…")}
                     </p>
                   ) : p.phatLai ? (
@@ -519,7 +519,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
                             độ theo BƯỚC in đúng thứ đo được, không bịa ra giây.
                         */}
                         <span
-                          className="ml-1 text-[10px] tabular-nums text-muted-foreground"
+                          className="ml-1 text-[10px] tabular-nums text-text-2"
                           data-testid="phat-lai-moc"
                           data-che-do={theoThoiGian ? "thoi-gian" : "buoc"}
                         >
@@ -541,7 +541,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
                       */}
                       {!theoThoiGian ? (
                         <p
-                          className="text-[10px] leading-snug text-muted-foreground"
+                          className="text-[10px] leading-snug text-text-2"
                           data-testid="phat-lai-khong-thoi-luong"
                         >
                           {t(
@@ -560,7 +560,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
                       <ul className="space-y-0.5" data-testid="phat-lai-gantt">
                         {buocDaDat.map((b) => (
                           <li key={b.stepId} className="flex items-center gap-1">
-                            <span className="w-20 shrink-0 truncate text-[10px] text-muted-foreground" title={b.stepId}>
+                            <span className="w-20 shrink-0 truncate text-[10px] text-text-2" title={b.stepId}>
                               {b.command ?? b.stepType}
                             </span>
                             <span className="relative h-2 flex-1 rounded bg-muted">
@@ -584,7 +584,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
                       </ul>
                     </>
                   ) : p.workflowRef ? (
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-[11px] text-text-2">
                       {t("twin3d.moPhong.dangChay", "Đang mô phỏng…")}
                     </p>
                   ) : null}
@@ -619,7 +619,7 @@ function O({
       <dd className="text-right font-medium tabular-nums" data-testid={`mo-phong-${khoa}`}>
         {co && tienTo ? tienTo : ""}
         {hienSo(gt)}
-        {donVi && co ? <span className="ml-0.5 text-[10px] text-muted-foreground">{donVi}</span> : null}
+        {donVi && co ? <span className="ml-0.5 text-[10px] text-text-2">{donVi}</span> : null}
       </dd>
     </div>
   );

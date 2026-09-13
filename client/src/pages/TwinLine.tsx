@@ -921,7 +921,7 @@ export function ThanManLine({
         <span className="font-medium" data-testid="ten-line">
           {tenLine}
         </span>
-        <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="ml-auto flex items-center gap-3 text-xs text-text-2">
           <span data-testid="dem-may-line">
             {t("twin3d.vanHanh.soMay", "Máy")} {hienSo(tomTat.soMay, chuaBiet)}
           </span>

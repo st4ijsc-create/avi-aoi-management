@@ -114,7 +114,7 @@ export default function TwinHub() {
         </TabsList>
 
         {/* Data-provenance legend — states plainly which tabs are real data. */}
-        <p className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted-foreground">
+        <p className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-text-2">
           <span className="inline-flex items-center gap-1.5">
             <ModeBadge mode="live" />
             {t("twinHub.legend.live", "Dữ liệu máy/telemetry thật, thời gian thực")}

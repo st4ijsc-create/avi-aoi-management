@@ -1058,7 +1058,7 @@ export function XuongThietKe({
                   về bạn". */}
             {coQuyenSua && tangId !== null ? (
               <div className="border-t p-2" data-testid="khoi-vung-an-toan">
-                <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                <p className="mb-1.5 text-[11px] font-medium text-text-2">
                   {t("twin3d.vung.tieuDe")}
                 </p>
                 <VeVung

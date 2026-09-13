@@ -38,6 +38,8 @@ import { Html } from "@react-three/drei";
 import * as THREE from "three";
 
 import { giaiMauCanh } from "../mauTrangThai";
+import { mauChuTrenNen } from "./mauChuTrenNen";
+import { mauCss } from "./mauThree";
 import { TAM_CANVAS, layVungCam } from "../loi/LopNhan";
 import { LOP_BADGE, ghiHopDaVe, ghiSoAn, xoaHopDaVe, xoaSoAn } from "../loi/hopDaVe";
 import {
@@ -78,14 +80,14 @@ export const TRAN_BADGE = 12;
  *   `--info`) — KHÔNG thêm mã thứ tám ở đây.
  */
 const KIEU_MUC: Readonly<
-  Record<MucCanhBao, { hinh: string; token: string; uuTien: number }>
+  Record<MucCanhBao, { hinh: string; token: string; tokenChu: string; uuTien: number }>
 > = {
   // Đỏ = critical. Tam giác — hình dạng "nguy hiểm" quy ước quốc tế.
-  red: { hinh: "▲", token: "--destructive", uuTien: 3 },
+  red: { hinh: "▲", token: "--destructive", tokenChu: "--destructive-foreground", uuTien: 3 },
   // Vàng = warning. Thoi.
-  yellow: { hinh: "◆", token: "--warning", uuTien: 2 },
+  yellow: { hinh: "◆", token: "--warning", tokenChu: "--warning-foreground", uuTien: 2 },
   // Xanh dương = information / gọi hỗ trợ. Tròn.
-  call: { hinh: "●", token: "--info", uuTien: 1 },
+  call: { hinh: "●", token: "--info", tokenChu: "--info-foreground", uuTien: 1 },
 };
 
 interface BadgeDaChieu {
@@ -345,7 +347,25 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
       >
         {hienThi.map((b) => {
           const kieu = KIEU_MUC[b.muc];
-          const mau = giaiMauCanh(kieu.token) ?? "#ef4444";
+          /* ★ Đợt 57 (mục 11) — nền badge qua `mauCss` (canvas 2D quy `oklch()` ra sRGB thật):
+               để chọn màu chữ ta cần BYTE, mà `giaiMauCanh` trả nguyên văn `oklch(...)` (G29). */
+          const mau = mauCss(kieu.token, "#ef4444");
+          /*
+           * ★★★ ĐỢT 57 (mục thiết kế 11) — MÀU CHỮ **TÍNH TỪ ĐỘ CHÓI CỦA NỀN**, ba lần đo mới ra.
+           *
+           * Bản gốc ghim `color: "#fff"` cho cả ba mức + `opacity: 0.6` cho badge đã ack. Đo pixel
+           * thật (WCAG 2.1, nền sau khi vẽ) qua ba vòng:
+           *   ① gốc (mờ 0,6 + trắng)             ⇒ **1,68–2,83**  — 106 chuỗi dưới ngưỡng
+           *   ② bỏ `opacity`, giữ trắng           ⇒ **1,96–2,60**  — độ mờ KHÔNG phải nguyên nhân duy nhất
+           *   ③ dùng `--<mức>-foreground`         ⇒ warning/info ĐẠT, **destructive vẫn 3,11–3,29**
+           * Lý do ③ hụt: `--destructive-foreground` là màu SÁNG (oklch 0.98) — đúng cho nút
+           * `bg-destructive` cỡ chữ thường, SAI cho chữ 11 px trên nền đỏ đặc. Chữ SẪM trên chính
+           * nền đỏ ấy đo được **≈ 5,0**.
+           * ⇒ Không ghim mức nào cả: `mauChuTrenNen` CHỌN giữa `--foreground` và `--background`
+           *   bằng đúng công thức WCAG. Chỉ dùng token có sẵn (§10.2 trần 7 mã nguyên vẹn), và tự
+           *   lật đúng khi đổi theme sáng/tối — thứ mà mọi bảng ghim tay đều hỏng.
+           */
+          const mauChu = mauChuTrenNen(mau, giaiMauCanh(kieu.tokenChu) ?? "#fff");
           return (
             <div
               key={b.id}
@@ -353,6 +373,8 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
               data-ngoai-khung={b.ngoaiKhung ? "1" : "0"}
               data-doi-cho={b.doiCho ? "1" : "0"}
               data-muc={b.muc}
+              /* ★ Đợt 57 (mục 11) — trạng thái ack nay đọc được từ DOM (viền thay cho `opacity`). */
+              data-da-ack={b.daAck ? "1" : "0"}
               /* ★ Đo kích thước THẬT ngay khi div gắn vào DOM và nhớ theo `id`.
                  Khung sau, `locBadge` khử chồng lấn bằng bbox thật thay vì trị
                  suy đoán. Ghi vào ref (không setState) nên KHÔNG gây re-render. */
@@ -383,10 +405,26 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
                 padding: "3px 6px",
                 borderRadius: 4,
                 whiteSpace: "nowrap",
-                color: "#fff",
+                color: mauChu,
                 background: mau,
-                // Alarm đã ack vẫn HIỆN (nó chưa được giải quyết) nhưng lùi lại.
-                opacity: b.daAck ? 0.6 : 1,
+                /*
+                 * ★★★ ĐỢT 57 (mục thiết kế 11) — "ĐÃ XÁC NHẬN" = **VIỀN**, KHÔNG PHẢI MỜ ĐI.
+                 * Bản cũ: `opacity: b.daAck ? 0.6 : 1`. `opacity` composite CẢ khối (nền + chữ) xuống
+                 * nền phía sau, nên nó KHÔNG "lùi badge lại" mà **kéo tương phản chữ/nền xuống cùng
+                 * lúc**. Đo pixel THẬT trên cảnh 3D (`.qa-dot57/01-do-truoc.txt`, WCAG 2.1 trên nền
+                 * sau khi vẽ): chữ 11 px trắng trong badge đã ack đạt tỉ số **1,68–2,83** — dưới cả
+                 * ngưỡng 3,0 của chữ lớn, chứ chưa nói 4,5 của chữ thường. 106 chuỗi dính lỗi này.
+                 * ★ Thay bằng `outline` nét ĐỨT: nó là kênh HÌNH DẠNG (§10.3 luật 2 — mã hoá dư thừa),
+                 *   giữ nguyên độ tương phản của chữ, và `outline` KHÔNG chiếm chỗ trong hộp nên
+                 *   `coBadgeRef`/`locBadge` đo ra đúng kích thước cũ — khử chồng lấn không đổi hành vi.
+                 * ★ `opacity` giữ 1 ở CẢ HAI nhánh: khác biệt ack/chưa-ack nay đọc được bằng viền,
+                 *   và một cảnh báo chưa được giải quyết không có lý do gì mờ hơn cảnh báo khác.
+                 */
+                opacity: 1,
+                /* ★ Viền ack lấy CÙNG màu chữ của mức ⇒ luôn tương phản với nền badge của mức ấy
+                     (trắng trên đỏ, sẫm trên vàng/xanh) — không còn trắng-trên-vàng. */
+                outline: b.daAck ? `2px dashed ${mauChu}` : "none",
+                outlineOffset: "-3px",
                 boxShadow: "0 1px 3px rgba(0,0,0,.4)",
               }}
             >

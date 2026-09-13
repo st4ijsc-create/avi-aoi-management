@@ -172,7 +172,7 @@ export default function TwinStudio() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Label className="text-xs text-muted-foreground">{t("common.factory")}</Label>
+          <Label className="text-xs text-text-2">{t("common.factory")}</Label>
           <Select
             value={factoryId === null ? "" : String(factoryId)}
             onValueChange={(v) => setFactoryId(Number(v))}
@@ -213,7 +213,7 @@ export default function TwinStudio() {
             </TabsTrigger>
           </TabsList>
           {/* Đếm RỖNG khác đếm bằng 0 (NT-3.5): chưa tải xong hiện "—", không hiện 0. */}
-          <p className="text-xs text-muted-foreground" data-testid="dem-toa-nha">
+          <p className="text-xs text-text-2" data-testid="dem-toa-nha">
             {t("twin3d.toaNha.tieuDe")}:{" "}
             {toaNhaQ.isLoading || factoryId === null ? "—" : (toaNhaQ.data?.length ?? 0)}
           </p>

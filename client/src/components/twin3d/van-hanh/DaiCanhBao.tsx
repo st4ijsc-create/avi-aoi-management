@@ -142,7 +142,7 @@ function DongCanhBao({
               </span>
             ) : null}
             {c.pha === "acknowledged" ? (
-              <span className="rounded border border-border px-1 text-[10px] text-muted-foreground">
+              <span className="rounded border border-border px-1 text-[10px] text-text-2">
                 {nhanAck}
               </span>
             ) : null}
@@ -194,7 +194,7 @@ export function DaiCanhBao({
         </span>
         {phamVi !== null ? (
           <span
-            className="rounded border border-border px-1 text-[10px] text-muted-foreground"
+            className="rounded border border-border px-1 text-[10px] text-text-2"
             data-testid="dai-theo-nhanh"
           >
             {t("twin3d.daiCanhBao.theoNhanh")}
@@ -235,17 +235,17 @@ export function DaiCanhBao({
       <div className="cuon-doc-bong min-h-0 flex-1 overflow-y-auto" data-testid="dai-canh-bao-cuon">
         {chuaDo ? (
           // Ba trạng thái, và đây là ô thứ ba (G15): KHÔNG in "0 cảnh báo".
-          <p className="px-2 py-2 text-xs text-muted-foreground" data-testid="dai-chua-do">
+          <p className="px-2 py-2 text-xs text-text-2" data-testid="dai-chua-do">
             —
           </p>
         ) : theoPhamVi.length === 0 ? (
-          <p className="px-2 py-2 text-xs text-muted-foreground" data-testid="dai-trong">
+          <p className="px-2 py-2 text-xs text-text-2" data-testid="dai-trong">
             {t("twin3d.daiCanhBao.trong")}
           </p>
         ) : theoMuc.length === 0 ? (
           // Khác hẳn ô trên: CÓ cảnh báo, chỉ là không ở mức đang lọc. Gộp hai câu
           // làm một sẽ nói "không có cảnh báo" trong khi nhà máy đang đỏ.
-          <p className="px-2 py-2 text-xs text-muted-foreground" data-testid="dai-trong-muc">
+          <p className="px-2 py-2 text-xs text-text-2" data-testid="dai-trong-muc">
             {t("twin3d.daiCanhBao.trongMuc")}
           </p>
         ) : (
@@ -253,7 +253,7 @@ export function DaiCanhBao({
             {nhom.homNay.length > 0 ? (
               <>
                 <p
-                  className="sticky top-0 z-10 bg-background px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                  className="sticky top-0 z-10 bg-background px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-2"
                   data-testid="nhom-hom-nay"
                 >
                   {t("twin3d.daiCanhBao.homNay")} ({nhom.homNay.length})

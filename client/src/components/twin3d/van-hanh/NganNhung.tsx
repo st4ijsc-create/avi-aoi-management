@@ -182,7 +182,7 @@ export function NganNhung({ ngan, nhanPhu, onDong, lyDo = "mo" }: NganNhungProps
               {tieuDe}
             </SheetTitle>
             {nhanPhu ? (
-              <p className="truncate text-xs text-muted-foreground">{nhanPhu}</p>
+              <p className="truncate text-xs text-text-2">{nhanPhu}</p>
             ) : null}
           </div>
 

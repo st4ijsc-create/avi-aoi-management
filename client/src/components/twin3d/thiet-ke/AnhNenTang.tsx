@@ -209,7 +209,7 @@ export function AnhNenTang({
   return (
     <div className="border-t p-2" data-testid="khoi-anh-nen">
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
-        <p className="text-[11px] font-medium text-muted-foreground">
+        <p className="text-[11px] font-medium text-text-2">
           {t("twin3d.tang.anhNen")}
         </p>
         {/* ★★★ NT-3/NT-4 — huy hiệu nói XUẤT XỨ của con số, không chỉ có/không.
@@ -274,7 +274,7 @@ export function AnhNenTang({
 
       {anhHienTai ? (
         <div className="mt-1.5">
-          <p className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <p className="mb-1 flex items-center gap-1 text-[10px] text-text-2">
             <Ruler className="h-3 w-3" />
             {t("twin3d.anhNen.huongDan")}
           </p>
@@ -346,7 +346,7 @@ export function AnhNenTang({
 
           {/* Kết quả / lý do — CON SỐ, không phải "được/không được". */}
           {ketTiLe.ok ? (
-            <p className="mt-1 text-[10px] text-muted-foreground" data-testid="ket-qua-ti-le">
+            <p className="mt-1 text-[10px] text-text-2" data-testid="ket-qua-ti-le">
               {ketTiLe.ketQua.khoangCachPx.toFixed(0)} px ·{" "}
               {ketTiLe.ketQua.mmMoiPx.toFixed(2)} mm/px
             </p>

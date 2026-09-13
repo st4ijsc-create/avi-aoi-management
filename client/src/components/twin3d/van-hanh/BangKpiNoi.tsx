@@ -114,7 +114,7 @@ export function BangKpiNoi({ kpi, dangTai = false, mo, onDoiMo, nhanPhamVi }: Ba
             ★ MẪU SỐ LUÔN HIỆN, kể cả khi bảng thu. "72 %" không có mẫu số là
               nửa sự thật — 72 % trên 1 máy và trên 42 máy là hai câu khác nhau.
           */}
-          <span className="text-[11px] text-muted-foreground" data-testid="kpi-mau-so">
+          <span className="text-[11px] text-text-2" data-testid="kpi-mau-so">
             {/* ★ Đợt 36: `count` ⇒ `mauSo_one`/`mauSo_other` (en) — "1 machines" là lỗi cùng lớp với `DaiLine`. */}
             {t("twin3d.kpiNoi.mauSo", "{{n}} máy", {
               n: hienSo(kpi.mauSo || null, dangTai),
@@ -150,7 +150,7 @@ export function BangKpiNoi({ kpi, dangTai = false, mo, onDoiMo, nhanPhamVi }: Ba
         */}
         <div id="than-bang-kpi" className="border-t px-2 py-1.5" hidden={!mo}>
           {nhanPhamVi ? (
-            <p className="mb-1 truncate text-[11px] text-muted-foreground" data-testid="kpi-pham-vi">
+            <p className="mb-1 truncate text-[11px] text-text-2" data-testid="kpi-pham-vi">
               {nhanPhamVi}
             </p>
           ) : null}
@@ -172,7 +172,7 @@ export function BangKpiNoi({ kpi, dangTai = false, mo, onDoiMo, nhanPhamVi }: Ba
                       xong mà ra rỗng; "—" trơn nói đúng điều đang xảy ra.
                   */}
                   {x.donVi !== null && !dangTai && x.giaTri !== null ? (
-                    <span className="ml-0.5 text-[10px] text-muted-foreground">{x.donVi}</span>
+                    <span className="ml-0.5 text-[10px] text-text-2">{x.donVi}</span>
                   ) : null}
                 </dd>
               </div>
@@ -188,7 +188,7 @@ export function BangKpiNoi({ kpi, dangTai = false, mo, onDoiMo, nhanPhamVi }: Ba
           {/* ★ `break-words`: dòng này DÀI nhất bảng và từng bị cắt ở mép (xem
               docblock `z-30` phía trên). Xuống dòng còn đọc được; tràn thì không. */}
           <p
-            className="mt-1 break-words text-[10px] leading-tight text-muted-foreground"
+            className="mt-1 break-words text-[10px] leading-tight text-text-2"
             data-testid="kpi-mau-so-oee"
           >
             {t("twin3d.kpiNoi.mauSoOee", "OEE đo được trên {{co}}/{{tong}} máy", {
