@@ -7184,6 +7184,34 @@ HEAD `9aff9749`, 6 commit đã push `fresh`. Tôi đo lại: cây mã sạch, in
 
 **Đợt 59 (giao tiếp — kỹ thuật, tự quyết):** (1) nhãn nằm dưới tay nắm **sau khi thu→mở panel @1600** (281 px², ≥ 17 s) — lớp nhãn phải tính lại khi panel đổi trạng thái, thêm ca "thu rồi mở" vào lưới thị giác; (2) **thước D-1 thế hệ mới**: fail-closed + đọc theo nghĩa, giữ `do32.mjs` làm bản đóng băng để đối chiếu lịch sử, và đóng luôn ô #20 xanh giả; (3) cân lại chiều cao @1600 để `danh-sach-may` **không mất hàng** (9 → 8) trong khi tồn đọng vẫn ≥ 3 hàng; (4) ghi `--workers=1` vào docblock/script e2e (G147).
 
+### 14q.38 Đợt 59 — bốn món cuối sau QA lần 10 (2026-09-13, 6 commit `52b855a0…b8bca3a9`)
+
+**A — gốc rễ KHÔNG như brief tôi đoán.** Tôi viết "tay nắm không nằm trong tập quan sát"; thật ra `nut-thu-trai` **đã** có `data-che-nhan` và **đã** được `ro.observe` từ khung đầu. Lỗ thật: tay nắm đổi **`left`** qua `transition-[left] 200ms` — **kích thước không đổi** ⇒ `ResizeObserver` **mù theo đặc tả**; khung cuối vẽ ở t=0 khi nút còn `left≈0`, tới t=200 nút sang 288 thì không ai xin khung (`frameloop="demand"`). Vá bằng **cùng cơ chế** `TheoDoiLopPhu` + `transitionend`/`transitioncancel`, lọc theo **allowlist thuộc tính hình học** (màu/mờ không mua được khung ⇒ idle vẫn 0). Kết quả (thu→mở, đo ở 2/5/17 s): **1600 vi 210 px² → 0 · 1600 en 355 → 0 · 1280 en 5 → 0**. ★ Bệnh **có ở 1280 tiếng Anh** mà Đợt 58 không thấy vì chỉ đo vi ở 1280. Ablation hai chiều: bản dựng head0↔A, **và** gỡ `data-che-nhan` runtime trên chính bản đã vá ⇒ 0 → **281 px²** → gắn lại ⇒ 0. Lưới: +13 ca jsdom (7 ca đối chứng dương) + 10 ca chỗ nối; thị giác **24 → 26 ca**.
+
+**B — thước D-1 thế hệ mới `do59.mjs` (fail-closed, đọc theo NGHĨA).**
+
+| | ĐẠT | SAI | CHẶN-ĐÚNG | N/A | HỎNG | ô không phán quyết |
+|---|---|---|---|---|---|---|
+| do59 / HEAD | 42 | 0 | 5 | 1 | 0 | **0** |
+| do59 / nền `2f835df1` | 42 | 0 | 5 | 1 | 0 | **0** |
+| do32 / HEAD | 39 | **2** | 5 | 1 | 0 | **1** |
+
+**0/48 ô khác giữa hai bản dựng** ⇒ ba bản vá Đợt 59 đổi **0 ô D-1**. Thước cũ sai **5 ô** (brief tôi nói 3): #15, #16 SAI oan (testid đã dời) · #20 ĐẠT-giả (`every()` trên tập rỗng) · **#12** ĐẠT nhưng so 12 nhãn với **0** nhãn · **#3** chưa từng có phán quyết. **Chứng minh fail-closed:** nạp cho `do59` đúng dữ kiện rỗng mà `do32` đọc được ⇒ #12/#15/#16/#20 đều **HỎNG** kèm tên dữ kiện thiếu. Bằng chứng "đọc theo nghĩa": trên nền, câu tuổi ở **ngăn phải**; trên HEAD, ở **viên tin cậy trên cảnh** — `do59` cho cùng phán quyết. `do32.mjs` **giữ nguyên** làm bản đóng băng đối chiếu lịch sử.
+
+**C — lấy lại hàng thứ 9 @1600.** `2xl:` bị **số học bác bỏ** (cửa sổ 1600×720 vẫn khớp `2xl` nhưng D=418 ⇒ tồn đọng chỉ 2,7 hàng). Dùng **trần chiều cao** `max-h-[328px]`: @1600 tồn đọng 5 đủ, `danh-sach-may` **8 → 9 hàng**, đáy 876/900; **@1280 không đổi một pixel**. +9 ca lưới, gồm ca 1600×720 chứng minh vì sao `2xl:` sai.
+
+**D — `--workers=1` vào CẤU HÌNH, không phải cờ dòng lệnh.** Bất biến "spec nào lái canvas WebGL" đọc từ nội dung spec, tách hai project ⇒ `--list` vẫn **151 ca / 30 tệp**; chạy **0 cờ** ⇒ 1 worker ⇒ **16/16**; ép `--workers=12` ⇒ **vẫn 1 worker** (trần project không dỡ được) ⇒ 16/16; cấu hình nền (1 project) ⇒ 12 workers ⇒ **4 ĐỎ OAN**.
+
+**Hồi quy:** `twin3d` **108/2 530** · `check` 0 · `check:tests` 27 (0 twin3d, 0 e2e) · `i18n:check` 0 · `lint:tokens` Δ0 · `kiem-vo` 2/2 · thị giác **26 ca × vi/en = 0 vi phạm** · bbox 34/34 · lệch lớp 0 · idle 40 s × 3 màn 0/0/0 · D-1 bằng **cả `do32` lẫn `do59`** · DB 11/11 + 6/6 · 5 ảnh md5 · `.qa-dot47` 103 tệp 0 byte · G120 dựng lại từ cây cuối **914/914 khớp**.
+
+**Lỗi của agent — 5, hai cái đáng ghi:** ① **ca thị giác mới KHÔNG BIẾT KÊU** (xanh cả trên bản chưa vá) — bắt được vì chạy ablation *trước khi tin nó*, sửa bằng `?thu=nhanTatCa`; ② **chạy hai lượt đo song song** (2 trình duyệt WebGL, cùng thư mục ra, cùng hàng tạm DB) — đúng lớp lỗi G147 mà chính nó đang vá.
+
+#### 14q.38.1 QĐ-28 lần hai — cổng 3000 (2026-09-13)
+
+Cổng 3000 **bật lại lúc 16:10:08** (PID 39904). Phiên `avi-aoi-management-b2` dựng chuỗi cha: `node dist/index.js` ← `cross-env` ← `cmd.exe` ← `pnpm start` ← **powershell là terminal tích hợp VS Code** ← `Code.exe` ⇒ **một người gõ tay**, không phải phiên Claude nào (shell công cụ của Claude luôn là `powershell -NonInteractive` hoặc `bash -c "source …/shell-snapshots/…"`). Họ đo tiếp: HEAD nhánh vẫn `1b327541`, `merge-base --is-ancestor e7b6afd1 HEAD` ⇒ **KHÔNG**, `factoryCommandRouter.ts` **0 lần `phamViCua`**, `dist/index.js` dựng lại 16:07:12 từ chính cây đó (bundle vẫn `index-tqmr4OwB.js`), live `operator1` ⇒ **200 · 42 máy** — **lỗ rò còn nguyên**.
+
+Vì có khả năng chính chủ sở hữu bật, tôi **không tự tắt** mà hỏi. **Chủ sở hữu quyết: tắt lại.** Thực hiện 12:09Z: `Stop-Process -Id 39904` ⇒ 3000 **0 LISTENING / curl `000`**; 3001 (23980) và 3008 (32584) vẫn 200. ★ Giao thức đa phiên giữ nguyên ranh giới đã ghi ở §14q.35.1: phiên kia **không tắt** vì quyết định tới họ qua trung gian; **hai phiên cùng báo một sự thật, chủ sở hữu quyết, phiên nhận trực tiếp thực hiện**.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
