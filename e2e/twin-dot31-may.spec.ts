@@ -5,6 +5,26 @@ import bcrypt from "bcryptjs";
 import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
 
 /**
+ * ★★★ ĐỢT 59 (mục D · G147) — **SỐ WORKER LÀ MỘT PHẦN CỦA PHÉP ĐO CỦA SPEC NÀY.**
+ *
+ * Spec này lái canvas WebGL. Đợt 58 chạy nó **không đặt `--workers`** ⇒ Playwright lấy 12 worker
+ * ⇒ 12 ngữ cảnh WebGL cùng lúc ⇒ `waitForSelector` 90 s hết giờ, `soNhan = 0` ⇒ **7/16 ĐỎ OAN**;
+ * cùng bản dựng với `--workers=1` ⇒ **16/16 XANH**. Con số nghiệm thu vì thế **chỉ có nghĩa khi
+ * đi kèm số worker** — ghi số worker vào báo cáo, đừng ghi mỗi "16/16".
+ *
+ * Từ Đợt 59, ràng buộc ấy nằm TRONG `playwright.config.ts`: tệp này rơi vào project
+ * **`chromium-canh-3d`** (bất biến: "spec có nhắc `canvas`") và project ấy khai `workers: 1`,
+ * nên `npx playwright test <tệp này>` **trần** cũng đã là 1 worker.
+ *
+ * ★ ĐO ĐƯỢC (Đợt 59), không suy đoán — và nó MẠNH HƠN tôi tưởng lúc viết dòng này lần đầu:
+ *   `--workers=12` trên dòng lệnh **KHÔNG** dỡ được trần của project (Playwright vẫn in
+ *   *"Running 16 tests using 1 worker"*, 16/16 xanh). `workers` toàn cục là kích thước DÀN,
+ *   `workers` của project là TRẦN cho project ấy. Muốn tái hiện lỗi cũ phải đổi hẳn cấu hình —
+ *   đối chứng Đợt 59 (`.qa-dot59/pw-nen.config.ts`, một project, không trần): 12 worker ⇒ **4 ĐỎ OAN**.
+ * Chạy cả nhóm 3D: `npm run test:e2e:canh-3d`.
+ */
+
+/**
  * ════════════════════════════════════════════════════════════════════════════
  * ĐỢT 31 — NGHIỆM THU SỐNG MÀN **MÁY 3D RIÊNG** `/twin/may/:id` (`TwinMay.tsx`)
  * ════════════════════════════════════════════════════════════════════════════
