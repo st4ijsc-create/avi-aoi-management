@@ -7136,6 +7136,17 @@ Cờ `--khong-index` (`SET enable_indexscan = off` trong phiên) làm hai việc
 
 **Còn mở:** `twin-dot31-may` A5 (nợ có sẵn, cockpit tab 3D nay chỉ 1 canvas — spec ghim một món nợ đã đổi hình) · 2 lần lặp mã máy trong **cockpit 2D nhúng** (`MachineWorkspace`, màn cũ) · production chưa áp index QĐ-30 · diễn tập DDL trên `aoi_management_test` chờ chủ sở hữu gỡ mâu thuẫn ràng buộc · 80 chuỗi ≤12 px bị ô cuộn cắt / bị dải thời gian che (không phải ca tương phản, nhưng `lop-phu-dong-thoi-gian` che 18 chuỗi của `danh-sach-may` là một món đáng nhìn riêng).
 
+#### 14q.36.6 Đo lại độc lập + gỡ mâu thuẫn diễn tập (chủ dự án, 2026-09-13)
+
+HEAD `9aff9749`, 6 commit đã push `fresh`. Tôi đo lại: cây mã sạch, index git rỗng, DB 6 khoá y trước, md5 5 ảnh `test-results/` 5/5, `.qa-dot47/` 103 tệp 0 byte nguyên, cổng **3001 = 200 · 3008 = 200 · 3000 = 0 LISTENING** (QĐ-28 còn hiệu lực). **Tự đọc ảnh `do-sau-vi/twin-1280x720.png`:** tay nắm "‹" nay nằm ở mép phải panel (x≈521) trên nền cảnh, **không còn đè hàng ▲**; "TỒN ĐỌNG >24H (7)" hiện **3 hàng đủ**; "Tổng quan" đã gộp thành một hàng số (Máy 42 · tươi 0 · cũ 0 · Không rõ 41 · Ngừng khai thác 1). Khớp báo cáo.
+
+**Gỡ mâu thuẫn trong brief của tôi (agent chỉ ra đúng):** brief vừa bảo "diễn tập trên bản sao" vừa cấm "DDL ngoài DB dev đã duyệt" — agent chọn **phần cấm**, đó là lựa chọn đúng khi hai ràng buộc đá nhau. **Quyết định của tôi: BỎ HẲN bước diễn tập DDL**, vì chính phép đo của agent đã chứng minh nó vô nghĩa (G145 dưới đây), không phải vì thiếu quyền. Runbook §7 giữ nguyên ba lệnh cần chạy để người vận hành dùng trên production.
+
+> #### ★★★ G145 - **DIỄN TẬP TRÊN BẢN SAO NHỎ KHÔNG TÁI HIỆN ĐƯỢC BỆNH PHỤ THUỘC KÍCH CỠ — VÀ SẼ CHO GIẤY CHỨNG NHẬN GIẢ.**
+> `aoi_management_test` có **30 633 hàng**; ở cỡ đó Postgres sắp trong RAM nên **T1 và T5 vẫn ĐẠT khi KHÔNG có index** — đúng cái bệnh mà index sinh ra để chữa (dev 213 k hàng: external merge 8 144 kB, 160,74 ms → 0,211 ms, **≈752×**). Diễn tập trên bản sao nhỏ sẽ báo "an toàn, không cần index" cho cả hai chiều. **Khi bệnh là "dữ liệu vượt ngưỡng bộ nhớ", môi trường diễn tập phải vượt ngưỡng ấy, hoặc đừng diễn tập — hãy đo thẳng trên production bằng thiết bị CHỈ ĐỌC.** Script `scripts/do-index-suc-khoe.mjs` fail-closed `read_only` chính là thiết bị ấy; nó đã chứng minh biết kêu TRƯỢT (`--khong-index` ⇒ T1–T5 TRƯỢT).
+
+**Còn chờ chủ sở hữu để đóng QĐ-30:** môi trường này **không có chuỗi kết nối production** (`.env` chỉ có DB dev `127.0.0.1:5434/aoi_management`). Hai đường: (a) chủ sở hữu cấp `DATABASE_URL` production + cửa sổ bảo trì ⇒ tôi chạy script chỉ-đọc trước, `CREATE INDEX CONCURRENTLY`, rồi đo lại; (b) người vận hành chạy theo runbook và gửi lại đầu ra script để tôi đối chiếu. Tiêu chí đóng: EXPLAIN ấm của `traSucKhoeMay` **không còn `external merge`** và `pg_stat_user_indexes.idx_scan > 0` sau 24 h.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
