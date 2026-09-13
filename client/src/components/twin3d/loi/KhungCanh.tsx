@@ -26,6 +26,7 @@ import * as THREE from "three";
 
 import { laCheDoDo } from "./cheDoDo";
 import { THUOC_TINH_CHE_NHAN } from "./LopNhan";
+import { taoBoNgheDoiCho } from "./theoDoiDoiCho";
 
 /** Trần DPR — §4 bảng ngân sách. Không nới, kể cả trên màn Retina. */
 export const DPR_TRAN: [number, number] = [1, 1.5];
@@ -412,6 +413,28 @@ function CuaSoDoTuongTac() {
  * `__demBadge.soVungCam = 5`, `biChe = 0` mà badge SPI đỏ vẫn nằm trọn dưới thẻ KPI 1.428 px² — thuật toán
  * đúng trên dữ liệu cũ. ResizeObserver trên MỌI lớp phủ + quét lớp phủ mới khi DOM đổi ⇒ `invalidate()`
  * đúng lúc hình dạng vùng cấm đổi; không đổi ⇒ không khung (giữ idle 0 khung/40 s của Đợt 40 T4).
+ *
+ * ★★★ ĐỢT 59 (mục A) — **LỚP PHỦ DỜI CHỖ MÀ KHÔNG ĐỔI CỠ: `ResizeObserver` MÙ HOÀN TOÀN.**
+ *
+ * QA lần 10 (§14q.37) đo được: ở 1600×900, THU rồi MỞ LẠI panel trái ⇒ 2 nhãn 3D nằm dưới tay nắm
+ * và **ở lì ≥ 17 s**, chỉ một lần đổi cỡ cửa sổ mới dọn. Brief đoán "tay nắm không nằm trong tập
+ * quan sát" — SAI: `nut-thu-trai` CÓ `data-che-nhan` nên `quet()` ĐÃ `ro.observe` nó từ khung đầu.
+ * Lỗ nằm ở CHỖ KHÁC: tay nắm đổi `left` (`left-0` ↔ `left-56 2xl:left-72`) qua
+ * `transition-[left] duration-200` — **kích thước không đổi một pixel nào**, và `ResizeObserver`
+ * theo đặc tả chỉ báo khi hộp CỠ đổi, không báo khi phần tử DỜI CHỖ. Chuỗi thật:
+ *   t=0   panel `w-0 → w-72` ⇒ RO kêu ⇒ `invalidate()` ⇒ khung được vẽ **trong khi tay nắm còn ở left≈0**
+ *         ⇒ `locNhan` chỉ tránh dải x∈[0,21], thả nhãn vào chỗ tay nắm SẮP tới.
+ *   t=200 tay nắm tới `left=288`. **Không ai kêu** ⇒ `frameloop="demand"` không vẽ khung nào nữa
+ *         ⇒ nhãn ở lì dưới tay nắm cho tới lần `invalidate()` kế (đổi cỡ cửa sổ, xoay camera…).
+ *
+ * ★ Vá = **đóng đúng cái lỗ ấy trong CÙNG cơ chế**, không đẻ cơ chế mới: RO lo "đổi CỠ",
+ *   `transitionend`/`transitioncancel` lo "đổi CHỖ". Cả hai cùng đổ về một `invalidate()`.
+ * ★ Lọc theo `propertyName` thuộc nhóm HÌNH HỌC (`left/right/top/bottom/width/height/transform/…`):
+ *   `transition-colors` của mọi nút hover trong panel KHÔNG được phép mua một khung — nếu không
+ *   thì "idle 0 khung/40 s" (Đợt 40 T4) chết ngay. Màu/mờ/đổ bóng không dời vùng cấm một pixel nào.
+ * ★ Nghe ở `document` pha bắt (`transitionend` có nổi bọt) rồi `closest([data-che-nhan])`: một
+ *   lớp phủ có thể transition ở phần tử CON (ví dụ khung trong của một panel), và vùng cấm là
+ *   bbox của phần tử tự khai — con dời thì hộp cha vẫn có thể đổi.
  */
 function TheoDoiLopPhu() {
   const invalidate = useThree((s) => s.invalidate);
@@ -438,9 +461,15 @@ function TheoDoiLopPhu() {
     // Chỉ `childList`: lớp phủ MỚI gắn vào cây. Không `attributes` — mỗi khung nhãn/badge đổi style hàng chục lần.
     const mo = new MutationObserver(quet);
     mo.observe(document.body, { childList: true, subtree: true });
+    // ★ Đợt 59 (A) — lớp phủ DỜI CHỖ (xem `theoDoiDoiCho.ts`): RO mù, `transitionend` là chỗ duy nhất biết.
+    const khiXongChuyenTiep = taoBoNgheDoiCho(invalidate, THUOC_TINH_CHE_NHAN);
+    document.addEventListener("transitionend", khiXongChuyenTiep, true);
+    document.addEventListener("transitioncancel", khiXongChuyenTiep, true);
     return () => {
       mo.disconnect();
       ro.disconnect();
+      document.removeEventListener("transitionend", khiXongChuyenTiep, true);
+      document.removeEventListener("transitioncancel", khiXongChuyenTiep, true);
     };
   }, [invalidate]);
   return null;

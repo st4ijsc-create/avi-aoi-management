@@ -128,3 +128,45 @@ describe("★ ⑤ LopNhan BẬT xếp tầng (`xepTang: true`) — opt-in của 
     expect(LOP_NHAN).toMatch(/locNhan\(ungVien, \{[\s\S]*?xepTang: true,[\s\S]*?\}\)/);
   });
 });
+
+/*
+ * ★★★ ĐỢT 59 (mục A) — CHỖ NỐI của cảm biến "lớp phủ DỜI CHỖ".
+ *
+ * `theoDoiDoiCho.dom.test.tsx` chứng minh bộ nghe LÀM ĐÚNG khi được gọi. Khối này hỏi câu G5 còn lại:
+ * **ai gắn nó, và có gỡ ra khi Canvas chết không?** Một `taoBoNgheDoiCho` có mã + có lưới + 0 chỗ gọi
+ * chính là bốn lỗ "CÓ MÃ + CÓ TEST + KHÔNG GIAO HÀNG" mà §14q đã đếm.
+ */
+describe("★★★ ⑥ Đợt 59 (A) — `KhungCanh.TheoDoiLopPhu` gắn bộ nghe DỜI CHỖ và dọn nó", () => {
+  const KHUNG = doc("src/components/twin3d/loi/KhungCanh.tsx");
+  it("import từ `./theoDoiDoiCho` (một chỗ định nghĩa, không sao chép danh sách)", () => {
+    expect(KHUNG).toMatch(/import \{ taoBoNgheDoiCho \} from "\.\/theoDoiDoiCho";/);
+  });
+  it("tạo bộ nghe bằng CHÍNH `invalidate` của canvas và CHÍNH hằng `THUOC_TINH_CHE_NHAN`", () => {
+    expect(KHUNG).toMatch(/taoBoNgheDoiCho\(invalidate, THUOC_TINH_CHE_NHAN\)/);
+  });
+  it.each(["transitionend", "transitioncancel"])("gắn `%s` ở pha bắt trên `document`", (loai) => {
+    expect(KHUNG).toContain(`document.addEventListener("${loai}", khiXongChuyenTiep, true)`);
+  });
+  it.each(["transitionend", "transitioncancel"])("GỠ `%s` trong hàm dọn (không rò bộ nghe qua các lần mount)", (loai) => {
+    expect(KHUNG).toContain(`document.removeEventListener("${loai}", khiXongChuyenTiep, true)`);
+  });
+  it("`ResizeObserver` VẪN còn — vá này THÊM cảm biến, không thay cảm biến cũ", () => {
+    expect(KHUNG).toMatch(/new ResizeObserver\(\(\) => invalidate\(\)\)/);
+    expect(KHUNG).toMatch(/ro\.observe\(el\)/);
+  });
+});
+
+describe("★★★ ⑦ Đợt 59 (A) — hai tay nắm THẬT dùng đúng thuộc tính mà bộ lọc cho qua", () => {
+  const HINH_HOC = doc("src/components/twin3d/loi/theoDoiDoiCho.ts");
+  it("`nut-thu-trai` chuyển tiếp `left`, `nut-thu-phai` chuyển tiếp `right` (nguồn của ca bệnh)", () => {
+    expect(theMo(VAN_HANH, "nut-thu-trai")).toMatch(/transition-\[left\]/);
+    expect(theMo(VAN_HANH, "nut-thu-phai")).toMatch(/transition-\[right\]/);
+  });
+  it("cả hai trị ấy nằm trong `THUOC_TINH_HINH_HOC` — nếu ai đó đổi sang `transform`, ca này bắt", () => {
+    for (const t of ['"left"', '"right"', '"transform"', '"width"']) expect(HINH_HOC).toContain(t);
+  });
+  it("panel trái/phải chuyển tiếp `width` (RO lo, nhưng hợp đồng phải ghi ra)", () => {
+    expect(theMo(VAN_HANH, "panel-trai")).toMatch(/transition-\[width\]/);
+    expect(theMo(VAN_HANH, "panel-phai")).toMatch(/transition-\[width\]/);
+  });
+});
