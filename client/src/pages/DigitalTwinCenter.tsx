@@ -16,6 +16,8 @@
  *   • REPLAY   — historical scrubbing via twin.replay (date range + scrubber + play/
  *                pause + 0.5–4× speed), animating device positions/states along the
  *                timeline (mirrors CellTwinPlayer's rAF playback loop).
+ *                ⚠ Đợt 61: `CellTwinPlayer.tsx` ĐÃ BỊ XOÁ (mã chết) — câu "mirrors …"
+ *                ở đây và ở :504 nay trỏ vào tệp không còn; giữ lại chỉ để đọc lịch sử.
  *
  * Reuses the FactoryFloor3D three.js/@react-three/fiber/drei approach (OrbitControls,
  * lighting, grid floor, beacon + selection ring, hover/click). 100% read-only — no
@@ -501,7 +503,7 @@ export function DigitalTwinCenterContent() {
     };
   }, [mode, liveEnabled, activeFactoryId]);
 
-  // ── REPLAY state + playback loop (mirrors CellTwinPlayer rAF) ──
+  // ── REPLAY state + playback loop (khuôn cũ: CellTwinPlayer rAF — tệp ấy đã xoá ở Đợt 61) ──
   const utils = trpc.useUtils();
   const [from, setFrom] = useState<string>(() => toLocalInput(new Date(Date.now() - 60 * 60 * 1000)));
   const [to, setTo] = useState<string>(() => toLocalInput(new Date()));

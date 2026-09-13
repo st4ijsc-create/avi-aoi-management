@@ -344,9 +344,19 @@ function Router() {
         đã có trục URL 6 khoá, đã có honest-null và đã nghiệm thu. Nên gộp về
         `/twin` chứ không chép 2.746 dòng đã nghiệm thu sang một vỏ chưa.
 
-        ★★★ `TwinHub` và **cả bảy màn con** VẪN CÒN TRÊN ĐĨA (§11b cấm xoá
-          màn). Cái bị bỏ là **lối vào bằng URL**, không phải mã. `/rf-test-cell`
-          bên dưới nay là tuyến THẬT trở lại và nó vẫn nạp `RfTestCellSim`.
+        ★★★ ĐỢT 61 (QĐ-31) — CÂU CŨ Ở ĐÂY ĐÃ HẾT HẠN, ghi lại thay vì để nguyên:
+          câu cũ ghi "`TwinHub` và cả bảy màn con VẪN CÒN TRÊN ĐĨA (§11b cấm xoá
+          màn)". Khảo sát Đợt 60 đo lại: `TwinHub` **0 route, 0 tệp sản phẩm
+          import** ⇒ nó là MÃ CHẾT, không phải "màn cũ chạy song song". Đợt 61 đã
+          **XOÁ** `TwinHub` + 5 màn con chỉ nó gọi (`DigitalTwinDashboard`,
+          `CellTwinPlayer`, `FactoryLiveMap3D`+`FactoryFloor3D`, `FactoryFloorEditor`).
+          `DigitalTwinCenter` **CÒN TRÊN ĐĨA** (giữ `twin.replay`/`twin.status` chưa
+          di trú — Đợt 62). `RfTestCellSim` và `Layout` sống nhờ route riêng.
+
+        ★★★ `<Redirect>` DƯỚI ĐÂY KHÔNG ĐƯỢC XOÁ THEO. Cái bị bỏ là **mã của vỏ**,
+          không phải **lối vào bằng URL**: bookmark/link cũ vẫn phải tới đúng đích.
+          Không đích nào của bảng `dinhTuyenTwinCu` là một trong các trang vừa xoá
+          (13 đích = `/twin` ×7, `/twin-studio` ×4, `/rf-test-cell` ×1, đo lại Đợt 61).
 
         ★ Redirect **theo `?tab=`**: bảy tab đi bảy đích khác nhau, nên một
           `<Redirect to="/twin">` phẳng sẽ nuốt `?tab=rf` (mô phỏng RF, §13b xếp
@@ -723,7 +733,9 @@ function Router() {
       <Route path="/metric-catalog"><RouteGuard navHref="/metric-catalog"><MetricCatalog /></RouteGuard></Route>
       <Route path="/products"><RouteGuard navHref="/products"><ProductModels /></RouteGuard></Route>
       <Route path="/product-mapping"><RouteGuard navHref="/product-mapping"><ProductMachineMapping /></RouteGuard></Route>
-      {/* Task 1 Khối D — /layout (không :id) gộp vào TwinHub làm tab "layout" (mode edit).
+      {/* Task 1 Khối D — /layout (không :id) trước đây là tab "layout" của TwinHub.
+          ★ Đợt 61: `TwinHub` đã xoá; `/layout` vẫn `<Redirect>` thẳng tới `/twin-studio`
+          (đích này có từ QĐ-18, KHÔNG trỏ vào trang vừa xoá).
           /layout/:id GIỮ RIÊNG: mang route param mà tab không có, và gate
           requirePermission="settings_factory" khác navHref của route trên. */}
       <Route path="/layout"><Redirect to="/twin-studio" /></Route>

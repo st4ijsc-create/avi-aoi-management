@@ -1049,9 +1049,10 @@ export function XuongThietKe({
 
             {/* ★★★ §11.7 #42 — CRUD VÙNG AN TOÀN.
                 Trước dòng này, `FactoryFloorEditor.tsx:444` là **nơi DUY NHẤT**
-                trong hệ làm được việc này (§11c.3, đo lại 2026-09-07). Đây là
-                đường THAY THẾ; màn cũ KHÔNG bị đụng tới — cổng ra §11 mới mở
-                18/62 và xoá nó hôm nay là mất tính năng thật (§11c.7).
+                trong hệ làm được việc này (§11c.3, đo lại 2026-09-07).
+                ★★★ ĐỢT 61 (QĐ-31): màn cũ **ĐÃ BỊ XOÁ** — đo DB bằng hai mô hình
+                rời nhau cho `factory_zones`/`safety_zones` = 0 hàng ⇒ lý do hoãn
+                "mất tính năng thật" đã hết hạn. Đây nay là đường DUY NHẤT.
 
                 ★ CHẶN-2 — đây là đường GHI ⇒ chỉ dựng khi `coQuyenSua`. Không
                   `disabled`: một công cụ vẽ bị xám vẫn nói "chức năng này thuộc
@@ -1076,9 +1077,11 @@ export function XuongThietKe({
 
             {/* ★★★ §11.7 #43 — ẢNH NỀN CAD + ĐẶT TỈ LỆ. ĐÂY LÀ CHỖ GỌI (G16).
                 §11c.2 xếp #43 vào lớp lỗi L-4: server + i18n ba thứ tiếng xong
-                từ Đợt 3, client 0 chỗ gọi. Cùng với #42 ở trên, đây là mục thứ
-                hai trong hai lý do thật khiến `FactoryFloorEditor` chưa xoá
-                được (§11c.4) — màn cũ vẫn KHÔNG bị đụng tới.
+                từ Đợt 3, client 0 chỗ gọi. Cùng với #42 ở trên, đây từng là mục
+                thứ hai trong hai lý do khiến `FactoryFloorEditor` chưa xoá được
+                (§11c.4). ★★★ ĐỢT 61: màn cũ đã xoá. ⚠ Ảnh nền ở đây đi qua
+                `twinCanh.*`, KHÔNG qua `factory.uploadFloorPlan`/`updateFloorDims`
+                của đường cũ — hai thủ tục ấy nay **còn trên server nhưng 0 UI**.
 
                 ★ CHẶN-2 — đường GHI ⇒ chỉ dựng khi `coQuyenSua`. */}
             {coQuyenSua && tangId !== null ? (

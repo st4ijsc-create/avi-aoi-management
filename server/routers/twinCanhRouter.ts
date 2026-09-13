@@ -1329,10 +1329,12 @@ export const twinCanhRouter = router({
      ═══════════════════════════════════════════════════════════════════════
 
      ★★★ §11c.3 ghi đích của #42 là `VeVungPolygon.tsx` — tệp đó **KHÔNG TỒN
-         TẠI**, và `FactoryFloorEditor.tsx:444` vẫn là **nơi DUY NHẤT** CRUD vùng
-         an toàn trong hệ. Đây là đường THAY THẾ đầu tiên. `FactoryFloorEditor`
-         KHÔNG bị đụng tới: cổng ra §11 chưa mở (18/62), và xoá nó hôm nay là
-         mất tính năng thật (§11c.7).
+         TẠI**, và `FactoryFloorEditor.tsx:444` khi ấy là **nơi DUY NHẤT** CRUD
+         vùng an toàn trong hệ. Đây là đường THAY THẾ đầu tiên.
+         ★★★ ĐỢT 61 (QĐ-31): `FactoryFloorEditor` **ĐÃ BỊ XOÁ** — lý do hoãn cũ
+         ("mất tính năng thật") hết hạn khi đo lại DB bằng hai mô hình rời nhau:
+         `factory_zones` 0 hàng, `safety_zones` 0 hàng, `machines.layout*` 0/43.
+         Tuyến này nay là tuyến DUY NHẤT ghi vùng an toàn.
 
      ★ Cổng quyền: `canEdit` cho ghi, `canDelete` cho xoá — KHÔNG dùng chung một
        mức. Vẽ lại một vùng và xoá hẳn nó là hai hậu quả khác nhau.

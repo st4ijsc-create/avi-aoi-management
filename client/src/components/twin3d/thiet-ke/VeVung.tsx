@@ -6,12 +6,20 @@
  *     KHÔNG BỊ ĐỤNG TỚI
  * ════════════════════════════════════════════════════════════════════════════
  * §11c.3 đo được: spec ghi đích của #42 là `VeVungPolygon.tsx`, **tệp đó không
- * tồn tại**, và `FactoryFloorEditor.tsx:444` vẫn là **nơi DUY NHẤT** CRUD vùng
- * an toàn trong hệ. §11c.7 nói rõ: xoá `FactoryFloorEditor` hôm nay là **mất
- * tính năng thật**, không phải dọn dẹp — cổng ra §11 mới mở 18/62.
+ * tồn tại**, và `FactoryFloorEditor.tsx:444` khi ấy là **nơi DUY NHẤT** CRUD vùng
+ * an toàn trong hệ.
  *
- * ⇒ Tệp này DỰNG đường mới. Nó KHÔNG xoá, không sửa, không vô hiệu hoá màn cũ.
- *   Hai đường chạy song song cho tới khi chủ sở hữu quyết định.
+ * ★★★ ĐỢT 61 (QĐ-31) — LỜI KHAI TRÊN ĐÃ HẾT HẠN, ghi lại thay vì để nguyên:
+ *   câu cũ ở đây ghi "xoá `FactoryFloorEditor` hôm nay là **mất tính năng thật**".
+ *   Đo lại trên DB dev 2026-09-13 bằng **hai mô hình rời nhau** (BG-127):
+ *     `factory_zones` = 0 hàng · `safety_zones` = 0 hàng ·
+ *     `machines.layoutPositionX/Y/layout` = 0/43 hàng có giá trị (phân bố khớp TỔNG 43),
+ *     đối chứng dương `id` = 43/43 ⇒ thước không mù.
+ *   ⇒ đường cũ giữ **0 hàng dữ liệu**; đường này (`twinCanh`, mm) giữ 82 vị trí.
+ *   `FactoryFloorEditor.tsx` VÌ THẾ ĐÃ BỊ XOÁ ở Đợt 61. Tệp này nay là đường
+ *   DUY NHẤT, không còn "hai đường song song".
+ *   ⚠ NỢ ĐỂ LẠI: `factory.uploadFloorPlan` + `factory.updateFloorDims` mất UI
+ *   (thủ tục server còn nguyên, dữ liệu không mất) — xem `.qa-dot61/BAO-CAO.md`.
  *
  * ════════════════════════════════════════════════════════════════════════════
  * ★★★ VẼ TRÊN MẶT BẰNG 2D, KHÔNG RAYCAST TRONG 3D

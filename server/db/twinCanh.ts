@@ -1580,9 +1580,10 @@ export async function traAnToanRobot(
 //     trước đợt này là phép đo trên TẬP RỖNG (G5).
 //
 // ★★★ §11c.3 ghi `VeVungPolygon.tsx` là đích của #42 — tệp đó KHÔNG TỒN TẠI, và
-//     `FactoryFloorEditor.tsx:444` vẫn là nơi DUY NHẤT CRUD vùng an toàn trong
-//     hệ. Đường mới này là đường THAY THẾ; `FactoryFloorEditor` KHÔNG bị đụng
-//     tới cho tới khi cổng ra §11 mở.
+//     `FactoryFloorEditor.tsx:444` khi ấy là nơi DUY NHẤT CRUD vùng an toàn.
+//     ★★★ ĐỢT 61 (QĐ-31): `FactoryFloorEditor.tsx` ĐÃ BỊ XOÁ (đo DB hai mô hình
+//     rời nhau: `factory_zones` 0 · `safety_zones` 0 · `machines.layout*` 0/43).
+//     Đường này nay là đường DUY NHẤT.
 //
 // ⚠ `factory_zones` (bảng cũ) dùng toạ độ 0–1; ở đây là **mm**, nhất quán với
 //   phần còn lại của Twin. KHÔNG di trú dữ liệu — bảng cũ đo được 0 dòng.
