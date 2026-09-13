@@ -275,7 +275,10 @@ export function DanhSachMay({
     //   chiều cao NỘI DUNG trước và khối này còn 0 px. Đo được: dải cảnh báo
     //   (27 hàng) lấy 715/849 px và danh sách máy về **h=0**; ablation xác nhận
     //   nguyên nhân. Xem docblock chỗ bọc dải cảnh báo ở `TwinVanHanh.tsx`.
-    <div className="flex min-h-0 flex-1 basis-0 flex-col" data-testid="danh-sach-may">
+    /* ★★★ Đợt 57 (mục 13) — `flex-[5]` thay `flex-1`: dải cảnh báo (`flex-[7]`) cần chỗ cho
+       ba hàng "Tồn đọng >24h" @1280. Danh sách này có ô lọc và LUÔN cuộn ở mọi chiều cao, nên
+       35 px của nó đổi được một hàng cảnh báo quá hạn. `basis-0` GIỮ — xem Đợt 22 ở dưới. */
+    <div className="flex min-h-0 flex-[5] basis-0 flex-col" data-testid="danh-sach-may">
       <div className="shrink-0 p-2">
         <Input
           value={loc}
@@ -306,9 +309,9 @@ export function DanhSachMay({
         data-so-hang-ve={dangTai || hienThi.length === 0 ? 0 : veHang.length}
       >
         {dangTai ? (
-          <li className="px-2 py-1 text-xs text-muted-foreground">—</li>
+          <li className="px-2 py-1 text-xs text-text-2">—</li>
         ) : hienThi.length === 0 ? (
-          <li className="px-2 py-1 text-xs text-muted-foreground" data-testid="danh-sach-rong">
+          <li className="px-2 py-1 text-xs text-text-2" data-testid="danh-sach-rong">
             {t("twin3d.cay.khongKhop", "Không có mục nào khớp")}
           </li>
         ) : (
@@ -388,7 +391,7 @@ export function DanhSachMay({
                       {m.ma}
                     </span>
                     {/* Chữ trạng thái — chiều thứ ba của mã hoá dư thừa. */}
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                    <span className="shrink-0 text-[10px] text-text-2">
                       {t(kieu.khoaNhan)}
                     </span>
                     {/*
@@ -400,7 +403,7 @@ export function DanhSachMay({
                         bộ định dạng thứ hai); số THÔ giữ ở `data-giay` cho thiết bị đo (NhanDoTuoi doc).
                     */}
                     <span
-                      className={`min-w-10 shrink-0 whitespace-nowrap text-right text-[10px] ${tuoi.do ? "text-destructive" : "text-muted-foreground"}`}
+                      className={`min-w-10 shrink-0 whitespace-nowrap text-right text-[10px] ${tuoi.do ? "text-destructive" : "text-text-2"}`}
                       data-testid={`tuoi-${m.id}`}
                       data-giay={tuoi.giay ?? undefined}
                     >

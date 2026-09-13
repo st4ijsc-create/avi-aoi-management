@@ -45,7 +45,15 @@ describe("★★★ ① Lớp phủ ĐÈ canvas tự khai `data-che-nhan` — m�
     ["/twin panel trái NỔI ĐÈ", VAN_HANH, "panel-trai"],
     ["/twin panel phải NỔI ĐÈ", VAN_HANH, "panel-phai"],
     ["/twin lớp phủ dòng thời gian (đáy)", VAN_HANH, "lop-phu-dong-thoi-gian"],
-    ["/twin/may chip máy (góc trái trên canvas)", MAY, "chip-may"],
+    // ★ Đợt 57 (mục 12) — `chip-may` (đáy-trái) thành `vien-tin-cay-may` (trên-phải), cùng vai trò vùng cấm nhãn.
+    ["/twin/may viên tin cậy (góc trên-phải canvas)", MAY, "vien-tin-cay-may"],
+    /* ★★★ Đợt 57 (mục 10) — HAI TAY NẮM THU/MỞ. Trước đợt này chúng neo `left-0`/`right-0`, tức
+       nằm TRÊN panel (panel đã tự khai), nên không ai nghĩ tới. Mục 10 dời chúng ra RANH GIỚI
+       panel↔cảnh để thôi đè icon dải cảnh báo — và ngay lúc đó chúng thành lớp phủ TRÊN CẢNH.
+       Lưới thị giác 24 trạng thái đo được 3 nhãn bị che (208 + 147 + 5 px²) trước khi thêm thẻ.
+       Hai hàng này giữ cho lần dời chỗ sau không tái phạm. */
+    ["/twin tay nắm thu panel TRÁI (nổi trên cảnh từ Đợt 57)", VAN_HANH, "nut-thu-trai"],
+    ["/twin tay nắm thu panel PHẢI (nổi trên cảnh từ Đợt 57)", VAN_HANH, "nut-thu-phai"],
   ])("%s mang `data-che-nhan`", (_ten, ma, tid) => {
     expect(theMo(ma, tid)).toMatch(/data-che-nhan="1"/);
   });

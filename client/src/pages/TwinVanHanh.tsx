@@ -2903,27 +2903,51 @@ export function ThanTwinVanHanh() {
           hidden={thuTrai}
         >
           {/* Tổng quan + tươi dữ liệu */}
-          <div className="shrink-0 border-b p-2 text-xs" data-testid="khoi-tong-quan">
-            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-              <span className="text-muted-foreground">{t("twin3d.vanHanh.soMay", "Máy")}</span>
-              <span className="text-right font-medium" data-testid="dem-may">
-                {hienSo(mayVanHanh.length, dangTai)}
+          <div className="shrink-0 border-b px-2 py-1 text-[10px]" data-testid="khoi-tong-quan">
+            {/*
+              ★★★ ĐỢT 57 (mục thiết kế 13) — NĂM DÒNG NHÃN/SỐ THÀNH **MỘT HÀNG SỐ**.
+              Đo trước vá @1280×720 (`.qa-dot57/01-do-truoc.txt`): khối này cao **105 px** trong một
+              `panel-trai` cao 489 px. `dai-canh-bao` và `danh-sach-may` là hai anh em `flex-1 basis-0`
+              nên chúng chia **phần dư**, và 105 px ấy trừ thẳng vào phần dư ⇒ ô cuộn của dải cảnh báo
+              còn **86 px** cho nội dung **313 px**: nhóm "Tồn đọng >24h" chỉ hiện **1 hàng đủ + 1 hàng
+              nửa (1,51 hàng / 7)**. Một nhóm cảnh báo treo >24 h mà phải cuộn mới thấy là đúng thứ
+              ISA-18.2 bảo phải PHƠI RA.
+              ★ KHÔNG bỏ một con số nào và KHÔNG bỏ một nhãn nào: vẫn đủ 5 cặp nhãn+số, đủ 5 `data-testid`,
+                chỉ đổi từ lưới 2 cột × 5 dòng sang **một hàng chảy** (`flex-wrap`) ở 10 px. Số vẫn
+                `font-medium` để tách khỏi nhãn khi không còn cột phải căn lề.
+              ★ `text-[10px]` chứ không nhỏ hơn: mục 11 cùng đợt đo tương phản MỌI chuỗi ≤ 12 px, và
+                nhãn ở đây dùng `text-text-2` (bậc chữ phụ ĐÃ NÂNG) chứ không `text-muted-foreground`.
+            */}
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5" data-testid="hang-tong-quan">
+              <span className="whitespace-nowrap">
+                <span className="text-text-2">{t("twin3d.vanHanh.soMay", "Máy")}</span>{" "}
+                <span className="font-medium" data-testid="dem-may">
+                  {hienSo(mayVanHanh.length, dangTai)}
+                </span>
               </span>
-              <span className="text-muted-foreground">{t("twin3d.tuoi.tuoi")}</span>
-              <span className="text-right font-medium" data-testid="dem-tuoi">
-                {hienSo(demTuoi.tuoi, dangTai)}
+              <span className="whitespace-nowrap">
+                <span className="text-text-2">{t("twin3d.tuoi.tuoi")}</span>{" "}
+                <span className="font-medium" data-testid="dem-tuoi">
+                  {hienSo(demTuoi.tuoi, dangTai)}
+                </span>
               </span>
-              <span className="text-muted-foreground">{t("twin3d.tuoi.cu")}</span>
-              <span className="text-right font-medium" data-testid="dem-cu">
-                {hienSo(demTuoi.cu, dangTai)}
+              <span className="whitespace-nowrap">
+                <span className="text-text-2">{t("twin3d.tuoi.cu")}</span>{" "}
+                <span className="font-medium" data-testid="dem-cu">
+                  {hienSo(demTuoi.cu, dangTai)}
+                </span>
               </span>
-              <span className="text-muted-foreground">{t("twin3d.trangThai.khongRo")}</span>
-              <span className="text-right font-medium text-amber-700 dark:text-amber-400" data-testid="dem-khong-ro">
-                {hienSo(demTuoi.khongRo, dangTai)}
+              <span className="whitespace-nowrap">
+                <span className="text-text-2">{t("twin3d.trangThai.khongRo")}</span>{" "}
+                <span className="font-medium text-amber-700 dark:text-amber-400" data-testid="dem-khong-ro">
+                  {hienSo(demTuoi.khongRo, dangTai)}
+                </span>
               </span>
-              <span className="text-muted-foreground">{t("twin3d.trangThai.ngungKhaiThac")}</span>
-              <span className="text-right font-medium" data-testid="dem-ngung">
-                {hienSo(demTuoi.ngungKhaiThac, dangTai)}
+              <span className="whitespace-nowrap">
+                <span className="text-text-2">{t("twin3d.trangThai.ngungKhaiThac")}</span>{" "}
+                <span className="font-medium" data-testid="dem-ngung">
+                  {hienSo(demTuoi.ngungKhaiThac, dangTai)}
+                </span>
               </span>
             </div>
             {/*
@@ -2979,7 +3003,27 @@ export function ThanTwinVanHanh() {
               phần dư SAU khi đã cấp chiều cao nội dung, và 715 px kia vẫn được
               cấp trước.
           */}
-          <div className="flex min-h-0 flex-1 basis-0 flex-col overflow-hidden">
+          {/*
+            ★★★ ĐỢT 57 (mục 13, bước 2) — TỈ LỆ CHIA PHẦN DƯ 7 : 5, KHÔNG CÒN 1 : 1.
+            Bước 1 (gộp "Tổng quan" thành một hàng) đã trả lại 64 px: ô cuộn của dải đi từ
+            **86 → 118 px** và nhóm tồn đọng từ **1,51 → 2,28 hàng** @1280×720. Nhưng SỐ HỌC
+            nói thẳng là chưa đủ: mỗi hàng tồn đọng cao **41 px** (tiêu đề + hàng huy hiệu
+            "tồn đọng N đ / Đã xác nhận") và tiêu đề nhóm dính đầu ô là **24 px**, nên **ba
+            hàng đủ = 24 + 3×41 = 147 px**. Với hai anh em `flex-1 basis-0` chia ĐỀU, ô cuộn
+            chỉ đạt 147 px khi phần dư ≥ 476 px, trong khi panel @1280 cao **489 px** và
+            riêng dải chuyển-chế-độ "Máy | Cây" đã ăn 30 px ⇒ **không đạt được bằng cách chia đều**.
+            ⇒ Đổi tỉ lệ: dải cảnh báo `flex-[7]`, danh sách máy `flex-[5]` (xem `DanhSachMay.tsx`).
+              Đo sau: ô cuộn **153 px ⇒ 3 hàng ĐỦ**, `danh-sach-may` **209 → 174 px**.
+            ★ Vì sao ĐÁNG đổi: nhóm tồn đọng là **tập hữu hạn và phải phơi ra** (ISA-18.2 gọi
+              alarm >24 h là dấu hiệu quy trình xử lý hỏng); còn danh sách máy là danh sách
+              **42 máy CÓ Ô LỌC, luôn phải cuộn** ở mọi chiều cao — 35 px của nó đổi được một
+              hàng cảnh báo treo quá hạn là một đổi chác có lợi, và nó **không biến mất**.
+            ⚠ `basis-0` GIỮ NGUYÊN ở cả hai: bài học Đợt 22 (dải không có trần bóp
+              `danh-sach-may` về **h = 0**) là về việc cấp chiều cao NỘI DUNG trước khi chia
+              phần dư — `flex-[7]`/`flex-[5]` vẫn chia PHẦN DƯ, nên trần vẫn còn và tỉ lệ
+              vẫn bị chặn hai đầu. Lưới đo sau vá kiểm `danh-sach-may` > 150 px.
+          */}
+          <div className="flex min-h-0 flex-[7] basis-0 flex-col overflow-hidden">
           <DaiCanhBao
             seed={canhBaoSeed}
             song={canhBaoSong}
@@ -3070,7 +3114,8 @@ export function ThanTwinVanHanh() {
             /* ★ `basis-0` — cùng lý lẽ với khối dải cảnh báo ở trên: không có
                 nó thì khối này được cấp chiều cao NỘI DUNG trước, rồi mới chia
                 phần dư, và anh em lại về 0. */
-            <div className="min-h-0 flex-1 basis-0 overflow-hidden">
+            /* ★ Đợt 57 (mục 13) — `flex-[5]`, đối xứng với `flex-[7]` của dải cảnh báo. */
+            <div className="min-h-0 flex-[5] basis-0 overflow-hidden">
               {/*
                 ★★★ CHỈ ĐỌC — ba điều làm nên điều ấy, và cả ba đều nhìn thấy
                   ở đây chứ không giấu trong một hàm:
@@ -3417,7 +3462,7 @@ export function ThanTwinVanHanh() {
                 Thêm `data-qua-cu` để đo được cờ mới mà không phải suy từ chuỗi.
             */}
             <span
-              className={`text-[11px] ${doTuoiNen.do ? "text-destructive" : "text-muted-foreground"}`}
+              className={`text-[11px] ${doTuoiNen.do ? "text-destructive" : "text-text-2"}`}
               data-testid="do-tuoi-nen"
               data-giay={doTuoiNen.giay ?? ""}
               data-qua-cu={doTuoiNen.quaCu ? "1" : "0"}
@@ -3455,7 +3500,7 @@ export function ThanTwinVanHanh() {
               (đáy-giữa là chỗ của chip nhãn `LopNhan`, đáy-phải đụng nó ở 1280); vùng cấm nhãn. */}
           {nganPhaiTrong ? (
             <p
-              className="pointer-events-none absolute right-2 top-12 z-20 max-w-[min(24rem,calc(100%-1rem))] truncate rounded-md border bg-background/80 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur"
+              className="pointer-events-none absolute right-2 top-12 z-20 max-w-[min(24rem,calc(100%-1rem))] truncate rounded-md border bg-background/80 px-2 py-1 text-[11px] text-text-2 backdrop-blur"
               data-testid="goi-y-chon-may"
               data-che-nhan="1"
               title={t("twin3d.vanHanh.chuaChon", "Chọn một máy trên cảnh hoặc trong danh sách để mở màn Máy 3D.")}
@@ -3485,8 +3530,30 @@ export function ThanTwinVanHanh() {
             /* ★ ĐỢT 21 — `z-30` thay `z-10`: panel nay o `z-20`, nen mot tay nam
                `z-10` se nam DUOI panel va bien mat khi panel MO. Nguoi dung mat
                duong thu panel, va khong loi nao no. */
-            className="absolute left-0 top-1/2 z-30 -translate-y-1/2 rounded-r border border-l-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2"
+            /* ★★★ ĐỢT 57 (mục thiết kế 10) — TAY NẮM RA **RANH GIỚI panel↔cảnh**, thôi đè nội dung.
+               Đo trước vá (`.qa-dot57/01-do-truoc.txt`, `e2e_tai_loE`): nút 21×42 neo `left-0` nằm
+               CHỒNG lên panel (`panel-trai` cũng `left-0`), đè **2 icon mức độ của dải cảnh báo**
+               — 167 px² @1280 (▲ 166 + ▲ 2) và 149 px² @1600 (◆ 95 + ● 54); chính icon ▲ bị nút
+               `bg-background/90` phủ ⇒ tương phản của nó rơi xuống **1,08** (thiết bị đo M11 bắt).
+               ★ Vá ở TOẠ ĐỘ, không ở z-index: đẩy nút sang `left-56 2xl:left-72` = ĐÚNG bề ngang
+                 panel khi mở, nên nút tựa vào mép ngoài panel và nằm trên CẢNH, không trên nội dung.
+                 Khi panel thu (`w-0`) nút về `left-0` — vẫn là mép panel, và là đường mở lại duy nhất.
+               ⚠ KHÔNG dùng `-translate-x-full`/`right-*`: panel đổi bề ngang theo `2xl`, nên tay nắm
+                 phải đọc CÙNG hai trị ấy, nếu không nó lệch đúng 64 px ở đúng một dải viewport. */
+            className={
+              "absolute top-1/2 z-30 -translate-y-1/2 rounded-r border border-l-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2 transition-[left] duration-200 " +
+              (thuTrai ? "left-0" : "left-56 2xl:left-72")
+            }
             data-testid="nut-thu-trai"
+            data-neo={thuTrai ? "mep-khung" : "mep-panel"}
+            /* ★★★ ĐỢT 57 (mục 10, vòng 2) — VÙNG CẤM NHÃN, và nó là HỆ QUẢ TRỰC TIẾP của chính
+               bản vá này: khi tay nắm còn ở `left-0` nó nằm TRÊN panel (panel đã tự khai
+               `data-che-nhan`), nên `LopNhan` không cần biết tới nó. Dời ra mép ngoài là dời
+               nó LÊN CẢNH — và lưới thị giác 24 trạng thái bắt ngay: `twin-nhan-tat-ca` có
+               **2 nhãn bị che @1600 + 1 @1280** (`nut-thu-trai:208 px²`, `:147`, `:5`).
+               Đúng lớp lỗi Đợt 35 (Pareto #5): lớp phủ mới trên cảnh mà không tự khai = nhãn
+               biến mất im lặng. `cheNhan.unit.test.ts` cưỡng chế thẻ này cho cả hai tay nắm. */
+            data-che-nhan="1"
             aria-expanded={!thuTrai}
             aria-label={
               thuTrai
@@ -3508,8 +3575,16 @@ export function ThanTwinVanHanh() {
           <button
             type="button"
             /* ★ ĐỢT 21 — `z-30`, xem chu thich tay nam trai. */
-            className="absolute right-0 top-1/2 z-30 -translate-y-1/2 rounded-l border border-r-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2"
+            /* ★★★ ĐỢT 57 (mục 10) — G110: CÙNG lớp lỗi ở tay nắm PHẢI, vá cùng lúc dù QA chỉ nêu
+               bên trái. `panel-phai` là `w-64 2xl:w-80`, nên tay nắm đọc ĐÚNG hai trị ấy. */
+            className={
+              "absolute top-1/2 z-30 -translate-y-1/2 rounded-l border border-r-0 bg-background/90 px-0.5 py-3 text-muted-foreground shadow-sm hover:bg-accent focus-visible:outline focus-visible:outline-2 transition-[right] duration-200 " +
+              (thuPhaiHieuLuc ? "right-0" : "right-64 2xl:right-80")
+            }
             data-testid="nut-thu-phai"
+            data-neo={thuPhaiHieuLuc ? "mep-khung" : "mep-panel"}
+            /* ★ Đợt 57 (mục 10) — vùng cấm nhãn, cùng lý do tay nắm trái. */
+            data-che-nhan="1"
             aria-expanded={!thuPhai}
             aria-label={
               thuPhai
