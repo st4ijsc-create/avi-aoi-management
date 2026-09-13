@@ -139,6 +139,8 @@ import { useTrangThaiSong } from "@/components/twin3d/van-hanh/useTrangThaiSong"
 import { coLuongTheoKetNoi, nhipHoiMs } from "@/components/twin3d/van-hanh/nguonDuLieu";
 import {
   hienSo,
+  nhanDoTuoi,
+  nhanTuoiDocDuoc,
   trangThaiHienThi,
   type MayVanHanh,
   tsTrangThaiTheoMay,
@@ -552,6 +554,9 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
 
   /* ── (B) chip trái ───────────────────────────────────────────────────── */
   const tomTat = useMemo(() => tomTatMay(mayNay, khai, bayGio), [mayNay, khai, bayGio]);
+  /* ★ Đợt 57 (mục 12) — tuổi dữ liệu của CHÍNH máy này, cùng hàm với `NganXuLy` (G12:
+     một hàm, hai chỗ đọc). Viên tin cậy trên cảnh in nó; ngăn phải thôi in (`hienDoTuoi`). */
+  const doTuoiMay = useMemo(() => nhanDoTuoi(mayNay?.thoiDiemDuLieu ?? null, bayGio), [mayNay, bayGio]);
   const trangThaiMay = useMemo(
     () =>
       mayNay
@@ -797,34 +802,53 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
                     ariaLabel={t("twin3d.may.ariaCanh", "Cảnh 3D của {{ten}}", { ten: tenMay })}
                   />
 
-                  {/* ★ (B) chip trái — DOM, 0 draw call, `pointer-events-none` để kéo
-                        xoay camera xuyên qua (khuôn `BangKpiNoi`). Mã · loại · trạng
-                        thái · sức khoẻ — MỘT chỗ, không lặp ở header (D-5). */}
+                  {/*
+                    ★★★ ĐỢT 57 (mục thiết kế 12) — CHIP ĐÁY CẢNH → **VIÊN TIN CẬY GÓC TRÊN-PHẢI**
+
+                    ĐO TRƯỚC VÁ (`.qa-dot57/01-do-truoc.txt`, 4 ca lang×vp, đọc DOM thật): chuỗi mã
+                    máy `SIM-L2-AOI` hiện **6 lần** trong khung màn — nhãn 3D trên nóc máy, `ma-may` ở
+                    chip đáy cảnh, `ngan-ma-may` ở ngăn phải, cộng ba chỗ trong cockpit 2D nhúng. Chip
+                    còn lặp lại TRẠNG THÁI mà `ngan-trang-thai` đã nói. Bốn bề mặt một câu.
+                    ★ Bỏ khỏi cảnh hai thứ ĐÃ CÓ CHỖ KHÁC: `ma-may` (đã có ở `ngan-ma-may`) và
+                      `trang-thai-may` (đã có ở `ngan-trang-thai`). KHÔNG mất dữ liệu nào.
+                    ★ GIỮ trên cảnh hai thứ KHÔNG CÓ CHỖ KHÁC: `loai-may` và `suc-khoe-may`
+                      ("Sức khoẻ 60 % · cảnh báo") — cộng **tuổi dữ liệu**, thứ trả lời "số này tin
+                      được không". Ba thứ ấy chính là "viên tin cậy", và nay nó đứng đúng chỗ của viên
+                      tin cậy ở ba màn kia: **góc trên-phải cảnh, `right-2 top-2`** — cùng toạ độ với
+                      `cum-trang-thai-du-lieu` ở `/twin` (đo được lệch mép phải 8 px, mép trên 8 px).
+                    ★ Dòng tuổi dữ liệu KHÔNG nhân bản: `NganXuLy` nhận `hienDoTuoi={false}` ở màn này
+                      (ngăn phải và cảnh nói về CÙNG một máy), còn `/twin` giữ nguyên vì ở đó ngăn nói
+                      về một máy còn viên trên cảnh nói về cả cảnh.
+                    ⚠ Bài học Đợt 35 (Pareto #5) VẪN CÒN HIỆU LỰC và bản này không phạm lại nó: chip
+                      cũ phải rời góc TRÊN-TRÁI vì nhãn nóc máy neo sát mép trên-GIỮA. Góc trên-PHẢI là
+                      phía đối diện, và `data-che-nhan` vẫn khai vùng cấm nhãn cho `LopNhan`.
+                  */}
                   <div
-                    /* ★ Đợt 35 (Pareto #5): chip ở GÓC DƯỚI-TRÁI, không phải trên-trái. Nhãn nóc máy neo sát mép
-                         trên (camera cấp Máy ép sát, Đợt 31) và chip là vùng cấm nhãn (`data-che-nhan`): ở 1280×720
-                         canvas chỉ 680 px rộng ⇒ chip [8..343] đè đúng lên nhãn [267..413] ⇒ tên máy trên nóc biến mất
-                         (đo `.qa-dot35/sau-BCE/e2-may-14-1280x720.json`: `biChe: 1`, nhãn 0). Đáy canvas không có gì
-                         neo (chip nhãn ẩn ở giữa), chip xuống đó thành chú thích ngay trên cockpit. */
-                    className="pointer-events-none absolute bottom-2 left-2 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-background/85 px-2 py-1 text-xs shadow-sm backdrop-blur"
-                    data-testid="chip-may"
-                    /* ★ Đợt 35 (Pareto #5): lớp phủ ĐÈ canvas tự khai — `LopNhan` không vẽ nhãn dưới nó. */
+                    className="pointer-events-none absolute right-2 top-2 z-10 flex max-w-[min(22rem,calc(100%-1rem))] flex-wrap items-center justify-end gap-x-3 gap-y-1 rounded-md border bg-background/85 px-2 py-1 text-xs shadow-sm backdrop-blur"
+                    data-testid="vien-tin-cay-may"
                     data-che-nhan="1"
                   >
-                    <span className="font-mono font-medium" data-testid="ma-may">
-                      {tomTat?.ma ?? "—"}
-                    </span>
-                    <span className="text-muted-foreground" data-testid="loai-may">
+                    <span className="text-text-2" data-testid="loai-may">
                       {tomTat?.loaiMay ?? "—"}
-                    </span>
-                    <span data-testid="trang-thai-may" data-trang-thai={trangThaiMay.trangThai}>
-                      {t(mauChoTrangThai(trangThaiMay.trangThai).khoaNhan)}
                     </span>
                     <span data-testid="suc-khoe-may" data-hang={tomTat?.hangSucKhoe ?? "chua_do"}>
                       {t("twin3d.may.sucKhoe", "Sức khoẻ")} {hienSo(tomTat?.diem, dangTai)}
                       {tomTat?.diem != null ? " %" : ""}
                       {" · "}
                       {nhanHang(tomTat?.hangSucKhoe ?? "chua_do", t)}
+                    </span>
+                    {/* ★ Tuổi dữ liệu — CÙNG `nhanDoTuoi`/`nhanTuoiDocDuoc` với `NganXuLy` (G12: một
+                          hàm, hai chỗ đọc; không có đường nào để hai bề mặt lệch nhau). */}
+                    <span
+                      className={doTuoiMay.do ? "text-destructive" : "text-text-2"}
+                      data-testid="do-tuoi-may"
+                      data-giay={doTuoiMay.giay ?? ""}
+                    >
+                      {doTuoiMay.giay === null
+                        ? t("twin3d.vanHanh.chuaTungBaoCao", "Chưa từng nhận dữ liệu")
+                        : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{tuoi}} trước", {
+                            tuoi: nhanTuoiDocDuoc(doTuoiMay, t),
+                          })}
                     </span>
                   </div>
                 </>
@@ -863,6 +887,9 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
               trangThai={trangThaiMay}
               thoiDiemDuLieu={mayNay?.thoiDiemDuLieu ?? null}
               bayGio={bayGio}
+              /* ★ Đợt 57 (mục 12) — tuổi dữ liệu ĐÃ lên viên tin cậy trên cảnh; in ở đây nữa
+                   là bề mặt thứ hai cho cùng một câu trên cùng một máy. */
+              hienDoTuoi={false}
               canhBao={canhBaoCuaMay}
               quyen={quyen}
               coQuyenXem={(m) => hasPermission(m, "canView")}

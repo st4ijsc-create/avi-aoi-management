@@ -99,6 +99,18 @@ export interface NganXuLyProps {
   /** `max(timestamp)` của dữ liệu máy này. */
   thoiDiemDuLieu: number | null;
   bayGio: number;
+  /**
+   * ★★★ ĐỢT 57 (mục thiết kế 12) — CÓ IN DÒNG TUỔI DỮ LIỆU Ở ĐÂY KHÔNG.
+   *
+   * Mặc định `true` = hành vi cũ, và `/twin` giữ nguyên: ở đó ngăn này là ngăn của **một máy đang
+   * chọn**, còn viên tin cậy trên cảnh (`cum-trang-thai-du-lieu`) nói về **cả cảnh** — hai đại lượng
+   * khác nhau, cùng hiện là đúng.
+   *
+   * Màn Máy truyền `false`: ở đó ngăn này và cảnh nói về **CÙNG một máy**, nên dòng tuổi lên
+   * `vien-tin-cay-may` (góc trên-phải cảnh, đồng bộ ba màn kia) và KHÔNG nhân bản ở ngăn phải.
+   * Đây là DI CHUYỂN, không phải xoá: `TwinMay.tsx` in đúng chuỗi ấy từ đúng `nhanDoTuoi`.
+   */
+  hienDoTuoi?: boolean;
   canhBao: readonly CanhBaoDangMo[];
   quyen: QuyenXuLy;
   /** Người dùng có `canView` module này không — để ẩn nút điều hướng vô ích. */
@@ -145,6 +157,7 @@ export function NganXuLy(props: NganXuLyProps) {
     trangThai,
     thoiDiemDuLieu,
     bayGio,
+    hienDoTuoi = true,
     canhBao,
     quyen,
     coQuyenXem,
@@ -316,7 +329,7 @@ export function NganXuLy(props: NganXuLyProps) {
         <h2 className="text-sm font-semibold text-foreground" data-testid="ngan-ma-may">
           {ma}
         </h2>
-        <p className="truncate text-xs text-muted-foreground">{ten}</p>
+        <p className="truncate text-xs text-text-2">{ten}</p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" data-testid="ngan-trang-thai" data-gia-tri={trangThai.trangThai}>
             {t(kieuMau.khoaNhan)}
@@ -341,8 +354,9 @@ export function NganXuLy(props: NganXuLyProps) {
           ★ NT-3.2 — "cập nhật N giây trước" tính từ `max(timestamp)` của DỮ LIỆU,
           không phải thời điểm render. `—` khi chưa từng có dữ liệu (NT-3.5).
         */}
+        {hienDoTuoi ? (
         <p
-          className={`mt-1 text-[11px] ${tuoi.do ? "text-destructive" : "text-muted-foreground"}`}
+          className={`mt-1 text-[11px] ${tuoi.do ? "text-destructive" : "text-text-2"}`}
           data-testid="ngan-do-tuoi"
           data-giay={tuoi.giay ?? ""}
         >
@@ -357,6 +371,7 @@ export function NganXuLy(props: NganXuLyProps) {
                 tuoi: nhanTuoiDocDuoc(tuoi, t),
               })}
         </p>
+        ) : null}
       </header>
 
       {/* ── §11 #60 — STATS AOI OK/NG/NTF/YIELD ────────────────────────── */}
@@ -368,7 +383,7 @@ export function NganXuLy(props: NganXuLyProps) {
         `data-*` mang giá trị THÔ để nghiệm thu đọc được số, không phải đọc chữ.
       */}
       <section className="border-t pt-2" data-testid="nhom-stats-aoi">
-        <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
           {t("twin3d.vanHanh.statsAoi", "Kết quả AOI")}
           {statsAoi.mauRong ? (
             <span className="font-normal normal-case" data-testid="stats-mau-rong">
@@ -385,7 +400,7 @@ export function NganXuLy(props: NganXuLyProps) {
             ] as const
           ).map(([ma_, khoa, macDinh, gt, lop]) => (
             <div key={ma_} className="rounded border px-1 py-1">
-              <dt className="text-[10px] uppercase text-muted-foreground">{t(khoa, macDinh)}</dt>
+              <dt className="text-[10px] uppercase text-text-2">{t(khoa, macDinh)}</dt>
               <dd
                 className={`text-sm font-semibold tabular-nums ${lop}`}
                 data-testid={`stats-${ma_}`}
@@ -396,7 +411,7 @@ export function NganXuLy(props: NganXuLyProps) {
             </div>
           ))}
           <div className="rounded border px-1 py-1">
-            <dt className="text-[10px] uppercase text-muted-foreground">
+            <dt className="text-[10px] uppercase text-text-2">
               {t("twin3d.vanHanh.aoiYield", "Yield")}
             </dt>
             <dd
@@ -408,7 +423,7 @@ export function NganXuLy(props: NganXuLyProps) {
             </dd>
           </div>
         </dl>
-        <p className="mt-1 text-[10px] text-muted-foreground" data-testid="stats-tong">
+        <p className="mt-1 text-[10px] text-text-2" data-testid="stats-tong">
           {t("twin3d.vanHanh.aoiTong", "Tổng kiểm")}: {hienSo(statsAoi.total)}
           {statsAoi.fpy === null ? "" : ` · FPY ${statsAoi.fpy}%`}
         </p>
@@ -416,12 +431,12 @@ export function NganXuLy(props: NganXuLyProps) {
 
       {/* ── NHÓM 1: XỬ LÝ CẢNH BÁO ─────────────────────────────────────── */}
       <section className="border-t pt-2" data-testid="nhom-canh-bao">
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
           {t("twin3d.vanHanh.canhBao", "Cảnh báo")} ({hienSo(canhBao.length)})
         </h3>
 
         {canhBao.length === 0 ? (
-          <p className="text-xs text-muted-foreground" data-testid="ngan-khong-canh-bao">
+          <p className="text-xs text-text-2" data-testid="ngan-khong-canh-bao">
             {t("twin3d.vanHanh.khongCoCanhBao", "Không có cảnh báo đang mở.")}
           </p>
         ) : (
@@ -477,7 +492,7 @@ export function NganXuLy(props: NganXuLyProps) {
       */}
       {tra("taoPhieu").duocPhep ? (
       <section className="border-t pt-2" data-testid="nhom-tao-viec">
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
           {t("twin3d.vanHanh.taoViec", "Tạo việc")}
         </h3>
 
@@ -584,7 +599,7 @@ export function NganXuLy(props: NganXuLyProps) {
 
       {/* ── NHÓM 3: MỞ CHỨC NĂNG (§9.3) ────────────────────────────────── */}
       <section className="border-t pt-2" data-testid="nhom-mo-chuc-nang">
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
           {t("twin3d.vanHanh.moChucNang", "Mở chức năng")}
         </h3>
         {/*

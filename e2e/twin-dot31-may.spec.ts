@@ -165,7 +165,10 @@ test("A1 — /twin/may/14: bbox trong viewport, 1 canvas, cockpit 2D + NganXuLy 
     manTwinMay: await bbox(page, "man-twin-may"),
     thanhTren: await bbox(page, "thanh-tren-may"),
     khoiCanh: await bbox(page, "khoi-canh-may"),
-    chip: await bbox(page, "chip-may"),
+    // ★ Đợt 57 (mục thiết kế 12) — `chip-may` (đáy-trái, mã·loại·trạng thái·sức khoẻ) thành
+    //   `vien-tin-cay-may` (trên-phải, loại·sức khoẻ·tuổi dữ liệu). Mã và trạng thái KHÔNG mất:
+    //   chúng ở `ngan-ma-may`/`ngan-trang-thai` trong ngăn phải, và spec này đọc đúng chỗ ấy.
+    vienTinCay: await bbox(page, "vien-tin-cay-may"),
     cockpit: await bbox(page, "cockpit-2d"),
     panelPhai: await bbox(page, "panel-phai-may"),
     nganXuLy: await bbox(page, "ngan-xu-ly"),
@@ -188,11 +191,18 @@ test("A1 — /twin/may/14: bbox trong viewport, 1 canvas, cockpit 2D + NganXuLy 
     }),
     lopNhan: await bbox(page, "lop-nhan-twin3d"),
     tenMay: await page.getByTestId("ten-may").innerText(),
-    maMay: await page.getByTestId("ma-may").innerText(),
+    maMay: await page.getByTestId("ngan-ma-may").innerText(),
     loaiMay: await page.getByTestId("loai-may").innerText(),
     sucKhoe: await page.getByTestId("suc-khoe-may").innerText(),
     hang: await page.getByTestId("suc-khoe-may").getAttribute("data-hang"),
-    trangThai: await page.getByTestId("trang-thai-may").getAttribute("data-trang-thai"),
+    trangThai: await page.getByTestId("ngan-trang-thai").getAttribute("data-gia-tri"),
+    doTuoiMay: await page.getByTestId("do-tuoi-may").innerText(),
+    /* ★ Đợt 57 (mục 12) — tuổi dữ liệu ĐÃ rời ngăn phải; **0** ở đây là kết cục MONG ĐỢI.
+       ⚠ Đo bằng `.count()` chứ KHÔNG `.innerText().catch(() => null)`: `locator.innerText()`
+         dùng `actionTimeout` (mặc định **0 = chờ vô hạn**), nên trên một phần tử VẮNG MẶT nó
+         không ném lỗi để `.catch` bắt — nó treo tới khi hết hạn CẢ BÀI TEST. Đo được ở chính
+         Đợt 57: bài A1 timeout 120 s ngay ở dòng này. "Chờ mãi" ≠ "không có". */
+    soNganDoTuoi: await page.getByTestId("ngan-do-tuoi").count(),
     hrefLine: await page.getByTestId("ve-man-line").getAttribute("href"),
     theLine: await page.getByTestId("ve-man-line").evaluate((el) => el.tagName),
     nganMaMay: await page.getByTestId("ngan-ma-may").innerText().catch(() => null),
@@ -230,9 +240,21 @@ test("A1 — /twin/may/14: bbox trong viewport, 1 canvas, cockpit 2D + NganXuLy 
   // ★★★ Cockpit 2D THẬT SỰ render (G85: đo DOM, không tin testid trên cha).
   expect(do_.soTab).toBeGreaterThanOrEqual(10);
   expect(do_.nganXuLy).not.toBeNull();
-  // Chip (B) và breadcrumb: mã/loại/sức khoẻ đúng máy 14; link sang màn Line 2 là <a>.
+  // Viên tin cậy (B) + ngăn phải + breadcrumb: mã/loại/sức khoẻ đúng máy 14; link Line 2 là <a>.
   expect(do_.maMay).toBe("SIM-L2-AOI");
   expect(do_.loaiMay).toBe("AOI");
+  /* ★★★ Đợt 57 (mục thiết kế 12) — VIÊN TIN CẬY Ở GÓC TRÊN-PHẢI CẢNH, cùng nhà với `/twin`.
+     Đo: mép phải viên cách mép phải khối cảnh 8 px, mép trên cách mép trên 8 px (`right-2 top-2`),
+     sai lệch cho phép ≤ 8 px so với ba màn kia. Và nó KHÔNG còn ở đáy: `day` phải ở nửa trên. */
+  expect(do_.vienTinCay, "vien-tin-cay-may phai co trong DOM").not.toBeNull();
+  const lechPhai = do_.khoiCanh!.x + do_.khoiCanh!.w - (do_.vienTinCay!.x + do_.vienTinCay!.w);
+  const lechTren = do_.vienTinCay!.y - do_.khoiCanh!.y;
+  expect(lechPhai, "vien tin cay phai neo goc PHAI cua canh").toBeLessThanOrEqual(16);
+  expect(lechTren, "vien tin cay phai neo goc TREN cua canh").toBeLessThanOrEqual(16);
+  expect(do_.vienTinCay!.y).toBeLessThan(do_.khoiCanh!.y + do_.khoiCanh!.h / 2);
+  // ★ Tuổi dữ liệu ĐÃ chuyển: có ở viên trên cảnh, KHÔNG còn ở ngăn phải (không nhân bản).
+  expect(do_.doTuoiMay.length).toBeGreaterThan(0);
+  expect(do_.soNganDoTuoi, "tuoi du lieu khong duoc lap lai o ngan phai").toBe(0);
   expect(do_.hrefLine).toBe("/twin/line/2");
   expect(do_.theLine).toBe("A");
   expect(["canh", "theo_doi", "nguy_kich", "khoe", "het_han", "chua_do"]).toContain(do_.hang);
