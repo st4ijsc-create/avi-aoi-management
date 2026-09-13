@@ -14,10 +14,11 @@
  *                        status dot rolled UP, deviceType chip, alarm/task/offline
  *                        badges. Select a node → filters the center + alarm rail; a
  *                        machine/robot leaf → "Open cockpit" → /machine|/robot/:id (U3).
- *   CENTER · OVERVIEW — the selected factory's live twin. We embed a compact 3D scene
- *                        (own twin.sceneGraph query, reusing the twin's three.js
- *                        approach) with a STATUS-GRID fallback when the scene is empty
- *                        or WebGL is unavailable — pragmatic, never breaks the page.
+ *   CENTER · OVERVIEW — the selected factory's live STATUS GRID (line→station→device),
+ *                        enriched with PackML state from its own twin.sceneGraph query.
+ *                        ★ Đợt 61 (QĐ-31): cảnh 3D compact (Canvas drei đời cũ) ĐÃ BỎ —
+ *                        nó trùng /twin (kit twin3d) và đốt thêm 1 WebGL context.
+ *                        Trang + 4 thủ tục commandCenter.* + 10 lối vào giữ nguyên.
  *   RIGHT · ALARM RAIL — seeded from commandCenter.recentAlerts, then LIVE-appended
  *                        from useEcosystemEvents() (dedupe by id, cap ~100). Click an
  *                        alert → navigate to the scoped machine/robot cockpit.
@@ -30,18 +31,15 @@
  * i18n via t("cmd.*","English default") fallbacks (nav keys added to locale files).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { Suspense, useEffect, useMemo, useRef, useState, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
-import { Canvas, invalidate, type ThreeEvent } from "@react-three/fiber";
-import { OrbitControls, PerspectiveCamera, Grid, Text } from "@react-three/drei";
-import * as THREE from "three";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
-import { MetricCard, PageHeader, StatusBadge, SectionCard, severityDotClass, stateHex, toneHex } from "@/components/patterns";
+import { MetricCard, PageHeader, StatusBadge, SectionCard, severityDotClass, toneHex } from "@/components/patterns";
 import { EmptyState } from "@/components/EmptyState";
 import { isScopeEmpty } from "@/lib/scopeEmpty";
 import { relTimeShort } from "@/lib/format";
@@ -103,7 +101,8 @@ interface DrawerDevice {
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── doc 67 W7 GĐ2 (việc 1) — màu trạng thái lấy từ nguồn DS chung
-// (patterns/isaStateBadges): stateHex()/toneHex() cho material three.js + legend
+// (patterns/isaStateBadges): toneHex() cho chấm trạng thái 2D (stateHex + legend
+// 3D đã bỏ ở Đợt 61 cùng Canvas)
 // (đọc CSS var theo theme, cache, fallback tĩnh khớp đúng bảng STATUS_HEX cũ),
 // severityDotClass() cho chấm 2D. Bảng STATUS_DOT/STATUS_HEX local đã xoá.
 // LƯU Ý ĐÃ DUYỆT: bảng cũ tự mâu thuẫn — STATUS_HEX.idle = amber (#f59e0b) trong
@@ -448,186 +447,23 @@ function TreeNode({
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// CENTER PANE — compact live 3D twin for the selected factory (own sceneGraph
-// query), with a status-grid fallback when the scene is empty or WebGL is off.
+// CENTER PANE — lưới trạng thái trực tiếp của nhà máy đang chọn.
+//
+// ★★★ ĐỢT 61 (QĐ-31) — CẢNH 3D CỦA MÀN NÀY ĐÃ BỊ BỎ (177 dòng: FLOOR_W/FLOOR_D,
+//   gridPositions, TwinBlock, CompactTwinScene) cùng `<Canvas>` drei đời cũ, bộ
+//   chuyển 2D/3D, khoá localStorage `commandCenter:viewMode`, thăm dò WebGL và
+//   hàm `Legend`. Lý do: cảnh ấy TRÙNG `/twin` (đã chạy kit `twin3d/loi`, 1 draw
+//   call, dispose triệt để) trong khi bản ở đây là `@react-three/fiber` + drei
+//   dựng tay ⇒ mỗi lượt mở `/command-center` đốt thêm MỘT WebGL context cho một
+//   cảnh người dùng đã có chỗ xem tốt hơn. Trang, 4 thủ tục `commandCenter.*` và
+//   10 lối vào GIỮ NGUYÊN.
+//
+// ⚠ `twin.sceneGraph` **KHÔNG** bị bỏ theo — đo được nó phục vụ 4 thứ của đường
+//   2D, không riêng cảnh 3D: (1) số thiết bị trên tiêu đề pane, (2) chấm tươi
+//   `PollFreshness`, (3) trạng thái đang tải của pane, (4) làm giàu PackML
+//   (`state`, `activeTaskId`) cho chip 2D khi mở ContextDrawer. Bỏ nó là bỏ 4
+//   tính năng đang sống của lưới 2D, không phải dọn bản sao của cảnh 3D.
 // ════════════════════════════════════════════════════════════════════════════
-
-const FLOOR_W = 34;
-const FLOOR_D = 24;
-
-// doc 68 — LƯỚI GỌN: KHÔNG dùng toạ độ không-gian-thật của thiết bị nữa. Trước
-// đây mỗi máy đặt theo device.position (chuyền 3 + vài máy lẻ nằm rải rác xa cụm
-// chính) → hộp bao giãn rộng → auto-fit buộc zoom-ra → khoảng trống giữa canvas.
-// Nay xếp TOÀN BỘ N thiết bị thành LƯỚI ĐỀU compact lấp đầy khung. Vị-trí gán
-// theo THỨ TỰ SORT ỔN ĐỊNH (stationId→code→id) nên (a) cùng trạm/chuyền ở gần
-// nhau, (b) 1 thiết bị LUÔN ở 1 ô cố định (không nhảy ô giữa các lần render),
-// (c) id không đổi → click vẫn mở đúng ContextDrawer.
-const GRID_SPACING = 2.2; // khoảng cách tâm-tâm giữa 2 ô (khối máy rộng 1.4u)
-function gridPositions(devices: TwinDevice[]): [number, number, number][] {
-  const n = devices.length;
-  if (n === 0) return [];
-  // thứ tự xếp ổn định: gom theo trạm (≈ chuyền) → mã máy → id chốt tie-break.
-  const order = devices
-    .map((d, i) => ({ i, d }))
-    .sort((a, b) => {
-      const sa = a.d.stationId ?? Number.MAX_SAFE_INTEGER;
-      const sb = b.d.stationId ?? Number.MAX_SAFE_INTEGER;
-      if (sa !== sb) return sa - sb;
-      const c = a.d.code.localeCompare(b.d.code);
-      return c !== 0 ? c : a.d.id.localeCompare(b.d.id);
-    });
-  // khung ~4:3 → cols = ⌈√(n·1.4)⌉ (rộng hơn cao); tâm lưới tại gốc toạ độ.
-  const cols = Math.max(1, Math.ceil(Math.sqrt(n * 1.4)));
-  const rows = Math.max(1, Math.ceil(n / cols));
-  const out = new Array<[number, number, number]>(n);
-  order.forEach((o, k) => {
-    const col = k % cols;
-    const row = Math.floor(k / cols);
-    const x = (col - (cols - 1) / 2) * GRID_SPACING;
-    const z = (row - (rows - 1) / 2) * GRID_SPACING;
-    out[o.i] = [x, 0.5, z]; // y = 0.5 (mặt sàn) giữ nguyên
-  });
-  return out;
-}
-
-function TwinBlock({
-  node, position, selected, onSelect,
-}: {
-  node: TwinDevice;
-  position: [number, number, number];
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const [hovered, setHovered] = useState(false);
-  const isRobot = node.kind === "robot";
-  const color = node.color || statusHexFromTwinState(node.state);
-  // W6 (doc 67, việc 2+3): frameloop='demand' — bỏ useFrame-lerp (đứng hình ở
-  // demand-mode) + bỏ cấp phát new THREE.Vector3 mỗi frame × N thiết bị; scale
-  // đặt TRỰC TIẾP qua prop, đổi hover/selection thì invalidate() vẽ lại 1 frame.
-  const scale = selected || hovered ? 1.12 : 1;
-  useEffect(() => { invalidate(); }, [hovered, selected]);
-  // W6 (việc 5): thiết bị KHÔNG-ok hiện nhãn mã máy thường trực (không chỉ hover).
-  const st = (node.state ?? "").toLowerCase();
-  const isOk = st === "running" || st === "execute" || st === "active";
-  const stop = (e: ThreeEvent<PointerEvent | MouseEvent>) => e.stopPropagation();
-  return (
-    <group
-      position={position}
-      scale={scale}
-      onClick={(e) => { stop(e); onSelect(); }}
-      onPointerOver={(e) => { stop(e); setHovered(true); }}
-      onPointerOut={() => setHovered(false)}
-    >
-      <mesh castShadow>
-        {isRobot ? <cylinderGeometry args={[0.4, 0.5, 1, 16]} /> : <boxGeometry args={[1.4, 0.9, 1.4]} />}
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.22} metalness={0.4} roughness={0.5} />
-      </mesh>
-      <mesh position={[0, 0.9, 0]}>
-        <sphereGeometry args={[0.12]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.9} />
-      </mesh>
-      {selected && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.48, 0]}>
-          <ringGeometry args={[1, 1.25, 32]} />
-          <meshBasicMaterial color="#06b6d4" side={THREE.DoubleSide} />
-        </mesh>
-      )}
-      {(hovered || selected || !isOk) && (
-        <Text position={[0, -0.7, 0.8]} fontSize={0.24} color="#fff" anchorX="center" anchorY="top" outlineWidth={0.01} outlineColor="#000">
-          {node.code}
-        </Text>
-      )}
-    </group>
-  );
-}
-
-function CompactTwinScene({
-  devices, selectedId, onSelect, onOpen,
-}: {
-  devices: TwinDevice[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onOpen: (d: TwinDevice) => void;
-}) {
-  // doc 68 §3.1 [P1] — AUTO-FIT CAMERA: tính vị-trí-scene 1 lần rồi khung camera
-  // theo hộp bao (bounding box) của 44 thiết bị → lấp đầy canvas, diệt lề đen trên/
-  // dưới (nguyên nhân "mất cân đối" chính, không phải tỷ lệ pane). Trước đây camera
-  // cố định [0,24.5,30.6] nhìn gốc toạ độ nên cụm máy lệch tâm & thu nhỏ giữa khung.
-  const positions = useMemo<[number, number, number][]>(
-    () => gridPositions(devices),
-    [devices],
-  );
-  const fit = useMemo(() => {
-    const fov = 50;
-    // doc 68 §3.1 [P1-fix] — CĂN KHUNG lại (phản hồi user "twin mất cân đối / nửa
-    // dưới đen"): (a) góc DỐC hơn 52° thay vì 45° chếch-thấp → bớt sàn foreground
-    // chiếm nửa dưới; (b) đệm auto-fit 1.08× (cũ 1.25×) + đặt magnitude camera ĐÚNG
-    // = dist (cũ dist×0.82×√2 = 1.16×dist làm cụm nhỏ thêm) → cụm lấp ~70-80% khung.
-    const PAD = 1.08;                     // đệm mép (giảm từ 1.25 → cụm to hơn)
-    const ELEV = (52 * Math.PI) / 180;    // độ chếch xuống ~52° (dốc hơn 45° cũ)
-    const sinE = Math.sin(ELEV), cosE = Math.cos(ELEV);
-    if (positions.length === 0) {
-      const d = Math.max(18, FLOOR_W * 0.9);
-      return {
-        center: [0, 0, 0] as [number, number, number],
-        camPos: [0, d * sinE, d * cosE] as [number, number, number],
-        floorW: FLOOR_W, floorD: FLOOR_D,
-      };
-    }
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const [x, , z] of positions) {
-      if (x < minX) minX = x; if (x > maxX) maxX = x;
-      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
-    }
-    const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
-    const spanX = maxX - minX, spanZ = maxZ - minZ;
-    // Bán kính hộp bao (nửa cạnh lớn nhất) + đệm 2.5u cho nhãn/khối máy.
-    const radius = Math.max(spanX, spanZ, 6) / 2 + 2.5;
-    // Khoảng cách khớp fov đứng + đệm PAD; kẹp trong [12,130].
-    const dist = Math.min(130, Math.max(12, (radius / Math.tan((fov * Math.PI) / 180 / 2)) * PAD));
-    return {
-      center: [cx, 0, cz] as [number, number, number],
-      // magnitude = dist chuẩn; phân rã theo góc chếch ELEV → cao/ngang cân đối.
-      camPos: [cx, dist * sinE, cz + dist * cosE] as [number, number, number],
-      // sàn + lưới THU về vừa hộp bao (+đệm 6u), không trải mênh mông ra foreground.
-      floorW: spanX + 6, floorD: spanZ + 6,
-    };
-  }, [positions]);
-  // W6 (doc 67, việc 2): frameloop='demand' — dữ liệu/lựa chọn/khung camera đổi thì
-  // vẽ lại 1 frame (kèm invalidate theo hover/selection trong TwinBlock; OrbitControls
-  // của drei tự invalidate khi xoay/zoom ở demand-mode).
-  useEffect(() => { invalidate(); }, [fit, selectedId]);
-  return (
-    <>
-      {/* key theo fit → đổi phạm vi thiết bị thì camera reset về khung vừa-khít mới. */}
-      <PerspectiveCamera key={`${fit.camPos[0]}:${fit.camPos[2]}`} makeDefault position={fit.camPos} fov={50} />
-      <OrbitControls enablePan enableZoom enableRotate minDistance={8} maxDistance={140} maxPolarAngle={Math.PI / 2.1} target={fit.center} />
-      {/* W6 (doc 67, việc 1 — AIR-GAP): BỎ <Environment preset="night"> vì drei
-          tải HDR từ CDN internet → mạng nhà máy không internet sẽ suspend vĩnh
-          viễn (khung đen). Bù sáng bằng ambient/directional tăng nhẹ. */}
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[16, 22, 10]} intensity={1.25} castShadow />
-      <pointLight position={[-10, 9, -10]} intensity={0.45} color="#06b6d4" />
-      {/* Lưới + sàn THU về vừa hộp bao thiết bị & CĂN THEO tâm cụm (fit.center) —
-          bỏ infiniteGrid/plane cố-định-gốc-toạ-độ vì chúng trải ra foreground trống
-          gây mảng đen nửa dưới. */}
-      <Grid position={[fit.center[0], -0.49, fit.center[2]]} args={[fit.floorW, fit.floorD]} cellSize={1} cellThickness={0.5} cellColor="#1e293b" sectionSize={5} sectionThickness={1} sectionColor="#334155" fadeDistance={Math.max(fit.floorW, fit.floorD)} fadeStrength={1.2} />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[fit.center[0], -0.5, fit.center[2]]} receiveShadow>
-        <planeGeometry args={[fit.floorW, fit.floorD]} />
-        <meshStandardMaterial color="#0f172a" transparent opacity={0.85} />
-      </mesh>
-      {devices.map((d, i) => (
-        <TwinBlock
-          key={d.id}
-          node={d}
-          position={positions[i]}
-          selected={selectedId === d.id}
-          onSelect={() => { onSelect(d.id); onOpen(d); }}
-        />
-      ))}
-    </>
-  );
-}
 
 /** Status-grid fallback: line→station→device cells coloured by hierarchy status.
  *  doc 68 §3.1 [P1]: chip thiết bị = <button> → mở ContextDrawer chi tiết (onDeviceOpen). */
@@ -712,23 +548,9 @@ function CenterOverview({
   /** doc 68 §3.1 [P1] — mở ContextDrawer chi tiết thiết bị (khối twin / chip 2D). */
   onDeviceOpen?: (d: DrawerDevice) => void;
 }) {
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const [webglOk, setWebglOk] = useState(true);
-
-  // W6 (doc 67, việc 5): toggle 2D/3D — persist localStorage; mặc định '2d' trên
-  // panel-PC (bề rộng ≤1366px lúc mount), '3d' màn lớn. Ở 2D KHÔNG mount Canvas
-  // (tiết kiệm toàn bộ GPU cho iGPU panel-PC).
-  const [viewMode, setViewMode] = useState<"2d" | "3d">(() => {
-    try {
-      const saved = localStorage.getItem("commandCenter:viewMode");
-      if (saved === "2d" || saved === "3d") return saved;
-    } catch { /* storage bị chặn → rơi về mặc định theo bề rộng */ }
-    return window.innerWidth <= 1366 ? "2d" : "3d";
-  });
-  const changeViewMode = useCallback((m: "2d" | "3d") => {
-    setViewMode(m);
-    try { localStorage.setItem("commandCenter:viewMode", m); } catch { /* noop */ }
-  }, []);
+  // ★ Đợt 61: `selectedDeviceId`/`webglOk`/`viewMode` đã bỏ cùng cảnh 3D. Khoá
+  //   localStorage `commandCenter:viewMode` KHÔNG còn được đọc/ghi — người dùng
+  //   nào còn giá trị cũ trong trình duyệt cũng không đổi gì (không ai tra nữa).
 
   // W6 (doc 67, việc 4): 10s → 30s — sceneGraph trả mảng mới mỗi lần fetch nên
   // mỗi chu kỳ là 1 lần re-render toàn scene; 30s đủ tươi cho sơ đồ tổng quan.
@@ -737,14 +559,11 @@ function CenterOverview({
     { enabled: factoryId != null, refetchInterval: 30_000, staleTime: 5_000 },
   );
   const devices = useMemo<TwinDevice[]>(() => sceneQ.data?.devices ?? [], [sceneQ.data]);
-  const selectedDevice = devices.find((d) => d.id === selectedDeviceId) ?? null;
 
   // doc 68 §3.1 [P1] — chuẩn hoá → DrawerDevice rồi báo lên trang mở ContextDrawer.
-  // Khối twin có state PackML + activeTaskId đầy đủ; chip 2D (HierarchyNode) được làm
-  // giàu thêm bằng cách tra TwinDevice cùng refId trong scene (nếu có).
-  const openTwinDevice = useCallback((d: TwinDevice) => {
-    onDeviceOpen?.({ refId: d.refId, kind: d.kind, name: d.name, code: d.code, state: d.state, activeTaskId: d.activeTaskId });
-  }, [onDeviceOpen]);
+  // ★ Đợt 61: `openTwinDevice` (lối bấm TỪ KHỐI 3D) đã bỏ cùng cảnh. Chip 2D
+  //   (HierarchyNode) vẫn được làm giàu bằng cách tra TwinDevice cùng refId
+  //   trong scene — đó là lý do `sceneQ` ở trên PHẢI ở lại.
   const openGridDevice = useCallback((dev: HierarchyNode) => {
     if (typeof dev.refId !== "number" || (dev.kind !== "machine" && dev.kind !== "robot")) return;
     const twin = devices.find((d) => d.refId === dev.refId && d.kind === dev.kind) ?? null;
@@ -754,29 +573,8 @@ function CenterOverview({
     });
   }, [devices, onDeviceOpen]);
 
-  // Detect WebGL availability once — if absent, skip the Canvas (status grid instead).
-  useEffect(() => {
-    try {
-      const c = document.createElement("canvas");
-      const gl = c.getContext("webgl") || c.getContext("experimental-webgl");
-      setWebglOk(!!gl);
-    } catch { setWebglOk(false); }
-  }, []);
-
-  const canRender3D = webglOk && devices.length > 0;
-
-  // W4 (doc 67) — a11y cho canvas 3D: aria-label mô tả + tóm tắt sr-only theo
-  // nhóm trạng thái (screen-reader không đọc được nội dung WebGL).
-  const activeAlarmCount = factoryNode?.counts.activeAlarms ?? 0;
-  const stateSummary = useMemo(() => {
-    const byCat = new Map<string, number>();
-    for (const d of devices) {
-      const cat = t(twinStateCategoryKey(d.state));
-      byCat.set(cat, (byCat.get(cat) ?? 0) + 1);
-    }
-    return [...byCat.entries()].map(([cat, n]) => `${n} ${cat.toLowerCase()}`).join(", ");
-  }, [devices]);
-  const sceneAriaLabel = t("commandCenter.sceneAria", { name: factoryNode ? ` ${factoryNode.name}` : "", devices: devices.length, alarms: activeAlarmCount });
+  // ★ Đợt 61: thăm dò WebGL (`getContext("webgl")`), `canRender3D`, `stateSummary`
+  //   và `sceneAriaLabel` đã bỏ — cả bốn chỉ tồn tại để phục vụ `<Canvas>`.
 
   return (
     <SectionCard
@@ -788,29 +586,8 @@ function CenterOverview({
       }
       action={
         <div className="flex items-center gap-2">
-          {/* W6 (doc 67, việc 5): toggle 2D/3D — chỉ hiện khi 3D là lựa chọn khả dụng. */}
-          {factoryId != null && webglOk && devices.length > 0 && (
-            <div className="flex items-center gap-0.5 rounded-md border p-0.5" role="group" aria-label={t("commandCenter.cheDoHienThiSo", "Chế độ hiển thị sơ đồ nhà máy")}>
-              <Button
-                size="sm"
-                variant={viewMode === "2d" ? "secondary" : "ghost"}
-                className="h-7 px-2"
-                aria-pressed={viewMode === "2d"}
-                onClick={() => changeViewMode("2d")}
-              >
-                2D
-              </Button>
-              <Button
-                size="sm"
-                variant={viewMode === "3d" ? "secondary" : "ghost"}
-                className="h-7 px-2"
-                aria-pressed={viewMode === "3d"}
-                onClick={() => changeViewMode("3d")}
-              >
-                3D
-              </Button>
-            </div>
-          )}
+          {/* ★ Đợt 61: bộ chuyển 2D/3D đã bỏ — chỉ còn MỘT đường hiển thị (lưới
+              trạng thái trực tiếp), nên một nút chọn giữa một lựa chọn là nhiễu. */}
           {/* AUD-01 (doc 65 W2) + W6 (việc 4): tuổi dữ liệu scene — poll 30s, amber khi >2× chu kỳ.
               doc 68 §3.1 [P2]: BỎ nút "Làm mới" trùng (đã có 1 ở header trang) — chỉ giữ
               1 chấm freshness/pane; scene tự poll 30s + nút header trang làm mới toàn cục. */}
@@ -832,81 +609,23 @@ function CenterOverview({
         <div className={cn("flex items-center justify-center text-sm text-muted-foreground", PANE_BODY_H)}>
           {t("cmd.loadingScene", "Loading factory scene…")}
         </div>
-      ) : canRender3D && viewMode === "3d" ? (
-        /* W6 (doc 67, việc 1): ErrorBoundary quanh Canvas — scene lỗi (driver GPU,
-           context-lost, shader…) rơi về lưới trạng thái thay vì khung đen; key theo
-           factoryId để đổi nhà máy thì boundary tự reset. */
-        <ErrorBoundary
-          key={factoryId}
-          fallback={
-            <>
-              <div className="mb-2 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] text-warning">
-                <Info className="h-3.5 w-3.5 shrink-0" />
-                Không dựng được cảnh 3D — hiển thị lưới trạng thái trực tiếp thay thế.
-              </div>
-              <StatusGridFallback factory={factoryNode} t={t} onDeviceOpen={openGridDevice} />
-            </>
-          }
-        >
-          {/* W4 (doc 67): role="img" + aria-label mô tả — nội dung WebGL vô hình
-              với screen-reader; kèm tóm tắt sr-only số liệu theo trạng thái.
-              GĐ2 (việc 1): bg-[#0a0a0f] CỐ ĐỊNH có chủ đích — scene 3D (đèn,
-              emissive, grid slate) được cân sáng cho nền tối, phải giữ tối ở CẢ
-              light lẫn dark theme, không chuyển sang token nền theo theme. */}
-          <div
-            role="img"
-            aria-label={sceneAriaLabel}
-            className={cn("w-full overflow-hidden rounded-lg border bg-[#0a0a0f]", PANE_BODY_H)}
-          >
-            {/* W6 (doc 67): frameloop='demand' — cảnh tĩnh không đốt GPU 60fps;
-                dpr trần 1.5 giới hạn độ phân giải render cho iGPU panel-PC. */}
-            <Canvas shadows frameloop="demand" dpr={[1, 1.5]} onPointerMissed={() => setSelectedDeviceId(null)}>
-              <Suspense fallback={null}>
-                <CompactTwinScene devices={devices} selectedId={selectedDeviceId} onSelect={setSelectedDeviceId} onOpen={openTwinDevice} />
-              </Suspense>
-            </Canvas>
-          </div>
-          <p className="sr-only">
-            {t("commandCenter.tomTatTwin", { devices: devices.length, state: stateSummary ? ` — ${stateSummary}` : "", alarms: activeAlarmCount })}
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-            {/* W4 (doc 67): nhãn chữ tiếng Việt cạnh chấm màu (không chỉ dựa màu). */}
-            {/* GĐ2: legend đọc cùng nguồn stateHex — "Chờ" nay là muted-xám (đồng
-                bộ chấm 2D; đổi so với amber cũ là CHỦ ĐÍCH, xem ghi chú đầu file). */}
-            <Legend hex={stateHex("running")} label={t("commandCenter.dangChay", "Đang chạy")} />
-            <Legend hex={stateHex("idle")} label={t("commandCenter.cho", "Chờ")} />
-            <Legend hex="#f97316" label={t("commandCenter.tamDungGiu", "Tạm dừng/Giữ")} />
-            <Legend hex={stateHex("fault")} label={t("commandCenter.loiEStop", "Lỗi/E-stop")} />
-            <Legend hex="#64748b" label={t("commandCenter.ngoaiTuyen", "Ngoại tuyến")} />
-            {selectedDevice && (
-              <span className="ml-auto text-foreground">
-                {selectedDevice.name} · {selectedDevice.state}
-                {selectedDevice.activeTaskId != null ? t("commandCenter.lenhSo", { id: selectedDevice.activeTaskId }) : ""}
-              </span>
-            )}
-          </div>
-        </ErrorBoundary>
-      ) : canRender3D ? (
-        /* W6 (doc 67, việc 5): chế độ 2D chủ động — Canvas KHÔNG được mount,
-           lưới trạng thái trực tiếp (line→station→device) thay thế toàn phần. */
+      ) : devices.length > 0 ? (
+        /* ★ Đợt 61: đường DUY NHẤT — lưới trạng thái trực tiếp (line→station→device).
+           Trước đây đây là nhánh "2D chủ động" và đã là MẶC ĐỊNH trên panel-PC
+           (bề rộng ≤1366px), nên nó là đường ĐÃ ĐƯỢC DÙNG THẬT, không phải nhánh dự
+           phòng chưa ai chạy. `<Canvas>` KHÔNG còn được mount ở màn này ⇒ __soCanvas = 0. */
         <StatusGridFallback factory={factoryNode} t={t} onDeviceOpen={openGridDevice} />
       ) : (
         <>
           <div className="mb-2 flex items-center gap-2 rounded-md border border-info/30 bg-info/10 px-2 py-1 text-[11px] text-info">
             <Info className="h-3.5 w-3.5 shrink-0" />
-            {webglOk
-              ? t("cmd.gridEmptyScene", "No devices placed in this factory's scene — showing the live status grid.")
-              : t("cmd.gridNoWebgl", "3D not available in this browser — showing the live status grid.")}
+            {t("cmd.gridEmptyScene", "No devices placed in this factory's scene — showing the live status grid.")}
           </div>
           <StatusGridFallback factory={factoryNode} t={t} onDeviceOpen={openGridDevice} />
         </>
       )}
     </SectionCard>
   );
-}
-
-function Legend({ hex, label }: { hex: string; label: string }) {
-  return <span className="flex items-center gap-1"><span aria-hidden="true" className="inline-block h-3 w-3 rounded-sm" style={{ background: hex }} /> {label}</span>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
