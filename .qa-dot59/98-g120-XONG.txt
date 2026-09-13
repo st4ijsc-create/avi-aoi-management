@@ -1,0 +1,4 @@
+XAC NHAN G120 2026-09-13T17:59:29+07:00
+Dung lai tu CAY CUOI (sau ca 3 commit nguon): bundle index-knE81yYW.js, 914 dong md5
+diff voi md5-dist-AC.txt (ban da do A/C/D + do59 + thi giac + bbox + idle): 0 dong khac
+=> BAN DANG CHAY khi do CHINH LA ban cuoi cua cay. Da xoa dist-cuoi (trung lap tuyet doi).
