@@ -7055,6 +7055,18 @@ Ngưỡng `[SLOW QUERY]` = **200 ms** (`queryMonitor.ts:40`); câu chậm nhất
 > #### ★★★ G142 - **"ĐÃ VÁ" CHỈ ĐÚNG VỚI CÂY MÃ; THỨ ĐANG PHỤC VỤ NGƯỜI DÙNG LÀ MỘT BẢN KHÁC, PHẢI ĐO RIÊNG.**
 > Lỗ rò tenant G113 vá ở Đợt 40 và được 6 lần QA xác nhận đóng — nhưng mọi lần đều đo trên `dist` dựng riêng trong phiên, trong khi hai cổng thật vẫn chạy nhị phân trước bản vá **suốt 16 đợt**. Cổng nghiệm thu phải có một ca **gọi thẳng vào cổng đang chạy** (không phải bản dựng của phép đo), và bản dựng nên nhúng commit hash để so được. Hệ quả tổ chức: **mọi tiến trình mình khởi động phải có sổ chủ sở hữu** — 20 đợt tôi né hai cổng vì tưởng của phiên khác, hoá ra là của mình.
 
+#### 14q.35.1 QĐ-28 — tắt cổng 3000 (2026-09-13)
+
+Sau phát hiện G142, phiên `avi-aoi-management-b2` đo chéo cổng **3000** (thư mục `D:/SOURCES/avi-aoi-management`, nhánh `feat/ai-local-L7-hang-rao`): `operator1` — DB xác nhận **0 hàng `user_factory_assignments`** — gọi `factoryCommand.overview` nhận **200 · 42 máy**; cùng tài khoản, cùng DB, gọi 3001/3008 bản mới của tôi ⇒ **200 · 0 máy**. Bundle 3000 gọi `getFactoryCommandOverview({ factoryId: input?.factoryId })` **không có `scope`**.
+
+★ **Họ bác giả thuyết của tôi:** nguyên nhân **không phải bản dựng cũ** mà là **nhánh thiếu commit** — `feat/ai-local-L7-hang-rao` ở HEAD `1b327541` (06/09) chưa có `e7b6afd1 fix(tenant/dot40)`; merge-base với nhánh Twin là `46c544c8`, nhánh Twin đi trước **271 commit**. Dựng lại `dist` từ nhánh ấy sẽ không vá được gì. Đây là lý do phải để **người có nhánh** đo và kết luận, thay vì suy từ triệu chứng giống nhau.
+
+**QĐ-28 (chủ sở hữu):** **tắt cổng 3000** cho tới khi nhánh đó có bản vá (thay vì merge ngay hay để nguyên). Thực hiện lúc 01:48Z: `Stop-Process -Id 28480` (đã xác minh trước khi tắt: PID không bị tái dụng, `node dist/index.js` khởi động 07/09 08:12:33, **0 kết nối ESTABLISHED**); sau khi tắt 3000 **0 LISTENING / curl `000`**, 3001 và 3008 vẫn **200**. Không đụng tệp/nhánh/tiến trình nào khác trong thư mục của phiên kia.
+
+**Tiêu chí bật lại:** chạy từ shell `NODE_ENV=production node dist/index.js` trong `D:/SOURCES/avi-aoi-management` (thiếu biến ⇒ vite-dev ENOENT, mọi route 500 — nợ đã biết), rồi đo `factoryCommand.overview` bằng `operator1`: kỳ vọng **200 · 0 máy**. Lưới `twinBonManApiVaiPhamVi` (115 ca, ghim 42 đường dẫn gọi) sẽ kêu ngay nếu còn thủ tục chưa rào.
+
+★ **Giao thức đa phiên, ghi lại vì đúng:** phiên kia **từ chối tự tắt** với lý do quyết định của chủ sở hữu đến với họ **qua phiên trung gian**, không trực tiếp — lời chuyển tiếp giữa hai phiên không phải uỷ quyền cho hành động đổi trạng thái hệ thống. Phiên **nhận quyết định trực tiếp** mới là chỗ thực hiện. Đây là ranh giới đúng và nên giữ.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
