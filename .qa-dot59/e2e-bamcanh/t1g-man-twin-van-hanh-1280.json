@@ -1,0 +1,64 @@
+{
+  "luc": "2026-09-13T08:47:12.851Z",
+  "duong": "/twin",
+  "vp": {
+    "width": 1280,
+    "height": 720
+  },
+  "dinh": {
+    "soNhan": 3,
+    "soKhoi": 42,
+    "soCap": 7,
+    "dienTich": 2300,
+    "biPhu": [
+      {
+        "machineId": 23,
+        "boiNhanCua": 18,
+        "X": 940.7524265632188,
+        "Y": 464.1411133312684
+      },
+      {
+        "machineId": 20,
+        "boiNhanCua": 18,
+        "X": 792.7959563591421,
+        "Y": 481.78576968841975
+      },
+      {
+        "machineId": 22,
+        "boiNhanCua": 18,
+        "X": 903.4733476751538,
+        "Y": 465.60784675028486
+      },
+      {
+        "machineId": 21,
+        "boiNhanCua": 18,
+        "X": 865.9368812347187,
+        "Y": 466.819732871974
+      },
+      {
+        "machineId": 19,
+        "boiNhanCua": 18,
+        "X": 791.272661868388,
+        "Y": 467.6750273284702
+      }
+    ]
+  },
+  "ketCuc": [
+    {
+      "machineId": 23,
+      "boiNhanCua": 18,
+      "X": 940.7524265632188,
+      "Y": 464.1411133312684,
+      "duongSau": "/twin/may/23",
+      "dung": true
+    },
+    {
+      "machineId": 20,
+      "boiNhanCua": 18,
+      "X": 792.7959563591421,
+      "Y": 481.78576968841975,
+      "duongSau": "/twin/may/20",
+      "dung": true
+    }
+  ]
+}
