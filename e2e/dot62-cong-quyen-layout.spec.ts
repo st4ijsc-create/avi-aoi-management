@@ -73,8 +73,24 @@ async function ghimTiengViet(page: Page) {
   });
 }
 
+/**
+ * ★ Bốn tài khoản `dot62_*` là HÀNG TẠM của đợt đo (xoá cuối phiên — `.qa-dot62/
+ *   tam-user-xoa.sql`). Nếu chúng không còn, các ca ấy **BỎ QUA CÓ LỜI KHAI**,
+ *   không đỏ oan và cũng không im lặng biến mất: người chạy phải đọc được vì sao.
+ *
+ * ⚠ `engineer1` là vai SEED THẬT ⇒ ca A5 **KHÔNG BAO GIỜ được bỏ qua**. Nó là ô
+ *   duy nhất chứng minh lỗi tồn tại trên dữ liệu sản phẩm, nên nếu nó không chạy
+ *   được thì suite này mất lý do tồn tại và phải ĐỎ, không phải "bỏ qua".
+ */
 async function dangNhap(page: Page, tk: O["tk"]) {
   const res = await page.request.post("/api/auth/login", { data: tk });
+  if (res.status() !== 200 && tk.username.startsWith("dot62_")) {
+    test.skip(
+      true,
+      `hàng TẠM \`${tk.username}\` không còn trong DB (login ${res.status()}). ` +
+        `Tạo lại bằng .qa-dot62/tam-user.sql rồi chạy lại — xem .qa-dot62/A-XONG.txt.`,
+    );
+  }
   expect(res.status(), `dang nhap ${tk.username}`).toBe(200);
   const me = await page.request.get("/api/auth/me");
   if (me.ok()) {
@@ -157,7 +173,13 @@ test("A6 — ĐỐI CHỨNG: bảng 2×2 không rỗng (có cả ô VÀO ĐƯỢ
     return fs.existsSync(p) ? (JSON.parse(fs.readFileSync(p, "utf8")) as { vaoDuoc: boolean }) : null;
   };
   const tatCa = VAI.map((o) => doc(o.ma)).filter(Boolean) as { vaoDuoc: boolean }[];
-  expect(tatCa.length, "phai co du 5 phep do truoc do").toBe(VAI.length);
+  // ★ Khi hàng tạm đã bị xoá, chỉ còn phép đo của `engineer1`. Ô đối chứng này
+  //   vẫn phải nói được điều gì đó, nên nó đòi ≥1 phép đo chứ không đòi đủ 5 —
+  //   và vẫn đòi bảng KHÔNG rỗng theo cả hai phía khi có đủ.
+  expect(tatCa.length, "phai co it nhat MOT phep do truoc do").toBeGreaterThanOrEqual(1);
+  if (tatCa.length < VAI.length) {
+    test.skip(true, `chi co ${tatCa.length}/${VAI.length} phep do (hang TAM dot62_* da xoa) — bang 2x2 khong day du`);
+  }
   // Nếu MỌI ô đều bị chặn (hoặc mọi ô đều vào được), bất biến "thấy ⇔ vào được" ở trên
   // vẫn xanh mà chẳng đo gì — đúng lớp lỗi G5. Ô này bắt ca đó.
   expect(tatCa.some((x) => x.vaoDuoc), "phai co it nhat MOT vai VAO DUOC dich").toBe(true);
