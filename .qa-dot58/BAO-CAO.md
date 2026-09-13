@@ -73,7 +73,7 @@ Ma trận: **5 màn** (`/twin`, `/twin/line/2`, `/twin/may/14`, `/twin/may/18`, 
 | **10** tay nắm đè nội dung | giao = 0 px² | @1280 **167 px²** (▲166 + ▲2) · @1600 **149 px²** (◆95 + ●54) · **tổng 632 px²/4 ca** | **0 px² / 0 phần tử, cả 4 ca** (cả trong panel lẫn TOÀN TRANG) | **ĐẠT** |
 | 10b hệ quả: nhãn 3D bị nút che | 0 | 0 (nút nằm TRÊN panel, không chạm cảnh) | **0** ở trạng thái mặc định và `?thu=nhanTatCa` | ĐẠT (kèm 1 phát hiện mới, §2.1) |
 | 10c nút còn bấm được | panel thu/mở thật | 224→0→224 px @1280 · 288→0→288 @1600 | **224→0→224 · 288→0→288** | ĐẠT |
-| **11** chữ ≤12 px đạt AA | 0 chuỗi dưới ngưỡng | **106 chuỗi dưới ngưỡng** / 1 324 đo được · thấp nhất **2,15** | **0 chuỗi** / 1 334 đo được · thấp nhất **4,58** | **ĐẠT** |
+| **11** chữ ≤12 px đạt AA | 0 chuỗi dưới ngưỡng | **106 chuỗi dưới ngưỡng** / 1 324 đo được · thấp nhất **2,15** | **0 chuỗi** / 1 334 đo được (trên 1 336 chuỗi còn nhìn thấy) · thấp nhất **4,58** | **ĐẠT** |
 | **12** lặp mã máy màn Máy | ≤3 (máy 14) / ≤4 (máy 18) | máy 14 **3**, máy 18 **4** (trong khối cảnh 2 / 3) | máy 14 **2**, máy 18 **3** (trong khối cảnh **1** / **2**) | **ĐẠT** |
 | 12b vị trí viên tin cậy | lệch ≤ 8 px so với `/twin` | không có `vien-tin-cay-may` | **lệch 0 px** (cả hai màn cách mép phải 8 px, mép trên 8 px), 8/8 ca | ĐẠT |
 | 12c không mất dữ kiện | 5 dữ kiện còn tìm thấy | chip đáy cảnh: mã·loại·trạng thái·sức khoẻ (tuổi ở ngăn phải) | **mã** (nhãn 3D + `ngan-ma-may` + cockpit) · **trạng thái** (nhãn 3D "· Không rõ" + `ngan-trang-thai`) · **loại**+**sức khoẻ**+**tuổi** (viên trên cảnh) | ĐẠT |
@@ -114,7 +114,7 @@ bị lớp phủ che), nên nhiều chuỗi Đợt 57 loại vẫn đo được.
 |---|---|---|
 | **khuất hẳn** (0 pixel được vẽ — cuộn ra ngoài ô) | **48** | **KHÔNG đo được, và đúng là không phải ca tương phản**: người dùng không nhìn thấy chúng |
 | **bị `lop-phu-dong-thoi-gian` che kín** | **24** | KHÔNG phải ca tương phản, mà là **ca CHE** — món nợ riêng (Đợt 57 cũng ghi) |
-| bị cắt một phần nhưng còn thấy | **8** | **ĐO ĐƯỢC** — Đợt 57 vứt, tôi đo: **8/8 ĐẠT** |
+| bị cắt một phần nhưng còn thấy | **8** | **6 ĐO ĐƯỢC** (Đợt 57 vứt cả 8) — **6/6 ĐẠT**; 2 ca còn lại là glyph `●` chỉ còn **7×1 px** (7 % chiều cao) ⇒ thật sự không đo nổi |
 | bình thường | 1 328 | = đúng cỡ mẫu Đợt 57 công bố (1 328) |
 
 ⇒ 80 chuỗi Đợt 57 bỏ = **72 ca thật sự không nhìn thấy được** (48 khuất + 24 bị che kín) **+ 8 ca
