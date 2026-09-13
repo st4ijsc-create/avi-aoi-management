@@ -408,42 +408,31 @@ export const navGroups: NavGroup[] = [
       },
       /*
        * ════════════════════════════════════════════════════════════════════
-       * ★★★ ĐỢT 21 LÔ Y — Ô NÀY **GIỮ LẠI**, và đó là một quyết định ĐO ĐƯỢC
+       * ★★★ ĐỢT 62 (QĐ-31) — Ô NAV `/digital-twin` **ĐÃ XOÁ**
        * ════════════════════════════════════════════════════════════════════
-       * `/digital-twin` nay chỉ còn là **redirect** vào `/twin` (`App.tsx`,
-       * theo `?tab=`). Về mặt IA thuần tuý, một ô nav trỏ vào redirect là ô
-       * THỨ HAI dẫn tới cùng một trang — đúng bệnh §13b 14.1.3 đi chữa, và
-       * bản năng đầu tiên là xoá nó.
+       * Đợt 21 GIỮ ô này, và giữ là ĐÚNG lúc ấy: `DataManagementHub.tsx:24` +
+       * `DataSettings.tsx:796` tra quyền quick-link "Layout" bằng
+       * `getRequiredPermissionForHref("/digital-twin")`. Xoá ô ⇒ hàm trả
+       * `undefined` ⇒ cả hai rơi về fallback `"analytics_oee"` TRONG IM LẶNG.
+       * Tức xoá một dòng menu trùng sẽ ĐẺ LẠI chính lớp lỗi "một lối vào rồi
+       * TỪ CHỐI" ở hai màn khác. Đợt 61 dò lại và DỪNG đúng ở đây vì lý do đó.
        *
-       * ⚠ **ĐO TRƯỚC KHI XOÁ, và phép đo BÁC BỎ việc xoá.** Hai nơi NGOÀI phạm
-       *   vi lô này đọc quyền của route đích qua chính ô nav này:
-       *     · `DataManagementHub.tsx:24`  `getRequiredPermissionForHref("/digital-twin")`
-       *     · `DataSettings.tsx:796`      cùng lời gọi
-       *   Cả hai dùng nó để quyết định có hiện quick-link "Bố trí xưởng" không —
-       *   đúng khuôn chống "một lối vào rồi TỪ CHỐI" mà Lô 5 Mục 2 dựng lên.
-       *   Xoá ô này ⇒ hàm trả `undefined` ⇒ **cả hai rơi về fallback
-       *   `"analytics_oee"` TRONG IM LẶNG**, không lỗi nào nổ, và quick-link
-       *   hiện ra cho người không sửa được bố cục. Tức là xoá một ô menu trùng
-       *   sẽ **đẻ lại chính lớp lỗi** mà đợt này đang chữa, ở hai màn khác.
+       * ★ Đợt 62 mục A gỡ ĐÚNG điều kiện chặn ấy trước: hai màn kia nay tra
+       *   `getAcceptedPermissionsForHref("/twin-studio")` — ĐÍCH THẬT — và
+       *   KHÔNG còn fallback chuỗi cứng. Đo lại bằng vai thật, hai chiều, trên
+       *   cổng 3062: 6/6 xanh; ablation (gỡ vá) 3 đỏ trở lại.
+       *   ⇒ Điều kiện chặn HẾT HẠN, và "lý do hoãn có HẠN SỬ DỤNG" (Khối D).
        *
-       * ⇒ Giữ ô, ghi nợ. Việc đúng là sửa hai chỗ gọi kia trỏ sang `/twin`
-       *   (đích thật của quick-link nay là `/twin?che-do=botri`, cần
-       *   `settings_factory`/`machine_control`, KHÔNG phải `analytics_oee`) —
-       *   nhưng hai tệp ấy nằm ngoài phạm vi tệp của lô này, và sửa mù một tệp
-       *   không đo được là cách nhanh nhất để thêm một lỗi câm thứ ba.
+       * ★ BA đường tra quyền đã kiểm lại khi xoá, không phải hai:
+       *     1. `navHref=` của `RouteGuard`      → 0 chỗ dùng `/digital-twin`
+       *     2. `hasAccessToItem("/digital-twin")` → 0 chỗ gọi
+       *     3. `getRequiredPermissionForHref("/digital-twin")` → 0 chỗ gọi
+       *        (đường thứ ba này là thứ brief Đợt 61 bỏ sót)
        *
-       * ★ Người dùng KHÔNG bị hại bởi việc giữ: ô này vẫn tới `/twin` đúng, chỉ
-       *   là menu còn một dòng trùng. Đó là nợ THẨM MỸ; xoá nó là nợ ĐÚNG-SAI.
+       * ⚠ `<Route path="/digital-twin">` + bảng `dinhTuyenTwinCu` KHÔNG XOÁ:
+       *   bookmark và link cũ vẫn phải tới đúng đích. Cái bị bỏ là DÒNG MENU
+       *   trùng, không phải LỐI VÀO BẰNG URL.
        */
-      {
-        href: "/digital-twin",
-        label: "nav.digitalTwin",
-        icon: <Boxes className="h-4 w-4" />,
-        description: "nav.digitalTwinDesc",
-        requiredPermission: "analytics_oee",
-        permissionCategory: "analytics",
-        section: "mes",
-      },
       // ── Twin 3D Đợt 0 (spec 2026-09-06 §6.4) ────────────────────────────────
       // ★ Quyền ở ĐÂY là NGUỒN DUY NHẤT: `App.tsx` gate hai route này bằng
       // `RouteGuard navHref=…`, tức là guard TRA lại chính hai dòng dưới. Không có
@@ -2588,7 +2577,10 @@ export function getRequiredPermissionForHref(href: string): string | undefined {
  * nó trả `undefined` — tức "route này không gán quyền", SAI hoàn toàn và sai một
  * cách CÂM. Nơi nào cần hỏi "route này đòi quyền gì" phải hỏi hàm này; hàm kia
  * chỉ còn đúng cho route một-quyền và được giữ vì các consumer hiện có
- * (`DataManagementHub`, `DataSettings`) chỉ tra `/digital-twin` — một-quyền.
+ * (`DataManagementHub`, `DataSettings`) — nhưng Đợt 62 đã chuyển CẢ HAI sang
+ * `getAcceptedPermissionsForHref("/twin-studio")`, và ô nav `/digital-twin` đã bị
+ * xoá. Hàm này nay KHÔNG còn chỗ gọi sản phẩm nào; giữ vì nó là câu trả lời đúng
+ * cho route MỘT quyền, và vì lưới ghim cái bẫy câm ở trên.
  */
 export function getAcceptedPermissionsForHref(href: string): string[] {
   for (const group of navGroups) {

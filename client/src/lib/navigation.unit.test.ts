@@ -23,6 +23,7 @@ import {
   getFilteredNavGroups,
   filterNavGroupsByMode,
   defaultNavModeForRole,
+  getNavItemByHref,
   getRequiredPermissionForHref,
   getAcceptedPermissionsForHref,
   type NavGroup,
@@ -132,6 +133,22 @@ describe("navigation.tsx — cổng quyền lối vào Layout (Đợt 62 mục A
       //   thành "ô hiện cho tất cả" trong im lặng.
       expect(nguon, `${tep} còn fallback chuỗi quyền cứng`).not.toContain('?? "analytics_oee"');
     }
+  });
+
+  it("★★★ Đợt 62 C — ô nav `/digital-twin` ĐÃ XOÁ, và không ai còn tra quyền qua nó", () => {
+    // Ô này là DÒNG MENU THỨ HAI trỏ vào một route chỉ-là-redirect. Đợt 21 giữ nó
+    // vì hai màn quick-link tra quyền qua chính nó; mục A đã gỡ điều kiện chặn ấy.
+    expect(getNavItemByHref("/digital-twin")).toBeUndefined();
+    expect(getRequiredPermissionForHref("/digital-twin")).toBeUndefined();
+    expect(getAcceptedPermissionsForHref("/digital-twin")).toEqual([]);
+  });
+
+  it("★★★ Đợt 62 C — xoá ô nav KHÔNG được kéo theo lối vào bằng URL", () => {
+    // Cái bị bỏ là dòng menu trùng, KHÔNG phải bookmark cũ. Nếu ai đó "dọn nốt"
+    // <Route path="/digital-twin"> thì 8 đường vào cũ của bảng dinhTuyenTwinCu
+    // chết câm — ô này bắt đúng ca đó, ở tầng rẻ nhất.
+    const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+    expect(app).toContain('<Route path="/digital-twin">');
   });
 
   it("★★★ href của lối vào và href dùng tra quyền là MỘT HẰNG (không thể lệch)", () => {
