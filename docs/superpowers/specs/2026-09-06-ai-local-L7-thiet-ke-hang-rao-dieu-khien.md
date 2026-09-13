@@ -785,3 +785,37 @@ du an, va nen bat tren mot may thu truoc.
 3. ★★ `dispatch()` con 4 nguoi goi khac khong qua cong (gom DCMD tu MQTT).
 4. ★ Chua ai do tren he chay that. Khi do: **dung do bang admin** — admin
    bypass `requirePermission`, se chung minh so 0.
+
+---
+
+## Phu luc B — CANH BAO VE CHINH NHANH NAY (2026-09-13)
+
+### B.1 ⛔ KHONG build / deploy TRUC TIEP tu nhanh nay
+
+Nhanh `feat/ai-local-L7-sach` re tu `46c544c8` ngay 2026-09-06. Tinh den
+2026-09-13, `feat/twin-3d-trung-tam` da di truoc **291 commit**.
+
+Trong so do co ban va **`e7b6afd1` — ro pham vi tenant (G113)**: 5 thu tuc
+`factoryCommand` + `assetCockpit` khong mang `phamViCua(ctx)` xuong `WHERE`, nen
+mot tai khoan `operator1` **khong duoc gan may nao** van doc duoc **42/43 may**.
+Ban va do **KHONG co tren nhanh nay**.
+
+Lo do **co san tu truoc**, khong phai do dot L-7 gay ra — L-7 khong dung toi
+`assetCockpitRouter`/`factoryCommandRouter`. Nhung hau qua thi khong quan tam ai
+gay ra: **mot ban build tu nhanh nay se ro tenant song**. Da tung xay ra that
+tren cong 3000 (tien trinh do nay da chet, kiem 2026-09-13).
+
+**Cach dung dung:** merge nhanh nay **len truoc** (vao `feat/twin-3d-trung-tam`
+hoac nhanh dich hien hanh) roi moi build. Dung `git merge-base` de kiem do lech
+truoc khi deploy bat cu nhanh nao.
+
+### B.2 Trang thai da kiem lai 2026-09-13 (sau 6 ngay, nhieu phien sua ma)
+
+| Muc | Ket qua |
+|---|---|
+| `aiControlGate` + guardrail | **72/72 test xanh** |
+| `PARAM_GUARDRAIL_STRICT` tren `.env` that | `true` (van bat) |
+| `AI_OT_CONTROL_ENABLED` | **van VANG ⇒ duong AI xuong thiet bi VAN DONG** |
+| Cong 3000 (tung phuc vu ban ro) | **da chet** |
+
+Hang rao song sot qua 6 ngay va 291 commit cua phien khac.
