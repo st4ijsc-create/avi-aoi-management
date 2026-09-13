@@ -1,0 +1,57 @@
+{
+  "tag": "../.qa-dot58/d2-chan/P",
+  "vp": "1600x900",
+  "luc": "2026-09-13T07:58:21.554Z",
+  "lan": [
+    {
+      "msToiTrucTiep": 1040,
+      "moc": [
+        {
+          "t": 188,
+          "kn": null
+        },
+        {
+          "t": 392,
+          "kn": null
+        },
+        {
+          "t": 606,
+          "kn": null
+        },
+        {
+          "t": 807,
+          "kn": "dang_cho",
+          "chu": "Waiting…"
+        },
+        {
+          "t": 1040,
+          "kn": "truc_tiep",
+          "chu": "Live"
+        }
+      ]
+    },
+    {
+      "msToiTrucTiep": 761,
+      "moc": [
+        {
+          "t": 137,
+          "kn": null
+        },
+        {
+          "t": 344,
+          "kn": null
+        },
+        {
+          "t": 556,
+          "kn": null
+        },
+        {
+          "t": 761,
+          "kn": "truc_tiep",
+          "chu": "Live"
+        }
+      ]
+    }
+  ],
+  "dat": true
+}

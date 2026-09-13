@@ -1,0 +1,88 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "luc": "2026-09-13T06:13:54.835Z",
+  "moc": [
+    {
+      "tMs": 4006,
+      "dangTai": 0,
+      "lyDo": null,
+      "coCanvas": 1,
+      "nganTrangThai": "khong_ro",
+      "doTuoi": null,
+      "ghiDe": 1,
+      "chipTrangThai": null,
+      "cockpitOnline": "OFFLINE",
+      "soCanhBao": 0,
+      "idle": {
+        "soKhungDoiTrong": 2000,
+        "khung": 0
+      }
+    },
+    {
+      "tMs": 11027,
+      "dangTai": 0,
+      "lyDo": null,
+      "coCanvas": 1,
+      "nganTrangThai": "khong_ro",
+      "doTuoi": null,
+      "ghiDe": 1,
+      "chipTrangThai": null,
+      "cockpitOnline": "OFFLINE",
+      "soCanhBao": 0,
+      "idle": {
+        "soKhungDoiTrong": 2000,
+        "khung": 0
+      }
+    },
+    {
+      "tMs": 20047,
+      "dangTai": 0,
+      "lyDo": null,
+      "coCanvas": 1,
+      "nganTrangThai": "khong_ro",
+      "doTuoi": null,
+      "ghiDe": 1,
+      "chipTrangThai": null,
+      "cockpitOnline": "OFFLINE",
+      "soCanhBao": 0,
+      "idle": {
+        "soKhungDoiTrong": 2000,
+        "khung": 0
+      }
+    },
+    {
+      "tMs": 32069,
+      "dangTai": 0,
+      "lyDo": null,
+      "coCanvas": 1,
+      "nganTrangThai": "khong_ro",
+      "doTuoi": null,
+      "ghiDe": 1,
+      "chipTrangThai": null,
+      "cockpitOnline": "OFFLINE",
+      "soCanhBao": 0,
+      "idle": {
+        "soKhungDoiTrong": 2000,
+        "khung": 0
+      }
+    },
+    {
+      "tMs": 49081,
+      "dangTai": 0,
+      "lyDo": null,
+      "coCanvas": 1,
+      "nganTrangThai": "khong_ro",
+      "doTuoi": null,
+      "ghiDe": 1,
+      "chipTrangThai": null,
+      "cockpitOnline": "OFFLINE",
+      "soCanhBao": 0,
+      "idle": {
+        "soKhungDoiTrong": 2000,
+        "khung": 0
+      }
+    }
+  ]
+}
