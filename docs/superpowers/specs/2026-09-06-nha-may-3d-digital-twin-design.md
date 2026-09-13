@@ -7147,6 +7147,43 @@ HEAD `9aff9749`, 6 commit đã push `fresh`. Tôi đo lại: cây mã sạch, in
 
 **Còn chờ chủ sở hữu để đóng QĐ-30:** môi trường này **không có chuỗi kết nối production** (`.env` chỉ có DB dev `127.0.0.1:5434/aoi_management`). Hai đường: (a) chủ sở hữu cấp `DATABASE_URL` production + cửa sổ bảo trì ⇒ tôi chạy script chỉ-đọc trước, `CREATE INDEX CONCURRENTLY`, rồi đo lại; (b) người vận hành chạy theo runbook và gửi lại đầu ra script để tôi đối chiếu. Tiêu chí đóng: EXPLAIN ấm của `traSucKhoeMay` **không còn `external merge`** và `pg_stat_user_indexes.idx_scan > 0` sau 24 h.
 
+### 14q.37 Đợt 58 — QA lần 10: bốn mục thiết kế ĐẠT 4/4, nghiệm thu 5/5 vẫn đứng vững (2026-09-13, 3 commit `6e8dac07…367289d5`)
+
+**MSA trước (G141):** `dist-head1` **giống TỪNG BYTE** `.qa-dot57/dist-e` (0/914 dòng md5 khác) ⇒ Đợt 57 đã đo trên bản dựng của HEAD thật; `dist-nen3` (`git archive 2f835df1`) == `.qa-dot57/dist-a` **trừ 5 tệp chỉ khác EOL** (worktree CRLF vs archive LF — **G101 tái xuất, suýt vu oan** rằng nền dựng sai). Ký hiệu bundle: HEAD có `vien-tin-cay-may`/`do-tuoi-may`/`flex-[7]`/`nut-thu-trai…data-che-nhan`, nền có `trang-thai-may`. ⚠ `mauChuTrenNen` **0 tệp ở cả hai** — tên module bị minify, brief tôi chọn sai dấu nhận dạng.
+
+| Mục | NỀN `2f835df1` | HEAD | Phán |
+|---|---|---|---|
+| **10** nút đè nội dung | **167 px² @1280 · 149 @1600 · tổng 632 px²/4 ca** | **0 px² / 0 phần tử** toàn trang | **ĐẠT** |
+| 10b nhãn 3D bị nút che | 0 | **0**; ablation runtime **0 → 281 px² → 0** | ĐẠT |
+| **11** chữ ≤ 12 px | **106 dưới ngưỡng /1 324, min 2,15** | **0 /1 334, min 4,58** | **ĐẠT** |
+| **12** lặp mã máy | máy 14 **3**, máy 18 **4** | máy 14 **2**, máy 18 **3** | **ĐẠT** |
+| 12b viên tin cậy | không có | **lệch 0 px** so `/twin` (8/8) | ĐẠT |
+| 12c mất dữ kiện | — | **5/5 dữ kiện còn** (mã, trạng thái, loại, sức khoẻ, tuổi) | ĐẠT |
+| **13** tồn đọng @1280 | **1,51 hàng** | **3,12 hàng (3 đủ)** | **ĐẠT** |
+| 13d đánh đổi | `danh-sach-may` 177 px/5 hàng @1280 · **267/9 @1600** | 174/5 · **249/8** | **mất 1 hàng @1600** |
+
+**M11 — 80 chuỗi Đợt 57 bỏ qua, QA đo lại:** 48 chuỗi **cuộn khuất hẳn** (0 pixel vẽ) + 24 bị `lop-phu-dong-thoi-gian` che kín ⇒ **không phải ca tương phản**; 8 chuỗi bị cắt một phần thì **6 đo được, 6/6 ĐẠT**, 2 còn lại là glyph `●` 7×1 px. ⇒ kết luận "0" **không sống nhờ loại mẫu** (đúng nỗi lo G134). Tám ca chỉ dưới ngưỡng theo luật ngặt: 4 × em-dash (khử răng cưa: pixel 2,57 vs màu quy định 5,57) + 4 × `"offline"` 11 px **biên 4,31/4,58** ở cockpit 2D (màn cũ).
+
+★ **Phát hiện mới của QA:** @1600, **sau khi thu rồi mở lại panel trái**, 2 nhãn (**281 px²**) nằm dưới tay nắm và **ở lì ≥ 17 s** (chỉ đổi cỡ cửa sổ mới dọn) — trạng thái mà lưới thị giác 24 ca **không đi qua**.
+
+**Phân xử 2 SAI của D-1 ⇒ (a) NỢ THIẾT BỊ ĐO, và nợ ấy là 3 ô chứ không phải 2.** Chạy `do32.mjs` **nguyên trạng** trên cả hai bản dựng: HEAD 39/2 = **y hệt cột 57 (0/48 ô khác)**, nền **41/0** ⇒ đúng 2 ô khác (#15, #16), cả hai đọc testid đã bị mục 12 dời. Bất biến gốc đo bằng **chữ hiển thị** (5 nguồn × vi/en) + SQL thô: máy 14 `stopped`, nhịp tim cuối `2026-07-17` = 58 ngày ⇒ **bất biến VẪN ĐÚNG**. ★ Ô **#20** đọc cùng `ngan-do-tuoi`, nay `null` ở cả 5 mốc nhưng luật là `every(!/Never/)` ⇒ **XANH GIẢ**.
+
+**Đính chính lời khai Đợt 57:** họ khai `twin-dot31-may` "6/7" — tệp thô của chính họ ghi **4 pass · 1 fail · 2 KHÔNG CHẠY** (`describe.serial` dừng sau ca đỏ), tức B1/B2 **chưa từng chạy**; QA chạy riêng ⇒ **2/2 xanh**. Và "209→174 px" là trung gian→cuối; nền thật 177 @1280, chỗ mất hàng là **@1600**.
+
+**Hồi quy:** `twin3d` 106/2 498 · `check` 0 · `check:tests` 27 nền (0 twin3d, 0 e2e) · `i18n:check` 0 · `lint:tokens` Δ=0 · `kiem-vo` 2/2 · e2e bấm cảnh **16/16** · thị giác vi+en 0 vi phạm · bbox 34/34 · lệch lớp 0 · idle 40 s × 3 màn 0 khung · F1 4/4 0 request ngoài · D-2 39 ✓ / 0 ✗ + 24/24 redirect với 2 đối chứng trượt đúng. Bảng 57 script `package.json`: **6 chạy · 51 không**, có lý do từng cái; **KHÔNG chạy `kb:operational-cards:test`** (G138) nên 169 tệp `knowledge/` giữ nguyên của phiên khác.
+
+**PHÁN QUYẾT: bốn mục thiết kế ĐẠT 4/4; nghiệm thu 5/5 của QA lần 9 CÒN ĐỨNG VỮNG**, riêng "Đẹp" **mạnh hơn trước**.
+
+**Lỗi của QA — 4, đều ở thiết bị đo:** chạy e2e **12 worker ⇒ 7 ĐỎ OAN** (1 worker: 16/16 — giữ cả hai log); quên CRLF của `git archive`; đọc `$?` qua `tee | tail` (luôn 0); ablation M10 lần đầu âm tính giả vì lớp nhãn không tính lại khi chỉ rê chuột. **Brief tôi sai 5 chỗ** (`mauChuTrenNen` làm dấu nhận dạng, "209→174" sai nền/viewport, "2 SAI" thiếu ô thứ ba, "16/16" thiếu `--workers=1`, `git archive` không chứng minh được A5).
+
+> #### ★★★ G146 - **`every()` TRÊN TẬP RỖNG LUÔN ĐÚNG: KHI PHÉP ĐO KHÔNG ĐỌC ĐƯỢC GÌ, LƯỚI PHẢI HỎNG, KHÔNG ĐƯỢC XANH.**
+> Ô #20 của lưới 48 ca đọc `ngan-do-tuoi` — testid đã bị dời nên trả `null` ở cả 5 mốc — nhưng luật viết là `every(x => !/Never/.test(x))` ⇒ **xanh giả**, và nó xanh giả ở **cả bản cũ lẫn bản mới** nên không ai thấy. Thước đo phải **fail-closed**: không đọc được ⇒ HỎNG; và điều kiện phải đọc theo **nghĩa hiển thị**, không theo testid (testid đổi là việc bình thường của một màn còn sống).
+
+> #### ★★ G147 - **SỐ WORKER LÀ MỘT PHẦN CỦA PHÉP ĐO: e2e chạy song song cho 7 ĐỎ OAN.**
+> Cùng bản dựng, cùng spec: 12 worker ⇒ 7 đỏ; `--workers=1` ⇒ 16/16. Mọi con số e2e trong báo cáo phải ghi kèm số worker, và tiêu chí hồi quy chỉ so được giữa các lần **cùng cấu hình song song**.
+
+**Đợt 59 (giao tiếp — kỹ thuật, tự quyết):** (1) nhãn nằm dưới tay nắm **sau khi thu→mở panel @1600** (281 px², ≥ 17 s) — lớp nhãn phải tính lại khi panel đổi trạng thái, thêm ca "thu rồi mở" vào lưới thị giác; (2) **thước D-1 thế hệ mới**: fail-closed + đọc theo nghĩa, giữ `do32.mjs` làm bản đóng băng để đối chiếu lịch sử, và đóng luôn ô #20 xanh giả; (3) cân lại chiều cao @1600 để `danh-sach-may` **không mất hàng** (9 → 8) trong khi tồn đọng vẫn ≥ 3 hàng; (4) ghi `--workers=1` vào docblock/script e2e (G147).
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
