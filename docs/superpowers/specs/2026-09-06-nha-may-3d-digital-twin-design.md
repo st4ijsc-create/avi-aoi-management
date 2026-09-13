@@ -7067,6 +7067,75 @@ Sau phát hiện G142, phiên `avi-aoi-management-b2` đo chéo cổng **3000** 
 
 ★ **Giao thức đa phiên, ghi lại vì đúng:** phiên kia **từ chối tự tắt** với lý do quyết định của chủ sở hữu đến với họ **qua phiên trung gian**, không trực tiếp — lời chuyển tiếp giữa hai phiên không phải uỷ quyền cho hành động đổi trạng thái hệ thống. Phiên **nhận quyết định trực tiếp** mới là chỗ thực hiện. Đây là ranh giới đúng và nên giữ.
 
+### 14q.36 Đợt 57 — bốn mục thiết kế 10–13 (QĐ-29) + runbook index production (QĐ-30) (2026-09-13, 5 commit `7734147e…f86bb230`)
+
+**Đầu vào:** Twin đã **nghiệm thu cuối ĐẠT 5/5** (§14q.33). Chủ sở hữu duyệt **QĐ-29** (làm cả 4 mục thiết kế 10–13) và **QĐ-30** (áp index QĐ-27 lên production).
+
+**Thiết bị đo:** `.qa-dot57/do57.mjs` — **một** mô hình, chạy TRƯỚC trên `dist-a` (= HEAD `2f835df1`) và SAU trên `dist-e` (= HEAD + 4 commit), **5 màn × 2 vp × vi/en**; gom bằng `.qa-dot57/gom57.mjs`.
+
+| Mục | TRƯỚC | SAU | Tiêu chí |
+|---|---|---|---|
+| **10** tay nắm đè icon cảnh báo | 2 phần tử · **167 px²** @1280 (▲166+▲2) · 149 px² @1600 · tổng **632 px²**/4 ca | **0 phần tử · 0 px²** ở cả 4 ca | giao = 0 · nút vẫn bấm được (tâm trúng nút 4/4) |
+| **11** chữ ≤12 px dưới ngưỡng AA | 1 318 chuỗi đo được · **104 dưới ngưỡng** (92,1 %) · thấp nhất **1,68** | 1 328 chuỗi · **0 dưới ngưỡng** (**100 %**) · thấp nhất **4,58** | ≥4,5 (≥3,0 nếu ≥18,66 px / bold ≥14 px) |
+| **12** màn Máy lặp tên/trạng thái | máy 14 **4** lần trong canvas+khung (máy 18: 5) · viên tin cậy nằm **trong ngăn phải** | **3** (máy 18: **4**) · viên ở **góc trên-phải cảnh**, lệch **8/8 px** = **y hệt `/twin`** | ≤3 · lệch ≤8 px · 0 mất dữ liệu |
+| **13** "Tồn đọng >24h" @1280 | **1,51 hàng** (1 đủ) · ô cuộn 86 px | **3,12 hàng (3 ĐỦ)** · ô cuộn 153 px · @1600 3,68 → **5,67** | ≥3 hàng · không tràn · 1600 không xấu đi |
+
+#### 14q.36.1 Mục 11 — **ba nguyên nhân chồng nhau, mỗi cái chỉ lộ ra sau khi vá cái trước**
+
+Phép đo là **pixel đã vẽ**, không phải màu đọc từ CSS: hai lượt ảnh, lượt B tắt fill chữ (`-webkit-text-fill-color: transparent`); pixel **lệch** giữa hai lượt chính là pixel CHỮ, lấy **lõi nét** (≥85 % độ lệch lớn nhất) làm màu chữ và nền THẬT tại chính toạ độ ấy. Nhờ vậy `opacity`, `backdrop-blur` và cảnh 3D phía sau đều nằm trong số đo.
+
+1. **`opacity: 0.6` của badge đã-ack** — `opacity` composite CẢ khối (nền + chữ), nên nó không "lùi badge lại" mà **kéo tương phản chữ/nền xuống cùng lúc**: 106 chuỗi ở **1,68–2,83**. Thay bằng `outline` nét ĐỨT (kênh HÌNH DẠNG, §10.3 luật 2) — `outline` không chiếm chỗ trong hộp nên `coBadgeRef`/`locBadge` đo ra đúng kích thước cũ, khử chồng lấn không đổi hành vi.
+2. Bỏ `opacity` rồi **vẫn 1,96–2,60** ⇒ thủ phạm thứ hai là **`color: "#fff"` ghim cứng cho cả ba mức**. Dùng `--<mức>-foreground` cứu `warning`/`info`…
+3. …nhưng **`destructive` vẫn 3,11–3,29**, vì `--destructive-foreground` là màu **SÁNG** — đúng cho nút `bg-destructive` cỡ chữ thường, **sai** cho chữ 11 px trên nền đỏ đặc (chữ SẪM trên chính nền ấy đo được ≈5,0). ⇒ `mauChuTrenNen.ts`: **CHỌN** giữa `--foreground` và `--background` bằng chính công thức WCAG. Chỉ token có sẵn (§10.2 trần 7 mã nguyên vẹn) và tự lật đúng khi đổi theme.
+
+> #### ★★★ G143 — **`opacity` KHÔNG PHẢI "LÀM MỜ MỘT THỨ", NÓ LÀ "TRỘN CẢ THỨ ẤY VÀO NỀN"**
+> Một badge `opacity: 0.6` không chỉ nhạt đi: **nền và chữ của nó nhạt đi CÙNG NHAU**, nên tỉ số giữa chúng tụt theo. Mọi chỗ dùng `opacity` để diễn đạt "trạng thái phụ" (đã ack, đã tắt, ngoài phạm vi) đều đang trả bằng **tương phản**, và không cổng nào bắt vì DOM/CSS vẫn khai đúng màu. Diễn đạt trạng thái phụ bằng **viền / hình dạng / vị trí**; để `opacity` cho thứ thật sự cần biến mất.
+
+> #### ★★★ G144 — **CẶP `--x` / `--x-foreground` CỦA HỆ TOKEN KHÔNG PHẢI LỜI HỨA VỀ TƯƠNG PHẢN Ở CỠ CHỮ NHỎ**
+> `--destructive-foreground` sáng là lựa chọn đúng cho nút cỡ thường (≥3,0 là đủ cho chữ lớn/bold), và **sai** cho chữ 11 px cần 4,5. Đọc tên token không thay được phép đo. Khi nền là một màu ĐẶC do dữ liệu quyết định, hãy **tính** màu chữ từ độ chói của nền thay vì tra một bảng ghép sẵn — vẫn chỉ dùng token có sẵn, mà đúng ở mọi theme.
+
+**Chữ phụ ≤12 px** (`text-muted-foreground` = `--text-3` → `text-text-2`) quét bằng **LUẬT MÁY** (`.qa-dot57/sweep11.mjs`): chỉ đổi khi CHÍNH chuỗi class ấy đặt cỡ ≤12 px. **94 dòng / 24 tệp**, idempotent (chạy lại = 0 dòng). ⚠ **Lỗi của tôi, bắt được bằng `git diff --stat`:** bộ lọc bản đầu dùng `endsWith("client/src/pages")` nên **quét cả `pages/machineWorkspace/MachineRail.tsx`** — màn CŨ mà brief cấm sửa; đã trả về HEAD và sửa bộ lọc thành `includes(...)`.
+
+#### 14q.36.2 Mục 10 — **bản vá sinh ra đúng lớp lỗi mà đợt trước đã đặt tên**
+
+Vá ở **toạ độ**, không ở z-index: `left-56 2xl:left-72` = đúng bề ngang panel khi mở, nên nút tựa mép ngoài panel và nằm **trên cảnh**; panel thu ⇒ `left-0`. G110: vá luôn tay nắm PHẢI cùng lúc.
+
+★ **Nhưng dời nút ra mép ngoài chính là đưa nó LÊN CẢNH** — và nó không tự khai `data-che-nhan`. Lưới thị giác 24 trạng thái bắt ngay: `twin-nhan-tat-ca` có **2 nhãn bị che @1600 + 1 @1280** (`nut-thu-trai:208|147|5 px²`). Đúng lớp lỗi **Đợt 35 (Pareto #5)**, tái phát ở một lớp phủ mới. Vá: `data-che-nhan="1"` cho **cả hai** tay nắm + 2 hàng mới trong `cheNhan.unit.test.ts`. **Ablation** (`.qa-dot57/ablation-cheNhan.sh`): gỡ thuộc tính ⇒ **đúng 1 ca ĐỎ**; khôi phục md5 khớp tuyệt đối (`a9fbfcc17989`).
+
+> #### ★★★ G142 — **MỘT LỚP PHỦ "DỜI CHỖ" LÀ MỘT LỚP PHỦ MỚI**
+> `nut-thu-trai` đã sống 36 đợt mà không cần `data-che-nhan`, vì nó nằm **trên panel** (panel đã tự khai). Đổi đúng một thuộc tính CSS vị trí biến nó thành lớp phủ **trên cảnh**, và nghĩa vụ tự khai xuất hiện **cùng lúc với** bản vá. Sau mỗi lần đổi neo của một phần tử nổi: hỏi *"nó còn nằm trên cái nó từng nằm trên không"*, rồi chạy lại lưới thị giác chứ đừng chạy lại lưới của chính mục vừa vá.
+
+#### 14q.36.3 Mục 13 — **số học nói bước 1 chưa đủ, và nói bằng con số cụ thể**
+
+Bước 1 (gộp "Tổng quan" 5 dòng → **một hàng chảy**, đủ 5 cặp nhãn+số, đủ 5 `data-testid`): khối **105 → 41 px**, ô cuộn **86 → 118 px**, tồn đọng **1,51 → 2,28 hàng**. Chưa đạt ≥3.
+
+Ba hàng đủ cần `24 + 3×41 = **147 px**` ô cuộn. Hai anh em `flex-1 basis-0` chia ĐỀU chỉ đạt 147 px khi phần dư ≥ **476 px**, mà panel @1280 cao **489 px** và riêng dải "Máy | Cây" đã ăn 30 px ⇒ **không đạt được bằng cách chia đều**. Bước 2: `flex-[7]` / `flex-[5]`. Đo sau: ô cuộn **153 px ⇒ 3 hàng ĐỦ**; `danh-sach-may` **209 → 174 px** — đánh đổi đã **đo**, không ước. Đáng đổi vì nhóm tồn đọng là tập **hữu hạn và phải phơi ra** (ISA-18.2), còn danh sách 42 máy có ô lọc và **luôn** phải cuộn. `basis-0` giữ nguyên cả hai: bài học Đợt 22 là về việc cấp chiều cao NỘI DUNG trước khi chia phần dư, và `flex-[7]/[5]` vẫn chia **phần dư**.
+
+#### 14q.36.4 Mục 12 — bỏ cái ĐÃ CÓ CHỖ KHÁC, giữ cái KHÔNG CÓ
+
+`ma-may` → đã có `ngan-ma-may`; `trang-thai-may` → đã có `ngan-trang-thai`. Giữ trên cảnh `loai-may` + `suc-khoe-may` + **tuổi dữ liệu** — ba thứ ấy chính là "viên tin cậy". Tuổi dữ liệu **chuyển**, không nhân bản: `NganXuLy` nhận `hienDoTuoi` (mặc định `true`), màn Máy truyền `false`; `/twin` giữ nguyên vì ở đó ngăn nói về **một máy** còn viên trên cảnh nói về **cả cảnh**. Cùng `nhanDoTuoi`/`nhanTuoiDocDuoc` với ngăn (G12).
+
+★ **Lỗi của tôi, đã vào mã:** ban đầu đo vắng mặt bằng `.innerText().catch(() => null)`. `locator.innerText()` dùng `actionTimeout` **mặc định 0 = chờ vô hạn**, nên trên phần tử VẮNG MẶT nó không ném lỗi để `.catch` bắt mà **treo hết 120 s cả bài test**. Đổi sang `.count()`. **"Chờ mãi" ≠ "không có".**
+
+#### 14q.36.5 QĐ-30 — runbook + thiết bị đo, **chưa chạy production**
+
+Môi trường không có chuỗi kết nối production. Giao `scripts/do-index-suc-khoe.mjs` (**chỉ đọc**, `default_transaction_read_only = on` làm hàng rào thứ hai) + `docs/runbook/2026-09-13-index-suc-khoe-may-production.md` (6 tiền điều kiện · 3 bước · dọn INVALID · rollback · **7 tiêu chí bằng số**).
+
+Cờ `--khong-index` (`SET enable_indexscan = off` trong phiên) làm hai việc: **chứng minh bảng tiêu chí biết kêu TRƯỢT** (G139) và **xem trước cái giá đang trả trên production mà không phải DROP index**. Đo trên dev: có index `0,211 ms` ấm p50 / `ĐẠT 7/7`; `--khong-index` `160,74 ms` / `Seq Scan 220 681 hàng → external merge 8 144 kB` / **TRƯỢT T1–T5** ⇒ chênh **≈752×**, cùng CSDL cùng câu cùng thiết bị.
+
+★ **Brief sai ở tiền đề:** nó giả định "có thể không có DB test". Đo `pg_database`: **`aoi_management_test` có thật**. Đã chạy script chỉ-đọc lên nó; **không** chạy DDL, vì lệnh giao việc có **hai câu mâu thuẫn** ("diễn tập trên DB test nếu có" vs "**tuyệt đối không** chạy DDL ngoài DB dev đã duyệt QĐ-27") — phần cấm thắng, và người giao việc là người gỡ.
+
+> #### ★★★ G145 — **MỘT MÔI TRƯỜNG NHỎ SẼ BÁO "KHÔNG SAO" CHO ĐÚNG CÁI BỆNH ĐANG GIẾT PRODUCTION**
+> Cùng câu `DISTINCT ON`, cùng bảng thiếu đúng một index: ở **220 681 hàng** Postgres tràn `work_mem` ⇒ `external merge` ra đĩa, **160,74 ms**; ở **30 633 hàng** (DB test) nó sắp **trong RAM** (`quicksort 2 248 kB`), **19,96 ms**, và **T1 + T5 vẫn ĐẠT**. Chỉ T2/T3 (còn `Seq Scan`, chưa dùng index) lộ ra ở cả hai cỡ. ⇒ Trong bảng tiêu chí hiệu năng, **tiêu chí về HÌNH DẠNG KẾ HOẠCH là tín hiệu sớm; tiêu chí về THỜI GIAN và TRÀN ĐĨA chỉ kêu sau khi đã đủ lớn** — đừng nghiệm thu một bản vá hiệu năng trên staging nhỏ.
+
+**Hồi quy:** `vitest twin3d` **106 tệp / 2 498 xanh** (+1 tệp/+15 ca: `mauChuTrenNen` 13 + `cheNhan` 2) · `check` 0 · `check:tests` **27 lỗi nền, 0 trong `twin3d`, 0 trong `e2e/`** · `i18n:check` 0 · `lint:tokens` **tổng 1 111 = y nguyên nền** · `kiem-vo` ĐẠT 2/2 · e2e bấm cảnh **16/16** · **24 ca thị giác × vi/en: 0 vi phạm cả hai** · **bbox 34/34** · 4 lưới phạm vi **180/180** · `twin-dot31-may` **6/7** (A5 ĐỎ — **nợ CÓ SẴN**, đo lại trên chính `dist-a` của HEAD: **ĐỎ y hệt**).
+
+**Brief sai 4 chỗ (đếm):** ① "nút đè 160–166 px² ở 1280" → đo được **167** (▲166 + ▲2 — brief bỏ sót icon thứ hai); ② "badge đã xác nhận trung vị **3,3**" → đo trên pixel thật là **1,68–2,83**, tệ hơn; ③ "mục 13 kỳ vọng ≥3 hàng" đúng là đạt được, nhưng **không** bằng riêng "gộp Tổng quan" như brief mô tả — cần thêm bước đổi tỉ lệ chia, và brief không lường; ④ "nếu không có DB test thì bỏ qua" → **có** DB test. Ngoài ra brief nói `lint:tokens` "phải 0" trong khi lưới ấy là **report-only, luôn exit 0** và nền là **1 111 phát hiện** — tiêu chí đọc được duy nhất là **Δ = 0**, và Δ = 0.
+
+**Lỗi của tôi — 3:** (a) bộ quét mục 11 chạm `pages/machineWorkspace/**` (màn cũ) ⇒ đã trả về HEAD, sửa bộ lọc; (b) `.innerText().catch()` treo 120 s trên phần tử vắng mặt (xem §14q.36.4); (c) bản đầu của thiết bị đo tương phản lấy "20 % pixel lệch nhiều nhất" làm lõi nét ⇒ glyph mảnh (em-dash 10 px) ra **2,57** trong khi cặp màu quy định cho **5,54** — một **âm tính giả** do chính thiết bị đo, sửa bằng lõi ≥85 % + mô hình thứ hai (màu quy định trên nền đo được).
+
+**Còn mở:** `twin-dot31-may` A5 (nợ có sẵn, cockpit tab 3D nay chỉ 1 canvas — spec ghim một món nợ đã đổi hình) · 2 lần lặp mã máy trong **cockpit 2D nhúng** (`MachineWorkspace`, màn cũ) · production chưa áp index QĐ-30 · diễn tập DDL trên `aoi_management_test` chờ chủ sở hữu gỡ mâu thuẫn ràng buộc · 80 chuỗi ≤12 px bị ô cuộn cắt / bị dải thời gian che (không phải ca tương phản, nhưng `lop-phu-dong-thoi-gian` che 18 chuỗi của `danh-sach-may` là một món đáng nhìn riêng).
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
