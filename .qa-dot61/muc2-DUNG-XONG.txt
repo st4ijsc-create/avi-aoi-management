@@ -1,0 +1,45 @@
+MỤC 2 — MỤC NAV `/digital-twin`  ⇒ ★★★ DỪNG, KHÔNG XOÁ (đo được > 0 chỗ tra sống)
+
+Số dòng brief ghi (`navigation.tsx:439`) — XÁC MINH LẠI: ĐÚNG, `href: "/digital-twin"`
+ở dòng 439, khối ô nav 438-446.
+
+PHÉP ĐO BRIEF YÊU CẦU (cả hai ĐỀU SẠCH):
+  grep -rn 'navHref="/digital-twin"'  ⇒ 0
+  grep hasAccessToItem tra href này   ⇒ 0
+  RouteGuard nào tra href này         ⇒ 0
+
+★★★ NHƯNG DANH SÁCH PHÉP ĐO CỦA BRIEF THIẾU MỘT ĐƯỜNG TRA THỨ BA — và đường
+ấy có 3 chỗ gọi SỐNG (lớp lỗi G24 "danh sách thay vì bất biến"):
+
+  `getRequiredPermissionForHref("/digital-twin")` — hàm khác, đọc CÙNG ô nav ấy:
+    1. client/src/pages/DataManagementHub.tsx:24
+         const LAYOUT_TILE_PERMISSION = getRequiredPermissionForHref("/digital-twin") ?? "analytics_oee";
+    2. client/src/pages/DataSettings.tsx:796
+         const layoutLinkPermission = getRequiredPermissionForHref("/digital-twin") ?? "analytics_oee";
+    3. client/src/lib/navigation.unit.test.ts:88 — lưới GHIM chính hợp đồng này
+         expect(getRequiredPermissionForHref("/digital-twin")).toBe("analytics_oee");
+
+  Chú thích navigation.tsx:407-437 (Đợt 21 Lô Y) đã ghi sẵn: "ĐO TRƯỚC KHI XOÁ,
+  và phép đo BÁC BỎ việc xoá" — nêu đúng 2 chỗ gọi trên.
+
+ABLATION (đo, không suy luận) — bỏ ô nav rồi chạy lưới, rồi KHÔI PHỤC:
+  npx vitest run client/src/lib/navigation.unit.test.ts
+    TRƯỚC : 27/27 xanh
+    SAU   : 26 xanh / **1 ĐỎ** — navigation.unit.test.ts:88
+            Expected "analytics_oee" · Received undefined
+  Khôi phục: md5 navigation.tsx = 0b1888af14e75f21874b26a4dce5491e (khớp bản gốc),
+  `git status` cho tệp này RỖNG ⇒ 0 byte lệch.
+
+SẮC THÁI CẦN CHỦ SỞ HỮU BIẾT (không phải lý do để tự quyết):
+  Hai chỗ gọi sản phẩm đều có `?? "analytics_oee"`, mà giá trị ô nav ĐANG là
+  đúng `"analytics_oee"` ⇒ về GIÁ TRỊ, bỏ ô nav KHÔNG đổi hành vi của 2 quick-link.
+  Cái đổi là HỢP ĐỒNG: "một nguồn quyền-theo-route" (Lô 5 Mục 2) biến thành
+  "hằng chép tay ở 2 nơi", và lưới ghim hợp đồng ấy ĐỎ.
+  ⚠ Đồng thời đo được một NỢ CÓ TRƯỚC, ngoài phạm vi đợt này: cả hai chú thích
+  nói đích của `/layout` là `/digital-twin?tab=layout` (gate `analytics_oee`).
+  Từ QĐ-18, `/layout` `<Redirect to="/twin-studio">`, mà `/twin-studio` gate
+  `settings_factory` HOẶC `machine_control` — KHÔNG phải `analytics_oee`.
+  ⇒ Điều kiện hiện quick-link đang tra SAI quyền ở CẢ HAI nơi, từ trước Đợt 61.
+
+THEO ĐÚNG LUẬT BRIEF ("ra > 0 ⇒ DỪNG món đó, ghi lại, báo tôi") ⇒ DỪNG.
+Ô nav `/digital-twin` GIỮ NGUYÊN. `<Redirect>` cũng giữ nguyên (vốn đã phải giữ).

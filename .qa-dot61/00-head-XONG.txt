@@ -1,0 +1,5 @@
+Đợt 61 — mục 0
+HEAD = 518434afa7f76172680c7fd2c44422ec5456120a  (KỲ VỌNG 518434af — KHỚP)
+branch = feat/twin-3d-trung-tam
+worktree = D:/SOURCES/_twin_wt
+518434afa7f76172680c7fd2c44422ec5456120a docs(qa/dot60): khao sat 22 trang 3D - 6 trang CHET (TwinHub + 5 tab), 4 cau KHONG-XOA do lai (1 sai), 214 khoa i18n mo coi

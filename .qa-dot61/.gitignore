@@ -1,0 +1,5 @@
+dist-*/
+f61/*.png
+*.err.log
+*.out.log
+server.pid

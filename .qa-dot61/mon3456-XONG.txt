@@ -1,0 +1,33 @@
+MÓN 3/4/6/5 — ĐÃ XOÁ (đảo thứ tự 5↔6, xem lý do dưới)
+
+MÓN 3 — client/src/pages/DigitalTwinDashboard.tsx (606 dòng) ⇒ XOÁ
+  Đo 15:16:01Z: 3 dòng khớp ngoài chính tệp, **cả 3 là chú thích**
+  (App.tsx:351 do chính tôi vừa viết, NganMoPhong:635, server/db/twinCanh.ts:2156).
+  grep import/from ⇒ **0**.
+
+MÓN 4 — client/src/pages/CellTwinPlayer.tsx (770 dòng) ⇒ XOÁ
+  Đo 15:16:06Z: 2 dòng khớp ngoài chính tệp, cả 2 là chú thích trong
+  `DigitalTwinCenter.tsx` (:18, :504) — "mirrors CellTwinPlayer rAF". 0 import.
+  Đã sửa 2 chú thích ấy để không trỏ vào tệp không còn.
+  npm run check sau MÓN 3+4 ⇒ 0.
+
+MÓN 6 — client/src/pages/FactoryFloorEditor.tsx (604 dòng) ⇒ XOÁ
+  Đo 15:16:54Z: 16 dòng khớp ngoài chính tệp — **16/16 là chú thích**; grep
+  import/await import ⇒ **0 chỗ gọi sống**.
+  DB dev, HAI MÔ HÌNH RỜI NHAU (BG-127) — xem TRUOC-KHI-XOA.txt:
+     A (lọc+đếm): factory_zones 0 · safety_zones 0 · machines.layoutPositionX/Y/layout 0
+     B (liệt kê toàn phân bố + đối chiếu TỔNG): bảng ĐỀU TỒN TẠI · kéo về 0 hàng ·
+       machines 43 hàng, x/y/layout đều 43 null + 0 có giá trị = KHỚP TỔNG 43 ·
+       đối chứng dương id 43/43 ⇒ thước KHÔNG MÙ.
+     ⇒ KHÁC 0 = KHÔNG. Không DỪNG.
+  Đã sửa 4 chú thích "nơi DUY NHẤT CRUD vùng an toàn / xoá hôm nay là mất tính
+  năng thật" (VeVung.tsx, XuongThietKe.tsx, server/db/twinCanh.ts,
+  server/routers/twinCanhRouter.ts) — lời khai hết hạn.
+
+MÓN 5 — client/src/pages/FactoryLiveMap3D.tsx (240) + client/src/components/FactoryFloor3D.tsx (209) ⇒ XOÁ
+  ★ ĐẢO THỨ TỰ: brief xếp 5 trước 6, nhưng đo được `FactoryFloorEditor.tsx:27`
+    `import { statusColor } from "@/components/FactoryFloor3D"` ⇒ xoá 5 trước 6 sẽ
+    làm `npm run check` ĐỎ giữa hai món. Làm 6 trước, 5 sau ⇒ mọi món vẫn check 0.
+  Đo lại 15:19:11Z (sau khi 6 đã xoá): 0 chỗ gọi sống; 0 tệp còn import
+    "@/components/FactoryFloor3D".
+  npm run check ⇒ 0.

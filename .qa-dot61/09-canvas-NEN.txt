@@ -1,0 +1,27 @@
+=== (2) 6 MAN: mo duoc + dem canvas ===
+/twin              url=/twin            DOM canvas=1  __soCanvas=1  chu=2840
+/twin/line/2       url=/twin/line/2     DOM canvas=1  __soCanvas=1  chu=1271
+/twin/may/14       url=/twin/may/14     DOM canvas=1  __soCanvas=1  chu=1641
+/twin-studio       url=/twin-studio     DOM canvas=1  __soCanvas=1  chu=1149
+/command-center    url=/command-center  DOM canvas=1  __soCanvas=null  chu=1527
+/factory-command   url=/factory-command DOM canvas=0  __soCanvas=null  chu=5063
+
+da ghi .qa-dot61/09-redirect-canvas.json
+
+════════════════════════════════════════════════════════════════════════════
+ĐỐI CHỨNG NỀN vs SAU — cả hai đo trên CÙNG cổng 3061, cùng vai e2e_tai_loE,
+1600×900, cùng script .qa-dot61/do-redirect-canvas.mjs
+       màn                NỀN(518434af)        SAU(Đợt 61)
+  /twin                 DOM 1 · __so 1      DOM 1 · __so 1     =
+  /twin/line/2          DOM 1 · __so 1      DOM 1 · __so 1     =
+  /twin/may/14          DOM 1 · __so 1      DOM 1 · __so 1     =
+  /twin-studio          DOM 1 · __so 1      DOM 1 · __so 1     =
+  /command-center       DOM **1** · __so null   DOM **0** · __so null   ★ ĐỔI ĐÚNG CHỖ
+  /factory-command      DOM 0 · __so null   DOM 0 · __so null   =  (không hỏng vì xoá FactoryScene3D)
+  chữ /command-center   1.527 ký tự   →   2.645 ký tự  (lưới trạng thái thay cảnh, trang KHÔNG rỗng)
+
+★★★ VÌ SAO PHẢI ĐẾM DOM CHỨ KHÔNG CHỈ `__soCanvas` (G99): `<Canvas>` cũ của
+CommandCenter KHÔNG đăng ký qua kit twin3d ⇒ `__soCanvas` = **null ở CẢ HAI**
+bản. Nếu chỉ đọc `__soCanvas` như brief ghi ("__soCanvas trên trang = 0") thì
+phép đo XANH cả trước lẫn sau ⇒ mù đúng thứ nó phải bắt. DOM canvas 1→0 mới là
+bằng chứng.
