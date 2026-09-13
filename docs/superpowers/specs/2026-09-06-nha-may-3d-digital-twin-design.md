@@ -7212,6 +7212,38 @@ Cổng 3000 **bật lại lúc 16:10:08** (PID 39904). Phiên `avi-aoi-managemen
 
 Vì có khả năng chính chủ sở hữu bật, tôi **không tự tắt** mà hỏi. **Chủ sở hữu quyết: tắt lại.** Thực hiện 12:09Z: `Stop-Process -Id 39904` ⇒ 3000 **0 LISTENING / curl `000`**; 3001 (23980) và 3008 (32584) vẫn 200. ★ Giao thức đa phiên giữ nguyên ranh giới đã ghi ở §14q.35.1: phiên kia **không tắt** vì quyết định tới họ qua trung gian; **hai phiên cùng báo một sự thật, chủ sở hữu quyết, phiên nhận trực tiếp thực hiện**.
 
+### 14q.39 Đợt 60–62 — QĐ-31: rà soát rồi xoá màn 3D trùng vai trò (2026-09-13/14)
+
+**QĐ-31 (chủ sở hữu, 2026-09-13):** sau khảo sát Đợt 60, duyệt **xoá cả 6 món chết**, **bỏ riêng cảnh 3D của `/command-center`**, **di trú rồi xoá `DigitalTwinCenter`**, **xoá khoá i18n mồ côi**, và **giữ nguyên `/factory-command`**.
+
+**Đợt 60 (khảo sát, 0 dòng mã bị sửa) — phát hiện lớn nhất:** `/digital-twin` **đã là `<Redirect>`** (`App.tsx:357`) nên `TwinHub` có **0 route + 0 import sống**, và **5 trang mà nó là người gọi duy nhất rơi theo**. Sổ dự án ghi "cũ/mới chạy song song" — **sai: bản cũ đã chết, chỉ chưa ai xoá**. Kiểm lại 4 câu "⛔ KHÔNG XOÁ": `MachineCockpit` ✅ đúng (4 chỗ gọi sống, `isWorkspaceShellEnabled()` mặc định bật) · `RobotCockpit` ✅ đúng · **`DigitalTwinCenter` ❌ HẾT HẠN** (lý do cũ "giữ chỗ gọi `usdExport` duy nhất" sai — `usdExport` có **2 chỗ gọi sống**) · `TwinHub` ⚠ đúng chữ, lạc hậu nghĩa. DB giết luôn lý do hoãn `FactoryFloorEditor`: `factory_zones` **0 hàng**, `safety_zones` **0**, `machines.layout*` **0/43**, trong khi đường mới `twin_dat_cho` **82 hàng**.
+
+**Đợt 61 — xoá 3.525 dòng** (`c54485fc`, `5b009b77`): 8 tệp (`TwinHub`, `DigitalTwinDashboard`, `CellTwinPlayer`, `FactoryLiveMap3D`, `FactoryFloor3D`, `FactoryFloorEditor`, `FactoryScene3D`, `machineMesh`) + cảnh 3D cũ của `/command-center` (281 dòng, DOM canvas 1 → 0). Mỗi món đo lại "đã chết" **ngay trước khi xoá**; `FactoryFloorEditor` đo DB bằng **hai mô hình rời nhau** (BG-127) kèm đối chứng dương 43/43. Cổng ra: 13/13 redirect, e2e 16/16, D-1 **0 ô đổi phán quyết**, 7 ca đỏ còn lại **chứng minh là nợ có trước** bằng cây `git archive` (từng con số y hệt). ★ **Agent DỪNG đúng một món** — ô nav `/digital-twin` — vì brief tôi **liệt kê thiếu đường tra quyền thứ ba**: `getRequiredPermissionForHref` có **3 chỗ gọi sống**; ablation: bỏ ô nav ⇒ lưới 27/27 → **26/1 ĐỎ**.
+
+**Đợt 62 — nợ quyền, di trú, xoá nốt** (`873938bf…8da76724`, −2 024/+578 dòng):
+
+**A. Lớp lỗi "một lối vào rồi TỪ CHỐI" — đo bằng VAI THẬT, HAI CHIỀU.** Lối vào tra quyền của `/digital-twin` (`analytics_oee`) trong khi đích thật `/layout → /twin-studio` gate `settings_factory` **HOẶC** `machine_control` ⇒ hỏng cả hai chiều:
+
+| ô | vai | TRƯỚC (thấy / vào) | SAU |
+|---|---|---|---|
+| A1 | chỉ `analytics_oee` | **THẤY / BỊ CHẶN** (dead-end) | ẨN / chặn |
+| A2 | chỉ `machine_control` | **ẨN / VÀO ĐƯỢC** (lối vào bị giấu) | THẤY / vào |
+| A5 | **`engineer1` — vai SEED THẬT** | **ẨN / VÀO ĐƯỢC** | THẤY / vào |
+
+Suite 3 ĐỎ → **6/6 XANH**; ablation trên bản dựng `99d9a635` ⇒ **3 ĐỎ trở lại, đúng ba ô ấy**. Vá: href lối vào và href tra quyền là **một hằng**, tra bằng `getAcceptedPermissionsForHref`, **tập rỗng ⇒ ẩn ô (fail-closed)**. ★ **Brief tôi kê bản vá SAI**: `getRequiredPermissionForHref("/twin-studio")` trả `undefined` (route khai `requiredPermissionAny`) — làm đúng chữ brief sẽ **hỏng câm**.
+
+**B. Di trú rồi xoá `DigitalTwinCenter` + `ArticulatedRobot` (938 dòng, không phải 1 132).** Quyết theo bằng chứng đo, **0 thủ tục server bị xoá**: USD export bỏ UI (2 chỗ gọi sống đã có) · cảnh 3D/KPI/inspector bỏ UI (`/twin`, Line, Máy, `/command-center` giàu hơn) · băng "trực tiếp" bỏ UI, giữ thủ tục · **replay máy: dữ liệu `packml_state`/`position_x`/`position_y` chỉ **20 hàng mỗi loại, dồn trong 2 phút ngày 2026-09-06, 0 hàng/24 h** ⇒ trang trả rỗng** ⇒ bỏ UI, giữ thủ tục + sổ nợ · cánh tay robot FK 3D: dữ liệu **thật** (1 460 075 hàng, 48 132 trong 24 h, 3 robot) nhưng `/robot/:id` tab Joints đã đọc đúng dữ liệu ấy ⇒ bỏ UI, ghi **đường hồi sinh**. Lưới `noTwinDot62.unit.test.ts` giữ **sổ nợ**, không giữ mã đã xoá.
+
+**C.** Ba đường tra quyền về 0 sau khi A gỡ điều kiện ⇒ xoá ô nav; `<Route>` + `dinhTuyenTwinCu` giữ nguyên ⇒ **13/13 redirect** vẫn đúng đích. **D.** Xoá **248 khoá × 3 = 744 mục**, `i18n:check` 0, nền nợ **336 → 333**. ★ Thước i18n **sai bốn lần trước khi đúng** (209/126/411/1 147 ứng viên): hai lớp sai là **khớp chuỗi con** (`twin.scene` núp sau `twin.sceneGraph`; cả họ `cmd.*` núp sau `` lineView.cmd.${c} ``) và **tính văn xuôi trong `docs/` là bằng chứng dùng**; giữ toàn bộ `nav.*` vì `EngineeringHub.tsx:186` dựng `` t(`nav.${tile.navKey}`) `` (âm tính giả đã biết).
+
+**Cổng ra Đợt 62 (16 mục, tất cả đạt):** `check` 0 · `check:tests` 27 (0 twin3d, 0 e2e) · `i18n:check` 0 · `lint:tokens` Δ0 · `kiem-vo` client+dist · `twin3d` **109/2 539** · phạm vi 17/437 · client toàn bộ 3 tệp/7 ca đỏ **y hệt nền** · build md5 914 dòng diff 0 · 13/13 redirect · 6 màn mở · e2e bấm cảnh **16/16** · D-1 **0 ô đổi phán quyết** · DB 11+6 khoá, 4 hàng tạm đã xoá · 5 ảnh md5 · 3001/3008 nguyên vẹn, `dist/` gốc không đổi.
+
+> #### ★★★ G148 - **"KHÔNG ĐƯỢC XOÁ" LÀ MỘT PHÉP ĐO CÓ HẠN SỬ DỤNG, KHÔNG PHẢI MỘT LUẬT.**
+> Bốn câu cấm xoá tôi tự ghi từ Đợt 5–20 được kế thừa nguyên văn suốt 40 đợt. Đo lại hôm nay: hai câu vẫn đúng, **một câu sai hẳn** (`usdExport` không còn duy nhất), một câu đúng chữ nhưng lạc hậu nghĩa (trang đã thành mã chết). Đồng thời `/digital-twin` đã là redirect từ lâu mà sổ vẫn ghi "cũ/mới chạy song song". **Mọi lý do hoãn/cấm phải mang ngày và cách kiểm lại; trước khi viện dẫn, chạy lại phép đo ấy.**
+
+> #### ★★★ G149 - **MỘT LỐI VÀO CÓ HAI HREF: href ĐIỀU HƯỚNG và href TRA QUYỀN — lệch nhau là hỏng cả hai chiều, và chiều "bị giấu" không ai báo lỗi.**
+> Ô Layout điều hướng tới `/twin-studio` nhưng tra quyền của `/digital-twin`: người có `analytics_oee` **thấy ô rồi bị chặn**; người có `machine_control` — kể cả vai seed thật `engineer1` — **không thấy ô dù vào được**. Chiều thứ hai **không sinh lỗi, không ai phàn nàn**, nên sống lâu hơn. **Bất biến: href điều hướng và href tra quyền phải là MỘT hằng; tập quyền rỗng ⇒ ẩn (fail-closed); và phải đo cả chiều "thấy" lẫn chiều "vào được" bằng vai thật.** Còn **nơi thứ ba chưa đo**: `domains.ts` — 8 ô trên Home **không có trường quyền nào**.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
