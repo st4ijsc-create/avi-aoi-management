@@ -3023,7 +3023,33 @@ export function ThanTwinVanHanh() {
               phần dư — `flex-[7]`/`flex-[5]` vẫn chia PHẦN DƯ, nên trần vẫn còn và tỉ lệ
               vẫn bị chặn hai đầu. Lưới đo sau vá kiểm `danh-sach-may` > 150 px.
           */}
-          <div className="flex min-h-0 flex-[7] basis-0 flex-col overflow-hidden">
+          {/*
+            ★★★ ĐỢT 59 (mục C) — **TRẦN CHIỀU CAO CHO DẢI CẢNH BÁO**, để @1600 trả lại hàng thứ 9
+            cho `danh-sach-may` mà KHÔNG đụng @1280.
+
+            QA lần 10 đo được đánh đổi thật của mục 13 (Đợt 57): @1600 `danh-sach-may` **267 → 249 px
+            = 9 → 8 hàng đủ**. Đợt 59 đo lại trên bản dựng HEAD, khớp từng số:
+              @1600 D(phần dư) = 598 px → 7:5 ⇒ dải **349** / danh sách **249** (8,56 hàng đủ 8)
+              @1280 D = 418 px → 7:5 ⇒ dải **244** / danh sách **174** (5,43 hàng đủ 5)
+            Hằng số đo được (cùng ở cả hai cỡ, nên là hằng của BỐ CỤC chứ không của viewport):
+              · khung cố định của dải (tiêu đề + hàng chip lọc) = **91 px**  (349−258 = 244−153)
+              · một hàng tồn đọng = **41 px**, tiêu đề nhóm dính đầu ô = **24 px**
+              · khung cố định của danh sách (tab Máy|Cây + ô lọc) = **44 px**, một hàng máy = **24 px**
+
+            ⚠ **KHÔNG dùng `2xl:` (breakpoint theo BỀ NGANG) cho một bài toán CHIỀU CAO.** Số học bác
+              bỏ thẳng: một cửa sổ 1600×720 vẫn khớp `2xl` nhưng D chỉ 418 px; tỉ lệ 7:6 ở đó cho ô
+              cuộn 134 px = **2,7 hàng** ⇒ phá chính tiêu chí ≥3 hàng mà mục 13 vừa mua được.
+            ⇒ Ràng buộc phải đọc theo CHIỀU CAO: **trần** cho dải, phần dôi ra chảy sang danh sách
+              (flexbox đóng băng item chạm `max-height` rồi chia lại chỗ trống cho anh em còn co giãn).
+
+            Chọn trần = **328 px** = 91 (khung cố định) + 24 (tiêu đề nhóm) + 5×41 (năm hàng tồn đọng)
+            + 8 px dự phòng làm tròn. Hệ quả tính được, rồi đo lại ở §C:
+              @1600: dải 349 → **328** (ô cuộn 258 → 237 ⇒ vẫn **5 hàng đủ**, tiêu chí cần 3)
+                     danh sách 249 → **270** (vùng hàng 226 px ⇒ **9 hàng đủ**) — trả lại đúng hàng đã mất
+              @1280: 7D/12 = 244 < 328 ⇒ trần KHÔNG chạm ⇒ **0 px đổi**, 3 hàng tồn đọng + 5 hàng máy y nguyên
+            Trần chỉ bắt đầu có tác dụng khi 7D/12 > 328, tức panel > 562 px, tức viewport cao > 864 px.
+          */}
+          <div className="flex max-h-[328px] min-h-0 flex-[7] basis-0 flex-col overflow-hidden">
           <DaiCanhBao
             seed={canhBaoSeed}
             song={canhBaoSong}
