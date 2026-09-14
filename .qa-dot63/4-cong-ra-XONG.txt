@@ -1,0 +1,46 @@
+Đợt 63 — mục 4 (sổ nợ: `.qa-dot63/NO.md`) + CỔNG RA
+====================================================
+
+CỔNG RA — LỆNH + SỐ ĐO THẬT (HEAD 92ed9e21)
+--------------------------------------------
+| cổng | lệnh | ngưỡng | đo được | ĐẠT |
+|------|------|--------|---------|-----|
+| twin3d — cây LF   | `npx vitest run twin3d` (tại `D:/SOURCES/_twin_wt`) | ≥ 109 tệp / 2 539 | **109 / 2 539 XANH** (rc=0) | ✔ |
+| twin3d — cây CRLF | `npx vitest run twin3d` (tại clone `w/crlf` 100 %)  | ≥ 109 tệp / 2 539 | **109 / 2 539 XANH** (rc=0) | ✔ |
+| check             | `npm run check`        | 0 lỗi   | **0** (rc=0) | ✔ |
+| check:tests       | `npm run check:tests`  | ≤ 27    | **27** (rc=2 như thường lệ) | ✔ |
+| i18n:check        | `npm run i18n:check`   | 0       | **0** placeholder mismatch · 0 NEW missing · 0 stale · 0 vi phạm (rc=0) | ✔ |
+| lint:tokens       | `npm run lint:tokens`  | Δ0      | **974** — nền Đợt 62 (`.qa-dot62/03-lint-SAU.txt`) = **974** ⇒ **Δ0** | ✔ |
+| lưới phạm vi      | `npx vitest run phamVi`| —       | **17 tệp / 437 ca XANH** | ✔ |
+
+★ CON SỐ NỀN "LƯỚI PHẠM VI" — LÀM RÕ BA CON SỐ ĐANG ĐÁ NHAU
+------------------------------------------------------------
+  · **17 tệp / 437 ca** = `npx vitest run phamVi` — bộ lọc tên tệp chứa "phamVi",
+    KHÔNG phân biệt hoa thường, TOÀN repo. Đây là con số brief ghi và là con số ĐÚNG
+    cho lệnh ấy. Xác nhận lại hôm nay: 17 passed / 437 passed.
+  · **15 tệp / 335 ca** (phiên khác) = CÙNG bộ lọc nhưng giới hạn `server/` — thiếu
+    đúng 2 tệp phía client: `client/src/components/twin3d/phamViLine.unit.test.ts` và
+    `client/src/components/twin3d/van-hanh/phamViCanh.unit.test.ts`.
+  · **4 tệp / 180 ca** (`.qa-dot49/52/54/vitest-phamvi*.txt`, "4 lưới 180/180" trong
+    trí nhớ) = bộ lọc HẸP của các đợt trước, chỉ 4 tệp phạm-vi-Twin, KHÔNG phải
+    `vitest run phamVi`.
+  ⇒ Ba con số đều đúng cho ba lệnh khác nhau. Con số nền chuẩn cho `vitest run phamVi`
+    là **17 tệp / 437 ca**.
+
+KỶ LUẬT MÔI TRƯỜNG
+-------------------
+  · Cổng mở thêm: **KHÔNG CÓ** (đợt này không cần server). 3001 (PID 14228) và
+    3008 (PID 29676) — KHÔNG chạm, KHÔNG kill. `dist/` — KHÔNG chạm.
+  · DB: chỉ đọc qua `vitest.setup.ts` (ép sang DB `*_test`, throw nếu tên không chứa "test").
+  · `.qa-dot47/` — KHÔNG đụng.
+  · `.gitattributes` — KHÔNG tạo. `git add --renormalize` — KHÔNG chạy.
+  · Cây CRLF dựng bằng `git clone --shared` vào thư mục tạm, KHÔNG dùng `git worktree add`
+    (tránh ghi metadata vào `.git` của repo chính mà phiên khác đang dùng). Đã dọn
+    `.gitattributes` thử nghiệm và `git reset --hard` trả clone về `92ed9e21`.
+  · `vitest.dot63.config.ts` (cấu hình tạm để chạy đúng 313 tệp ứng viên) đã XOÁ khỏi
+    worktree, KHÔNG commit.
+
+ẢNH `test-results/` — MD5 GIỮ NGUYÊN
+-------------------------------------
+  Không chạy Playwright trong đợt này ⇒ không ghi vào `test-results/`.
+  (Kiểm kê md5 5 ảnh: xem `.qa-dot63/md5-anh.txt`.)
