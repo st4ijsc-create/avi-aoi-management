@@ -32,8 +32,10 @@
  *   đúng lớp lỗi mà lưới được dựng ra để chặn.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readdirSync, existsSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 // server/db/khongBomInspectionBia.test.ts → GOC = repo root
 const GOC = resolve(__dirname, "..", "..");
@@ -75,7 +77,7 @@ interface Khop {
 }
 
 function timKhopTrongFile(absPath: string, relPath: string): Khop[] {
-  const src = readFileSync(absPath, "utf8");
+  const src = docMaNguon(absPath);
   const ra: Khop[] = [];
   src.split("\n").forEach((line, idx) => {
     if (NEEDLE.test(line)) {

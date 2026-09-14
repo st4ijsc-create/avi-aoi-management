@@ -187,8 +187,9 @@ describe("quyUptime — cửa sổ rỗng là `null`, không phải 0%", () => {
 /* ★★★ ĐỢT 38 (Pareto #2 QA Đợt 37) — ẢNH LỊCH SỬ VÀ KHO LIVE NÓI CÙNG MỘT TỪ ĐIỂN                              */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 /*
  * Đợt 6 ánh xạ `online → running` / `offline → stopped` từ hàng log (`nhatKyRaTrangThaiCanh`). QA Đợt 37 D-4 đo:
@@ -198,7 +199,7 @@ import { resolve } from "node:path";
  * (G16: có hàm chưa đủ, phải nối vào đúng chỗ) — đọc nguồn, bỏ chú thích.
  */
 describe("Đợt 38 — twinCanh.ts nối vào MỘT từ điển (`mapMachineStatus` / `trangThaiLichSuTaiMoc`)", () => {
-  const SRC = readFileSync(resolve(__dirname, "twinCanh.ts"), "utf8")
+  const SRC = docMaNguon(resolve(__dirname, "twinCanh.ts"))
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
   const than = (ten: string) => {

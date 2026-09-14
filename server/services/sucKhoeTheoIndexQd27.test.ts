@@ -17,9 +17,11 @@
  *
  * Lưới này quét MÃ (không phải liệt kê tay) nên bản sao THỨ BA ngày mai cũng bị bắt.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 const GOC = resolve(__dirname, "../..");
 
@@ -37,7 +39,7 @@ function quetTs(thuMuc: string, ra: string[] = []): string[] {
 /** Mỗi câu SQL chứa `machine_health_history` + `DISTINCT ON ("machineId")`, kèm mệnh đề ORDER BY của nó. */
 const CAU: { tep: string; dong: number; orderBy: string }[] = [];
 for (const p of quetTs(resolve(GOC, "server"))) {
-  const src = readFileSync(p, "utf8");
+  const src = docMaNguon(p);
   let tu = 0;
   for (;;) {
     const i = src.indexOf('DISTINCT ON ("machineId")', tu);
@@ -86,7 +88,7 @@ describe("★★★ Đợt 53 — `DISTINCT ON machine_health_history` phải d�
     // Bản vá mục C dùng đúng index QĐ-27 đã có. Nếu ai đó lén thêm migration, ca này nói ra.
     const ds = readdirSync(resolve(GOC, "drizzle")).filter((f) => /^0(3[5-9]|[4-9]\d)\d/.test(f) && f.endsWith(".sql"));
     const themIndex = ds.filter((f) => {
-      const s = readFileSync(resolve(GOC, "drizzle", f), "utf8");
+      const s = docMaNguon(resolve(GOC, "drizzle", f));
       return /CREATE\s+INDEX[\s\S]*machine_health_history/i.test(s);
     });
     // 0356 (QĐ-27) là migration DUY NHẤT được phép tạo index trên bảng này.

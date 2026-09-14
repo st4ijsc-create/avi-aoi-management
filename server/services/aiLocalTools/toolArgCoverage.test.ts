@@ -29,13 +29,14 @@
  * người dùng thật"* bắt lượt làm một trong hai vế thành chân lý rỗng.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import "./index"; // side-effect: đăng ký toàn bộ tool (đây là nguồn đo)
 import * as progMod from "./readToolsProgramming";
 import { listTools, getTool, type Tool } from "./toolRegistry";
 import { chonDuocTheoTrigger, classifyToolIntent, extractArgsForTool, hasArgExtractionPath, kindFromLabel } from "./intentClassifier";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 /** Ô bắt buộc của một tool — hỏi **chính schema**, không chép tay. */
 function oBatBuoc(tool: Tool<any, any>): string[] {
@@ -338,7 +339,7 @@ describe("★★★ F2 — luật: MỌI tool chọn được theo trigger phả
      * ký lúc chạy và (b) `hasArgExtractionPath()`. Hai nguồn phải nói **cùng một chuyện** — nếu
      * lệch thì hoặc có nhánh chết (tool đã đổi tên/bị gỡ), hoặc cái sentinel đã hỏng.
      */
-    const nguon = readFileSync(fileURLToPath(new URL("./intentClassifier.ts", import.meta.url)), "utf8");
+    const nguon = docMaNguon(fileURLToPath(new URL("./intentClassifier.ts", import.meta.url)));
     const nhan = [...new Set([...nguon.matchAll(/case\s+"([A-Za-z0-9_]+)"/g)].map((m) => m[1]!))].sort();
     expect(nhan.length, "không rút được nhãn `case` nào — bộ điều phối đã đổi hình dạng?").toBeGreaterThanOrEqual(41);
 

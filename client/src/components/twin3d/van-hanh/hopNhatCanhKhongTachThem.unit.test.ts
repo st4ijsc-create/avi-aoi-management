@@ -15,11 +15,12 @@
  *   Chúng chỉ được dùng cho những câu mà giá trị trả về **không nói được**.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
 const GOC = resolve(__dirname, "../../../..");
-const doc = (p: string) => readFileSync(resolve(GOC, p), "utf8");
+const doc = (p: string) => docMaNguon(resolve(GOC, p));
 
 /** G92 — TƯỚC CHÚ THÍCH trước khi đo. Docblock của tệp này nhắc mọi tên ở dưới. */
 const MA = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");

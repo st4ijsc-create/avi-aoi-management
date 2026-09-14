@@ -18,17 +18,18 @@
  *   mọi tên dưới đây, kể cả trong câu *"KHÔNG được làm thế này"*.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { SAN_KHOI_CANH_MAY_PX, chieuCaoKhoiCanhMay, phamViCuaManMay } from "./manMay";
 import { trongPhamVi } from "./phamViCanh";
 
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
 const GOC = resolve(__dirname, "../../../..");
 
 /** G92 — mã đã TƯỚC mọi chú thích (khối lẫn dòng). */
 function docSach(duongDan: string): string {
-  return readFileSync(resolve(GOC, duongDan), "utf8")
+  return docMaNguon(resolve(GOC, duongDan))
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 }

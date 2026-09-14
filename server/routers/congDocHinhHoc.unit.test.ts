@@ -44,8 +44,10 @@ import { fileURLToPath } from "node:url";
 import { MODULE_DOC_HINH_HOC } from "./twinCanhRouter";
 import { getNavItemByHref } from "../../client/src/lib/navigation";
 
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const NGUON = fs.readFileSync(path.join(__dirname, "twinCanhRouter.ts"), "utf8");
+const NGUON = docMaNguon(path.join(__dirname, "twinCanhRouter.ts"));
 
 /**
  * Ba thủ tục ĐỌC mà `/twin` (Vận hành) BẮT BUỘC gọi được — đọc thẳng từ
@@ -53,10 +55,8 @@ const NGUON = fs.readFileSync(path.join(__dirname, "twinCanhRouter.ts"), "utf8")
  * không ai mở cổng cho nó, danh sách này dài ra và ca "mọi thủ tục `/twin` gọi
  * đều mở" ở dưới sẽ đỏ.
  */
-const NGUON_MAN_VAN_HANH = fs.readFileSync(
-  path.join(__dirname, "../../client/src/pages/TwinVanHanh.tsx"),
-  "utf8",
-);
+const NGUON_MAN_VAN_HANH = docMaNguon(
+  path.join(__dirname, "../../client/src/pages/TwinVanHanh.tsx"));
 
 /** Tên mọi thủ tục của router + cổng nó đứng trên. Phân tích từ NGUỒN. */
 function quetThuTuc(): Array<{ ten: string; cong: string }> {

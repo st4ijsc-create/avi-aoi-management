@@ -32,9 +32,11 @@
  * ⚠ Mọi đường của cổng phải **TỒN TẠI trên đĩa** — một đường gõ sai là một đường vitest bỏ qua.
  */
 import { describe, it, expect } from "vitest";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url)); // .../server/services/vram
 const GOC = join(TEST_DIR, "..", "..", ".."); // gốc repo
@@ -133,7 +135,7 @@ function moiFileTest(goc: string, ra: string[] = []): string[] {
  * thì nó chỉ chứng minh bản sao ấy đúng, còn cái người ta thật sự chạy vẫn tự do lệch đi.
  */
 function duongCuaCong(): string[] {
-  const md = readFileSync(KE_HOACH, "utf8");
+  const md = docMaNguon(KE_HOACH);
   const i = md.indexOf("**Cổng kiểm chung");
   if (i === -1) return [];
   const mo = md.indexOf("```", i);
@@ -175,7 +177,7 @@ const VITEST_CONFIG = join(GOC, "vitest.config.ts");
 
 /** Rút mảng `include: [...]` khỏi `vitest.config.ts`. */
 function mauCuaVitest(): string[] {
-  const src = readFileSync(VITEST_CONFIG, "utf8");
+  const src = docMaNguon(VITEST_CONFIG);
   const i = src.indexOf("include:");
   if (i === -1) return [];
   const mo = src.indexOf("[", i);
@@ -199,7 +201,7 @@ const CONG = duongCuaCong();
 const MOI_FILE = NHANH.flatMap((n) => moiFileTest(join(GOC, n))).map((p) => ({ duong: duong(p), that: p }));
 
 /** Lưới nhận diện bằng **NỘI DUNG** (luật cũ) — vẫn giữ, vì có lưới Pha 5 ngoài module VRAM. */
-const FILE_PHA5 = MOI_FILE.filter((f) => readFileSync(f.that, "utf8").includes(DAU_KHAI))
+const FILE_PHA5 = MOI_FILE.filter((f) => docMaNguon(f.that).includes(DAU_KHAI))
   .map((f) => f.duong)
   .sort();
 /** Lưới nhận diện bằng **VỊ TRÍ / TÊN** (luật mới) — không sửa được bằng cách viết khác đi. */
@@ -211,7 +213,7 @@ const FILE_VRAM = MOI_FILE.filter((f) => laLuoiVram(f.duong))
  * ⚠ Bất biến theo cấu tạo: tập này **không bao giờ** đẩy thêm file ra ngoài cổng.
  */
 const FILE_PHA_TRONG_CONG = MOI_FILE.filter(
-  (f) => DAU_KHAI_PHA.test(readFileSync(f.that, "utf8")) && duocPhu(f.duong, CONG),
+  (f) => DAU_KHAI_PHA.test(docMaNguon(f.that)) && duocPhu(f.duong, CONG),
 )
   .map((f) => f.duong)
   .sort();
@@ -233,7 +235,7 @@ const FILE_PHA_TRONG_CONG = MOI_FILE.filter(
  * ⇒ Tập này **KHÔNG giao với `duocPhu`**, và ca ∀ dưới đòi phần bù của nó **RỖNG**. Phần tử thứ
  *   mười một tự làm cổng ĐỎ, không cần ai nhớ đếm lại.
  */
-const FILE_TU_KHAI_PHA = MOI_FILE.filter((f) => DAU_KHAI_PHA.test(readFileSync(f.that, "utf8")))
+const FILE_TU_KHAI_PHA = MOI_FILE.filter((f) => DAU_KHAI_PHA.test(docMaNguon(f.that)))
   .map((f) => f.duong)
   .sort();
 /** ⚠ **HỢP**, không phải thay thế: ba vị từ chỉ nới rộng đối tượng bị canh. */
@@ -437,7 +439,7 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
    *   ai đó xoá dòng lệnh shuffle đi ⇒ ĐỎ, kể cả khi câu văn giải thích vẫn còn nguyên.
    * ════════════════════════════════════════════════════════════════════════════════════════════ */
   it("★★★★ B4 — §Cổng kiểm chung phải chứa một LỆNH `--sequence.shuffle.tests` trong khối ```", () => {
-    const md = readFileSync(KE_HOACH, "utf8");
+    const md = docMaNguon(KE_HOACH);
     const i = md.indexOf("**Cổng kiểm chung");
     expect(i, "không tìm thấy §Cổng kiểm chung trong kế hoạch").toBeGreaterThan(-1);
     /** Mọi khối ``` sau tiêu đề §Cổng kiểm chung, cho tới tiêu đề ⚠⚠⚠ đầu tiên của phần lý lẽ. */
@@ -668,7 +670,7 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // ⚠ Nếu hai tập BẰNG nhau thì ca trên là một phép lặp của bộ thứ ba, không thêm sức mạnh nào.
     expect(FILE_TU_KHAI_PHA.length).toBeGreaterThanOrEqual(FILE_PHA_TRONG_CONG.length);
     // ⚠ …và nó KHÔNG được tóm mọi file: một lưới không nhắc pha nào phải nằm ngoài lượng từ.
-    const khongKhai = MOI_FILE.filter((f) => !DAU_KHAI_PHA.test(readFileSync(f.that, "utf8")));
+    const khongKhai = MOI_FILE.filter((f) => !DAU_KHAI_PHA.test(docMaNguon(f.that)));
     expect(khongKhai.length, "MỌI file test đều tự khai một pha? ⇒ mẫu đang bắt bừa").toBeGreaterThan(100);
   });
 

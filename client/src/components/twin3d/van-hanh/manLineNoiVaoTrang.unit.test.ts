@@ -32,16 +32,17 @@
  *   một thiết bị đo luôn báo ĐẠT không đo gì cả.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { phamViCuaManLine } from "./manLine";
 import { trongPhamVi } from "./phamViCanh";
 
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
 const GOC = resolve(__dirname, "../../../..");
 
 /** G92 — mã của trang, ĐÃ TƯỚC mọi chú thích. */
-const MA = readFileSync(resolve(GOC, "src/pages/TwinLine.tsx"), "utf8")
+const MA = docMaNguon(resolve(GOC, "src/pages/TwinLine.tsx"))
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/^\s*\/\/.*$/gm, "");
 
@@ -393,7 +394,7 @@ describe("★★★ ⑧c Khung phải TRỪ vỏ ứng dụng bằng số ĐO, k
     expect(MA).toContain('useTruDinhKhung(khungRef, "--twin-line-top")');
     // ★ Hook có một `useEffect` THẬT đo `top` rồi ghi biến — nếu không, `5rem` mồi thành số CUỐI.
     //   Đọc từ CHÍNH tệp hook (đã tước chú thích), không tin tên hàm.
-    const hook = readFileSync(resolve(GOC, "src/components/twin3d/van-hanh/useTruDinhKhung.ts"), "utf8")
+    const hook = docMaNguon(resolve(GOC, "src/components/twin3d/van-hanh/useTruDinhKhung.ts"))
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");
     expect(hook).toContain("getBoundingClientRect().top");
@@ -454,7 +455,7 @@ describe("★★★ ⑨ G37 — đúng MỘT chỗ đọc route; thân không t�
 /* ⑩ HẠNG B — G67 + §11b: cổng quyền và cái KHÔNG được xoá nhầm                */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-const MA_APP = readFileSync(resolve(GOC, "src/App.tsx"), "utf8")
+const MA_APP = docMaNguon(resolve(GOC, "src/App.tsx"))
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/^\s*\/\/.*$/gm, "");
 
@@ -542,7 +543,7 @@ describe("Đợt 38 — TwinLine: nhãn 3D dùng mã NGẮN (tiền tố chung c
     expect(MA).toContain("dungCanhBao3D(andonRows, mayVe, maTheoMay)");
   });
   it("★★★ kit: `LopNhan` ước lượng bề rộng theo CHỮ cho nhãn chưa đo (`uocLuongRongNhanPx`), không dùng 150 px mặc định", () => {
-    const lop = readFileSync(resolve(GOC, "src/components/twin3d/loi/LopNhan.tsx"), "utf8");
+    const lop = docMaNguon(resolve(GOC, "src/components/twin3d/loi/LopNhan.tsx"));
     expect(lop).toContain("rongPx: co?.rongPx ?? uocLuongRongNhanPx(n.phu ? `${n.ma} · ${n.phu}` : n.ma)");
   });
 });

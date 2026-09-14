@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -136,10 +138,8 @@ describe("ROLE=api — nhật ký BẬT, đối chiếu TẮT", () => {
  * `server/worker.smoke.test.ts` ("binds no HTTP").
  */
 describe("worker — runWorkerProcess() PHẢI tự bật nhật ký (không dựa vào index.ts)", () => {
-  const backgroundJobsSrc = fs.readFileSync(
-    path.join(HERE, "..", "..", "_core", "backgroundJobs.ts"),
-    "utf-8",
-  );
+  const backgroundJobsSrc = docMaNguon(
+    path.join(HERE, "..", "..", "_core", "backgroundJobs.ts"));
 
   it("thân hàm runWorkerProcess() gọi __setVramLogTimerEnabled(true)", () => {
     const body = extractFunctionBody(backgroundJobsSrc, "runWorkerProcess");
@@ -162,7 +162,7 @@ describe("worker — runWorkerProcess() PHẢI tự bật nhật ký (không d�
  * theo cả server.
  */
 describe("I-4 — `api` CÓ nhịp đối chiếu (chỉ TẮT CHUÔNG), không phải mù vĩnh viễn", () => {
-  const indexSrc = fs.readFileSync(path.join(HERE, "..", "..", "_core", "index.ts"), "utf-8");
+  const indexSrc = docMaNguon(path.join(HERE, "..", "..", "_core", "index.ts"));
 
   it("★★★ `startVramReconciler()` được gọi TRƯỚC nhánh rẽ `SERVER_ROLE === \"api\"`", () => {
     const batNhip = indexSrc.indexOf("startVramReconciler({");
@@ -198,7 +198,7 @@ describe("I-4 — `api` CÓ nhịp đối chiếu (chỉ TẮT CHUÔNG), không 
   });
 
   it("★★★ `__runReconcileTick()` xuất bản ô quyết định BẤT KỂ `ring`", async () => {
-    const reconcilerSrc = fs.readFileSync(path.join(HERE, "vramReconciler.ts"), "utf-8");
+    const reconcilerSrc = docMaNguon(path.join(HERE, "vramReconciler.ts"));
     const body = extractFunctionBody(reconcilerSrc, "__runReconcileTick");
     expect(body, "không tìm thấy __runReconcileTick").not.toBe("");
     expect(body).toMatch(/publishDecisionTick\(/);
@@ -216,7 +216,7 @@ describe("I-4 — `api` CÓ nhịp đối chiếu (chỉ TẮT CHUÔNG), không 
      */
     const cum = ["mù", "VĨNH VIỄN"].join(" ");
     for (const rel of ["vramWiring.ts", "vramEnforcement.ts", "vramReconciler.ts"]) {
-      const src = fs.readFileSync(path.join(HERE, rel), "utf-8");
+      const src = docMaNguon(path.join(HERE, rel));
       for (let i = src.indexOf(cum); i !== -1; i = src.indexOf(cum, i + 1)) {
         const quanh = src.slice(Math.max(0, i - 200), i + 200);
         expect(

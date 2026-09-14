@@ -7244,6 +7244,43 @@ Suite 3 ĐỎ → **6/6 XANH**; ablation trên bản dựng `99d9a635` ⇒ **3 �
 > #### ★★★ G149 - **MỘT LỐI VÀO CÓ HAI HREF: href ĐIỀU HƯỚNG và href TRA QUYỀN — lệch nhau là hỏng cả hai chiều, và chiều "bị giấu" không ai báo lỗi.**
 > Ô Layout điều hướng tới `/twin-studio` nhưng tra quyền của `/digital-twin`: người có `analytics_oee` **thấy ô rồi bị chặn**; người có `machine_control` — kể cả vai seed thật `engineer1` — **không thấy ô dù vào được**. Chiều thứ hai **không sinh lỗi, không ai phàn nàn**, nên sống lâu hơn. **Bất biến: href điều hướng và href tra quyền phải là MỘT hằng; tập quyền rỗng ⇒ ẩn (fail-closed); và phải đo cả chiều "thấy" lẫn chiều "vào được" bằng vai thật.** Còn **nơi thứ ba chưa đo**: `domains.ts` — 8 ô trên Home **không có trường quyền nào**.
 
+### 14q.40 Đợt 63 — lưới xanh nhờ TRẠNG THÁI ĐĨA, không nhờ nội dung repo (2026-09-14, 3 commit `92ed9e21…31b9b5e2`)
+
+**Nguồn:** phiên `avi-aoi-management-39` chạy lưới twin3d trên bản merge và thấy **2/2 539 ca đỏ** mà cây `client/` giống hệt nhánh twin. Họ truy đúng: hai ca đọc mã nguồn từ đĩa rồi so chuỗi có `
+` cứng — worktree `_twin_wt` có `w/lf` (tệp do công cụ ghi) nên xanh; bản `git checkout` sạch của Windows có `w/crlf` nên đỏ. **Lỗi của tôi, họ tìm ra.**
+
+**Tái hiện trước khi vá** (`git clone --shared` vào thư mục tạm — **không** `git worktree add`, thứ đó ghi metadata vào `.git` mà phiên khác đang dùng): cùng commit `5b67a1b4`, `ls-files --eol` → `i/lf w/crlf`, `od -c` thấy `
+`, `CR=427 LF=427` vs cây LF `CR=0 LF=427`. Chạy 2 ca: **CRLF 2 failed / 48 passed · LF 50 passed**.
+
+**Quét cả lớp lỗi (G110), và phép đo chính không phải grep mà là CHẠY cả bộ trên hai cây rồi lấy hiệu:** **313 tệp** test đọc tệp từ đĩa (brief tôi ghi 288 — lệch +25). CRLF 5 435 ca/68 đỏ vs LF 5 466 ca/70 đỏ ⇒ **64 ca đỏ ở cả hai = nợ có sẵn**; **4 ca chỉ đỏ trên CRLF** → soi kỹ: **2 là EOL thật**, 2 ca kia là **ENOENT do đua tệp probe tạm** (chạy riêng thì xanh). Phân loại theo **luồng dữ liệu** (biến nhận giá trị từ `readFileSync` rồi bị đem đi làm gì): **(A) 63 · (B) 250**; trong 63 có **38 tệp cơ chế thật**, **25 tệp là dương tính giả** (đối chứng: cả 25 xanh trên CRLF).
+
+**Vá — một chỗ, không rải rác:** helper `shared/testing/docMaNguon.ts` chuẩn hoá `
+` → `
+`; **25 tệp / 59 chỗ đọc** chuyển sang dùng; **0 assertion về nội dung bị đổi**. ★ Repo **đã biết lớp lỗi này và vá lẻ**: 9 tệp họ `aiCodingWorkspace*` tự `.replace(/
+/g,"
+")` — biết mà không gom thành một chỗ nên 25 tệp khác vẫn vỡ.
+
+| `vitest twin3d` | cây LF | cây CRLF |
+|---|---|---|
+| trước vá `5b67a1b4` | 109/**2 539 xanh** | 107/109 · **2 537 xanh / 2 ĐỎ** |
+| sau vá `92ed9e21` | 109/**2 539 xanh** | 109/**2 539 XANH** |
+
+**Sổ nợ `.gitattributes` — số đo BÁC BỎ phần "hại" tôi viết trong brief.** Đo trên clone dùng một lần: **7 390/7 390 blob văn bản đã là `i/lf`**, `i/crlf` = 0 · `git add --renormalize .` stage **0 tệp** · commit sẽ chạm **đúng 1 tệp** (`.gitattributes`) · `git status` trên cây đang CRLF **0 tệp báo đổi** ⇒ **không gây xung đột cho nhánh/phiên nào**. Cái giá thật: 7 390 tệp lật CRLF→LF trên đĩa ở lần checkout kế (mất cache một lần) và **12 tệp phải miễn trừ**, rủi ro thật là `gradlew.bat`. Bối cảnh: worktree "LF" này thực ra **lẫn EOL** — 5 142 `w/crlf` / 2 228 `w/lf` / 17 `w/mixed`.
+
+**Làm rõ ba con số lưới phạm vi** (ba lệnh khác nhau, cả ba đúng): `vitest run phamVi` toàn repo = **17 tệp/437 ca** · chỉ `server/` = **15/335** (phiên kia; thiếu `phamViLine`+`phamViCanh` phía client) · bộ lọc hẹp Đợt 49/52/54 = **4/180**.
+
+**Lỗi của agent — 6, hai cái thuộc loại "công cụ nói dối":** ① `grep -c $''` trong Git Bash trả **0** trên tệp CRLF thật (grep MSYS nuốt ``) ⇒ suýt kết luận clone vẫn LF, phải đo bằng `od -c`; ② `grep 'replace(/'` trả 0 ⇒ suýt viết "chưa ai từng chuẩn hoá EOL" trong khi **9 tệp đã có**; ③ suýt báo "brief bỏ sót 2 ca đỏ" — cô lập mới ra là đua probe; ④ chèn dòng import LF vào 14 tệp CRLF ⇒ **tự tạo 14 tệp `w/mixed`**, đã sửa về 0.
+
+> #### ★★★ G150 - **LƯỚI CÓ THỂ XANH NHỜ TRẠNG THÁI ĐĨA CỦA MỘT WORKTREE, KHÔNG NHỜ NỘI DUNG REPO.**
+> Hai ca chứng nhận hợp đồng mã nguồn suốt nhiều đợt, xanh chỉ vì tệp trên đĩa đang là LF; blob trong git giống hệt nhau. **Mọi test đọc tệp từ đĩa rồi so nội dung phải chuẩn hoá EOL tại một chỗ dùng chung** (`docMaNguon`), và khi nghi ngờ thì **tái hiện trên bản checkout sạch**, không suy luận. Hệ quả rộng hơn: `git ls-files --eol` là thiết bị đo, `grep $''` trong Git Bash thì **không** (MSYS nuốt ``) — dùng `od -c`.
+
+> #### ★★ G151 - **CHẠY CẢ BỘ TRÊN HAI MÔI TRƯỜNG RỒI LẤY HIỆU — nhưng nhớ rằng "chỉ đỏ ở một bên" chưa đủ để kết tội.**
+> 4 ca chỉ đỏ trên CRLF: 2 là EOL thật, 2 là **đua tệp probe tạm** (census test ghi tệp tạm vào cây repo trong khi census khác đang quét ⇒ ENOENT, nạn nhân đổi mỗi lần chạy). Phải **cô lập từng ca** trước khi quy nguyên nhân. Và phép đo này chỉ bắt biến thể **ĐỎ**, không bắt biến thể **CÂM** (`not.toContain(<dòng cắt từ đĩa>)` thành đúng-tầm-thường) ⇒ "0 ca còn đỏ" **≠** "0 ca còn phụ thuộc EOL".
+
+**Còn mở:** 13/38 tệp nhóm (A) chưa vá (mỗi tệp có lý do: đã tự chuẩn hoá · dương tính giả · cố ý không vá vì đọc đầu ra của chính mã đang bị kiểm) · `server/services/aiCodingDot02.stream.test.ts:218` cắt dòng từ `.cs` CRLF — phía so sánh do **mã sản xuất** dựng nên cần người quyết · **10/313 tệp chưa từng được đo** (2 spec Playwright, 3 `*.test.mjs`, 5 `vscode-extension/test-real-host/` — trong đó có đúng một tệp tên `eolBom.test.ts`) · lớp lỗi mới **đua tệp probe tạm** (7 tệp đo được) · quyết định `.gitattributes` chờ chủ sở hữu.
+
+**Sự cố cần nói:** cuối đợt **3001 (PID 14228) / 3008 (PID 29676) không còn sống**. Agent khai không chạy lệnh kill nào, không mở cổng nào, không chạm `dist/` — nhưng **không đo lúc bắt đầu** nên không chứng minh được chúng chết từ trước (đúng tinh thần G139: không có phép đo nền thì không có kết luận). Chủ dự án đã bật lại: PID mới **32528 (3001) / 10144 (3008)**, bundle `index-knE81yYW.js`, cả hai 200.
+
 ## 14n. §15 — THIẾT KẾ LẠI 3D TWIN BA CẤP: NHÀ MÁY → LINE → MÁY (ĐỢT 25, 2026-09-09)
 
 > **Vì sao mục này mang số 14n chứ không phải 15.** Tệp này **đã có `## 15. Tiêu chí nghiệm thu tổng
