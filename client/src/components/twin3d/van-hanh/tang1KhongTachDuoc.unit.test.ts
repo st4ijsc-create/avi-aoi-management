@@ -65,11 +65,12 @@
  *   tới `refetchInterval`. Chừng nào ② còn đó, mọi phương án đều là vòng tròn.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
 const GOC = resolve(__dirname, "../../../..");
-const TRANG = readFileSync(resolve(GOC, "src/pages/TwinVanHanh.tsx"), "utf8");
+const TRANG = docMaNguon(resolve(GOC, "src/pages/TwinVanHanh.tsx"));
 
 /** Số dòng (1-based) của lần khai đầu tiên; `-1` nếu không có. */
 const dongKhai = (ten: string) => {

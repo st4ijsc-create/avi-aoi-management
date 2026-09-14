@@ -20,8 +20,10 @@
  * Bỏ dòng gác đi ⇒ câu 3 đỏ. Thêm một điểm nạp mới ở đâu đó ⇒ câu 1 đỏ.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 const GOC = resolve(process.cwd(), "server");
 
@@ -78,7 +80,7 @@ describe("G1-D — điểm nghẽn nạp model: vị từ trên MÃ NGUỒN, kh�
   it("★ câu 1: trong server/** chỉ có ĐÚNG những điểm gọi `.loadModel(` đã ghi nhận", () => {
     const thay = new Map<string, number>();
     for (const p of tep) {
-      const n = (bocTruiChuThich(readFileSync(p, "utf8")).match(/\.loadModel\s*\(/g) || []).length;
+      const n = (bocTruiChuThich(docMaNguon(p)).match(/\.loadModel\s*\(/g) || []).length;
       if (n > 0) thay.set(relative(GOC, p).replace(/\\/g, "/"), n);
     }
     const mong = new Map(DIEM_NAP_DUOC_PHEP.map((d) => [d.tep, d.so]));
@@ -90,7 +92,7 @@ describe("G1-D — điểm nghẽn nạp model: vị từ trên MÃ NGUỒN, kh�
     ).toEqual(Object.fromEntries([...mong].sort()));
   });
 
-  const nguon = readFileSync(join(GOC, "services", "aiGgufEngine.ts"), "utf8");
+  const nguon = docMaNguon(join(GOC, "services", "aiGgufEngine.ts"));
   const than = (() => {
     const i = nguon.indexOf("export async function loadGgufModel(");
     expect(i, "không tìm thấy loadGgufModel() — brief/lưới đã lệch khỏi mã").toBeGreaterThan(0);

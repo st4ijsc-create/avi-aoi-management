@@ -30,10 +30,12 @@
  * chỉ có một cách duy nhất đi qua: strip đúng comment CŨ và vẫn thấy mã MỚI.
  */
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync, statSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { readdirSync, statSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -111,7 +113,7 @@ function boCacKhoiTrenDong(line: string, dangTrongKhoi: boolean): { text: string
  * docblock của hàm đó cho lý do cần tách riêng).
  */
 function dongMaKhongComment(filePath: string): string[] {
-  const lines = readFileSync(filePath, "utf8").split("\n");
+  const lines = docMaNguon(filePath).split("\n");
   const out: string[] = [];
   let inBlock = false;
   for (const ln of lines) {
@@ -257,7 +259,7 @@ function quetFakeUtcAst(goc: string = SERVER_ROOT): FakeUtcHit[] {
   const ket: FakeUtcHit[] = [];
   for (const file of walkTs(goc)) {
     const rel = relative(SERVER_ROOT, file).split("\\").join("/");
-    ket.push(...quetFakeUtcAstTuVanBan(rel, readFileSync(file, "utf8")));
+    ket.push(...quetFakeUtcAstTuVanBan(rel, docMaNguon(file)));
   }
   return ket;
 }
@@ -285,7 +287,7 @@ describe("BG-96 — census cấm fake-UTC tái sinh (server/**, comment không t
 
   it("cầu chì 2 — bẫy đã biết PHẢI còn tồn tại (nếu không, ca dưới đây canh một bẫy ma)", () => {
     for (const rel of FILE_CO_COMMENT_BAY) {
-      const raw = readFileSync(join(SERVER_ROOT, rel), "utf8");
+      const raw = docMaNguon(join(SERVER_ROOT, rel));
       expect(
         RE_FAKE_UTC.test(raw),
         `${rel}: không còn chứa mẫu trong văn bản thô — bẫy đã biến mất, gỡ file này khỏi FILE_CO_COMMENT_BAY`,
@@ -652,7 +654,7 @@ function quetBg99Ast(relFiles: readonly string[], goc: string): Bg99Hit[] {
   for (const rel of relFiles) {
     const full = join(goc, rel);
     if (!existsSync(full)) continue;
-    ket.push(...quetBg99AstTuVanBan(rel, readFileSync(full, "utf8")));
+    ket.push(...quetBg99AstTuVanBan(rel, docMaNguon(full)));
   }
   return ket;
 }
@@ -706,7 +708,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     // Cầu chì đối chứng — xác nhận rớt khỏi danh sách vì ĐÃ DI TRÚ (0 new
     // Date(...) THẬT trong CHÍNH file), không phải bộ quét bị hỏng.
     expect(
-      /new Date\(\s*[^)\s]/.test(readFileSync(join(SERVER_ROOT, "services/ingestCayKetQua.ts"), "utf8")),
+      /new Date\(\s*[^)\s]/.test(docMaNguon(join(SERVER_ROOT, "services/ingestCayKetQua.ts"))),
       "cầu chì: services/ingestCayKetQua.ts phải THẬT SỰ 0 new Date(đối số) — nếu có, nó phải xuất hiện lại trong FILE_INGEST_BG99, kiểm lại bộ quét",
     ).toBe(false);
   });
@@ -878,7 +880,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
 
   it("★★★ ĐỘT BIẾN THẬT (I-5.1, review lượt 9 §6-1): inspection.ts quay lại `new Date(iso)` trong toDateOrUndefined ⇒ census AST PHẢI bắt (không chạm đĩa)", () => {
     const rel = "db/inspection.ts";
-    const goc = readFileSync(join(SERVER_ROOT, rel), "utf8");
+    const goc = docMaNguon(join(SERVER_ROOT, rel));
     const DONG_GOC = "  return iso === undefined ? undefined : docGioMay(iso) ?? undefined;";
     expect(
       goc.includes(DONG_GOC),
@@ -896,7 +898,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
     ).toBeGreaterThan(0);
 
     // Đột biến chỉ sống trong biến `maDotBien` — chưa từng `writeFileSync`.
-    const docLai = readFileSync(join(SERVER_ROOT, rel), "utf8");
+    const docLai = docMaNguon(join(SERVER_ROOT, rel));
     expect(docLai).toBe(goc);
   });
 

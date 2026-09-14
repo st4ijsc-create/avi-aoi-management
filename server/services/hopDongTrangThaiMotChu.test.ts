@@ -18,9 +18,11 @@
  * ★ Tầng hành vi của cùng bản vá nằm ở `trangThaiMayTuoi.test.ts`; tầng SỐNG (6 bề mặt trên dist,
  *   có chèn nhịp tim `now()`) ở `.qa-dot53/hopdong53.mjs` + `.qa-dot53/hd-<tag>/tong.json`.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 const GOC = resolve(__dirname, "../..");
 
@@ -73,7 +75,7 @@ const TEP = quetTs(resolve(GOC, "server"));
 /** Mọi chỗ GỌI `mapMachineStatus(` trong mã sản phẩm (bỏ dòng khai báo hàm và chú thích). */
 const CHO_GOI: { tep: string; dong: number; doiSo2: string; nguon: string }[] = [];
 for (const p of TEP) {
-  const src = readFileSync(p, "utf8");
+  const src = docMaNguon(p);
   let tu = 0;
   for (;;) {
     const i = src.indexOf("mapMachineStatus(", tu);
@@ -128,7 +130,7 @@ describe("★★★ Đợt 53 — MỘT hợp đồng trạng thái: không ch�
   });
 
   it("★★★ `assetCockpitService` ĐỌC `operationStatus` trong ĐÚNG truy vấn đã có (0 truy vấn thêm)", () => {
-    const src = readFileSync(resolve(GOC, "server/services/ecosystem/assetCockpitService.ts"), "utf8");
+    const src = docMaNguon(resolve(GOC, "server/services/ecosystem/assetCockpitService.ts"));
     expect(src).toMatch(
       /\.select\(\{\s*lastHeartbeat: machinesTable\.lastHeartbeat,\s*operationStatus: machinesTable\.operationStatus\s*\}\)/,
     );
@@ -140,7 +142,7 @@ describe("★★★ Đợt 53 — MỘT hợp đồng trạng thái: không ch�
   });
 
   it("★ `factoryCommand.machineDetail` lấy `operationStatus` từ hợp đồng liveState (nơi dữ kiện từng rơi)", () => {
-    const src = readFileSync(resolve(GOC, "server/services/factoryCommandService.ts"), "utf8");
+    const src = docMaNguon(resolve(GOC, "server/services/factoryCommandService.ts"));
     expect(src).toMatch(/detail\.liveState\.value\?\.operationStatus/);
   });
 });

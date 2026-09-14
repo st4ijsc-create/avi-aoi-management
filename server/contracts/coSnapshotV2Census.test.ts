@@ -23,9 +23,10 @@
 // trị (`# SPEC_GATE_SNAPSHOT_ENABLED=false`) ⇒ §1 phải ĐỎ — đúng hình dạng lỗ mà
 // C-1 mô tả.
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ENV_EXAMPLE = resolve(REPO_ROOT, ".env.example");
@@ -59,12 +60,12 @@ function gomKhoiCommentPhiaTren(dongs: readonly string[], idx: number): string {
 
 describe("C-1 census — SPEC_GATE_SNAPSHOT_ENABLED không được TẮT IM LẶNG (.env.example)", () => {
   it("cầu chì: .env.example phải đọc được và không rỗng", () => {
-    const raw = readFileSync(ENV_EXAMPLE, "utf8");
+    const raw = docMaNguon(ENV_EXAMPLE);
     expect(raw.length, ".env.example rỗng/đọc lỗi — census đang canh một tệp trống").toBeGreaterThan(1000);
   });
 
   it("★★★ BẤT BIẾN §1: .env.example phải có SPEC_GATE_SNAPSHOT_ENABLED= là GIÁ TRỊ THẬT, không phải chú thích", () => {
-    const dongs = readFileSync(ENV_EXAMPLE, "utf8").split("\n");
+    const dongs = docMaNguon(ENV_EXAMPLE).split("\n");
     const idx = timDongGiaTri(dongs);
     expect(
       idx,
@@ -74,7 +75,7 @@ describe("C-1 census — SPEC_GATE_SNAPSHOT_ENABLED không được TẮT IM L�
   });
 
   it("§2: dòng giá trị phải đi kèm KHỐI COMMENT liền kề giải thích hệ quả CẢ HAI trạng thái (TẮT/BẬT/hạ oan)", () => {
-    const dongs = readFileSync(ENV_EXAMPLE, "utf8").split("\n");
+    const dongs = docMaNguon(ENV_EXAMPLE).split("\n");
     const idx = timDongGiaTri(dongs);
     expect(idx, "§1 phải đứng trước — không có dòng giá trị thì không có gì để đối chiếu").toBeGreaterThanOrEqual(0);
 
@@ -86,7 +87,7 @@ describe("C-1 census — SPEC_GATE_SNAPSHOT_ENABLED không được TẮT IM L�
   });
 
   it("★★★ ĐỘT BIẾN THẬT: comment-hoá lại dòng giá trị (mô phỏng TRONG BỘ NHỚ) ⇒ §1 phải ĐỎ", () => {
-    const goc = readFileSync(ENV_EXAMPLE, "utf8");
+    const goc = docMaNguon(ENV_EXAMPLE);
     const dongs = goc.split("\n");
     const idx = timDongGiaTri(dongs);
     expect(idx, "không tìm thấy dòng giá trị THẬT để đột biến — bộ suy đã đổi neo?").toBeGreaterThanOrEqual(0);
@@ -100,7 +101,7 @@ describe("C-1 census — SPEC_GATE_SNAPSHOT_ENABLED không được TẮT IM L�
     ).toBe(-1);
 
     // Đột biến chỉ sống trong biến `dotBien` — chưa từng ghi đĩa. Đọc lại xác nhận.
-    const docLai = readFileSync(ENV_EXAMPLE, "utf8");
+    const docLai = docMaNguon(ENV_EXAMPLE);
     expect(docLai).toBe(goc);
   });
 

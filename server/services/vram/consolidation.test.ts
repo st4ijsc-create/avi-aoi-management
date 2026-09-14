@@ -85,6 +85,8 @@ import {
 import { formatVramRefusal } from "./vramRefusal";
 import type { VramLeaseKind, VramPriority, VramReclaimerId, VramReserveRequest } from "./types";
 
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
 const MIB = 1024 * 1024;
 const NOW = 1_800_000_000_000;
 /** Ràng buộc 7 — khối 30B, con số của thiết bị thật. */
@@ -306,7 +308,7 @@ describe("A. `enforceVramGuard()` XOÁ — trần nay là của BROKER, và nó 
    */
   it("★★★ cụm chữ của lượt tràn im lặng KHÔNG CÒN Ở MÃ SẢN XUẤT (điều kiện ra #7, kiểm bằng MÁY)", async () => {
     const CUM = ["temporary", "overflow"].join(" ");
-    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { readdirSync, statSync } = await import("node:fs");
     const { join, dirname } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
     const goc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -319,7 +321,7 @@ describe("A. `enforceVramGuard()` XOÁ — trần nay là của BROKER, và nó 
         if (e.isDirectory()) { duyet(p); continue; }
         if (!/\.(ts|tsx|js|mjs|cjs|cs)$/.test(e.name)) continue;
         if (statSync(p).size > 4_000_000) continue;
-        if (readFileSync(p, "utf8").includes(CUM)) dinh.push(p);
+        if (docMaNguon(p).includes(CUM)) dinh.push(p);
       }
     };
     for (const t of thuMuc) {
@@ -712,11 +714,10 @@ describe("C-bis. LƯỚI THEO ĐƯỜNG THOÁT — `beginVramAllocation()` là n
 
     // ⚠ ĐƯỜNG DỰ PHÒNG (`vramLoadOutcome` không nạp được) dùng CÙNG hàm này — khoá lại bằng MÁY để
     // hai đường không trôi khỏi nhau (bản trước viết object hai lần, mỗi lần một chỗ).
-    const { readFileSync } = await import("node:fs");
     const { join, dirname } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
     const goc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-    const src = readFileSync(join(goc, "server/services/aiGgufEngine.ts"), "utf8");
+    const src = docMaNguon(join(goc, "server/services/aiGgufEngine.ts"));
     const soLuotDung = src.match(/ggufModelVramRequest\(modelId, resolvedPath\)/g) ?? [];
     expect(soLuotDung.length, "cả ĐƯỜNG CHÍNH lẫn ĐƯỜNG DỰ PHÒNG phải dùng hàm thuần").toBe(2);
   });
@@ -804,12 +805,11 @@ describe("E. `AI_SESSION_CACHE_MAX` — MỘT người đọc cho CẢ HAI kho p
     __resetVramCapsForTests();
     expect(sessionCacheMax()).toBe(3);
 
-    const { readFileSync } = await import("node:fs");
     const { join, dirname } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
     const goc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
     for (const f of ["server/services/aiInferenceEngine.ts", "server/services/ai/ocrService.ts"]) {
-      const src = readFileSync(join(goc, f), "utf8");
+      const src = docMaNguon(join(goc, f));
       expect(src, `${f} phải NHẬP trần từ vramCaps`).toMatch(/from "\.\.?\/(\.\.\/)?vram\/vramCaps"/);
       // ⚠ Ca này canh SỰ HIỆN DIỆN của một người đọc duy nhất; hành vi "kho có trần" được canh
       // bằng ca hành vi ở `ai/ocrService` (xem `donKhoPhienOcr`) và `aiInferenceEngine`.
@@ -818,11 +818,10 @@ describe("E. `AI_SESSION_CACHE_MAX` — MỘT người đọc cho CẢ HAI kho p
   });
 
   it("★★ `recSessionCache` của ocrService KHÔNG còn là `Map` không giới hạn", async () => {
-    const { readFileSync } = await import("node:fs");
     const { join, dirname } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
     const goc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-    const src = readFileSync(join(goc, "server/services/ai/ocrService.ts"), "utf8");
+    const src = docMaNguon(join(goc, "server/services/ai/ocrService.ts"));
     // có một lượt dọn, và nó chạy trên đường ghi cache
     expect(src).toMatch(/function donKhoPhienOcr\(\)/);
     expect(src).toMatch(/recSessionCache\.set\(modelPath, session\);\s*\n[\s\S]{0,200}?donKhoPhienOcr\(\);/);

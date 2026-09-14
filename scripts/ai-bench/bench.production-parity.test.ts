@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 /**
  * Trích thân hàm `function <name>(...)` cho tới khai báo hàm TOP-LEVEL kế tiếp.
@@ -44,7 +45,7 @@ function extractFunctionBody(src: string, functionName: string): string {
  *  xuất. Test này không đo VRAM — nó khẳng định bench KHÔNG còn hard-code tham
  *  số context riêng, mà lấy từ cùng nguồn với sản xuất. */
 describe("bench.mjs — khớp đường sản xuất", () => {
-  const src = readFileSync("scripts/ai-bench/bench.mjs", "utf8");
+  const src = docMaNguon("scripts/ai-bench/bench.mjs");
 
   it("KHÔNG còn hard-code contextSize 'auto' cho embedding", () => {
     expect(src).not.toMatch(/createEmbeddingContext\(\{\s*contextSize:\s*"auto"/);

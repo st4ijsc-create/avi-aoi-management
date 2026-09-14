@@ -67,6 +67,8 @@ import {
   PERMIT_SYMBOL_OCCURRENCES_THAT_ARE_NOT_CALL_SITES,
 } from "./vramAllocationSites";
 
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
 /** Bỏ chú thích. GIỮ nội dung chuỗi. Giữ nguyên số dòng. */
 export function stripComments(src: string): string {
   return scrub(src, false);
@@ -268,7 +270,7 @@ function scanRepo(): Map<string, number> {
       const rel = path.relative(REPO_ROOT, fileAbs).split(path.sep).join("/");
       if (!SCAN_EXTS.some((x) => rel.endsWith(x))) continue;
       if (isTestFile(rel) || SELF_EXCLUDED.has(rel)) continue;
-      const raw = fs.readFileSync(fileAbs, "utf8");
+      const raw = docMaNguon(fileAbs);
       const noStrings = stripCommentsAndStrings(raw);
       const keepStrings = stripComments(raw);
       for (const [symbol, re] of Object.entries(CALL_PATTERNS)) {
@@ -507,7 +509,7 @@ describe("Pha 2A Task 5 — bản liệt kê đường cấp phát VRAM", () => 
       const abs = path.join(REPO_ROOT, rel);
       expect(fs.existsSync(abs), `${rel} biến mất ⇒ mục N-6b của bản liệt kê đã cũ`).toBe(true);
       expect(
-        /cuda/i.test(fs.readFileSync(abs, "utf8")),
+        /cuda/i.test(docMaNguon(abs)),
         `${rel} thôi chạm CUDA ⇒ đọc lại mục N-6b (hộ external-process không có số)`,
       ).toBe(true);
     }
@@ -517,7 +519,7 @@ describe("Pha 2A Task 5 — bản liệt kê đường cấp phát VRAM", () => 
     // `vramAllocationSites.ts` bị loại khỏi lượt quét (nó nhắc tên `child_process` trong ghi chú).
     // Việc đó CHỈ an toàn chừng nào nó không import và không gọi được gì. Ca này giữ tính chất đó.
     for (const rel of SELF_EXCLUDED) {
-      const code = stripCommentsAndStrings(fs.readFileSync(path.join(REPO_ROOT, rel), "utf8"));
+      const code = stripCommentsAndStrings(docMaNguon(path.join(REPO_ROOT, rel)));
       expect(/^\s*import\s/m.test(code), `${rel} có câu lệnh import ⇒ không còn là module chỉ-dữ-liệu`).toBe(false);
       expect(/\brequire\s*\(/.test(code), `${rel} có require() ⇒ không còn là module chỉ-dữ-liệu`).toBe(false);
       for (const [symbol, re] of Object.entries(CALL_PATTERNS)) {

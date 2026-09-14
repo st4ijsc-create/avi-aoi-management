@@ -16,13 +16,14 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { SO_BUOC_DOI_CHO, locBadge, type BadgeUngVien } from "./locBadge";
 import { ghiSoAn, docSoAn, xoaSoAn, LOP_BADGE } from "../loi/hopDaVe";
 
-const doc = (p: string) => readFileSync(resolve(process.cwd(), p), "utf8");
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
+const doc = (p: string) => docMaNguon(resolve(process.cwd(), p));
 const LOP_NHAN = doc("client/src/components/twin3d/loi/LopNhan.tsx");
 const LOP_CANH_BAO = doc("client/src/components/twin3d/van-hanh/LopCanhBao.tsx");
 const CANH_VAN_HANH = doc("client/src/components/twin3d/van-hanh/CanhVanHanh.tsx");

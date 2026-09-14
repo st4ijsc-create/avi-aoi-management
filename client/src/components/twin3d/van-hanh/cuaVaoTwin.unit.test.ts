@@ -12,12 +12,14 @@
  *   bằng `.qa-dot33/do.mjs` (K1–K9) — hai thiết bị đo độc lập, không thay nhau.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 const GOC = resolve(__dirname, "../../../..");
 function docSach(duongDan: string): string {
-  return readFileSync(resolve(GOC, duongDan), "utf8")
+  return docMaNguon(resolve(GOC, duongDan))
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 }

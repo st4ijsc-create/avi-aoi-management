@@ -34,13 +34,14 @@
  *   không dựng nổi trong `environment: "node"`.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 const GOC = resolve(__dirname, "../../../..");
 
 /** G92 — TƯỚC CHÚ THÍCH trước khi đo: docblock của trang nhắc mọi tên ở dưới. */
-const MA = readFileSync(resolve(GOC, "src/pages/TwinVanHanh.tsx"), "utf8")
+const MA = docMaNguon(resolve(GOC, "src/pages/TwinVanHanh.tsx"))
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/^\s*\/\/.*$/gm, "");
 

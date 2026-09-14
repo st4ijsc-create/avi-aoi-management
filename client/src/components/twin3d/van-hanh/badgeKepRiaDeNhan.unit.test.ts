@@ -37,12 +37,13 @@
  * TẦNG 2 (chỗ nối, văn bản): `LopCanhBao` phải ghi `hopManHinh` và KHÔNG được lọc null trở lại.
  * TẦNG 3 (thị giác, ngoài tệp này): trạng thái `may/co-canh-bao` mới trong lưới 22 trạng thái.
  */
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { hopNhan, locNhan, type NhanUngVien } from "../loi/locNhan";
 import { hopBadge, locBadge, type BadgeUngVien } from "./locBadge";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 /** Diện tích giao của hai hộp, px² — dụng cụ đo ĐỘC LẬP với cả hai thuật toán. */
 function dienTichGiao(
@@ -177,8 +178,8 @@ describe("★★★ Đợt 53 — badge KẸP RÌA phải đi vào sổ hộp ch
 
 describe("★★★ Đợt 53 — CHỖ NỐI: `LopCanhBao` ghi `hopManHinh` vào sổ `hopDaVe` (khuôn `lopCanhBaoNoiVaoCanvas`)", () => {
   const GOC = resolve(__dirname, "../../../..");
-  const LOP_CANH_BAO = readFileSync(resolve(GOC, "src/components/twin3d/van-hanh/LopCanhBao.tsx"), "utf8");
-  const LOC_BADGE = readFileSync(resolve(GOC, "src/components/twin3d/van-hanh/locBadge.ts"), "utf8");
+  const LOP_CANH_BAO = docMaNguon(resolve(GOC, "src/components/twin3d/van-hanh/LopCanhBao.tsx"));
+  const LOC_BADGE = docMaNguon(resolve(GOC, "src/components/twin3d/van-hanh/locBadge.ts"));
 
   it("ghi sổ bằng `u.hopManHinh`", () => {
     expect(LOP_CANH_BAO).toMatch(

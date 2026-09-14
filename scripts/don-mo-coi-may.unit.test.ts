@@ -22,9 +22,11 @@ import { fileURLToPath } from "node:url";
 import { BANG_DON } from "./don-mo-coi-may.ts";
 import { xacMinhCauChi } from "./go-tai-twin.ts";
 
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
 const thuMuc = path.dirname(fileURLToPath(import.meta.url));
-const nguonDon = fs.readFileSync(path.join(thuMuc, "don-mo-coi-may.ts"), "utf8");
-const nguonGo = fs.readFileSync(path.join(thuMuc, "go-tai-twin.ts"), "utf8");
+const nguonDon = docMaNguon(path.join(thuMuc, "don-mo-coi-may.ts"));
+const nguonGo = docMaNguon(path.join(thuMuc, "go-tai-twin.ts"));
 
 /** Bỏ chú thích: docblock ở đây kể lịch sử và có nhắc cả những cách làm ĐÃ BỊ LOẠI. */
 function boChuThich(s: string): string {
