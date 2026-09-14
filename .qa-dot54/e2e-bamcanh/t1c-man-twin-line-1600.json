@@ -1,0 +1,16 @@
+{
+  "luc": "2026-09-12T12:28:56.518Z",
+  "duong": "/twin/line/2",
+  "vp": {
+    "width": 1600,
+    "height": 900
+  },
+  "nhanBamDuoc": {
+    "id": 18,
+    "X": 888.609375,
+    "Y": 530.8125,
+    "chu": "CONVEYOR · Unknown",
+    "soNhan": 12
+  },
+  "urlSau": "http://localhost:3054/twin/may/18"
+}

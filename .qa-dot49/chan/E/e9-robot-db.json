@@ -1,0 +1,29 @@
+{
+ "robots": [
+  {
+   "id": 1,
+   "code": "ROB-SIM-01",
+   "lineId": 1,
+   "stationId": null,
+   "tsUtc": "2026-09-12T01:36:07.615Z",
+   "soTele": 1374683
+  },
+  {
+   "id": 2,
+   "code": "ROB-UR-01",
+   "lineId": 1,
+   "stationId": null,
+   "tsUtc": null,
+   "soTele": 0
+  },
+  {
+   "id": 3,
+   "code": "ROB-FANUC-01",
+   "lineId": 1,
+   "stationId": null,
+   "tsUtc": null,
+   "soTele": 0
+  }
+ ],
+ "bayGio": "2026-09-12T01:36:10.538Z"
+}

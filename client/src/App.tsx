@@ -25,6 +25,8 @@ const AILocalChatBubble = React.lazy(() =>
 );
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { RouteGuard } from "./components/RouteGuard";
+// ★★★ Đợt 21 lô Y (§13b 14.2.3) — 14 đường vào Twin cũ, mỗi đường ≤1 chặng.
+import { traDichCu } from "./components/twin3d/bo-cuc/dinhTuyenTwinCu";
 // ★★★ Pha 7 / I-4 — cổng buộc đổi mật khẩu (bọc CHÍNH `<Router/>`, xem điểm dùng ở cuối file).
 import { CongDoiMatKhau } from "./components/CongDoiMatKhau";
 import DashboardLayout from "./components/DashboardLayout";
@@ -164,13 +166,30 @@ const SupervisorHome = React.lazy(() => import("./pages/SupervisorHome")); // Do
 const ViewerHome = React.lazy(() => import("./pages/ViewerHome")); // Doc 10 U3: viewer/user read-only landing
 const AdminHome = React.lazy(() => import("./pages/AdminHome")); // Doc 10 U5: admin governance briefing landing
 const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U12: request a higher role
-// doc 39 Wave 4 — the 6 twin/3D surfaces are consolidated into one lazy Digital Twin
-// hub (their bodies are imported as *Content there). Legacy routes redirect in.
-const TwinHub = React.lazy(() => import("./pages/TwinHub"));
-// Twin 3D Đợt 0 (spec 2026-09-06) — hai màn mới của Nhà máy 3D. STUB ở đợt này; chiếm
-// chỗ định tuyến sớm để Đ1–Đ6 không cùng sửa App.tsx/navigation.tsx/3 locale (rủi ro R10).
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 26 — TWIN LÀ **HAI TRANG LIÊN KẾT** (§13c.2 QĐ-18, thay QĐ-16)
+// ════════════════════════════════════════════════════════════════════════════
+// Đợt 21 gộp `/twin-studio` vào `/twin`. QĐ-18 (chủ sở hữu, 2026-09-09) ĐẢO
+// NGƯỢC đúng phần gộp ấy — hai màn có hai MỤC ĐÍCH, không phải hai vùng:
+//   • `/twin`         → TRÌNH DIỄN / XEM / REALTIME, **chỉ đọc**
+//   • `/twin-studio`  → THIẾT KẾ / LAYOUT / XÂY DỰNG, **chỉ người có quyền**
+// Hai trang **liên kết** với nhau: `/twin` mang một nút sang `/twin-studio`,
+// và nút ấy chỉ hiện với ai sửa được (luật ẩn-không-disable §12b.3).
+//
+// ⚠ `/digital-twin` VẪN là redirect theo `?tab=` (bảng `dinhTuyenTwinCu.ts`) —
+//   Đợt 21 mua được 14 redirect ≤1 chặng, và đợt này KHÔNG đụng vào phần đó.
+// ⚠ Bảy màn con của hub VẪN CÒN TRÊN ĐĨA (§11b cấm xoá màn) — `RfTestCellSim`
+//   dưới đây là một trong số đó, và nó lấy lại **tuyến thật** `/rf-test-cell`
+//   vì §13b 3g xếp nó NGOÀI Twin (đo được: 0 lời gọi tRPC trong 792 dòng).
 const TwinVanHanh = React.lazy(() => import("./pages/TwinVanHanh"));
 const TwinStudio = React.lazy(() => import("./pages/TwinStudio"));
+// ★★★ Đợt 30 (QĐ-19/QĐ-21) — màn LINE 3D RIÊNG, canvas RIÊNG. Xem khối chú
+//   thích ở `<Route path="/twin/line/:id">` bên dưới.
+const TwinLine = React.lazy(() => import("./pages/TwinLine"));
+// ★★★ Đợt 31 (QĐ-19/QĐ-21) — màn MÁY 3D RIÊNG, canvas RIÊNG. Xem khối chú
+//   thích ở `<Route path="/twin/may/:id">` bên dưới.
+const TwinMay = React.lazy(() => import("./pages/TwinMay"));
+const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim"));
 const CommandCenter = React.lazy(() => import("./pages/CommandCenter")); // U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)
 const ControlTower = React.lazy(() => import("./pages/ControlTower")); // doc 46 FE-W3.1 (D4): persona-configurable Executive Control Tower — consolidates 6 command screens (compose + cross-link)
 const ComparisonStudio = React.lazy(() => import("./pages/ComparisonStudio")); // doc 46 FE-W3.3: unified multi-dim comparison (line/shift/product/period + benchmark)
@@ -316,13 +335,147 @@ function Router() {
       <Route path="/mes-control-tower"><RouteGuard navHref="/mes-control-tower"><MESControlTower /></RouteGuard></Route>
       <Route path="/wip-dashboard"><RouteGuard navHref="/wip-dashboard"><WipLineBalance /></RouteGuard></Route>
       <Route path="/traceability"><RouteGuard navHref="/traceability"><TraceabilityLineage /></RouteGuard></Route>
-      {/* doc 39 Wave 4 — Digital Twin hub consolidates the 6 twin/3D surfaces into one
-          tabbed page; the legacy routes deep-link into their tab. */}
-      <Route path="/digital-twin"><RouteGuard navHref="/digital-twin"><AIPageWrapper><TwinHub /></AIPageWrapper></RouteGuard></Route>
+      {/*
+        ════════════════════════════════════════════════════════════════════
+        ★★★ ĐỢT 21 LÔ Y (§13b 14.2 + §13c.1 QD-16) — `/digital-twin` → `/twin`
+        ════════════════════════════════════════════════════════════════════
+        `/digital-twin` là **vỏ Tabs 140 dòng** (`TwinHub.tsx`); nó không mang
+        nghiệp vụ nào ngoài chính cái vỏ. `/twin` thì đã gộp 13 nguồn dữ liệu,
+        đã có trục URL 6 khoá, đã có honest-null và đã nghiệm thu. Nên gộp về
+        `/twin` chứ không chép 2.746 dòng đã nghiệm thu sang một vỏ chưa.
+
+        ★★★ ĐỢT 61 (QĐ-31) — CÂU CŨ Ở ĐÂY ĐÃ HẾT HẠN, ghi lại thay vì để nguyên:
+          câu cũ ghi "`TwinHub` và cả bảy màn con VẪN CÒN TRÊN ĐĨA (§11b cấm xoá
+          màn)". Khảo sát Đợt 60 đo lại: `TwinHub` **0 route, 0 tệp sản phẩm
+          import** ⇒ nó là MÃ CHẾT, không phải "màn cũ chạy song song". Đợt 61 đã
+          **XOÁ** `TwinHub` + 5 màn con chỉ nó gọi (`DigitalTwinDashboard`,
+          `CellTwinPlayer`, `FactoryLiveMap3D`+`FactoryFloor3D`, `FactoryFloorEditor`).
+          `RfTestCellSim` và `Layout` sống nhờ route riêng.
+
+        ★★★ ĐỢT 62 — `DigitalTwinCenter` (938 dòng) + `ArticulatedRobot` (196) **ĐÃ XOÁ**.
+          Câu Đợt 61 ("còn trên đĩa, giữ `twin.replay`/`twin.status` chưa di trú") hết hạn
+          sau khi ĐO từng tính năng thay vì suy từ tên thủ tục:
+            · USD export ......... ĐÃ có ở `TwinVanHanh.tsx:2213` + `SystemHealth.tsx:592`
+            · cảnh 3D + KPI ...... `/twin` và `/command-center` đã có, giàu hơn
+            · băng "trực tiếp" ... `/twin` có 5 trạng thái + huy hiệu NGUỒN SỐ (mạnh hơn
+                                   banner 3 trạng thái của trang cũ)
+            · replay máy ......... `twin.replay` đọc `packml_state`/`position_*`: ĐO trên DB
+                                   dev = **20 hàng mỗi loại, tất cả trong 2 phút ngày
+                                   2026-09-06, 0 hàng trong 24 h** ⇒ trang trả RỖNG. `/twin`
+                                   có `DongThoiGian` 24 h (xấp xỉ CÓ KHAI).
+            · cánh tay robot FK .. dữ liệu THẬT (1,46 triệu hàng `robot_telemetry`), nhưng
+                                   `/robot/:id` đã đọc đúng dữ liệu ấy bằng thanh 2D — một
+                                   lựa chọn CÓ CHỦ Ý (`RobotCockpit.tsx:15`).
+          **KHÔNG thủ tục server nào bị xoá** — `twin.replay`/`twin.status`/`twin.usdExport`
+          còn nguyên trong `twinRouter`; sổ nợ + đường hồi sinh ở spec §14r, lưới ghim ở
+          `client/src/components/twin3d/noTwinDot62.unit.test.ts`.
+
+        ★★★ `<Redirect>` DƯỚI ĐÂY KHÔNG ĐƯỢC XOÁ THEO. Cái bị bỏ là **mã của vỏ**,
+          không phải **lối vào bằng URL**: bookmark/link cũ vẫn phải tới đúng đích.
+          Không đích nào của bảng `dinhTuyenTwinCu` là một trong các trang vừa xoá
+          (13 đích = `/twin` ×7, `/twin-studio` ×4, `/rf-test-cell` ×1, đo lại Đợt 61).
+
+        ★ Redirect **theo `?tab=`**: bảy tab đi bảy đích khác nhau, nên một
+          `<Redirect to="/twin">` phẳng sẽ nuốt `?tab=rf` (mô phỏng RF, §13b xếp
+          NGOÀI Twin) và `?tab=floor` (vùng sửa). Bảng tra ở
+          `dinhTuyenTwinCu.ts`, và test ở đó cưỡng chế **≤1 chặng** cho cả 14
+          dòng — luật ấy không thể kiểm bằng mắt trên tệp này.
+      */}
+      <Route path="/digital-twin">
+        {() => {
+          const tab = new URLSearchParams(window.location.search).get("tab");
+          return <Redirect to={traDichCu(tab ? `/digital-twin?tab=${tab}` : "/digital-twin") ?? "/twin"} />;
+        }}
+      </Route>
       {/* Twin 3D Đợt 0 (spec 2026-09-06 §6.4) — `navHref` chứ KHÔNG `requirePermission`:
           guard TRA quyền từ chính navGroups, nên mục nav và cổng route KHÔNG THỂ lệch
           nhau. Đó là cách repo chặn lớp lỗi "một lối vào rồi TỪ CHỐI" của Khối D. */}
       <Route path="/twin"><RouteGuard navHref="/twin"><TwinVanHanh /></RouteGuard></Route>
+      {/*
+        ════════════════════════════════════════════════════════════════════
+        ★★★ ĐỢT 30 — QĐ-19 + QĐ-21: MÀN **LINE 3D RIÊNG**, CANVAS RIÊNG
+        ════════════════════════════════════════════════════════════════════
+        Chủ sở hữu chốt 2026-09-09: *"1 màn canvas là dành cho factory thôi,
+        còn Line/Machine là 2 màn hình khác"*. URL **phân cấp** (QĐ-21).
+
+        ★★★ `/twin` KHÔNG NUỐT `/twin/line/2` — ĐO ĐƯỢC, KHÔNG SUY.
+          `bo-cuc/duongDanBaMan.unit.test.ts` (9 ca) đo bằng `regexparam` —
+          CHÍNH bộ khớp mà wouter 3.7.1 `import` bên trong
+          (`node_modules/wouter/esm/index.js:1`, và `regexparam` là dependency
+          khai trong `wouter/package.json`). Nếu điều đó SAI thì triệu chứng là
+          **màn nhà máy hiện ra**, không phải một lỗi (lớp G67: URL bị nuốt im
+          lặng, ghi được, đọc ra thứ khác, không lỗi nào nổ).
+
+        ⚠⚠⚠ **G67 — `navHref="/twin"`, KHÔNG PHẢI `"/twin/line/:id"`.**
+          `hasAccessToItem` (`navigation.tsx:2546`) duyệt `navGroups` tìm ô có
+          `href` **khớp CHÍNH XÁC**, và **`return false`** khi không thấy. Khai
+          `navHref="/twin/line/:id"` — một href KHÔNG có trong `navGroups` — sẽ
+          **từ chối MỌI người dùng, kể cả người đủ quyền**, và triệu chứng là
+          thẻ "Không có quyền truy cập" chứ không phải một lỗi. Đây đúng là
+          "thêm tên vào danh sách ĐÓNG mà quên thêm đủ chỗ".
+          ⇒ Màn Line **thừa cổng của `/twin`**: `analytics_oee` HOẶC
+            `machine_status` (QĐ-18 — nó là màn **XEM**, 0 mutation, không phải
+            cổng studio `settings_factory`/`machine_control`).
+
+        ⛔ **KHÔNG TRÙNG với `/line-view/:lineId`** (`:444` bên dưới):
+          `LineView.tsx` **418 dòng, 0 tham chiếu 3D** là màn **2D điều khiển
+          tuyến** (có lệnh, server đòi 2FA). Màn này là **3D chỉ XEM**. Tên gần
+          nhau ⇒ ghi rõ ở cả hai đầu kẻo người sau xoá nhầm (§11b).
+      */}
+      <Route path="/twin/line/:id"><RouteGuard navHref="/twin"><TwinLine /></RouteGuard></Route>
+      {/*
+        ★★★ ĐỢT 31 — QĐ-19 + QĐ-21: MÀN **MÁY 3D RIÊNG**, CANVAS RIÊNG.
+        Cùng tiền đề và cùng cổng với `/twin/line/:id` ngay trên:
+          · `/twin` KHÔNG nuốt `/twin/may/5` — `bo-cuc/duongDanBaMan.unit.test.ts`
+            đo bằng `regexparam` (bộ khớp thật của wouter 3.7.1).
+          · ⚠⚠⚠ G67: `navHref="/twin"`, KHÔNG `"/twin/may/:id"` — href vắng khỏi
+            `navGroups` ⇒ `hasAccessToItem` từ chối MỌI người, im lặng.
+          · QĐ-18: màn XEM ở cổng route (`analytics_oee` HOẶC `machine_status`);
+            mặt GHI là `NganXuLy` tự gate từng nút bên trong.
+        ⛔ KHÔNG TRÙNG với `/machine/:id` (bên dưới): đó là cockpit 2D TOÀN TRANG
+          (redirect sang `/device-monitor?machine=` khi workspace shell bật).
+          Màn này là 3D định vị + cockpit NHÚNG (`MachineCockpitBody embedded`)
+          + `NganXuLy` — nó DÙNG cockpit, không thay thế. Ghi ở cả hai đầu (§11b).
+      */}
+      <Route path="/twin/may/:id"><RouteGuard navHref="/twin"><TwinMay /></RouteGuard></Route>
+      {/*
+        ════════════════════════════════════════════════════════════════════
+        ★★★ QĐ-18 (§13c.2) — TÁCH LẠI HAI TRANG. **ĐẢO NGƯỢC QĐ-16.**
+        ════════════════════════════════════════════════════════════════════
+        Chủ sở hữu chốt 2026-09-09, và lý do MẠNH HƠN lý do gộp của QĐ-16:
+
+          *"Twin-studio là nơi THIẾT KẾ và layout cũng như xây dựng 3D Twin
+           cho nhà máy/ProductionLine, CHỈ NHỮNG NGƯỜI CÓ QUYỀN mới làm được.
+           Còn Twin là nơi TRÌNH DIỄN, XEM, QUẢN LÝ REALTIME nhà máy, KHÔNG
+           CHỈNH SỬA ĐƯỢC… 2 trang liên kết với nhau nhưng MỤC ĐÍCH HOÀN TOÀN
+           KHÁC NHAU."*
+
+        QĐ-16 gộp vì cho rằng đây là hai VÙNG của một việc. QĐ-18 nói đây là
+        hai MỤC ĐÍCH khác nhau — người chỉ xem KHÔNG BAO GIỜ cần công cụ sửa.
+        Hai vùng của một việc thì gộp đúng; hai mục đích thì tách đúng.
+
+        ────────────────────────────────────────────────────────────────────
+        ★★★ VÌ SAO TÁCH KHÔNG TÁI DIỄN TAI NẠN "CHẶN-1" — SỐ ĐO, KHÔNG PHỎNG ĐOÁN
+        ────────────────────────────────────────────────────────────────────
+        Nỗi lo của QĐ-16 là `operator1` **mất lối vào**. Đo lại trên bảng
+        `permissions` (2026-09-09, 8 tài khoản `isActive`):
+
+            operator1     xem /twin ✅ (machine_status) · sửa studio ❌
+            engineer1     ✅ / ✅        maint1        ✅ / ✅
+            supervisor1   ✅ / ✅        e2e_tai_loE   ✅ / ✅
+
+        ⇒ `operator1` **KHÔNG mất gì khi tách**: họ vốn đã không có
+          `settings_factory` lẫn `machine_control`, nên vùng sửa với họ vốn
+          đã không tồn tại (QĐ-16 tự hạ cấp họ về `xem`). Tách chỉ chuyển chỗ
+          của MỘT thứ họ chưa từng thấy. Đây là khác biệt then chốt so với
+          CHẶN-1 của Đợt 3 — ở đó 2/4 vai **thật sự** mất màn đang dùng được.
+
+        ⚠ `RouteGuard navHref="/twin-studio"` TRA quyền từ chính ô nav
+          `navigation.tsx` (`["settings_factory","machine_control"]`), nên nav
+          và cổng route KHÔNG THỂ lệch — lớp lỗi "một lối vào rồi TỪ CHỐI".
+          Và vì nav ẩn ô với ai thiếu quyền (luật ẩn-không-disable §12b.3),
+          `operator1` **không thấy** mục này, chứ không phải thấy rồi bị chặn.
+      */}
       <Route path="/twin-studio"><RouteGuard navHref="/twin-studio"><TwinStudio /></RouteGuard></Route>
       <Route path="/history"><RouteGuard navHref="/history"><History /></RouteGuard></Route>
       <Route path="/inspection/:id"><RouteGuard requirePermission="history_view"><InspectionDetail /></RouteGuard></Route>
@@ -368,6 +521,10 @@ function Router() {
       {/* doc 40 Wave 4d §13.1 — Factory Command View: chỉ huy toàn nhà máy 2D/3D (xem = giám sát). */}
       <Route path="/factory-command"><RouteGuard requirePermission="machine_status"><AIPageWrapper><FactoryCommandView /></AIPageWrapper></RouteGuard></Route>
       {/* doc 44 W3-B4 §G5.10 — Line View (LDS-L5 Ch.4.2): xem = machine_status; lệnh tuyến tự gate machine_control/edit + server actuationProcedure (2FA). */}
+      {/* ⛔ ĐỢT 30 (§11b) — **KHÔNG TRÙNG** với `/twin/line/:id` ở trên. Đây là màn
+          **2D CÓ LỆNH** (`LineView.tsx`, 418 dòng, 0 tham chiếu `Canvas`/`three`/
+          `KhungCanh`); kia là màn **3D CHỈ XEM** (0 mutation). Tên gần nhau là lý do
+          để ghi dòng này, KHÔNG phải lý do để xoá một trong hai vì tưởng trùng lặp. */}
       <Route path="/line-view/:lineId?"><RouteGuard requirePermission="machine_status"><AIPageWrapper><LineView /></AIPageWrapper></RouteGuard></Route>
       {/* doc 44 W6-1 §G5.14 — e-SOP (LDS-L5 §6.2): viewer vận hành (machine_status read-open) + quản trị (settings_products); server gate role/2FA. */}
       <Route path="/sop/:sopId?"><RouteGuard requirePermission="machine_status"><SopViewer /></RouteGuard></Route>
@@ -380,7 +537,8 @@ function Router() {
       <Route path="/machine-status"><Redirect to="/device-monitor" /></Route>
       <Route path="/machine-health"><Redirect to="/device-monitor?tab=health" /></Route>
       <Route path="/oee-dashboard"><RouteGuard navHref="/oee-dashboard"><OEEDashboard /></RouteGuard></Route>
-      <Route path="/factory-live-map"><Redirect to="/digital-twin?tab=map" /></Route>
+      {/* ★ ĐỢT 21 — RÚT 2 CHẶNG THÀNH 1 (§13b 14.2.3). Trước: → /digital-twin?tab=map → … */}
+      <Route path="/factory-live-map"><Redirect to="/twin" /></Route>
       <Route path="/field-devices"><Redirect to="/device-monitor?tab=field" /></Route>
       {/* doc 39 Wave 4 — Connectivity hub consolidates the 9 MQTT/UNS surfaces into one
           tabbed page; legacy routes deep-link into their tab (deep-links preserved). */}
@@ -434,10 +592,13 @@ function Router() {
       <Route path="/ir-editor"><RouteGuard requirePermission="machine_control"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
       <Route path="/pou-studio"><RouteGuard requirePermission="machine_control"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
       <Route path="/programming-copilot"><RouteGuard requirePermission="machine_status"><AIPageWrapper><ProgrammingCopilot /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/factory-floor-editor"><Redirect to="/digital-twin?tab=floor" /></Route>
-      <Route path="/rf-test-cell"><Redirect to="/digital-twin?tab=rf" /></Route>
-      <Route path="/cell-twin"><Redirect to="/digital-twin?tab=cell" /></Route>
-      <Route path="/digital-twin-center"><Redirect to="/digital-twin?tab=center" /></Route>
+      <Route path="/factory-floor-editor"><Redirect to="/twin-studio" /></Route>
+      {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo được 0 lời gọi tRPC trong 792 dòng):
+          nó không trả lời "nhà máy đang thế nào". Trả lại TUYẾN THẬT, ngoài Twin. */}
+      <Route path="/rf-test-cell"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
+      {/* ★ §13b 3f — phát lại workflow ĐÃ GỘP vào /twin (`orchestration.simulate`). */}
+      <Route path="/cell-twin"><Redirect to="/twin" /></Route>
+      <Route path="/digital-twin-center"><Redirect to="/twin" /></Route>
       <Route path="/command-center"><RouteGuard requirePermission="machine_status"><AIPageWrapper><CommandCenter /></AIPageWrapper></RouteGuard></Route>
       {/* U3 (doc 21 §6 G-4/G-5): per-asset cockpits — reached by drill (no top-nav entry). */}
       {/* doc 59 P3 — workspace default-ON: /machine/:id folds into the Machine Workspace
@@ -589,10 +750,12 @@ function Router() {
       <Route path="/metric-catalog"><RouteGuard navHref="/metric-catalog"><MetricCatalog /></RouteGuard></Route>
       <Route path="/products"><RouteGuard navHref="/products"><ProductModels /></RouteGuard></Route>
       <Route path="/product-mapping"><RouteGuard navHref="/product-mapping"><ProductMachineMapping /></RouteGuard></Route>
-      {/* Task 1 Khối D — /layout (không :id) gộp vào TwinHub làm tab "layout" (mode edit).
+      {/* Task 1 Khối D — /layout (không :id) trước đây là tab "layout" của TwinHub.
+          ★ Đợt 61: `TwinHub` đã xoá; `/layout` vẫn `<Redirect>` thẳng tới `/twin-studio`
+          (đích này có từ QĐ-18, KHÔNG trỏ vào trang vừa xoá).
           /layout/:id GIỮ RIÊNG: mang route param mà tab không có, và gate
           requirePermission="settings_factory" khác navHref của route trên. */}
-      <Route path="/layout"><Redirect to="/digital-twin?tab=layout" /></Route>
+      <Route path="/layout"><Redirect to="/twin-studio" /></Route>
       <Route path="/layout/:id"><RouteGuard requirePermission="settings_factory"><Layout /></RouteGuard></Route>
       <Route path="/workstation-management"><RouteGuard navHref="/workstation-management"><WorkstationManagement /></RouteGuard></Route>
       <Route path="/process-management"><RouteGuard navHref="/process-management"><ProcessManagement /></RouteGuard></Route>

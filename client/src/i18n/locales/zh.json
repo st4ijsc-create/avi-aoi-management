@@ -645,26 +645,6 @@
       "oee": "OEE与停机"
     }
   },
-  "twinHub": {
-    "title": "数字孪生",
-    "tabs": {
-      "overview": "概览",
-      "center": "3D中心",
-      "map": "实时地图",
-      "floor": "布局编辑器",
-      "layout": "车间布局",
-      "cell": "单元孪生",
-      "rf": "RF测试单元"
-    },
-    "mode": {
-      "edit": "布局图"
-    },
-    "legend": {
-      "live": "真实设备/遥测数据，实时",
-      "sim": "回放已录制的仿真——并非真实工作单元",
-      "edit": "平面布局编辑工具"
-    }
-  },
   "ecn": {
     "title": "工程变更",
     "subtitle": "ECN / ECO 变更请求流程——影响分析、审批（maker-checker）与生效日期。",
@@ -2287,69 +2267,16 @@
   },
   "digitalTwin": {
     "tabWipFlow": "WIP 流",
-    "tabStationLoad": "工位负载",
-    "tabPrediction": "拥堵预测",
     "wipFlow": {
-      "title": "按工位的 WIP 流",
-      "desc": "各工位当前在产的在制品数量（实时/轮询）",
-      "wipCount": "WIP 数量",
-      "streaming": "实时流",
-      "polling": "轮询中",
-      "noData": "产线上无在制品"
-    },
-    "stationLoad": {
-      "title": "工位负载热力图",
-      "desc": "各工位的负载水平与主导状态（颜色由服务端计算）",
-      "loadPct": "负载 (%)",
-      "state": "状态",
-      "starved": "缺料",
-      "blocked": "阻塞",
-      "processing": "处理中",
-      "idle": "空闲",
-      "bottleneck": "瓶颈"
+      "wipCount": "WIP 数量"
     },
     "prediction": {
-      "title": "拥堵预测",
-      "desc": "预估下一小时 WIP 与拥堵风险（仅提示，不执行操作）",
-      "predictedWip": "预测 WIP (1小时)",
-      "risk": "风险",
       "high": "高拥堵风险 — 预测 WIP 超过阈值",
       "medium": "中等拥堵风险 — 密切关注",
-      "low": "低风险 — 在控制范围内",
-      "unavailable": "数据不足，无法预测"
+      "low": "低风险 — 在控制范围内"
     },
-    "health": "健康度",
-    "atRisk": "存在风险",
-    "bottleneck": "瓶颈",
-    "code": "机器编码",
-    "cycleMult": "节拍系数",
     "defectHeatmap": "按机器的缺陷热力图",
-    "defectHeatmapDesc": "时间窗口内的 NG 数量和 NG 率",
-    "effCycle": "有效节拍（秒）",
-    "effectiveUnits": "有效产出",
-    "horizonHours": "预测范围（小时）",
-    "lineBalanceRate": "产线平衡率",
-    "lowHealth": "健康度低",
-    "machineStates": "按机器的孪生状态",
-    "machineStatesDesc": "颜色反映综合运行状态与健康评分",
-    "name": "机器名称",
-    "risk": "风险",
-    "running": "运行中",
-    "simulate": "运行仿真",
-    "station": "工位",
-    "status": "状态",
-    "subtitle": "实时机器状态 · 缺陷热力图 · 假设仿真",
-    "tabHeatmap": "缺陷热力图",
-    "tabTwin": "机器状态",
-    "tabWhatIf": "假设仿真",
-    "theoreticalUnits": "理论产出",
-    "totalMachines": "机器总数",
-    "units": "件",
-    "utilization": "利用率",
-    "whatIf": "产线产能仿真（假设分析）",
-    "whatIfDesc": "根据节拍、可用率与良率估算产能（纯计算）",
-    "whatIfHint": "点击“运行仿真”以估算当前工位的产能。",
-    "windowHours": "时间窗口（小时）"
+    "whatIf": "产线产能仿真（假设分析）"
   },
   "supervisor": {
     "title": "主管控制台",
@@ -2700,7 +2627,8 @@
     "brightness": "亮度",
     "contrast": "对比度",
     "on": "开",
-    "off": "关"
+    "off": "关",
+    "hide": "隐藏"
   },
   "corporate": {
     "yieldRatePercent": "良率百分比",
@@ -13904,48 +13832,23 @@
     "confirmNhieu": "{{count}} 条告警（来源 {{sources}}）— {{label}} — 将被永久关闭，无法从本界面撤销。"
   },
   "cmd": {
-    "title": "生态系统指挥中心",
     "subtitle": "一个实时面板：层级结构、工厂孪生、KPI 以及覆盖全域的统一告警栏。",
-    "live": "实时",
-    "polling": "轮询",
-    "refresh": "刷新",
     "refreshAll": "刷新",
-    "kpiOee": "OEE（平均）",
-    "kpiWip": "在制品数量",
-    "bottleneck": "瓶颈：{{b}}",
-    "kpiAlarms": "严重 / 高级告警",
-    "kpiFleet": "车队任务 / 机器人",
-    "kpiSites": "上报中的站点",
-    "sitesStaleDown": "{{s}} 陈旧 · {{d}} 离线",
-    "kpiAi": "AI 洞察",
-    "kpiEnergy": "能耗 kWh",
-    "noEstateEnergy": "暂无全域汇总",
-    "hierarchy": "生态系统层级",
-    "hierarchyHint": "站点 → 工厂 → 产线 → 工位 → 机器 / 机器人",
     "loadingTree": "正在加载层级…",
     "noSites": "暂无站点上报。",
-    "devices": "设备",
     "selectFactory": "选择一个工厂",
     "pickFactoryHint": "在树中选择站点或工厂以查看其实时车间。",
     "loadingScene": "正在加载工厂场景…",
-    "lgRunning": "运行中",
-    "lgIdle": "空闲",
-    "lgHeld": "暂停/停止",
-    "lgDown": "故障/急停",
-    "lgOffline": "离线",
     "gridEmptyScene": "该工厂场景中未放置设备 — 显示实时状态网格。",
-    "gridNoWebgl": "此浏览器不支持 3D — 显示实时状态网格。",
     "noFactoryLayout": "该工厂尚无产线/工位布局。",
     "alarmRail": "告警栏",
     "railScoped": "范围限定为 {{name}}",
     "railLive": "实时 · 统一告警流",
     "railPoll": "轮询 · 初始数据 + 每15秒刷新",
-    "noAlarms": "无活动告警。一切正常。",
     "noScopedAlarms": "所选范围内无告警。",
     "alarms": "活动告警",
     "tasks": "活动任务",
-    "offline": "离线",
-    "openCockpit": "打开驾驶舱"
+    "offline": "离线"
   },
   "instrumentCal": {
     "title": "仪器校准与健康",
@@ -15703,6 +15606,7 @@
     "manufacturer": "制造商",
     "mode": "模式",
     "model": "型号",
+    "model3dEmbedded": "上方的 3D 孪生场景已显示此机器 — 此处不再渲染第二个 3D 视图（每页仅一个 WebGL 上下文）。",
     "model3dHint": ".glb 或 .gltf（glTF 2.0）— 将成为该机器的模型",
     "model3dReadErr": "无法读取该文件。",
     "model3dUpload": "上传并注册 3D 模型",
@@ -15745,6 +15649,8 @@
     "noTasksHint": "没有分配给该机器人的机群任务。",
     "notFound": "未找到机器",
     "notFoundHint": "此 ID 不存在对应机器，或您无权查看。",
+    "forbidden": "无权查看此机台",
+    "forbiddenHint": "查看机台驾驶舱需要“机台状态”权限，请联系管理员授予。",
     "offline": "离线",
     "online": "在线",
     "openIr": "打开 IR",
@@ -15787,6 +15693,8 @@
     "tabJoints": "关节与位姿",
     "tabOee": "OEE",
     "tabOverview": "概览",
+    "cuonTabTrai": "向左滚动标签栏",
+    "cuonTabPhai": "向右滚动标签栏",
     "tabPrograms": "IR 程序",
     "tabRecipes": "配方",
     "tabSafety": "安全区响应",
@@ -16230,50 +16138,6 @@
       "severe": "严重"
     }
   },
-  "ffe": {
-    "view3d": "查看 3D",
-    "floor": "厂房地面（俯视图）",
-    "floorMeters": "厂房地面（米，俯视图）",
-    "fpD": "深度（D）",
-    "fpW": "宽度（W）",
-    "note": "带虚线边框的暗色机器尚未放置 — 将它们拖到地面上以分配坐标。松开即自动保存。滚动以缩放，拖动地面以平移。",
-    "noteZone": "区域模式：点击“新建区域”，然后点击地面添加点；拖动顶点以调整。读取开放，编辑需要权限。",
-    "pickFactory": "选择工厂",
-    "placed": "台机器已放置",
-    "rotation": "旋转",
-    "saveFailed": "保存位置失败",
-    "saving": "保存中…",
-    "snap": "对齐网格",
-    "subtitle": "将每台机器拖到其在地面上的真实位置 — 坐标将被保存并用于 3D 地图",
-    "title": "厂房地面编辑器",
-    "empty": "该工厂尚无机器",
-    "modeMachines": "机器",
-    "modeZones": "区域",
-    "floorPlan": "背景（CAD/图像）",
-    "bgUpload": "上传背景",
-    "bgUploading": "上传中…",
-    "bgUploaded": "背景已上传",
-    "pickImage": "请选择一个图像文件",
-    "maxFile8": "最大 8MB",
-    "floorWidthM": "地面宽度（米）",
-    "floorDepthM": "地面深度（米）",
-    "saveDims": "保存尺寸",
-    "dimsSaved": "地面尺寸已保存",
-    "undo": "撤销",
-    "redo": "重做",
-    "zoomIn": "放大",
-    "zoomOut": "缩小",
-    "resetView": "重置视图",
-    "zones": "区域",
-    "noZones": "尚无区域",
-    "newZone": "新建区域",
-    "newZoneName": "新区域",
-    "drawHint": "点击地面以添加点",
-    "removeLastPoint": "移除最后一个点",
-    "finishZone": "完成",
-    "zoneNeed3": "至少需要 3 个点",
-    "points": "点"
-  },
   "field": {
     "batteryNull": "无电池遥测（AGV 电量来自 VDA5050；无驱动上报时为 null）。",
     "col": {
@@ -16559,34 +16423,6 @@
       "production": "生产",
       "transit": "通行"
     }
-  },
-  "flm": {
-    "avgUptime": "平均正常运行时间",
-    "heartbeat": "心跳",
-    "uptime": "24 小时正常运行时间",
-    "detail": "机器详情",
-    "editLayout": "编辑布局",
-    "empty": "该工厂尚无活跃机器。请在 主数据 / 工厂结构 下添加机器。",
-    "floor": "厂房地面",
-    "idle": "空闲",
-    "idleStopped": "空闲/停止",
-    "machines": "台机器",
-    "offline": "离线",
-    "openCockpit": "打开机器驾驶舱",
-    "openStudio": "编排工作流",
-    "openTwin": "打开单元仿真（孪生）",
-    "pickFactory": "选择工厂",
-    "refresh": "刷新",
-    "running": "运行中",
-    "selectHint": "点击 3D 地面上的机器方块以查看详情并下钻。",
-    "shadowNote": "这是一个数字影子 — 颜色反映机器的真实遥测/心跳，约每 5 秒自动更新。与单元页面上的数字孪生（假设仿真）不同。",
-    "stopped": "已停止",
-    "subtitle": "每台机器是一个按真实状态着色的 3D 方块 — 点击查看详情并打开单元仿真",
-    "tip": "拖动以旋转 • 滚动以缩放 • 点击机器方块以选择",
-    "title": "3D 工厂地图（实时）",
-    "total": "机器总数",
-    "wsStale": "实时（延迟）",
-    "wsLive": "实时（WS）"
   },
   "ir": {
     "whenToUse": "适用场景 — 低层运动与 I/O 块（IR）。完整的构建/部署流水线请使用工程工作区；IEC 61131 LAD/FBD/SFC 请使用 POU Studio。",
@@ -17201,58 +17037,7 @@
     "materialsUsed": "物料/部件"
   },
   "twin": {
-    "activeTasks": "活跃任务",
-    "alarms": "告警",
-    "block": "方块",
-    "devices": "设备",
-    "devicesLower": "设备",
-    "down": "宕机/关闭",
-    "emptyScene": "该工厂的场景图中无设备。",
-    "flagOff": "实时流已禁用（TWIN_LIVE_ENABLED 关闭）。显示每 5 秒轮询的场景图。回放仍可用 — 它是只读历史。",
-    "frame": "帧",
-    "from": "从",
-    "idle": "空闲",
-    "inspect": "检查设备",
-    "inspectHint": "点击 3D 场景中的设备以检查其 PackML 状态、告警、活跃任务与模型。",
-    "layerLabels": "标签",
-    "layerRobots": "机器人",
-    "layers": "图层",
-    "layerZones": "区域",
-    "lgFault": "故障/急停",
-    "lgIdle": "空闲",
-    "lgOffline": "离线",
-    "lgRunning": "运行中",
-    "lgStopped": "已停止/保持",
-    "live": "实时",
-    "loading": "正在加载场景图…",
-    "loadReplay": "加载回放",
-    "modelsLoaded": "已注册 {{n}} 个 glTF 模型",
-    "modelUri": "模型 URI",
-    "noFrames": "此窗口内无遥测。请尝试更宽的范围，或选择有已记录设备遥测的工厂。",
-    "noModels": "尚未注册 3D 模型 — 设备渲染为彩色方块（glTF 为渐进式）。",
-    "openCockpit": "打开驾驶舱",
-    "pause": "暂停",
-    "pickFactory": "选择工厂",
-    "pickFactoryHint": "选择一个工厂以渲染其孪生。",
-    "play": "播放",
-    "pollFallback": "已启用实时，但尚未收到设备增量 — 每 5 秒轮询场景图作为回退。",
-    "position": "位置",
-    "refresh": "刷新",
-    "replay": "回放",
-    "replayNote": "回放是来自 TimescaleDB 的只读历史（已降采样）。选择一个窗口，加载后即可拖动或回放该事件。",
-    "reset": "重置",
-    "robots": "机器人",
-    "running": "运行中",
-    "scene": "工厂场景",
-    "speed": "速度",
-    "stationId": "工位",
-    "streaming": "实时：正在通过 twin:{{f}} 接收设备增量 — 位置与状态实时更新。",
-    "subtitle": "工厂场景图的实时 3D 孪生 — 区域、机器与机器人按真实状态着色。回放历史以调查事件。",
-    "task": "任务",
-    "title": "数字孪生中心",
-    "to": "到",
-    "unplaced": "未放置",
-    "zonesLower": "区域"
+    "replay": "回放"
   },
   "userGuide": {
     "faqDescription": "操作系统时的常见问题",
@@ -17621,48 +17406,6 @@
       "coTheHuuIch": "可能有用",
       "thamKhaoThem": "供进一步参考"
     }
-  },
-  "celltwin": {
-    "whenToUse": "适用场景 — 选择一个工作流并在数字孪生上回放其预测时间线；切换实时以叠加真实设备状态。不向任何设备发送命令。",
-    "activeStep": "当前步骤",
-    "cellView": "单元图（工位泳道）",
-    "cycleNo": "已运行循环",
-    "cycleTime": "节拍",
-    "done": "循环完成",
-    "elapsed": "时间戳",
-    "empty": "尚未部署任何工作流。打开 /orchestration-studio 创建并部署工作流，然后回到此处观看回放。",
-    "invalid": "无效的工作流",
-    "kpis": "预测指标",
-    "machineCount": "机器数量",
-    "machines": "机器状态（PackML）",
-    "noStations": "此工作流未引用任何可显示的机器。",
-    "openStudio": "打开 /orchestration-studio 以真实地编辑/部署/运行（通过人工在环分派器）。",
-    "pause": "暂停",
-    "pickWorkflow": "选择一个工作流…",
-    "play": "播放",
-    "program": "控制程序",
-    "reset": "重置",
-    "selectPrompt": "选择一个工作流以观看回放。",
-    "simFailed": "无法加载孪生仿真",
-    "simulating": "仿真中…",
-    "speed": "速度",
-    "stepCount": "步骤数",
-    "subtitle": "选择一个工作流并观看数字孪生回放其预测时间线；启用实时以叠加真实设备状态（不下发命令）",
-    "timeline": "循环进度",
-    "title": "单元孪生 — 预测工作流回放",
-    "modePredicted": "预测",
-    "modeLive": "实时",
-    "liveNote": "显示真实设备状态（operationStatus）。令牌运动仍是预测回放。",
-    "noLive": "未知",
-    "scrubHint": "拖动以拖拽 · ←/→ 按标记逐步",
-    "layoutReal": "来自真实位置的布局（厂房地面编辑器）",
-    "layoutEven": "等间距泳道（并非所有工位都有已保存坐标）",
-    "kpiFromHistory": "来自命令历史",
-    "kpiDefault": "默认估计",
-    "twinNote": "这是数字孪生上的仿真 — 不向设备下发命令。真实运行时：每条命令都通过人工在环分派器；安全（急停/联锁/运动）驻留在设备上。",
-    "unknownMachine": "机器 #{{id}}",
-    "warnings": "警告",
-    "workflow": "工作流"
   },
   "inspectionDetail": {
     "lightboxHint": "滚动以缩放 · 拖动以平移",
@@ -20010,9 +19753,6 @@
   "softwareVersions": {
     "uploadOk": "上传成功：v{{version}}（{{size}} MB）"
   },
-  "cellTwin": {
-    "maySo": "设备 #{{id}}"
-  },
   "teachTree": {
     "tab": "示教树",
     "chuaCoMay": "还没有设备为此产品示教",
@@ -20072,6 +19812,38 @@
     "guiYeuCauDuyetLoiMotPhan": "已提交 {{thanhCong}}/{{tong}} 个审批申请——{{soLoi}} 个失败，请稍后重试"
   },
   "twin3d": {
+    "may": {
+      "chuaGanNhaMay": "您的账户尚未分配任何工厂。请联系管理员分配后再打开此机台。",
+      "idKhongHopLe": "无法从地址读取机台",
+      "idKhongHopLeMo": "地址格式应为 /twin/may/<编号>。请从工厂或产线画面选择一台机台。",
+      "hang": {
+        "nguyKich": "危急",
+        "canh": "告警",
+        "theoDoi": "关注",
+        "khoe": "健康",
+        "hetHan": "已过期",
+        "chuaDo": "未测量"
+      },
+      "maySo": "机台 #{{n}}",
+      "khongMoDuoc": "无法打开机台 #{{n}}",
+      "dangTai": "正在加载机台…",
+      "chuaDatCho": "该机台在 3D 布局上还没有位置",
+      "chuaDatChoMo": "请在 Twin Studio 中为其布置位置，即可看到机台及其相邻设备。下方的驾驶舱与处理面板仍可使用。",
+      "ariaCanh": "{{ten}} 的 3D 场景",
+      "sucKhoe": "健康度",
+      "dangTaiCockpit": "正在加载驾驶舱…"
+    },
+    "line": {
+      "idKhongHopLe": "无法从地址读取产线",
+      "idKhongHopLeMo": "地址格式应为 /twin/line/<编号>。请从工厂画面选择一条产线。",
+      "chuyenSo": "产线 {{n}}",
+      "veNhaMay": "工厂",
+      "soTram": "工位",
+      "khongMoDuoc": "无法打开产线 #{{n}}",
+      "rong": "该产线的布局上还没有机台",
+      "rongMo": "该产线可能尚未在 Twin Studio 中布置，或属于另一家工厂。",
+      "ariaCanh": "{{ten}} 的 3D 场景"
+    },
     "chuaDung": "此页面尚未构建。内容将在 3D 数字孪生项目的后续阶段中添加。",
     "chuaDo": "未实测",
     "chuaDoGiaiThich": "该数值由系统生成，尚未有人在现场实测。",
@@ -20081,7 +19853,7 @@
       "tieuDe": "3D 工厂 — 运行",
       "moTa": "工厂的空间索引：定位设备、查看实时状态，并切换到 2D 界面进行处理。",
       "nganXuLy": "处理面板",
-      "chuaChon": "请在场景或列表中选择一台设备进行处理。",
+      "chuaChon": "请在场景或列表中选择一台设备以打开设备三维画面。",
       "danhSachMay": "设备列表",
       "soMay": "设备",
       "canhBao": "报警",
@@ -20105,17 +19877,24 @@
       "ganKyThuat": "指派技术员",
       "chuaGan": "未指派",
       "moChucNang": "打开功能",
-      "capNhatTruoc": "{{giay}} 秒前更新",
+      "capNhatTruoc": "{{tuoi}}前更新",
       "chuaTungBaoCao": "从未上报数据",
       "duLieuQuaCu": "数据过旧——状态不可信",
       "doiSoatLech": "{{thieu}} 台设备未布置 · {{moCoi}} 条布置指向已停用设备",
+      "thieuQuyenTruyVan": "权限不足，无法查看数据 — 请联系管理员。被拒绝的查询：{{ds}}",
+      "soTrongThieuQuyen": "状态数据需要“机台状态”权限，请联系管理员授予。",
       "moXuongDung": "打开设计工作室",
       "thieuQuyenBoCuc": "无权读取厂房布局",
       "thieuQuyenBoCucMoTa": "您可以查看运行画面，但 3D 布局数据需要工厂配置或设备控制权限。请联系管理员。",
       "canhAria": "3D 工厂场景：{{may}} 台设备，{{canhBao}} 条未处理报警，{{khongRo}} 台设备失去信号",
       "daiLine": "产线条",
       "soTram": "{{n}} 个工位",
+      "tienToChung": "前缀",
+      "tienToChungMoTa": "产线条上所有工位代码共有的前缀 — 已从每个单元格中去掉，以免名称被截断",
       "soMayNgan": "{{n}} 台设备",
+      "nhipChuyen": "节拍",
+      "tongWip": "在制品",
+      "wipNgan": "在制",
       "cap": {
         "tapDoan": "集团",
         "nhaMay": "工厂",
@@ -20134,9 +19913,59 @@
         "sanXuat": "生产",
         "andon": "安灯",
         "tapDoan": "集团总览",
-        "xuongDung": "编辑布局"
+        "xuongDung": "编辑布局",
+        "dieuKhien": "控制平面",
+        "robotCockpit": "机器人驾驶舱",
+        "banDieuKhien": "指令控制台"
       },
-      "canhAria2D": "2D 工厂平面图：{{may}} 台设备，{{canhBao}} 条未处理报警，{{khongRo}} 台设备失去信号"
+      "canhAria2D": "2D 工厂平面图：{{may}} 台设备，{{canhBao}} 条未处理报警，{{khongRo}} 台设备失去信号",
+      "statsAoi": "AOI 结果",
+      "chuaKiemChiecNao": "尚未检测任何产品",
+      "aoiOk": "OK",
+      "aoiNg": "NG",
+      "aoiNtf": "NTF",
+      "aoiYield": "良率",
+      "aoiTong": "检测总数",
+      "nhung": {
+        "tieuDeMay": "设备详情",
+        "tieuDeRobot": "机器人驾驶舱",
+        "tieuDeTram": "工位分析",
+        "quayLai": "返回 3D",
+        "moDayDu": "打开完整页面",
+        "dangNap": "正在加载内容…",
+        "ngoaiPhamVi": "该对象不在当前查看范围内（或已不存在）。请切换工厂/楼层后重新打开。",
+        "thieuQuyen": "您没有查看该对象的权限。请联系管理员分配工厂。"
+      },
+      "xuatUsd": "导出 USD",
+      "xuatUsdDang": "正在导出…",
+      "xuatUsdMoTa": "将整个工厂场景导出为 USD (.usda) 文件，可在 Omniverse / Isaac Sim 中打开",
+      "xuatUsdXong": "已导出 {{ten}} — {{prim}} 个图元，{{byte}} 字节",
+      "xuatUsdCanhTrong": "未导出：该工厂的平面图上尚无任何对象（文件将为空）。",
+      "xuatUsdChuaChonNhaMay": "尚未选择要导出的工厂。",
+      "xuatUsdHong": "USD 导出失败（{{lyDo}}）。",
+      "donViGiay": "{{n}} 秒",
+      "nhanBiAn": "另有 {{n}} 个名称被隐藏",
+      "suCoNgoaiKhung": "{{n}} 个告警在视野外",
+      "canhBaoBiAn": "另有 {{n}} 个告警被隐藏",
+      "chiNhanBatThuongMoTa": "仅显示异常设备（及所选设备）的名称",
+      "hienMoiNhanMoTa": "当前仅显示异常设备名称 — 点击显示全部名称",
+      "breadcrumbAnCap": "上级层级",
+      "napLai": "重新加载数据",
+      "nhanBiAnTheoChinhSach": "仅显示异常设备名称 · 另有 {{n}} 个名称未显示",
+      "chonNhaMay": "工厂",
+      "chonToaNha": "楼栋",
+      "chonTang": "楼层",
+      "haCapPhamVi": "当前仅显示一家工厂的数据（系统中共 {{soNhaMay}} 家工厂）。集团范围暂不能同时加载多家工厂——请用“工厂”框切换。",
+      "linkBiBoQua": "打开此画面的链接指向的工厂/楼栋/楼层已不存在——正在显示最接近的选择。",
+      "mayTangKhac": "另有 {{so}} 台机台位于本楼栋的其他楼层——切换“楼层”框查看",
+      "mayToaKhac": "{{so}} 台机台不在本次加载范围内（尚未查询其他楼栋）——暂无法判断它们是否已布置",
+      "moPanelPhai": "打开右侧处理面板",
+      "thuPanelPhai": "收起右侧处理面板",
+      "moPanelTrai": "打开左侧面板",
+      "thuPanelTrai": "收起左侧面板",
+      "moTwinStudio": "Twin Studio",
+      "moTwinStudioMoTa": "前往 Twin Studio：设计厂房、拖放机台、保存布局",
+      "toanManMoTa": "近乎全屏的 3D（收起两侧面板）"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",
@@ -20151,6 +19980,9 @@
       "changeover": "换型中",
       "starved": "缺料等待",
       "blocked": "下游阻塞",
+      "idle": "待机",
+      "down": "故障/停机",
+      "offline": "离线",
       "khongRo": "未知",
       "ngungKhaiThac": "已停用"
     },
@@ -20240,7 +20072,18 @@
       "tieuDe": "布局版本",
       "xuatBan": "发布",
       "daXuatBan": "已发布",
-      "nhan": "版本标签"
+      "nhan": "版本标签",
+      "luu": "保存版本",
+      "khoiPhuc": "恢复",
+      "xoa": "删除",
+      "chuaCo": "尚无已保存的布局版本。",
+      "thucThe": "个实体",
+      "rongKhongLuu": "当前布局为空——没有可保存的内容。",
+      "daLuu": "布局版本已保存（{{n}} 个实体）。该版本尚未发布。",
+      "daXuatBanXong": "已发布。运行画面现已显示该布局。",
+      "daKhoiPhuc": "已将 {{n}} 个实体恢复到正在编辑的布局。请点击保存写入数据库。",
+      "daXoa": "布局版本已删除。",
+      "xoaBanDangXuatBan": "已删除——该版本正是发布到运行画面的那一个。"
     },
     "congCu": {
       "chon": "选择",
@@ -20303,7 +20146,10 @@
       "loc": "按名称或编码筛选…",
       "khongKhop": "没有匹配项",
       "moTatCa": "全部展开",
-      "dongTatCa": "全部折叠"
+      "dongTatCa": "全部折叠",
+      "chiCanhBao": "仅显示有告警的节点",
+      "soCanhBao": "{{n}} 条告警",
+      "ariaCay": "工厂层级树"
     },
     "thuocTinh": {
       "tieuDe": "属性",
@@ -20395,7 +20241,234 @@
       "nhapBanVe": "导入图纸",
       "roiTrang": "仍有未保存的更改，离开将会丢失。",
       "loiLuu": "保存失败：{{loi}}",
-      "phimTat": "快捷键：W 移动 · E 旋转 · R 缩放 · Ctrl 反转吸附 · Ctrl+Z 撤销"
+      "phimTat": "快捷键：W 移动 · E 旋转 · R 缩放 · Ctrl 反转吸附 · Ctrl+Z 撤销",
+      "chuaCoNhaMay": "尚无可设计的工厂。"
+    },
+    "ketNoi": {
+      "chua_ket_noi": {
+        "nhan": "未连接",
+        "moTa": "实时流未连接 — 以下数字为页面加载时的快照。"
+      },
+      "dang_cho": {
+        "nhan": "等待中…",
+        "moTa": "已连接，正在等待第一个数据包。"
+      },
+      "truc_tiep": {
+        "nhan": "实时",
+        "moTa": "正在接收实时数据。"
+      },
+      "im_lang": {
+        "nhan": "静默",
+        "moTa": "已连接但近期无数据包 — 数据正在变旧。"
+      },
+      "xem_lai": {
+        "nhan": "回放",
+        "moTa": "正在查看历史数据，非实时数据。"
+      }
+    },
+    "tua": {
+      "trucTiep": "实时",
+      "xemLai": "回放 {{gio}}",
+      "xapXi": "回放仅能重建连接状态，无法重建运行模式——状态为近似值",
+      "lui": "后退5分钟",
+      "tien": "前进5分钟",
+      "phat": "播放",
+      "dung": "暂停",
+      "thanhKeo": "回放过去24小时"
+    },
+    "xuatXu": {
+      "bong": {
+        "nhan": "SHADOW",
+        "moTa": "SHADOW — 颜色反映设备的真实遥测/心跳数据。"
+      },
+      "mo_phong": {
+        "nhan": "模拟",
+        "moTa": "模拟 — 这些是假设推演值，并非实测数据。"
+      },
+      "so_do": {
+        "nhan": "示意图",
+        "moTa": "示意图 — 仅有布局，尚无运行数据。"
+      },
+      "khong_ro": {
+        "nhan": "—",
+        "moTa": "无法确定当前数据的来源。"
+      }
+    },
+    "anToan": {
+      "estopDangNhan": "E-STOP 已触发：{{ds}}"
+    },
+    "daiCanhBao": {
+      "tieuDe": "告警",
+      "homNay": "今天",
+      "tonDong": "积压 >24小时",
+      "tonDongNgay": "积压 {{n}} 天",
+      "trong": "无告警",
+      "trongMuc": "所选级别无告警",
+      "tatCa": "全部",
+      "red": "停机",
+      "call": "呼叫支援",
+      "yellow": "警告",
+      "green": "正常",
+      "theoNhanh": "按所选分支",
+      "daAck": "已确认"
+    },
+    "canvasUi": {
+      "fitTatCa": "适应视图",
+      "fitKhongSan": "3D 场景尚未就绪",
+      "toanManHinh": "全屏",
+      "toanManHinhKhongHoTro": "浏览器不支持全屏",
+      "xuatAnh": "导出 PNG",
+      "xuatAnhXong": "已保存 {{ten}}",
+      "xuatAnhLoi": "无法导出图片",
+      "miniMap": "小地图 — 点击导航",
+      "miniMapRong": "尚无设备"
+    },
+    "vung": {
+      "veMoi": "绘制安全区",
+      "banVe": "平面图 — 点击添加顶点",
+      "demDinh": "{{n}} 个顶点",
+      "boDinhCuoi": "删除最后一个顶点",
+      "xong": "完成",
+      "huy": "取消",
+      "luu": "保存",
+      "dangLuu": "保存中…",
+      "sua": "编辑",
+      "xoa": "删除",
+      "vungMoi": "新建安全区",
+      "suaVung": "编辑安全区",
+      "ten": "区域名称",
+      "tenGoiY": "例如：焊接机器人安全区",
+      "mau": "颜色",
+      "tomTat": "{{n}} 个顶点 · {{dt}} m²",
+      "chuaCoVung": "此楼层尚无安全区。",
+      "daLuu": "已保存安全区",
+      "daXoa": "已删除安全区",
+      "polygonKhongHopLe": "至少需要 {{n}} 个不共线的顶点",
+      "quaNhieuDinh": "最多 {{n}} 个顶点",
+      "tieuDe": "安全区"
+    },
+    "kpiNoi": {
+      "tieuDe": "指标",
+      "mauSo": "{{n}} 台设备",
+      "thu": "收起指标面板",
+      "mo": "展开指标面板",
+      "mauSoOee": "已测量 OEE 的设备 {{co}}/{{tong}} 台",
+      "o": {
+        "dangChay": "运行中",
+        "dungLoi": "故障停机",
+        "baoTri": "维护中",
+        "matKetNoi": "失去连接",
+        "tyLeChay": "运行率",
+        "oeeTrungBinh": "平均 OEE",
+        "andonMo": "有安灯的机台",
+        "ruiRoPdm": "预测性维护风险"
+      }
+    },
+    "model": {
+      "tamGiac": "三角面",
+      "material": "材质",
+      "duoiKhongNhan": "仅接受 .glb / .gltf 文件。SVG 是二维图像，没有深度；STEP/IGES 需先转换。",
+      "napHong": "无法读取该 3D 文件。文件可能已损坏或不是 glTF 2.0。",
+      "goiYNen": "建议：用 gltf-transform 压缩（保留 --no-join --no-flatten，以免节点树被压平）。",
+      "daGan": "3D 模型已上传并分配。",
+      "chuaChonMay": "请先选择一台设备",
+      "ganMayNay": "分配给 {{ma}}",
+      "chonChungLoai": "设备类型…",
+      "ganMoiMay": "分配给全部 {{n}} 台同类型设备",
+      "lechKichThuoc": "模型与申报尺寸相差 {{phanTram}}%——分配前请核对单位。",
+      "lyDo": {
+        "tam_giac_cao": "超过 50,000 三角面——仍可使用，但会占用帧预算。",
+        "tam_giac_vuot_tran": "超过 150,000 三角面——已阻止。",
+        "dung_luong_vuot_tran": "大于 15 MB——已阻止。",
+        "tep_rong": "文件为空。",
+        "duoi_tep_khong_nhan": "不接受该文件扩展名。"
+      }
+    },
+    "anhNen": {
+      "duoiKhongNhan": "仅接受 PNG、JPG 或 WebP 图像。DWG/PDF 需先导出为图像。",
+      "docHong": "无法读取该图像。",
+      "taiLen": "上传平面图",
+      "daTai": "平面图已上传。尚未校准——请在摆放设备前先设置比例。",
+      "huongDan": "点击两个已知真实距离的点，然后输入该距离。",
+      "khoangCachThat": "真实距离（毫米）",
+      "xoaDiem": "清除标点",
+      "daHieuChuanXong": "比例已保存，平面图已完成校准。",
+      "lechSan": "图像宽 {{anh}} 米，而申报的地面为 {{san}} 米——摆放设备前请核对比例。",
+      "loi": {
+        "thieu_diem": "请在图像上点击两个点。",
+        "hai_diem_qua_gan": "两点距离过近——点击误差一个像素就会使整体比例失真。请选择相距更远的两点。",
+        "khoang_cach_that_khong_hop_le": "请输入以毫米为单位的真实距离。",
+        "ti_le_vo_ly": "该比例不合理——请核对所输入距离的单位。"
+      }
+    },
+    "moPhong": {
+      "tieuDe": "仿真",
+      "thu": "收起仿真面板",
+      "mo": "展开仿真面板",
+      "whatIf": "What-if 产能",
+      "horizon": "时长（小时）",
+      "heSo": "节拍系数",
+      "chay": "运行",
+      "dangChay": "仿真中…",
+      "bamChay": "点击“运行”以估算产能。",
+      "tuoi": "{{tuoi}}前",
+      "nguon": "整条产线节拍 {{nhip}} 秒/件（wip.lineBalance），统一应用于 {{n}} 个工位{{tuoi}}",
+      "sanLuong": "产量",
+      "lyThuyet": "理论产量",
+      "canBang": "平衡率",
+      "nutThat": "瓶颈",
+      "tram": "工位",
+      "cycle": "节拍（秒）",
+      "hieuSuat": "利用率",
+      "phatLai": "回放流程",
+      "chonWorkflow": "选择要回放的流程",
+      "khongCoWorkflow": "尚未部署任何流程。",
+      "simKhongDat": "仿真未通过。",
+      "phat": "播放",
+      "tam": "暂停",
+      "luiBuoc": "上一步",
+      "toiBuoc": "下一步",
+      "lyDo": {
+        "chuaChonLine": "请选择一条产线以进行产能仿真。",
+        "khongCoTram": "该产线尚无工位。",
+        "chuaDo": "正在读取产线节拍…",
+        "khongCoBanGhi": "该产线尚无产线平衡记录。",
+        "banGhiKhongCoNhip": "最新的产线平衡记录不含节拍（avgCycleTimeMs 为空）。",
+        "nhipHetHan": "最新产线节拍已超过 8 小时有效期 — 不用于仿真。"
+      },
+      "buocTren": "第 {{i}}/{{n}} 步",
+      "khongThoiLuong": "该流程仅包含人工审批门 — 仿真不预测其时长，因此按步骤展示。",
+      "donVi": {
+        "phut": "{{n}} 分钟",
+        "gio": "{{n}} 小时",
+        "ngay": "{{n}} 天"
+      }
+    },
+    "coCheGiao": {
+      "day": {
+        "nhan": "推送",
+        "moTa": "所有数据均通过实时推送流到达。"
+      },
+      "hon_hop": {
+        "nhan": "推送 + 30 秒轮询",
+        "moTa": "推送流正常，但部分数据仍通过每 30 秒一次的轮询到达。"
+      },
+      "hoi": {
+        "nhan": "定时轮询",
+        "moTa": "没有推送流——所有数据均通过定时轮询到达。"
+      },
+      "lich_su": {
+        "nhan": "历史",
+        "moTa": "正在查看历史——数据不会自动刷新。"
+      },
+      "chua_ro": {
+        "nhan": "—",
+        "moTa": "尚未确定数据交付机制。"
+      }
+    },
+    "daiHopNhat": {
+      "an": "隐藏",
+      "tomTat": "{{so}} 项需知"
     }
   }
 }

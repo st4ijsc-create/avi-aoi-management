@@ -1,0 +1,13 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+stdout | server/_core/machinePresenceStore.test.ts > machinePresenceStore — in-memory fallback (single instance) > auto mode with no REDIS_URL falls back to memory
+[Presence] REDIS_URL not set — machine presence store is in-memory (single instance).
+
+ ✓ server/_core/machinePresenceStore.test.ts (11 tests) 5ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  19:48:23
+   Duration  679ms (transform 56ms, setup 18ms, collect 92ms, tests 5ms, environment 0ms, prepare 137ms)
+

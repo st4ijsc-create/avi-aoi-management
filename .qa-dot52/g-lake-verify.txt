@@ -1,0 +1,16 @@
+
+> synapse-platform@1.0.0 lake:verify
+> tsx scripts/streaming/lake-verify.mjs
+
+◇ injected env (265) from .env // tip: ⌘ override existing { override: true }
+[lake:verify] backend=nats dir=./data/lake topic=syn/telemetry/lakeverify consumer=lake_verify flush=1500ms
+[LakeSink] durable NATS consumer 'lake_verify' on 'syn_bridge' filter='syn.telemetry.lakeverify' deliver=all → local:D:\SOURCES\_twin_wt\data\lake (batch≤50, flush 1500ms, ack_wait 60000ms)
+[lake:verify] sink started: mode=nats-durable target=local:D:\SOURCES\_twin_wt\data\lake
+[lake:verify] published 5 synthetic samples → ok=true seq=1742418 reason=-
+[LakeSink] wrote 5 row(s) (298B gz) → D:\SOURCES\_twin_wt\data\lake\date=2026-07-13\hour=06\aspect=telemetry\part-lake_verify-1-1-48832932.ndjson.gz
+[LakeSink] wrote 5 row(s) (301B gz) → D:\SOURCES\_twin_wt\data\lake\date=2026-09-12\hour=08\aspect=telemetry\part-lake_verify-1742418-1742418-e34168a3.ndjson.gz
+[lake:verify] sink status: {"enabled":true,"running":true,"mode":"nats-durable","target":"local:D:\\SOURCES\\_twin_wt\\data\\lake","filesWritten":2,"rowsWritten":10,"bytesWritten":599,"batches":1,"lastFlushAt":"2026-09-12T08:01:16.931Z","lastError":null}
+[lake:verify] wrote 2 file(s), 10 row(s), 599B gz
+[lake:verify] newest: data\lake\date=2026-09-12\hour=08\aspect=telemetry\part-lake_verify-1742418-1742418-e34168a3.ndjson.gz  (5 row(s))
+[lake:verify] first row: {"deviceId":"SIM-L9-VERIFY-0","machineCode":"SIM-VERIFY","metric":"verify_signal","value":59.7,"ts":"2026-09-12T08:01:16.336Z","meta":{"source":"lake:verify","overallResult":"NG"},"_topic":"syn/telemetry/lakeverify","_seq":1742418,"_aspect":"telemetry","_ingest_ts":"2026-09-12T08:01:16.347Z","_event_ts":"2026-09-12T08:01:16.336Z"}
+[lake:verify] PASS

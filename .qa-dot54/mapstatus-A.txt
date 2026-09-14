@@ -1,0 +1,21 @@
+{
+ "luc": "2026-09-12T11:51:00.928Z",
+ "dangKetNoi": true,
+ "NGUONG_TRANG_THAI_TUOI_MS": 300000,
+ "ca": {
+  "null": "idle",
+  "undefined": "idle",
+  "rong ''": "idle",
+  "stopped": "idle",
+  "running": "running",
+  "maintenance": "maintenance",
+  "error": "down",
+  "warming_up": "running",
+  "XAP_XI": "running"
+ },
+ "khongKetNoi": {
+  "null": "offline",
+  "running": "offline"
+ },
+ "lichSuTaiMoc": "running"
+}

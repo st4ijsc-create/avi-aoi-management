@@ -1,0 +1,114 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "luc": "2026-09-12T12:38:29.336Z",
+  "cach": "click-may-hang-14",
+  "urlSauClick": "/twin/may/14",
+  "ngan": {
+    "coNgan": 1,
+    "maMay": "SIM-L2-AOI",
+    "trangThai": {
+      "giaTri": "khong_ro",
+      "chu": "Unknown"
+    },
+    "ghiDe": 1,
+    "doTuoi": "Updated 57 days ago",
+    "soCanhBao": 0,
+    "khongCanhBao": 1,
+    "moChucNang": "OPEN MODULE\nFull cockpit\nMachine health\nTraceability\nControl plane",
+    "nutAck": 0
+  },
+  "nhan": {
+    "canvas": {
+      "x": 288,
+      "y": 125,
+      "w": 1000,
+      "h": 324
+    },
+    "lop": {
+      "x": 288,
+      "y": 125,
+      "w": 1000,
+      "h": 324
+    },
+    "soBiChe": 0,
+    "phuBox": [
+      {
+        "t": "chip-may",
+        "x": 296,
+        "y": 415,
+        "w": 313,
+        "h": 26
+      },
+      {
+        "t": "thanh-tren-may",
+        "x": 288,
+        "y": 80,
+        "w": 1288,
+        "h": 45
+      }
+    ],
+    "lopTrungCanvas": true,
+    "so": 1,
+    "tamTrong": 1,
+    "tronVen": 1,
+    "chipNhanAn": null,
+    "ds": [
+      {
+        "text": "SIM-L2-AOI · Unknown",
+        "x": 715,
+        "y": 155,
+        "w": 146,
+        "h": 24,
+        "opacityTichLuy": 1,
+        "tamTrong": true,
+        "tronVen": true,
+        "cheBoi": []
+      }
+    ]
+  },
+  "coNganNhung": false,
+  "coTab": false,
+  "coTab3d": false,
+  "truoc": {
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "day": 449,
+        "chaTestId": "khoi-canh-3d",
+        "w_attr": 1000,
+        "h_attr": 324
+      }
+    ],
+    "drawCalls": 5,
+    "matContext": 0,
+    "__demNhan": {
+      "ve": 1,
+      "tong": 1,
+      "ngoaiKhung": 0,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 0,
+      "vuotMep": 0,
+      "biChe": 0,
+      "deKhoiKhac": 0,
+      "deKhoiKhacDoLai": 0,
+      "soHopKhoi": 3,
+      "soVungCam": 1,
+      "soLopPhuDom": 1,
+      "soHopBadge": 0,
+      "suCoNgoaiKhung": 0,
+      "capConChong": 0
+    }
+  },
+  "sau": null,
+  "cockpitChu": null,
+  "urlCuoi": "/twin/may/14"
+}

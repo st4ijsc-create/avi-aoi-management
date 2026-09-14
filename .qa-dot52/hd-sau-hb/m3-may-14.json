@@ -1,0 +1,30 @@
+{
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot52/hd-sau-hb",
+  "may": 14,
+  "luc": "2026-09-12T08:27:12.359Z",
+  "url": "/twin/may/14",
+  "nganDoTuoiSom": {
+    "luc": 1789201620243,
+    "chu": "Updated 19s ago",
+    "giay": "19",
+    "chip": "idle"
+  },
+  "chip": {
+    "trangThai": "idle",
+    "chu": "SIM-L2-AOI\nAOI\nIdle\nHealth 61 % · warning"
+  },
+  "nganDoTuoi": {
+    "chu": "Updated 23s ago",
+    "giay": "23"
+  },
+  "badgeQuaCu": 0,
+  "cockpit": {
+    "headerBadge": "ONLINE",
+    "connected": "Connected",
+    "liveState": "Live state Status online PackML / op — Last change online · 9/7/2026, 1:51:22 AM Heartbeat running Last heartbeat 19s Connection connected",
+    "lastHeartbeat": "Last heartbeat 19s",
+    "lastChange": "Last change online · 9/7/2026, 1:51:22 AM Heartbeat"
+  }
+}

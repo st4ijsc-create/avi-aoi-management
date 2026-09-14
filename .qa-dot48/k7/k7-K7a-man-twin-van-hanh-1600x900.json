@@ -1,0 +1,129 @@
+{
+  "luc": "2026-09-11T22:24:06.062Z",
+  "base": "http://localhost:3048",
+  "duong": "/twin",
+  "man": "man-twin-van-hanh",
+  "vp": "1600x900",
+  "me": {
+    "cache": false,
+    "login": 200,
+    "ten": "e2e_tai_loE",
+    "status": 200,
+    "ct": "application/json"
+  },
+  "mo": {
+    "msCanvas": 1042,
+    "msSanSang": 3603,
+    "coMayTrongKhung": true
+  },
+  "coChe": {
+    "soObject": 1,
+    "coHandler": 1,
+    "trongScene": 1,
+    "ten": [
+      "twin3d-lo-may-su-kien"
+    ]
+  },
+  "lop": {
+    "canvas": [
+      288,
+      207,
+      1288,
+      669
+    ],
+    "lopNhan": [
+      288,
+      207,
+      1288,
+      669
+    ],
+    "lopBadge": [
+      288,
+      207,
+      1288,
+      669
+    ],
+    "soBadge": 7,
+    "soNhan": 3
+  },
+  "may": {
+    "id": 246,
+    "X": 775.1205276862463,
+    "Y": 489.1787606159683,
+    "cv": [
+      288,
+      207,
+      1288,
+      669
+    ],
+    "soTrongKhung": 42,
+    "loai": [],
+    "hit": {
+      "ten": "twin3d-lo-may",
+      "batchId": 0,
+      "khoangCach": 50.855930789917316
+    }
+  },
+  "cursorTrenMay": "pointer",
+  "san": {
+    "X": 932,
+    "Y": 260.52
+  },
+  "cursorTrenSan": "auto",
+  "urlTruocSan": "http://localhost:3048/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+  "urlSauSan": "http://localhost:3048/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+  "camTruoc": {
+    "x": 46.28983020377636,
+    "y": 16.2802169896242,
+    "z": 40.014830203776356,
+    "mucX": 19.125,
+    "mucZ": 12.849999999999998
+  },
+  "camSau": {
+    "x": 33.765577694137924,
+    "y": 16.2802169896242,
+    "z": 48.367734792381086,
+    "mucX": 19.125,
+    "mucZ": 12.849999999999998
+  },
+  "urlSauKeo": "http://localhost:3048/twin?do=1&cam=33.77%2C16.28%2C48.37%2C19.13%2C12.85",
+  "may2": {
+    "id": 246,
+    "X": 687.1974221411814,
+    "Y": 527.1074112908948,
+    "cv": [
+      288,
+      207,
+      1288,
+      669
+    ],
+    "soTrongKhung": 42,
+    "loai": [],
+    "hit": {
+      "ten": "twin3d-lo-may",
+      "batchId": 0,
+      "khoangCach": 45.761706256228464
+    }
+  },
+  "msPlaywright": 3036,
+  "urlSauBam": "http://localhost:3048/twin/may/1",
+  "treTrongTrang": 0.2,
+  "veXong": {
+    "coCanvas": true,
+    "onDinh": true,
+    "msVeXong": 3009
+  },
+  "manMay": {
+    "coMan": true,
+    "canvasDom": 1,
+    "canvasTrongMan": 1,
+    "__soCanvas": 1,
+    "dangTai": 0,
+    "spin": 0,
+    "calls": 5,
+    "thanhTren": "Nhà máy›Dây chuyền ảo 1›SIM-L1 SPI",
+    "h1": "SIM-L1 SPI",
+    "cockpit": 1,
+    "lyDo": null
+  }
+}

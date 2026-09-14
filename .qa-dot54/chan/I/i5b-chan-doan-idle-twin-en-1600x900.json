@@ -1,0 +1,53 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "lang": "en",
+  "vp": "1600x900",
+  "tag": "../.qa-dot54/chan/I",
+  "luc": "2026-09-12T13:24:38.702Z",
+  "coMan": true,
+  "coCanvas": true,
+  "url": "/twin?pv=factory%3A1&cam=51.38%2C19.68%2C45.11%2C19.13%2C12.85",
+  "__soCanvas": 1,
+  "canvasDom": 1,
+  "canvasDs": [
+    {
+      "x": 288,
+      "y": 207,
+      "w": 1288,
+      "h": 669,
+      "chaTestId": "khoi-canh-3d"
+    }
+  ],
+  "drawCalls": 5,
+  "tongKhung40s": 0,
+  "cuaSo4s": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "mocDauTien": [],
+  "mocCuoi": [],
+  "camTruoc": {
+    "x": 51.38323586698442,
+    "y": 19.67582076509624,
+    "z": 45.108235866984415,
+    "mucX": 19.125,
+    "mucZ": 12.849999999999998
+  },
+  "camSau": {
+    "x": 51.38323586698442,
+    "y": 19.67582076509624,
+    "z": 45.108235866984415,
+    "mucX": 19.125,
+    "mucZ": 12.849999999999998
+  },
+  "camDoi": false
+}

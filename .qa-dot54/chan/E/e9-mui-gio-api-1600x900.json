@@ -1,0 +1,44 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot54/chan/E",
+  "luc": "2026-09-12T13:21:25.327Z",
+  "bayGio": "2026-09-12T13:21:25.270Z",
+  "anhLichSu": {
+    "status": 200,
+    "code": null,
+    "soMay": 42,
+    "bayGioServer": "2026-09-12T13:21:25.270Z",
+    "may14": {
+      "trangThai": "offline",
+      "capNhatLuc": "2026-07-17T01:26:09.833Z",
+      "tuoiGiay": 4967715,
+      "tuoiPhut": 82795
+    }
+  },
+  "anToanRobot": {
+    "status": 200,
+    "code": null,
+    "robots": [
+      {
+        "id": 2,
+        "ma": "ROB-UR-01",
+        "capNhatLuc": null,
+        "tuoiPhut": null
+      },
+      {
+        "id": 3,
+        "ma": "ROB-FANUC-01",
+        "capNhatLuc": null,
+        "tuoiPhut": null
+      },
+      {
+        "id": 1,
+        "ma": "ROB-SIM-01",
+        "capNhatLuc": "2026-09-12T13:21:22.055Z",
+        "tuoiPhut": 0
+      }
+    ]
+  }
+}

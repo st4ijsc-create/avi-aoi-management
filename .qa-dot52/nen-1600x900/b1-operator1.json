@@ -1,0 +1,174 @@
+{
+  "role": "B",
+  "user": "operator1",
+  "vp": "1600x900",
+  "luc": "2026-09-12T07:41:14.593Z",
+  "ds": [
+    {
+      "duong": "/twin",
+      "url": "/twin",
+      "coMan": 1,
+      "biChan": 0,
+      "__soCanvas": 0,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": null,
+      "matContext": null,
+      "__demNhan": null,
+      "lyDoMay": null,
+      "lineRong": 0,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "Production | MES | Production Overview | War-room | SLA Cockpit | Product changeover | 3D Factory | INSPECTION | History | AOI Packages | ORDERS & SCHEDULE | Production Orders | Production Scheduling | Session Sign-Off (21 CFR) | Production Routing | Line Materials",
+        "activeApp": "active_app=production"
+      },
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "body": "Skip to content\nProduction (MES)\nProduction\nMES\nProduction Overview\nWar-room\nSLA Cockpit\nProduct changeover\n3D Factory\nINSPECTION\nHistory\nAOI Packages\nORDERS & SCHEDULE\nProduction Orders\nProduction Scheduling\nSession Sign-Off (21 CFR)\nProduction Routing\nLine Materials\nShow advanced menu\nSimple\nC\nChị"
+    },
+    {
+      "duong": "/twin/line/2",
+      "url": "/twin/line/2",
+      "coMan": 1,
+      "biChan": 0,
+      "__soCanvas": 0,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": null,
+      "matContext": null,
+      "__demNhan": null,
+      "lyDoMay": null,
+      "lineRong": 0,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "Production | MES | Production Overview | War-room | SLA Cockpit | Product changeover | 3D Factory | INSPECTION | History | AOI Packages | ORDERS & SCHEDULE | Production Orders | Production Scheduling | Session Sign-Off (21 CFR) | Production Routing | Line Materials",
+        "activeApp": "active_app=production"
+      },
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [
+          {
+            "t": "thanh-tren-line",
+            "x": 288,
+            "y": 80,
+            "w": 1288,
+            "h": 45
+          }
+        ],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "body": "Skip to content\nProduction (MES)\nProduction\nMES\nProduction Overview\nWar-room\nSLA Cockpit\nProduct changeover\n3D Factory\nINSPECTION\nHistory\nAOI Packages\nORDERS & SCHEDULE\nProduction Orders\nProduction Scheduling\nSession Sign-Off (21 CFR)\nProduction Routing\nLine Materials\nShow advanced menu\nSimple\nC\nChị"
+    },
+    {
+      "duong": "/twin/may/14",
+      "url": "/twin/may/14",
+      "coMan": 1,
+      "biChan": 0,
+      "__soCanvas": null,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": null,
+      "matContext": null,
+      "__demNhan": null,
+      "lyDoMay": "chuaGanNhaMay",
+      "lineRong": 0,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "Production | MES | Production Overview | War-room | SLA Cockpit | Product changeover | 3D Factory | INSPECTION | History | AOI Packages | ORDERS & SCHEDULE | Production Orders | Production Scheduling | Session Sign-Off (21 CFR) | Production Routing | Line Materials",
+        "activeApp": "active_app=production"
+      },
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [
+          {
+            "t": "thanh-tren-may",
+            "x": 288,
+            "y": 80,
+            "w": 1288,
+            "h": 45
+          }
+        ],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "body": "Skip to content\nProduction (MES)\nProduction\nMES\nProduction Overview\nWar-room\nSLA Cockpit\nProduct changeover\n3D Factory\nINSPECTION\nHistory\nAOI Packages\nORDERS & SCHEDULE\nProduction Orders\nProduction Scheduling\nSession Sign-Off (21 CFR)\nProduction Routing\nLine Materials\nShow advanced menu\nSimple\nC\nChị"
+    },
+    {
+      "duong": "/twin-studio",
+      "url": "/twin-studio",
+      "coMan": 0,
+      "biChan": 1,
+      "__soCanvas": null,
+      "canvasDom": 0,
+      "canvasDs": [],
+      "drawCalls": null,
+      "matContext": null,
+      "__demNhan": null,
+      "lyDoMay": null,
+      "lineRong": 0,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "Production | MES | Production Overview | War-room | SLA Cockpit | Product changeover | 3D Factory | INSPECTION | History | AOI Packages | ORDERS & SCHEDULE | Production Orders | Production Scheduling | Session Sign-Off (21 CFR) | Production Routing | Line Materials",
+        "activeApp": "active_app=production"
+      },
+      "nhan": {
+        "canvas": null,
+        "lop": null,
+        "soBiChe": 0,
+        "phuBox": [],
+        "lopTrungCanvas": false,
+        "so": 0,
+        "tamTrong": 0,
+        "tronVen": 0,
+        "chipNhanAn": null,
+        "ds": []
+      },
+      "body": "Skip to content\nProduction (MES)\nProduction\nMES\nProduction Overview\nWar-room\nSLA Cockpit\nProduct changeover\n3D Factory\nINSPECTION\nHistory\nAOI Packages\nORDERS & SCHEDULE\nProduction Orders\nProduction Scheduling\nSession Sign-Off (21 CFR)\nProduction Routing\nLine Materials\nShow advanced menu\nSimple\nC\nChị"
+    }
+  ],
+  "probe": {
+    "status": 200,
+    "appCode": null,
+    "code": null,
+    "tho": "{\"result\":{\"data\":{\"json\":[]}}}"
+  }
+}

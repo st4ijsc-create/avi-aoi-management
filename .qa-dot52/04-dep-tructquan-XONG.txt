@@ -1,0 +1,50 @@
+[Đợt 52 · mục 3] "ĐẸP · TRỰC QUAN"
+Thô: .qa-dot52/d3-vi/, .qa-dot52/d3-en/ (22 trạng thái × 2 vp mỗi ngôn ngữ + tong.json),
+     .qa-dot52/bbox-52/, .qa-dot52/nc/, .qa-dot52/nhanbadge/, .qa-dot52/thigiac-tomtat.json
+
+1) 22 TRẠNG THÁI × vi VÀ en (thigiac52.mjs — bbox thật từ DOM, không elementFromPoint):
+   vi: 23 tệp đo · nhãn 126 · badge 54 · chip 6
+   en: 23 tệp đo · nhãn 124 · badge 54 · chip 6
+   NGOÀI canvas : nhãn 0 · badge 0 · chip 0   (cả hai ngôn ngữ)
+   BỊ CHE       : nhãn 0 · badge 0 · chip 0   (cả hai ngôn ngữ)
+   cặp CHỒNG    : nhãn×nhãn 0 · badge×badge 0 · nhãn×badge 0   (cả hai ngôn ngữ)
+   badge soAn 0 · biChe 0 (gồm /twin @1280 — Đợt 49 đưa về 0/0, GIỮ)
+   tràn trang 0 · Geist đủ mặt chữ ở mọi trạng thái
+   ⚠ tôi gom nhầm khoá ở lần đầu (nhan.ngoaiCanvas / badgeDoiCho coi là mảng) ⇒ ra "toàn 0" GIẢ;
+     đã đối chiếu với chính dòng in của harness rồi viết lại (.qa-dot52/tomtat-thigiac.mjs).
+
+2) LỆCH LỚP-VS-CANVAS `lop-nhan` + `lop-canh-bao`: 0 ở mọi trạng thái (mọi nhãn/badge trongCanvas=true).
+
+3) 34 MỤC THIẾT KẾ QĐ-26 (bbox52.mjs, 4 màn × 2 vp): ĐẠT 34 · TRƯỢT 0 / 34.
+
+4) CẶP NHÃN ∩ HÌNH CHIẾU KHỐI MÁY KHÁC (nc52.mjs — mô hình rời với (1)):
+   1600×900 /twin mặc định 10 · sau kéo 13 · /twin/line/2 0 · 0
+   1280×720 /twin mặc định  9 · sau kéo  7 · /twin/line/2 2 · 0
+   TỔNG 41 — Y HỆT nền Đợt 49/50 (10/13/0/0/9/7/2/0). Không hồi quy, cũng không cải thiện.
+   ⇒ KHÔNG chặn kết cục: 24/24 cú bấm tâm khối vẫn tới đúng máy (K8), kể cả 5 máy bị nhãn máy khác phủ.
+
+5) ★ SAI MỚI TÌM ĐƯỢC (mắt thấy trước, phép đo xác nhận sau):
+   MÀN MÁY của máy ĐANG CÓ CẢNH BÁO MỞ: badge cảnh báo ĐÈ LÊN nhãn tên máy.
+   Đo bbox thật (.qa-dot52/nhanbadge/tong.json), 8 máy × 2 vp × vi/en = 32 ca:
+     /twin/may/18 (SIM-L2-CONVEYOR, 1 cảnh báo mở) — 4/4 ca có chồng:
+       1600×900 vi 1 595 px² (35 % diện tích nhãn) · en 1 584 px²
+       1280×720 vi   744 px² (17 %)               · en   756 px²
+       badge nằm TRÊN (z ≥ z nhãn) ⇒ che một phần chữ tên máy.
+     28 ca còn lại (máy 0 cảnh báo): 0 chồng.
+   VÌ SAO 22 TRẠNG THÁI KHÔNG BẮT: bộ 22 trạng thái dùng /twin/may/14, mà máy 14 có 0 cảnh báo mở
+   ⇒ trạng thái "màn Máy của máy ĐANG có cảnh báo" CHƯA BAO GIỜ nằm trong lưới (G5 họ hàng).
+   Ảnh: .qa-dot52/nhanbadge/chong-may18-*.png · .qa-dot52/k8/k8-K8b-1600x900-may2-18-sau.png
+
+6) ĐỌC ẢNH BẰNG MẮT (11 PNG, tự đọc — DOM count không phải bằng chứng thị giác):
+   k8/k8-K8a-1600x900-may1-246 · k8/k8-K8b-1600x900-may2-18 · k8/k8-K8b-1280x720-may1-22 ·
+   k8/k8-K8a-1280x720-may1-7 · k8/k8-K8b-1600x900-may5-21 · k8/k8-K8a-1600x900-may3-247 ·
+   k8/k8-K8h-factory-command-1600x900 · k8/k8-K8h-factory-command-1280x720 ·
+   d3-vi/twin-nhan-tat-ca-1600x900 · d3-vi/line-mac-dinh-1600x900 · d3-en/twin-chua-chon-1280x720 ·
+   nhanbadge/chong-may18-1600x900-vi
+   Nhận xét đọc được từ ảnh (không từ DOM):
+   · Vòng sức khoẻ quanh máy đổi màu theo hạng (đỏ/cam/không vòng khi "khoẻ") — tín hiệu trực quan THẬT.
+   · Màn Line: 12/12 nhãn trạm, mũi tên dòng chảy, dải WIP đáy có số từng trạm ⇒ đọc được ngay.
+   · ĐỐI CHỨNG /factory-command 3D (màn CŨ): 41 máy CHỒNG LÊN NHAU thành một khối, nhãn đè nhau
+     (G102 đã ghi) — chính là "chưa trực quan" mà ba màn Twin mới đã bỏ được.
+   · Nit "đẹp": màn Line @1600 để trống ~40 % nửa trên khung nhìn; máy nằm dồn xuống dải y≈560–640.
+   · Dữ liệu seed để tên KHÔNG DẤU ("Xuong lap rap ao (SIM)", "Tang tret") — lỗi DỮ LIỆU, không phải mã.

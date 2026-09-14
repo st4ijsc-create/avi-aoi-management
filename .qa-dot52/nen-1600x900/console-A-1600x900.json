@@ -1,0 +1,14 @@
+[
+  {
+    "ca": "a7",
+    "text": "[API Query Error] TRPCClientError: Failed to fetch\n    at ao.from (http://localhost:3052/assets/index-C9m3IM7B.js:2:55781)\n    at http://localhost:3052/assets/index-C9m3IM7B.js:2:61010"
+  },
+  {
+    "ca": "a7",
+    "text": "[API Query Error] TRPCClientError: Failed to fetch\n    at ao.from (http://localhost:3052/assets/index-C9m3IM7B.js:2:55781)\n    at http://localhost:3052/assets/index-C9m3IM7B.js:2:61010"
+  },
+  {
+    "ca": "a7",
+    "text": "[API Query Error] TRPCClientError: Failed to fetch\n    at ao.from (http://localhost:3052/assets/index-C9m3IM7B.js:2:55781)\n    at http://localhost:3052/assets/index-C9m3IM7B.js:2:61010"
+  }
+]

@@ -1,0 +1,5 @@
+MUC D XONG 2026-09-13T15:52:44+07:00
+cau hinh moi, 0 co   : 1 worker, 16/16 XANH (exit 0)
+cau hinh moi, -w12   : 1 worker, 16/16 XANH (tran project khong do duoc)
+cau hinh NEN, 0 co   : 12 worker, 4 DO OAN/16 (exit 1)
+--list: 151 ca / 30 tep (chromium 30 ca/13 tep + chromium-canh-3d 121 ca/17 tep, roi nhau)

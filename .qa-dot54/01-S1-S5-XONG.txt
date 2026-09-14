@@ -1,0 +1,5 @@
+S1-S4 (badge x nhan): 0/20 cap · vs ABLATION 8/20 cap 11928px2 (may18 35%/17%, may23 53%/40%)
+G136 badge VE = badge VAO SO: 20/20 (+48/48 ca thi giac)
+S5 hop dong: 6/6 mot chu (ablation 2/6 lech)
+S-C: EXPLAIN cu 114-153ms vs moi 0.10-0.34ms, 43 hang giong het; SLOW QUERY DISTINCT ON health: 54a=0, 54z=1
+bbox 34/34 · K8 46 DAT/2 N-A · K9 6/6 · thi giac 48/48 ca sach

@@ -1,0 +1,115 @@
+════════ ĐỢT 56 · MỤC C — DỰNG LẠI `dist/` TỪ HEAD (chủ sở hữu ĐÃ DUYỆT) ════════
+
+── 1. md5 `dist/` TRƯỚC ──────────────────────────────────────────────────────
+tệp đo      : `.qa-dot56/md5-dist-truoc.txt`  (922 tệp, md5 từng tệp)
+dấu vân tay : md5 của cả danh sách = **423b4e868e714af7afb43e04e34b08ac**
+thời điểm   : đo 2026-09-12T15:10Z; `dist/index.js` mtime **2026-09-12 03:52**, 11 963 516 byte
+ai đang phục vụ khi đo: cổng **3001** (PID 37128) và **3008** (PID 38472) — tiến trình của **phiên khác**
+
+BẰNG CHỨNG `dist/` CŨ HƠN HEAD (grep 3 dấu của Đợt 49+):
+  hopManHinh  → **0** tệp trong `dist/`     (nguồn có: 4 tệp)
+  hopKhoiMay  → **0** tệp trong `dist/`     (nguồn có: 4 tệp)
+  hopNhanDaVe → **0** tệp trong `dist/`     (nguồn có: 2 tệp)
+⇒ xác nhận brief: bundle đang chạy KHÔNG chứa mọi bản vá 49–54.
+
+── 2. BUILD ──────────────────────────────────────────────────────────────────
+lệnh: `NODE_ENV=production npm run build`  (đúng lệnh repo, **không** đổi một dòng cấu hình)
+lần 1: `.qa-dot56/build-1.log` → **EXIT=0**
+lần 2: `.qa-dot56/build-2.log` → **EXIT=0**
+
+★ G120 — HAI LẦN BUILD PHẢI KHỚP:
+  dấu vân tay lần 1 = **8e48c9336e123698dc5e5598298daefe**
+  dấu vân tay lần 2 = **8e48c9336e123698dc5e5598298daefe**
+  `diff md5-dist-sau1.txt md5-dist-sau2.txt` ⇒ **KHỚP TUYỆT ĐỐI, 922/922 tệp md5 giống hệt**.
+  ⇒ bản dựng TẤT ĐỊNH; thứ tôi đo bên dưới đúng là thứ vừa dựng, không phải bản trôi.
+
+── 3. SAU BUILD ──────────────────────────────────────────────────────────────
+md5 `dist/` SAU : `.qa-dot56/md5-dist-sau1.txt` (= sau2), dấu vân tay **8e48c933…**, 922 tệp
+                  `dist/index.js` mtime 2026-09-12 22:21, 11 965 208 byte
+
+3 dấu Đợt 49+ trong bundle MỚI:
+  hopManHinh  → **1** tệp ✅
+  hopKhoiMay  → **1** tệp ✅
+  hopNhanDaVe → **1** tệp ✅
+
+`scripts/kiem-vo-app-https.mjs` ⇒ **ĐẠT** cả hai:
+  client/index.html    : tài nguyên ngoài 0 · meta CSP 0 · http(s):// thô 0
+  dist/public/index.html: tài nguyên ngoài 0 · meta CSP 0 · http(s):// thô 31 (đều trong script nội tuyến/chú thích)
+
+HAI CỔNG CỦA PHIÊN KHÁC — VẪN 200, KHÔNG BỊ ĐỘNG TỚI:
+  trước build : 3001 → 200 · 3008 → 200
+  sau build   : 3001 → 200 · 3008 → 200
+  ⚠ Tôi **KHÔNG** `taskkill`, **KHÔNG** restart PID 37128 / 38472. Chỉ ghi đè tệp tĩnh trong `dist/`.
+  ⚠⚠ **BACKEND TRONG BỘ NHỚ CỦA HAI CỔNG ẤY VẪN LÀ BẢN CŨ** cho tới khi chủ sở hữu tự restart.
+     Vì vậy MỌI phép đo mục C.4 dưới đây chạy trên **server 3056 của tôi, dựng từ `dist` MỚI**,
+     không đi qua 3001/3008.
+
+── 4. BỐN PHÉP ĐO ĐỢT 55 KHÔNG CHẠY ĐƯỢC — NAY CHẠY ĐƯỢC ─────────────────────
+Server đo: `sh .qa-dot56/server.sh start` ⇒ cổng **3056**, PID **42872** (của TÔI), `/twin` = 200.
+
+(a) e2e BẤM CẢNH — `e2e/twin-dot47-bam-canh.spec.ts`
+    `TWIN_E2E_ANH=.qa-dot56/e2e PLAYWRIGHT_BASE_URL=http://localhost:3056 … --workers=1
+     --output .qa-dot56/pw-output`
+    ⇒ **16 passed (2,1 phút)** — `.qa-dot56/C4-bamcanh.log`, EXIT=0
+    ★ Đợt 55 có **4 ca T1g ĐỎ**; nay cả 4 XANH. Nguyên nhân đỏ đã được xác nhận đúng là
+      **nhị phân cũ**: thông báo đỏ của Đợt 55 là
+      `cửa sổ đo hopKhoiMay phải có — nếu 0 thì khoiMay chưa nối tới LopNhan` (`dinh.soKhoi` = 0),
+      mà `hopKhoiMay` chính là 1 trong 3 dấu **vắng mặt** khỏi bundle cũ (mục 1).
+      Đây là đối chứng nhân–quả, không phải trùng hợp.
+
+(b) 24 CA THỊ GIÁC × vi/en — `.qa-dot56/thigiac56.mjs` (bản Đợt 53, chỉ đổi `--base`)
+    vi ⇒ **24 trạng thái**, 127 nhãn, 56 badge, **0 vi phạm**
+    en ⇒ **24 trạng thái**, 126 nhãn, 56 badge, **0 vi phạm**
+    Bất biến đã kiểm từng trạng thái: mọi nhãn/badge **trong canvas** · **không bị lớp phủ che** ·
+    **0 cặp chồng** (nhãn×nhãn, badge×badge, nhãn×badge) · **đúng 1 canvas** · **không tràn khung nhìn**.
+    Tóm tắt: `.qa-dot56/C4-thigiac-{vi,en}-tomtat.txt`; ảnh + JSON từng trạng thái: `.qa-dot56/d3-{vi,en}/`
+
+(c) BBOX — `.qa-dot56/bbox56.mjs --tag=56 --base=http://localhost:3056`
+    ⇒ **ĐẠT 34 · TRƯỢT 0 / 34** (`.qa-dot56/C4-bbox.log`, EXIT=0)
+
+(d) 4 LƯỚI PHẠM VI ⇒ **180/180 XANH**
+      server/routers/maintenanceAndonPhamVi.db.test.ts              28
+      server/routers/factoryCommandAssetCockpitPhamVi.db.test.ts    22
+      server/routers/digitalTwinPhamVi.db.test.ts                   15
+      server/routers/twinBonManApiVaiPhamVi.db.test.ts             115
+      ────────────────────────────────────────────────────────────  ───
+                                                                   180
+    (chạy trong `npx vitest run phamVi` = 17 tệp / **437 test XANH** — `.qa-dot56/HQ-phamvi.log`)
+
+── 5. `dist/` bị `.gitignore` ⇒ KHÔNG commit ────────────────────────────────
+`git check-ignore dist` ⇒ có. Không một byte nào của `dist/` vào commit.
+Bằng chứng còn lại nằm ở `.qa-dot56/md5-dist-{truoc,sau1,sau2}.txt` (đã commit).
+
+════════════════════════════════════════════════════════════════════════════
+★★★ PHÁT HIỆN NGOÀI BRIEF — `dist/` CŨ ĐANG PHỤC VỤ MỘT LỖ RÒ PHẠM VI
+════════════════════════════════════════════════════════════════════════════
+Tôi đo hợp đồng đầu ra `factoryCommand.overview` trên **2 vai** ở CẢ HAI nhị phân
+(`.qa-dot56/md5-overview.mjs`, md5 tính trên bản đã chuẩn hoá — bỏ trường suy từ đồng hồ).
+3001 dùng được làm "bản TRƯỚC" chính vì backend trong bộ nhớ của nó vẫn là bản cũ.
+
+  nhị phân CŨ (cổng 3001, PID 37128 — phiên khác)
+    A `e2e_tai_loE` (supervisor, **1** gán nhà máy) → 41 máy · 26 issue · md5 9a3132658efa157db88c5334b970eec0
+    B `operator1`   (operator,  **0** gán nhà máy) → **41 máy** · 26 issue · md5 9a3132658efa157db88c5334b970eec0
+                                                       ↑ HAI VAI, MỘT md5 GIỐNG HỆT
+
+  nhị phân MỚI (cổng 3056, dựng từ HEAD)
+    A `e2e_tai_loE` → 41 máy · 67 issue · md5 a1b9167b83b3c414066116f936bc5d7e
+    B `operator1`   → **0 máy** · 0 issue · md5 ca2eb573817aac77821e99503c4d101b
+
+XÁC MINH PHÂN QUYỀN TỪ DB (không đoán): `user_factory_assignments` có đúng 3 hàng;
+`operator1` (id=48) có **0** hàng; `e2e_tai_loE` (id=21075) có **1** hàng (`SIM-FAC`).
+
+⇒ Bản `dist/` mà cổng 3001/3008 đang phục vụ trả **toàn bộ 41 máy** cho một tài khoản
+  **0 gán nhà máy**. Đó đúng lớp lỗi G113 (`factoryCommand.overview` thiếu scope tenant) —
+  đã được vá ở Đợt 40 nhưng **chưa bao giờ vào nhị phân đang chạy**. Cổng phạm vi
+  (`factoryCommandService.ts:196` `idsTrongPhamVi` → `[]` ⇒ trả RỖNG) có mặt và hoạt động
+  đúng trong bản MỚI.
+
+⚠ LƯU Ý VỀ CÁCH ĐỌC md5: md5 cũ ≠ md5 mới, nên **KHÔNG** được nói "dựng lại không đổi đầu ra".
+  Đầu ra CÓ đổi, và phần đổi chính là **bản vá**: (i) phạm vi tenant nay chặn đúng,
+  (ii) số issue 26 → 67 do các bản vá 49–54 về ưu tiên/kiểm đếm sự cố. Đây là chiều đo hai
+  hướng đúng nghĩa: một vai thấy dữ liệu, một vai thấy rỗng — thiết bị đo phân biệt được,
+  không phải "rỗng vì hỏng".
+
+⇒ KHUYẾN NGHỊ CHO CHỦ SỞ HỮU: restart 3001/3008 sớm. Chừng nào chưa restart, hai cổng ấy
+  vẫn để lộ toàn bộ đội máy cho tài khoản không được gán nhà máy nào.

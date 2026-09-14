@@ -1,0 +1,6 @@
+Dot 54 — QA lan 9 XAC NHAN — XONG 2026-09-12T20:44:17+07:00
+PHAN QUYET: nghiem thu cuoi DAT 5/5 tieu chi + 7/7 QD (QD-27 dat tren dev, production chua ap)
+S1-S4 DONG (0/20 vs ablation 8/20) · S5 DONG (6/6 vs ablation 2/6 sai) · S-C DONG (0 cau cham vs ablation 2)
+625 ca do · 0 SAI · 0 HONG · 13 CHAN-DUNG · 2 N-A
+Brief SAI 4 cho · loi cua toi 6 cho (4 do doc CHUOI thay vi CAU TRUC)
+DB 11+6 khoa LECH 0 · 5 anh + .qa-dot47 616/616 khong doi · ma san pham md5 5/5 khop · 3054 da tat

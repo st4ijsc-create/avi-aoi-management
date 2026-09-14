@@ -311,7 +311,26 @@ function NoiDungCanh({
     }));
   }, [layout, zoomGan, selectedId, chon.dangHover, nhanTrangThai]);
 
-  // Con trỏ pointer khi rê lên máy — hành vi màn cũ.
+  /**
+   * Con trỏ pointer khi rê lên máy — hành vi màn cũ.
+   *
+   * ★★★ ĐỢT 50 MỤC D — CHỖ LỆCH VỚI `CanhVanHanh.tsx:544` ĐƯỢC GHI RA, KHÔNG ĐƯỢC VÁ.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Ở ĐÂY  : không rê ⇒ `cursor = "grab"` (và KHÔNG có hàm dọn khi unmount).
+   * Bên kia : không rê ⇒ `cursor = ""` (trả về mặc định), có `return () => …` dọn.
+   *
+   * VÌ SAO KHÔNG ĐỔI (đo lại 2026-09-12, không chép lời khai Đợt 49 — G83):
+   *   `grep -rn "CanhNhaMay" client/src` ⇒ NGƯỜI GỌI DUY NHẤT là
+   *   `client/src/pages/FactoryCommandView.tsx:518` (`/factory-command`) — một
+   *   trong 5 MÀN CŨ mà mọi đợt Twin đều bị cấm sửa hành vi. Đổi `"grab"` → `""`
+   *   ở đây là đổi cảm giác kéo-xoay của màn ấy, và KHÔNG CÓ PHÉP ĐO NÀO nói
+   *   bên nào đúng: e2e `T1b`/`K7e` chỉ canh "rời máy ⇒ KHÔNG `pointer`", mà
+   *   `"grab"` cũng không phải `pointer` ⇒ lưới XANH cho CẢ HAI giá trị (lưới
+   *   KHÔNG canh được hướng này — đó là lý do chỗ lệch sống sót 50 đợt).
+   *
+   * ⇒ Điều kiện để hợp nhất: có phép đo nói `/factory-command` muốn con trỏ nào,
+   *   HOẶC màn ấy được đưa vào phạm vi sửa. Chưa có ⇒ ghi lệch, giữ nguyên.
+   */
   const gl = useThree((s) => s.gl);
   useEffect(() => {
     gl.domElement.style.cursor = chon.dangHover != null ? "pointer" : "grab";

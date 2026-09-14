@@ -1,0 +1,12 @@
+{
+ "cheDo": "chan",
+ "argv": [
+  "--vp=1600x900",
+  "--tag=f1-51-7",
+  "--base=http://localhost:3051",
+  "--mang=chan"
+ ],
+ "soNgoai": 0,
+ "host": [],
+ "ngoai": []
+}

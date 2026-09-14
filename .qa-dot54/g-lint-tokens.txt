@@ -1,0 +1,81 @@
+
+> synapse-platform@1.0.0 lint:tokens
+> node scripts/lint-frontend-tokens.mjs
+
+Front-end token lint (report-only) — client/src/pages/**/*.tsx
+
+   palette     hex  file
+  --------  ------  ----------------------------------------
+        78      14  client/src/pages/RfTestCellSim.tsx
+        62       0  client/src/pages/Login.tsx
+        61       0  client/src/pages/AICodingWorkspace.tsx
+         4      48  client/src/pages/CorporateLayout.tsx
+        52       0  client/src/pages/OrchestrationStudio.tsx
+        52       0  client/src/pages/SPCAdvanced.tsx
+        20      25  client/src/pages/DigitalTwinCenter.tsx
+        43       0  client/src/pages/AdminSettings.tsx
+        42       0  client/src/pages/EnhancedAuditLogs.tsx
+        20      20  client/src/pages/CellTwinPlayer.tsx
+        37       0  client/src/pages/SafetyWorkforce.tsx
+        35       2  client/src/pages/TwinVanHanh.tsx
+        36       0  client/src/pages/OperatorHome.tsx
+         8      24  client/src/pages/Dashboard.tsx
+        31       0  client/src/pages/AIBrainDashboard.tsx
+        21       7  client/src/pages/FleetOrchestration.tsx
+        19       4  client/src/pages/FactoryFloorEditor.tsx
+         0      20  client/src/pages/AnnotationStatistics.tsx
+        20       0  client/src/pages/LicenseManagement.tsx
+         0      19  client/src/pages/MachineCockpit.tsx
+        16       0  client/src/pages/RecipeManagement.tsx
+         0      14  client/src/pages/CommandCenter.tsx
+        14       0  client/src/pages/CorporateManagement.tsx
+        13       0  client/src/pages/Setup.tsx
+        12       0  client/src/pages/MasterDataAudit.tsx
+         7       4  client/src/pages/ProcessManagement.tsx
+        11       0  client/src/pages/SoftwareVersionsTab.tsx
+         3       7  client/src/pages/ApiDocs.tsx
+        10       0  client/src/pages/AuditLogs.tsx
+         4       6  client/src/pages/EnergyAnalyticsPage.tsx
+        10       0  client/src/pages/EquipmentStandards.tsx
+         6       4  client/src/pages/FactoryLiveMap3D.tsx
+         0      10  client/src/pages/StationAnalysis.tsx
+         8       0  client/src/pages/DashboardMarketplace.tsx
+         2       6  client/src/pages/Layout.tsx
+         0       8  client/src/pages/ProductModels.tsx
+         8       0  client/src/pages/TwinHub.tsx
+         7       0  client/src/pages/DashboardTemplates.tsx
+         7       0  client/src/pages/DataSettings.tsx
+         7       0  client/src/pages/EquipmentIntegration.tsx
+         0       7  client/src/pages/MaskAnnotationPage.tsx
+         2       5  client/src/pages/RobotCockpit.tsx
+         6       0  client/src/pages/AIChatPage.tsx
+         6       0  client/src/pages/NonconformanceReports.tsx
+         0       6  client/src/pages/ProcessAnalytics.tsx
+         6       0  client/src/pages/QualityGateTemplates.tsx
+         6       0  client/src/pages/ThresholdApprovalsPage.tsx
+         4       0  client/src/pages/MqttDashboard.tsx
+         3       0  client/src/pages/CommandConsole.tsx
+         3       0  client/src/pages/FeederVerify.tsx
+         3       0  client/src/pages/ProductMachineMapping.tsx
+         3       0  client/src/pages/RobotModelHealth.tsx
+         3       0  client/src/pages/Settings.tsx
+         3       0  client/src/pages/TemplateMarketplace.tsx
+         3       0  client/src/pages/UnifiedDeviceMonitor.tsx
+         2       0  client/src/pages/AdvancedVisionLabPage.tsx
+         2       0  client/src/pages/AlarmKpiDashboard.tsx
+         0       2  client/src/pages/ProductionDashboard.tsx
+         2       0  client/src/pages/Users.tsx
+         1       0  client/src/pages/CorrelationAnalysis.tsx
+         1       0  client/src/pages/EngineeringChanges.tsx
+         1       0  client/src/pages/RoutingMaster.tsx
+         1       0  client/src/pages/SynapsePlatformPage.tsx
+         0       1  client/src/pages/TwinLine.tsx
+         0       1  client/src/pages/TwinMay.tsx
+
+  Files scanned:        225
+  Files with findings:  65
+  Raw palette classes:  847
+  Raw hex colours:      264
+  Grand total:          1111
+
+REPORT-ONLY baseline (exit 0). F3 will sweep these to tokens.

@@ -1,0 +1,6 @@
+MSA XONG 2026-09-13T15:01:50+07:00
+dist-head1 == .qa-dot57/dist-e (0 dong md5 khac, 914 tep)
+dist-nen3 vs .qa-dot57/dist-a: 909/914 y het; 5 tep lech CHI do EOL (CRLF worktree vs LF archive)
+md5 lap lai: head1==head2, nen1==nen2 KHOP
+ky hieu: head co vien-tin-cay-may/do-tuoi-may/flex-[7]/data-che-nhan; nen co trang-thai-may
+mauChuTrenNen: 0 tep o CA HAI (ten module bi minify) => brief sai

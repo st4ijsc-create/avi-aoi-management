@@ -645,26 +645,6 @@
       "oee": "OEE & Downtime"
     }
   },
-  "twinHub": {
-    "title": "Digital Twin",
-    "tabs": {
-      "overview": "Overview",
-      "center": "3D Center",
-      "map": "Live Map",
-      "floor": "Floor Editor",
-      "layout": "Workshop Layout",
-      "cell": "Cell Twin",
-      "rf": "RF Test Cell"
-    },
-    "mode": {
-      "edit": "LAYOUT"
-    },
-    "legend": {
-      "live": "Real machine/telemetry data, in real time",
-      "sim": "Replay of a recorded simulation — NOT a real cell",
-      "edit": "Floor-plan editing tools"
-    }
-  },
   "ecn": {
     "title": "Engineering Changes",
     "subtitle": "ECN / ECO change-request workflow — impact analysis, maker-checker approval, and effectivity.",
@@ -2295,69 +2275,16 @@
   },
   "digitalTwin": {
     "tabWipFlow": "WIP Flow",
-    "tabStationLoad": "Station Load",
-    "tabPrediction": "Congestion Forecast",
     "wipFlow": {
-      "title": "WIP flow by station",
-      "desc": "Work-in-process units currently on the line per station (realtime/poll)",
-      "wipCount": "WIP count",
-      "streaming": "Streaming",
-      "polling": "Polling",
-      "noData": "No WIP on the line"
-    },
-    "stationLoad": {
-      "title": "Station load heatmap",
-      "desc": "Load level and dominant state per station (color computed server-side)",
-      "loadPct": "Load (%)",
-      "state": "State",
-      "starved": "Starved",
-      "blocked": "Blocked",
-      "processing": "Processing",
-      "idle": "Idle",
-      "bottleneck": "Bottleneck"
+      "wipCount": "WIP count"
     },
     "prediction": {
-      "title": "Congestion forecast",
-      "desc": "Estimated next-hour WIP and congestion risk (advisory only, no action)",
-      "predictedWip": "Predicted WIP (1h)",
-      "risk": "Risk",
       "high": "High congestion risk — predicted WIP exceeds threshold",
       "medium": "Medium congestion risk — monitor closely",
-      "low": "Low risk — within limits",
-      "unavailable": "Insufficient data to forecast"
+      "low": "Low risk — within limits"
     },
-    "health": "Health",
-    "atRisk": "At risk",
-    "bottleneck": "Bottleneck",
-    "code": "Machine code",
-    "cycleMult": "Cycle time factor",
     "defectHeatmap": "Defect heatmap by machine",
-    "defectHeatmapDesc": "NG count and NG rate within the time window",
-    "effCycle": "Effective cycle (s)",
-    "effectiveUnits": "Effective output",
-    "horizonHours": "Horizon (hours)",
-    "lineBalanceRate": "Line balance rate",
-    "lowHealth": "Low health",
-    "machineStates": "Twin state by machine",
-    "machineStatesDesc": "Color reflects the combined operating state and health score",
-    "name": "Machine name",
-    "risk": "Risk",
-    "running": "Running",
-    "simulate": "Run simulation",
-    "station": "Station",
-    "status": "Status",
-    "subtitle": "Real-time machine status · defect heatmap · what-if simulation",
-    "tabHeatmap": "Defect heatmap",
-    "tabTwin": "Machine status",
-    "tabWhatIf": "What-if simulation",
-    "theoreticalUnits": "Theoretical output",
-    "totalMachines": "Total machines",
-    "units": "units",
-    "utilization": "Utilization",
-    "whatIf": "Line throughput simulation (what-if)",
-    "whatIfDesc": "Estimate throughput from cycle time, availability and yield (pure compute)",
-    "whatIfHint": "Click \"Run simulation\" to estimate throughput for the current stations.",
-    "windowHours": "Window (hours)"
+    "whatIf": "Line throughput simulation (what-if)"
   },
   "supervisor": {
     "title": "Supervisor Console",
@@ -2708,7 +2635,8 @@
     "brightness": "Brightness",
     "contrast": "Contrast",
     "on": "On",
-    "off": "Off"
+    "off": "Off",
+    "hide": "hide"
   },
   "corporate": {
     "yieldRatePercent": "Yield rate percent",
@@ -14121,48 +14049,23 @@
     "confirmNhieu": "{{count}} alarms (source {{sources}}) — {{label}} — will be closed PERMANENTLY; this cannot be undone from this screen."
   },
   "cmd": {
-    "title": "Ecosystem Command Center",
     "subtitle": "One live pane: hierarchy, factory twin, KPIs and the unified alarm rail across the whole estate.",
-    "live": "LIVE",
-    "polling": "POLLING",
-    "refresh": "Refresh",
     "refreshAll": "Refresh",
-    "kpiOee": "OEE (mean)",
-    "kpiWip": "WIP units",
-    "bottleneck": "Bottleneck: {{b}}",
-    "kpiAlarms": "Alarms crit / high",
-    "kpiFleet": "Fleet tasks / robots",
-    "kpiSites": "Sites reporting",
-    "sitesStaleDown": "{{s}} stale · {{d}} down",
-    "kpiAi": "AI insights",
-    "kpiEnergy": "Energy kWh",
-    "noEstateEnergy": "No estate rollup yet",
-    "hierarchy": "Ecosystem hierarchy",
-    "hierarchyHint": "Site → factory → line → station → machine / robot",
     "loadingTree": "Loading hierarchy…",
     "noSites": "No sites reporting yet.",
-    "devices": "devices",
     "selectFactory": "Select a factory",
     "pickFactoryHint": "Select a site or factory in the tree to view its live floor.",
     "loadingScene": "Loading factory scene…",
-    "lgRunning": "Running",
-    "lgIdle": "Idle",
-    "lgHeld": "Held/Stopped",
-    "lgDown": "Fault/E-stop",
-    "lgOffline": "Offline",
     "gridEmptyScene": "No devices placed in this factory's scene — showing the live status grid.",
-    "gridNoWebgl": "3D not available in this browser — showing the live status grid.",
     "noFactoryLayout": "No line/station layout for this factory yet.",
     "alarmRail": "Alarm rail",
     "railScoped": "Scoped to {{name}}",
     "railLive": "Live · unified alert stream",
     "railPoll": "Polling · seed + 15s refresh",
-    "noAlarms": "No active alarms. All clear.",
     "noScopedAlarms": "No alarms in the selected scope.",
     "alarms": "Active alarms",
     "tasks": "Active tasks",
-    "offline": "Offline",
-    "openCockpit": "Open cockpit"
+    "offline": "Offline"
   },
   "instrumentCal": {
     "title": "Instrument calibration & health",
@@ -15145,6 +15048,7 @@
     "manufacturer": "Manufacturer",
     "mode": "Mode",
     "model": "Model",
+    "model3dEmbedded": "The 3D twin scene above already shows this machine — a second 3D view is not rendered here (one WebGL context per page).",
     "model3dHint": ".glb or .gltf (glTF 2.0) — becomes this machine's model",
     "model3dReadErr": "Could not read the file.",
     "model3dUpload": "Upload & register 3D model",
@@ -15187,6 +15091,8 @@
     "noTasksHint": "No fleet tasks assigned to this robot.",
     "notFound": "Machine not found",
     "notFoundHint": "No machine exists for this id, or it is not visible to you.",
+    "forbidden": "No permission to view this machine",
+    "forbiddenHint": "Viewing a machine cockpit requires the Machine status permission. Ask an administrator to grant it.",
     "offline": "OFFLINE",
     "online": "ONLINE",
     "openIr": "Open IR",
@@ -15229,6 +15135,8 @@
     "tabJoints": "Joints & pose",
     "tabOee": "OEE",
     "tabOverview": "Overview",
+    "cuonTabTrai": "Scroll tabs left",
+    "cuonTabPhai": "Scroll tabs right",
     "tabPrograms": "IR programs",
     "tabRecipes": "Recipes",
     "tabSafety": "Safety zone reactions",
@@ -15831,50 +15739,6 @@
       "severe": "Severe"
     }
   },
-  "ffe": {
-    "view3d": "View 3D",
-    "floor": "Factory floor (top view)",
-    "floorMeters": "Factory floor (metres, top view)",
-    "fpD": "Depth (D)",
-    "fpW": "Width (W)",
-    "note": "Dimmed machines with a dashed border are NOT placed yet — drag them onto the floor to assign coordinates. Release to auto-save. Scroll to zoom, drag the floor to pan.",
-    "noteZone": "Zone mode: click 'New zone' then click on the floor to add points; drag a vertex to adjust. Read is open, editing needs permission.",
-    "pickFactory": "Select factory",
-    "placed": "machines placed",
-    "rotation": "Rotation",
-    "saveFailed": "Failed to save position",
-    "saving": "saving…",
-    "snap": "Snap to grid",
-    "subtitle": "Drag each machine to its real position on the floor — coordinates are saved and used for the 3D map",
-    "title": "Factory Floor Editor",
-    "empty": "This factory has no machines yet",
-    "modeMachines": "Machines",
-    "modeZones": "Zones",
-    "floorPlan": "Background (CAD/image)",
-    "bgUpload": "Upload background",
-    "bgUploading": "Uploading…",
-    "bgUploaded": "Background uploaded",
-    "pickImage": "Please select an image file",
-    "maxFile8": "Max 8MB",
-    "floorWidthM": "Floor width (m)",
-    "floorDepthM": "Floor depth (m)",
-    "saveDims": "Save dimensions",
-    "dimsSaved": "Floor dimensions saved",
-    "undo": "Undo",
-    "redo": "Redo",
-    "zoomIn": "Zoom in",
-    "zoomOut": "Zoom out",
-    "resetView": "Reset view",
-    "zones": "Zones",
-    "noZones": "No zones yet",
-    "newZone": "New zone",
-    "newZoneName": "New zone",
-    "drawHint": "Click on the floor to add points",
-    "removeLastPoint": "Remove last point",
-    "finishZone": "Finish",
-    "zoneNeed3": "At least 3 points required",
-    "points": "points"
-  },
   "field": {
     "batteryNull": "No battery telemetry (AGV battery flows from VDA5050; null when no driver reports it).",
     "col": {
@@ -16160,34 +16024,6 @@
       "production": "Production",
       "transit": "Transit"
     }
-  },
-  "flm": {
-    "avgUptime": "Avg uptime",
-    "heartbeat": "Heartbeat",
-    "uptime": "Uptime 24h",
-    "detail": "Machine detail",
-    "editLayout": "Edit layout",
-    "empty": "No active machines in this factory yet. Add machines under Master Data / Factory structure.",
-    "floor": "Factory floor",
-    "idle": "Idle",
-    "idleStopped": "Idle/Stopped",
-    "machines": "machines",
-    "offline": "Offline",
-    "openCockpit": "Open machine cockpit",
-    "openStudio": "Program workflow",
-    "openTwin": "Open cell simulation (twin)",
-    "pickFactory": "Select factory",
-    "refresh": "Refresh",
-    "running": "Running",
-    "selectHint": "Click a machine block on the 3D floor to view details and drill down.",
-    "shadowNote": "This is a digital SHADOW — colors reflect the machine's REAL telemetry/heartbeat, auto-updating ~5s. Different from the digital TWIN (what-if simulation) on the cell page.",
-    "stopped": "Stopped",
-    "subtitle": "Each machine is a 3D block colored by real status — click to view details & open the cell simulation",
-    "tip": "Drag to rotate • scroll to zoom • click a machine block to select",
-    "title": "3D Factory Map (live)",
-    "total": "Total machines",
-    "wsStale": "Live (delayed)",
-    "wsLive": "Live (WS)"
   },
   "ir": {
     "whenToUse": "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.",
@@ -16857,58 +16693,7 @@
     "materialsUsed": "Materials/components"
   },
   "twin": {
-    "activeTasks": "Active tasks",
-    "alarms": "Alarms",
-    "block": "block",
-    "devices": "Devices",
-    "devicesLower": "devices",
-    "down": "Down/Off",
-    "emptyScene": "No devices in this factory's scene-graph.",
-    "flagOff": "Live streaming is disabled (TWIN_LIVE_ENABLED off). Showing the scene-graph polled every 5s. Replay still works — it is read-only history.",
-    "frame": "Frame",
-    "from": "From",
-    "idle": "Idle",
-    "inspect": "Inspect device",
-    "inspectHint": "Click a device in the 3D scene to inspect its PackML state, alarm, active task and model.",
-    "layerLabels": "Labels",
-    "layerRobots": "Robots",
-    "layers": "Layers",
-    "layerZones": "Zones",
-    "lgFault": "Fault/E-stop",
-    "lgIdle": "Idle",
-    "lgOffline": "Offline",
-    "lgRunning": "Running",
-    "lgStopped": "Stopped/Held",
-    "live": "Live",
-    "loading": "Loading scene-graph…",
-    "loadReplay": "Load replay",
-    "modelsLoaded": "{{n}} glTF model(s) registered",
-    "modelUri": "Model URI",
-    "noFrames": "No telemetry in this window. Try a wider range or a factory with recorded device telemetry.",
-    "noModels": "No 3D models registered yet — devices render as coloured blocks (glTF is progressive).",
-    "openCockpit": "Open cockpit",
-    "pause": "Pause",
-    "pickFactory": "Select factory",
-    "pickFactoryHint": "Select a factory to render its twin.",
-    "play": "Play",
-    "pollFallback": "Live enabled, but no device delta has arrived yet — polling the scene-graph every 5s as a fallback.",
-    "position": "Position",
-    "refresh": "Refresh",
-    "replay": "Replay",
-    "replayNote": "Replay is read-only history from TimescaleDB (downsampled). Pick a window, load, then scrub or play back the incident.",
-    "reset": "Reset",
-    "robots": "Robots",
-    "running": "Running",
-    "scene": "Factory scene",
-    "speed": "Speed",
-    "stationId": "Station",
-    "streaming": "Live: receiving device deltas over twin:{{f}} — positions & states update in real time.",
-    "subtitle": "Live 3D twin of the factory scene-graph — zones, machines & robots coloured by real status. Replay history to investigate incidents.",
-    "task": "Task",
-    "title": "Digital Twin Center",
-    "to": "To",
-    "unplaced": "unplaced",
-    "zonesLower": "zones"
+    "replay": "Replay"
   },
   "userGuide": {
     "faqDescription": "Frequently asked questions when operating the system",
@@ -17305,48 +17090,6 @@
       "coTheHuuIch": "Possibly useful",
       "thamKhaoThem": "For further reference"
     }
-  },
-  "celltwin": {
-    "whenToUse": "When to use — pick a workflow and replay its PREDICTED timeline on the digital twin; toggle Live to overlay real device state. No commands are sent to any device.",
-    "activeStep": "Current step",
-    "cellView": "Cell diagram (station lanes)",
-    "cycleNo": "Cycles run",
-    "cycleTime": "Cycle time",
-    "done": "Cycle complete",
-    "elapsed": "Timestamp",
-    "empty": "No workflow has been deployed yet. Open /orchestration-studio to create and deploy a workflow, then come back here to watch the replay.",
-    "invalid": "Invalid workflow",
-    "kpis": "Predictive metrics",
-    "machineCount": "Machine count",
-    "machines": "Machine status (PackML)",
-    "noStations": "This workflow references no machines to display.",
-    "openStudio": "Open /orchestration-studio to edit/deploy/run for real (via HITL dispatcher).",
-    "pause": "Pause",
-    "pickWorkflow": "Select a workflow…",
-    "play": "Play",
-    "program": "Control program",
-    "reset": "Reset",
-    "selectPrompt": "Select a workflow to watch the replay.",
-    "simFailed": "Failed to load twin simulation",
-    "simulating": "Simulating…",
-    "speed": "Speed",
-    "stepCount": "Step count",
-    "subtitle": "Pick a workflow and watch the digital twin replay its PREDICTED timeline; enable Live to overlay real device state (no commands dispatched)",
-    "timeline": "Cycle progress",
-    "title": "Cell Twin — Predicted workflow replay",
-    "modePredicted": "Predicted",
-    "modeLive": "Live",
-    "liveNote": "Showing REAL device state (operationStatus). Token motion is still a predicted replay.",
-    "noLive": "unknown",
-    "scrubHint": "Drag to scrub · ←/→ step by marker",
-    "layoutReal": "Layout from real positions (Factory Floor Editor)",
-    "layoutEven": "Evenly-spaced lane (not all stations have saved coordinates)",
-    "kpiFromHistory": "from command history",
-    "kpiDefault": "default estimate",
-    "twinNote": "This is a SIMULATION on the digital twin — no commands are dispatched to devices. In real runs: every command goes through the HITL dispatcher; safety (E-stop/interlock/motion) resides on the device.",
-    "unknownMachine": "Machine #{{id}}",
-    "warnings": "Warnings",
-    "workflow": "Workflow"
   },
   "inspectionDetail": {
     "lightboxHint": "Scroll to zoom · Drag to pan",
@@ -20002,9 +19745,6 @@
   "softwareVersions": {
     "uploadOk": "Upload succeeded: v{{version}} ({{size}} MB)"
   },
-  "cellTwin": {
-    "maySo": "Machine #{{id}}"
-  },
   "teachTree": {
     "tab": "Teach tree",
     "chuaCoMay": "No machine has taught this product yet",
@@ -20064,6 +19804,38 @@
     "guiYeuCauDuyetLoiMotPhan": "Sent {{thanhCong}}/{{tong}} approval requests — {{soLoi}} failed, try again later"
   },
   "twin3d": {
+    "may": {
+      "chuaGanNhaMay": "Your account is not assigned to any factory yet. Ask an administrator to assign one, then open this machine again.",
+      "idKhongHopLe": "Could not read the machine from the URL",
+      "idKhongHopLeMo": "The URL must look like /twin/may/<number>. Pick a machine from the factory or line screen.",
+      "hang": {
+        "nguyKich": "critical",
+        "canh": "warning",
+        "theoDoi": "watch",
+        "khoe": "healthy",
+        "hetHan": "stale",
+        "chuaDo": "not measured"
+      },
+      "maySo": "Machine #{{n}}",
+      "khongMoDuoc": "Cannot open machine #{{n}}",
+      "dangTai": "Loading machine…",
+      "chuaDatCho": "This machine has no place on the 3D layout yet",
+      "chuaDatChoMo": "Place it in Twin Studio to see the machine among its neighbours. The cockpit and the action panel below still work.",
+      "ariaCanh": "3D scene of {{ten}}",
+      "sucKhoe": "Health",
+      "dangTaiCockpit": "Loading cockpit…"
+    },
+    "line": {
+      "idKhongHopLe": "Could not read the line from the URL",
+      "idKhongHopLeMo": "The URL must look like /twin/line/<number>. Pick a line from the factory screen.",
+      "chuyenSo": "Line {{n}}",
+      "veNhaMay": "Factory",
+      "soTram": "Stations",
+      "khongMoDuoc": "Cannot open line #{{n}}",
+      "rong": "This line has no machines on the layout yet",
+      "rongMo": "The line may not have been placed in Twin Studio yet, or it belongs to another factory.",
+      "ariaCanh": "3D scene of {{ten}}"
+    },
     "chuaDung": "This screen is not built yet. Content will be added in later phases of the 3D Twin project.",
     "chuaDo": "not measured",
     "chuaDoGiaiThich": "Value generated by the system; nobody has measured it on site yet.",
@@ -20073,7 +19845,7 @@
       "tieuDe": "3D Factory — Operations",
       "moTa": "A spatial index of the factory: locate machines, see live status, and hand off to 2D screens to act.",
       "nganXuLy": "Action panel",
-      "chuaChon": "Select a machine on the scene or in the list to act on it.",
+      "chuaChon": "Select a machine on the scene or in the list to open its 3D machine screen.",
       "danhSachMay": "Machine list",
       "soMay": "Machines",
       "canhBao": "Alarms",
@@ -20097,17 +19869,24 @@
       "ganKyThuat": "Assign technician",
       "chuaGan": "Unassigned",
       "moChucNang": "Open module",
-      "capNhatTruoc": "Updated {{giay}}s ago",
+      "capNhatTruoc": "Updated {{tuoi}} ago",
       "chuaTungBaoCao": "Never reported",
       "duLieuQuaCu": "Data too old — status not trustworthy",
       "doiSoatLech": "{{thieu}} machines not placed · {{moCoi}} placements point at retired machines",
+      "thieuQuyenTruyVan": "Insufficient permission to view data - contact an administrator. Denied queries: {{ds}}",
+      "soTrongThieuQuyen": "Status figures require the Machine status permission - ask an administrator to grant it.",
       "moXuongDung": "Open Studio",
       "thieuQuyenBoCuc": "No permission to read the factory layout",
       "thieuQuyenBoCucMoTa": "You can view the Operations screen, but the 3D layout data requires factory-settings or machine-control permission. Contact an administrator.",
       "canhAria": "3D factory scene: {{may}} machines, {{canhBao}} open alarms, {{khongRo}} machines with no signal",
       "daiLine": "Line strip",
       "soTram": "{{n}} stations",
+      "tienToChung": "Prefix",
+      "tienToChungMoTa": "Prefix shared by every station code on the strip — trimmed from each cell so names are not cut",
       "soMayNgan": "{{n}} machines",
+      "nhipChuyen": "Takt",
+      "tongWip": "WIP",
+      "wipNgan": "WIP",
       "cap": {
         "tapDoan": "Corporate",
         "nhaMay": "Factory",
@@ -20126,9 +19905,61 @@
         "sanXuat": "Production",
         "andon": "Andon",
         "tapDoan": "Corporate overview",
-        "xuongDung": "Edit layout"
+        "xuongDung": "Edit layout",
+        "dieuKhien": "Control plane",
+        "robotCockpit": "Robot cockpit",
+        "banDieuKhien": "Command console"
       },
-      "canhAria2D": "2D factory map: {{may}} machines, {{canhBao}} open alarms, {{khongRo}} machines with no signal"
+      "canhAria2D": "2D factory map: {{may}} machines, {{canhBao}} open alarms, {{khongRo}} machines with no signal",
+      "statsAoi": "AOI results",
+      "chuaKiemChiecNao": "no units inspected",
+      "aoiOk": "OK",
+      "aoiNg": "NG",
+      "aoiNtf": "NTF",
+      "aoiYield": "Yield",
+      "aoiTong": "Total inspected",
+      "nhung": {
+        "tieuDeMay": "Machine details",
+        "tieuDeRobot": "Robot cockpit",
+        "tieuDeTram": "Station analysis",
+        "quayLai": "Back to 3D",
+        "moDayDu": "Open full screen",
+        "dangNap": "Loading content…",
+        "ngoaiPhamVi": "This item is not in the scope you are viewing (or no longer exists). Switch factory/floor and open it again.",
+        "thieuQuyen": "You do not have permission to view this item. Contact an administrator to be assigned a factory."
+      },
+      "xuatUsd": "Export USD",
+      "xuatUsdDang": "Exporting…",
+      "xuatUsdMoTa": "Export the whole factory scene as a USD (.usda) file for Omniverse / Isaac Sim",
+      "xuatUsdXong": "Exported {{ten}} — {{prim}} prims, {{byte}} bytes",
+      "xuatUsdCanhTrong": "Not exported: this factory has no objects placed on the floor plan (the file would be empty).",
+      "xuatUsdChuaChonNhaMay": "No factory selected to export.",
+      "xuatUsdHong": "USD export failed ({{lyDo}}).",
+      "donViGiay": "{{n}}s",
+      "nhanBiAn": "{{n}} more names hidden",
+      "suCoNgoaiKhung": "{{n}} alarms out of view",
+      "canhBaoBiAn": "{{n}} alarms hidden",
+      "chiNhanBatThuongMoTa": "Show names only for abnormal machines (and the selected one)",
+      "hienMoiNhanMoTa": "Showing abnormal machine names only — click to show every name",
+      "breadcrumbAnCap": "Upper levels",
+      "napLai": "Reload data",
+      "nhanBiAnTheoChinhSach": "abnormal names only · {{n}} other names hidden",
+      "chonNhaMay": "Factory",
+      "chonToaNha": "Building",
+      "chonTang": "Floor",
+      "haCapPhamVi": "Showing data for ONE factory ({{soNhaMay}} factories in the system). The Corporate scope cannot load several factories at once yet — use the Factory box to switch.",
+      "linkBiBoQua": "The link that opened this screen points to a factory/building/floor that no longer exists — showing the closest selection.",
+      "mayTangKhac": "{{so}} more machines are placed on another floor of this building — change the Floor box to see them",
+      "mayToaKhac": "{{so}} machines are outside this load (other buildings were not queried) — whether they are placed is not known yet",
+      "moPanelPhai": "Open the action panel on the right",
+      "thuPanelPhai": "Collapse the action panel on the right",
+      "moPanelTrai": "Open the left panel",
+      "thuPanelTrai": "Collapse the left panel",
+      "moTwinStudio": "Twin Studio",
+      "moTwinStudioMoTa": "Go to Twin Studio: design the plant, drag and drop machines, save the layout",
+      "toanManMoTa": "Near full-screen 3D (collapse both side panels)",
+      "soMayNgan_one": "{{n}} machine",
+      "soMayNgan_other": "{{n}} machines"
     },
     "studio": {
       "tieuDe": "3D Factory — Design",
@@ -20143,6 +19974,9 @@
       "changeover": "Changeover",
       "starved": "Starved",
       "blocked": "Blocked",
+      "idle": "Idle",
+      "down": "Down/Stopped",
+      "offline": "Offline",
       "khongRo": "Unknown",
       "ngungKhaiThac": "Decommissioned"
     },
@@ -20232,7 +20066,18 @@
       "tieuDe": "Layout version",
       "xuatBan": "Publish",
       "daXuatBan": "Published",
-      "nhan": "Version label"
+      "nhan": "Version label",
+      "luu": "Save version",
+      "khoiPhuc": "Restore",
+      "xoa": "Delete",
+      "chuaCo": "No saved layout version yet.",
+      "thucThe": "items",
+      "rongKhongLuu": "The layout is empty — there is nothing to save.",
+      "daLuu": "Layout version saved ({{n}} items). It is NOT published yet.",
+      "daXuatBanXong": "Published. The Operations screen now shows this layout.",
+      "daKhoiPhuc": "Restored {{n}} items into the working layout. Press Save to write them to the database.",
+      "daXoa": "Layout version deleted.",
+      "xoaBanDangXuatBan": "Deleted — that version was the one published to Operations."
     },
     "congCu": {
       "chon": "Select",
@@ -20295,7 +20140,10 @@
       "loc": "Filter by name or code…",
       "khongKhop": "No matching items",
       "moTatCa": "Expand all",
-      "dongTatCa": "Collapse all"
+      "dongTatCa": "Collapse all",
+      "chiCanhBao": "Only nodes with alarms",
+      "soCanhBao": "{{n}} alarms",
+      "ariaCay": "Factory hierarchy"
     },
     "thuocTinh": {
       "tieuDe": "Properties",
@@ -20387,7 +20235,238 @@
       "nhapBanVe": "Import drawing",
       "roiTrang": "There are unsaved changes. Leaving will lose them.",
       "loiLuu": "Save failed: {{loi}}",
-      "phimTat": "Shortcuts: W move · E rotate · R scale · Ctrl inverts snap · Ctrl+Z undo"
+      "phimTat": "Shortcuts: W move · E rotate · R scale · Ctrl inverts snap · Ctrl+Z undo",
+      "chuaCoNhaMay": "There is no factory to design yet."
+    },
+    "ketNoi": {
+      "chua_ket_noi": {
+        "nhan": "Not connected",
+        "moTa": "Live stream not connected — the numbers below are a snapshot from page load."
+      },
+      "dang_cho": {
+        "nhan": "Waiting…",
+        "moTa": "Connected, waiting for the first data packet."
+      },
+      "truc_tiep": {
+        "nhan": "Live",
+        "moTa": "Receiving live data."
+      },
+      "im_lang": {
+        "nhan": "Silent",
+        "moTa": "Connected but no recent packets — data is going stale."
+      },
+      "xem_lai": {
+        "nhan": "Replay",
+        "moTa": "Viewing history, not live data."
+      }
+    },
+    "tua": {
+      "trucTiep": "Live",
+      "xemLai": "Replay {{gio}}",
+      "xapXi": "Replay reconstructs connectivity only, not the operating mode - statuses are approximate",
+      "lui": "Back 5 minutes",
+      "tien": "Forward 5 minutes",
+      "phat": "Play",
+      "dung": "Pause",
+      "thanhKeo": "Replay the last 24 hours"
+    },
+    "xuatXu": {
+      "bong": {
+        "nhan": "SHADOW",
+        "moTa": "SHADOW — colors reflect the device's REAL telemetry/heartbeat."
+      },
+      "mo_phong": {
+        "nhan": "SIMULATED",
+        "moTa": "SIMULATED — these are what-if assumptions, NOT measurements."
+      },
+      "so_do": {
+        "nhan": "DIAGRAM",
+        "moTa": "DIAGRAM — layout only, no operational data yet."
+      },
+      "khong_ro": {
+        "nhan": "—",
+        "moTa": "Cannot determine the provenance of the data shown."
+      }
+    },
+    "anToan": {
+      "estopDangNhan": "E-STOP engaged: {{ds}}"
+    },
+    "daiCanhBao": {
+      "tieuDe": "Alarms",
+      "homNay": "Today",
+      "tonDong": "Backlog >24h",
+      "tonDongNgay": "backlog {{n}}d",
+      "trong": "No alarms",
+      "trongMuc": "No alarms at the selected level",
+      "tatCa": "All",
+      "red": "Stop",
+      "call": "Call",
+      "yellow": "Warning",
+      "green": "Normal",
+      "theoNhanh": "Scoped to selection",
+      "daAck": "Ack"
+    },
+    "canvasUi": {
+      "fitTatCa": "Fit all in view",
+      "fitKhongSan": "3D scene is not ready",
+      "toanManHinh": "Fullscreen",
+      "toanManHinhKhongHoTro": "Browser does not support fullscreen",
+      "xuatAnh": "Export PNG",
+      "xuatAnhXong": "Saved {{ten}}",
+      "xuatAnhLoi": "Could not export image",
+      "miniMap": "Mini-map — click to navigate",
+      "miniMapRong": "No machines yet"
+    },
+    "vung": {
+      "veMoi": "Draw safety zone",
+      "banVe": "Floor plan — click to add a vertex",
+      "demDinh": "{{n}} vertices",
+      "boDinhCuoi": "Remove last vertex",
+      "xong": "Done",
+      "huy": "Cancel",
+      "luu": "Save",
+      "dangLuu": "Saving…",
+      "sua": "Edit",
+      "xoa": "Delete",
+      "vungMoi": "New safety zone",
+      "suaVung": "Edit safety zone",
+      "ten": "Zone name",
+      "tenGoiY": "e.g. Welding robot safety zone",
+      "mau": "Colour",
+      "tomTat": "{{n}} vertices · {{dt}} m²",
+      "chuaCoVung": "No safety zones on this floor yet.",
+      "daLuu": "Safety zone saved",
+      "daXoa": "Safety zone deleted",
+      "polygonKhongHopLe": "Needs at least {{n}} non-collinear vertices",
+      "quaNhieuDinh": "At most {{n}} vertices",
+      "tieuDe": "Safety zones"
+    },
+    "kpiNoi": {
+      "tieuDe": "Metrics",
+      "mauSo": "{{n}} machines",
+      "thu": "Collapse metrics panel",
+      "mo": "Expand metrics panel",
+      "mauSoOee": "OEE measured on {{co}}/{{tong}} machines",
+      "o": {
+        "dangChay": "Running",
+        "dungLoi": "Down",
+        "baoTri": "Maintenance",
+        "matKetNoi": "Offline",
+        "tyLeChay": "Running rate",
+        "oeeTrungBinh": "Average OEE",
+        "andonMo": "Machines w/ andon",
+        "ruiRoPdm": "PdM risk"
+      },
+      "mauSo_one": "{{n}} machine",
+      "mauSo_other": "{{n}} machines"
+    },
+    "model": {
+      "tamGiac": "triangles",
+      "material": "materials",
+      "duoiKhongNhan": "Only .glb / .gltf files are accepted. SVG is a 2D image and carries no depth; STEP/IGES must be converted first.",
+      "napHong": "Could not read this 3D file. It may be corrupt or not glTF 2.0.",
+      "goiYNen": "Suggestion: compress with gltf-transform (keep --no-join --no-flatten so the node tree survives).",
+      "daGan": "3D model uploaded and assigned.",
+      "chuaChonMay": "Select a machine first",
+      "ganMayNay": "Assign to {{ma}}",
+      "chonChungLoai": "Machine type…",
+      "ganMoiMay": "Assign to all {{n}} machines of this type",
+      "lechKichThuoc": "Model differs {{phanTram}}% from the declared size — check the unit before assigning.",
+      "lyDo": {
+        "tam_giac_cao": "Above 50,000 triangles — accepted, but it will cost frame budget.",
+        "tam_giac_vuot_tran": "Above 150,000 triangles — blocked.",
+        "dung_luong_vuot_tran": "Larger than 15 MB — blocked.",
+        "tep_rong": "The file is empty.",
+        "duoi_tep_khong_nhan": "File extension not accepted."
+      }
+    },
+    "anhNen": {
+      "duoiKhongNhan": "Only PNG, JPG or WebP images are accepted. DWG/PDF must be exported to an image first.",
+      "docHong": "Could not read this image.",
+      "taiLen": "Upload floor plan",
+      "daTai": "Floor plan uploaded. It is NOT calibrated yet — set the scale before placing machines.",
+      "huongDan": "Click two points whose real distance you know, then type that distance.",
+      "khoangCachThat": "Real distance (mm)",
+      "xoaDiem": "Clear points",
+      "daHieuChuanXong": "Scale saved. The floor plan is now calibrated.",
+      "lechSan": "The image measures {{anh}} m wide but the floor is declared {{san}} m — check the scale before placing machines.",
+      "loi": {
+        "thieu_diem": "Click two points on the image.",
+        "hai_diem_qua_gan": "The two points are too close — a one-pixel click error would skew the whole scale. Pick two points further apart.",
+        "khoang_cach_that_khong_hop_le": "Enter the real distance in millimetres.",
+        "ti_le_vo_ly": "That scale is implausible — check the unit of the distance you entered."
+      }
+    },
+    "moPhong": {
+      "tieuDe": "Simulation",
+      "thu": "Collapse simulation panel",
+      "mo": "Expand simulation panel",
+      "whatIf": "What-if throughput",
+      "horizon": "Horizon (h)",
+      "heSo": "Cycle factor",
+      "chay": "Run",
+      "dangChay": "Simulating…",
+      "bamChay": "Press Run to estimate throughput.",
+      "tuoi": "{{tuoi}} ago",
+      "nguon": "Cycle {{nhip}} s/unit for the WHOLE LINE (wip.lineBalance), applied to all {{n}} stations{{tuoi}}",
+      "sanLuong": "Output",
+      "lyThuyet": "Theoretical",
+      "canBang": "Balance",
+      "nutThat": "Bottleneck",
+      "tram": "Station",
+      "cycle": "Cycle (s)",
+      "hieuSuat": "Utilization",
+      "phatLai": "Replay workflow",
+      "chonWorkflow": "Choose a workflow to replay",
+      "khongCoWorkflow": "No workflow has been deployed yet.",
+      "simKhongDat": "Simulation did not pass.",
+      "phat": "Play",
+      "tam": "Pause",
+      "luiBuoc": "Step back",
+      "toiBuoc": "Step forward",
+      "lyDo": {
+        "chuaChonLine": "Select a line to simulate throughput.",
+        "khongCoTram": "This line has no stations.",
+        "chuaDo": "Reading line cycle time…",
+        "khongCoBanGhi": "No line-balance record exists for this line.",
+        "banGhiKhongCoNhip": "The latest line-balance record carries no cycle time (avgCycleTimeMs is empty).",
+        "nhipHetHan": "The latest line cycle time is older than 8 hours — not used for simulation."
+      },
+      "buocTren": "step {{i}}/{{n}}",
+      "khongThoiLuong": "This workflow is human-approval gates only — the simulation does not predict their duration, so it is shown STEP by step.",
+      "donVi": {
+        "phut": "{{n}} min",
+        "gio": "{{n}} h",
+        "ngay": "{{n}} days"
+      }
+    },
+    "coCheGiao": {
+      "day": {
+        "nhan": "push",
+        "moTa": "Every number arrives through the real-time push stream."
+      },
+      "hon_hop": {
+        "nhan": "push + 30 s poll",
+        "moTa": "The push stream is live, but some numbers still arrive through a 30-second poll."
+      },
+      "hoi": {
+        "nhan": "polling",
+        "moTa": "No push stream — every number arrives through periodic polling."
+      },
+      "lich_su": {
+        "nhan": "history",
+        "moTa": "Viewing history — numbers do not refresh on their own."
+      },
+      "chua_ro": {
+        "nhan": "—",
+        "moTa": "The delivery mechanism has not been determined yet."
+      }
+    },
+    "daiHopNhat": {
+      "an": "hide",
+      "tomTat": "{{so}} things to know",
+      "tomTat_one": "{{so}} thing to know",
+      "tomTat_other": "{{so}} things to know"
     }
   }
 }

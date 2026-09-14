@@ -45,6 +45,15 @@ export interface BangThuocTinhProps {
   buocGocDo: number;
   onSua: (khoa: KhoaNode, sua: Partial<DatChoDauVao>) => void;
   onGoKhoiMatBang: (khoa: KhoaNode) => void;
+  /**
+   * ★★★ CHẶN-2 — chế độ chỉ đọc: ẨN mọi ô nhập/công tắc/nút ghi, KHÔNG disable.
+   *
+   * ⚠ Inspector là đường vào THỨ HAI của màn Thiết kế (gizmo là đường thứ nhất).
+   *   Ẩn gizmo mà để ô nhập sống thì chế độ chỉ-đọc chỉ đóng một nửa cửa — và
+   *   nửa còn lại chính là đường mà QA đã đo được là SỐNG. Mặc định `false` để
+   *   không đổi hành vi của chỗ gọi nào chưa truyền.
+   */
+  chiDoc?: boolean;
 }
 
 /** mm → mét để HIỆN. Làm tròn 3 chữ số: `numeric(14,3)` không giữ hơn thế. */
@@ -81,7 +90,7 @@ function OSo({
 }) {
   return (
     <div className="grid gap-1">
-      <Label className="text-[11px] text-muted-foreground">{nhan}</Label>
+      <Label className="text-[11px] text-text-2">{nhan}</Label>
       <Input
         type="text"
         inputMode="decimal"
@@ -113,12 +122,13 @@ export function BangThuocTinh({
   buocGocDo,
   onSua,
   onGoKhoiMatBang,
+  chiDoc = false,
 }: BangThuocTinhProps) {
   const { t } = useTranslation();
 
   if (soDangChon > 1) {
     return (
-      <div className="p-3 text-xs text-muted-foreground" data-testid="bang-thuoc-tinh">
+      <div className="p-3 text-xs text-text-2" data-testid="bang-thuoc-tinh">
         {t("twin3d.thuocTinh.nhieuVatThe", { n: soDangChon })}
       </div>
     );
@@ -126,7 +136,7 @@ export function BangThuocTinh({
 
   if (!node) {
     return (
-      <div className="p-3 text-xs text-muted-foreground" data-testid="bang-thuoc-tinh">
+      <div className="p-3 text-xs text-text-2" data-testid="bang-thuoc-tinh">
         {t("twin3d.thuocTinh.chuaChon")}
       </div>
     );
@@ -148,13 +158,45 @@ export function BangThuocTinh({
     <div className="flex h-full min-h-0 flex-col overflow-auto p-3" data-testid="bang-thuoc-tinh">
       <div className="mb-2">
         <p className="text-xs font-semibold">{node.nhan}</p>
-        <p className="text-[11px] text-muted-foreground">{node.loai}</p>
+        <p className="text-[11px] text-text-2">{node.loai}</p>
       </div>
 
       {node.choXepCho || !datCho ? (
-        <p className="rounded border border-dashed p-2 text-[11px] text-muted-foreground">
+        <p className="rounded border border-dashed p-2 text-[11px] text-text-2">
           {t("twin3d.khuChoXepChoMoTa")}
         </p>
+      ) : chiDoc ? (
+        /*
+         * ★★★ CHẶN-2 — nhánh CHỈ ĐỌC. Vẫn HIỆN SỐ (người chỉ-xem có quyền xem
+         * bố cục), nhưng không có một ô nhập, công tắc hay nút ghi nào trong
+         * DOM. Phép đo nghiệm thu là `queryByTestId("o-vi-tri-x") === null`, và
+         * một ô `disabled` sẽ làm phép đo đó ĐỎ — đúng như phải thế.
+         */
+        <div className="grid gap-1.5 text-[11px]" data-testid="thuoc-tinh-chi-doc">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("twin3d.thuocTinh.viTri")}</span>
+            <span className="tabular-nums">
+              {hienMet(datCho.viTriXMm)} · {hienMet(datCho.viTriYMm)} ·{" "}
+              {hienMet(datCho.viTriZMm)}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("twin3d.thuocTinh.xoayDo")}</span>
+            <span className="tabular-nums">{Math.round(gocDo * 1000) / 1000}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("twin3d.thuocTinh.kichThuoc")}</span>
+            <span className="tabular-nums">
+              {datCho.rongMm === null ? "—" : hienMet(datCho.rongMm)} ·{" "}
+              {datCho.caoMm === null ? "—" : hienMet(datCho.caoMm)} ·{" "}
+              {datCho.sauMm === null ? "—" : hienMet(datCho.sauMm)}
+            </span>
+          </div>
+          <div className="text-muted-foreground">
+            {/* ★ Đợt 36: khoá TƯỜNG MINH — dạng `"twin3d.nguon." + x` làm `i18n:check` đọc thành khoá `twin3d.nguon.` (báo THIẾU giả). */}
+            {t(datCho.nguon === "tay" ? "twin3d.nguon.tay" : "twin3d.nguon.sinh")}
+          </div>
+        </div>
       ) : (
         <>
           {/* ★ NT-4 — badge vàng "chưa đo". */}
@@ -176,7 +218,7 @@ export function BangThuocTinh({
             </Tooltip>
           ) : null}
 
-          <p className="mb-2 text-[10px] leading-tight text-muted-foreground">
+          <p className="mb-2 text-[10px] leading-tight text-text-2">
             {t("twin3d.thuocTinh.oNhapLaNguonSuThat")}
           </p>
 
@@ -206,7 +248,7 @@ export function BangThuocTinh({
           </div>
 
           <div className="mb-3 grid gap-1">
-            <Label className="text-[11px] text-muted-foreground">
+            <Label className="text-[11px] text-text-2">
               {t("twin3d.thuocTinh.xoayDo")}
             </Label>
             <Input
@@ -293,8 +335,9 @@ export function BangThuocTinh({
             </label>
           </div>
 
-          <div className="mb-3 text-[11px] text-muted-foreground">
-            {t("twin3d.nguon." + (datCho.nguon === "tay" ? "tay" : "sinh"))}
+          <div className="mb-3 text-[11px] text-text-2">
+            {/* ★ Đợt 36: khoá TƯỜNG MINH — dạng `"twin3d.nguon." + x` làm `i18n:check` đọc thành khoá `twin3d.nguon.` (báo THIẾU giả). */}
+            {t(datCho.nguon === "tay" ? "twin3d.nguon.tay" : "twin3d.nguon.sinh")}
           </div>
 
           <Button

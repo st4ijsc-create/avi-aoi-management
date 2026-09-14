@@ -1,0 +1,355 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot54/chan/K-1600x900",
+  "luc": "2026-09-12T13:12:17.751Z",
+  "onDinh_nhan": true,
+  "onDinh_pixel": 670,
+  "camA_nhanKhac": true,
+  "camA_pixelKhac": 332568,
+  "camB_nhanKhac": true,
+  "camB_pixelKhac": 182201,
+  "camAB_khac": true,
+  "viTriCamera": {
+    "khongCam": "19.2,21.4,27.8",
+    "camA": "19.2,18,30",
+    "camB": "0,10,14.8",
+    "yeuCauA": "19.2,18,30,19.2,14.8",
+    "yeuCauB": "0,10,14.8,19.2,14.8"
+  },
+  "kq": {
+    "khongCam1": {
+      "url": "/twin/line/2",
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 288,
+          "y": 125,
+          "w": 1288,
+          "h": 659,
+          "chaTestId": "khoi-canh-3d"
+        }
+      ],
+      "drawCalls": 6,
+      "tuTheCamera": {
+        "x": 19.200000000000003,
+        "y": 21.367311858230227,
+        "z": 27.76373859388744,
+        "mucX": 19.200000000000003,
+        "mucZ": 12.755692603869027
+      },
+      "nhan": [
+        [
+          "CONVEYOR · Unknown",
+          816,
+          519
+        ],
+        [
+          "ROBOT · Unknown",
+          1263,
+          519
+        ],
+        [
+          "FCT · Unknown",
+          751,
+          493
+        ],
+        [
+          "PWR · Unknown",
+          922,
+          582
+        ],
+        [
+          "ASSY · Unknown",
+          1005,
+          556
+        ],
+        [
+          "ICT · Unknown",
+          667,
+          519
+        ],
+        [
+          "SCREW · Unknown",
+          1085,
+          527
+        ],
+        [
+          "PACK · Unknown",
+          1181,
+          493
+        ],
+        [
+          "AVI · Unknown",
+          530,
+          525
+        ],
+        [
+          "AOI · Unknown",
+          496,
+          499
+        ],
+        [
+          "AGV · Unknown",
+          1358,
+          493
+        ],
+        [
+          "SPI · Unknown",
+          411,
+          551
+        ]
+      ]
+    },
+    "khongCam2": {
+      "url": "/twin/line/2",
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 288,
+          "y": 125,
+          "w": 1288,
+          "h": 659,
+          "chaTestId": "khoi-canh-3d"
+        }
+      ],
+      "drawCalls": 6,
+      "tuTheCamera": {
+        "x": 19.200000000000003,
+        "y": 21.367311858230227,
+        "z": 27.76373859388744,
+        "mucX": 19.200000000000003,
+        "mucZ": 12.755692603869027
+      },
+      "nhan": [
+        [
+          "CONVEYOR · Unknown",
+          816,
+          519
+        ],
+        [
+          "ROBOT · Unknown",
+          1263,
+          519
+        ],
+        [
+          "FCT · Unknown",
+          751,
+          493
+        ],
+        [
+          "PWR · Unknown",
+          922,
+          582
+        ],
+        [
+          "ASSY · Unknown",
+          1005,
+          556
+        ],
+        [
+          "ICT · Unknown",
+          667,
+          519
+        ],
+        [
+          "SCREW · Unknown",
+          1085,
+          527
+        ],
+        [
+          "PACK · Unknown",
+          1181,
+          493
+        ],
+        [
+          "AVI · Unknown",
+          530,
+          525
+        ],
+        [
+          "AOI · Unknown",
+          496,
+          499
+        ],
+        [
+          "AGV · Unknown",
+          1358,
+          493
+        ],
+        [
+          "SPI · Unknown",
+          411,
+          551
+        ]
+      ]
+    },
+    "camA": {
+      "url": "/twin/line/2?cam=19.2,18,30,19.2,14.8",
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 288,
+          "y": 125,
+          "w": 1288,
+          "h": 659,
+          "chaTestId": "khoi-canh-3d"
+        }
+      ],
+      "drawCalls": 6,
+      "tuTheCamera": {
+        "x": 19.200000000000003,
+        "y": 18,
+        "z": 29.999999999999996,
+        "mucX": 19.2,
+        "mucZ": 14.8
+      },
+      "nhan": [
+        [
+          "CONVEYOR · Unknown",
+          814,
+          353
+        ],
+        [
+          "ROBOT · Unknown",
+          1281,
+          353
+        ],
+        [
+          "FCT · Unknown",
+          745,
+          327
+        ],
+        [
+          "PWR · Unknown",
+          924,
+          420
+        ],
+        [
+          "ASSY · Unknown",
+          1011,
+          394
+        ],
+        [
+          "ICT · Unknown",
+          656,
+          379
+        ],
+        [
+          "SCREW · Unknown",
+          1095,
+          363
+        ],
+        [
+          "PACK · Unknown",
+          1195,
+          327
+        ],
+        [
+          "AVI · Unknown",
+          569,
+          334
+        ],
+        [
+          "AOI · Unknown",
+          478,
+          360
+        ],
+        [
+          "AGV · Unknown",
+          1380,
+          327
+        ],
+        [
+          "SPI · Unknown",
+          389,
+          386
+        ]
+      ]
+    },
+    "camB": {
+      "url": "/twin/line/2?cam=0,10,14.8,19.2,14.8",
+      "__soCanvas": 1,
+      "canvasDom": 1,
+      "canvasDs": [
+        {
+          "x": 288,
+          "y": 125,
+          "w": 1288,
+          "h": 659,
+          "chaTestId": "khoi-canh-3d"
+        }
+      ],
+      "drawCalls": 6,
+      "tuTheCamera": {
+        "x": 0,
+        "y": 9.999999999999998,
+        "z": 14.800000000000006,
+        "mucX": 19.2,
+        "mucZ": 14.8
+      },
+      "nhan": [
+        [
+          "CONVEYOR · Unknown",
+          1018,
+          374
+        ],
+        [
+          "ROBOT · Unknown",
+          872,
+          219
+        ],
+        [
+          "AOI · Unknown",
+          883,
+          715
+        ],
+        [
+          "AVI · Unknown",
+          884,
+          626
+        ],
+        [
+          "ICT · Unknown",
+          990,
+          480
+        ],
+        [
+          "FCT · Unknown",
+          992,
+          420
+        ],
+        [
+          "PWR · Unknown",
+          995,
+          332
+        ],
+        [
+          "ASSY · Unknown",
+          758,
+          327
+        ],
+        [
+          "SCREW · Unknown",
+          1005,
+          295
+        ],
+        [
+          "PACK · Unknown",
+          997,
+          262
+        ],
+        [
+          "AGV · Unknown",
+          881,
+          177
+        ]
+      ]
+    }
+  },
+  "dat": true
+}

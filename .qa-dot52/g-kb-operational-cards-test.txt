@@ -1,0 +1,41 @@
+
+> synapse-platform@1.0.0 kb:operational-cards:test
+> node scripts/ai-kb/buildOperationalCards.test.mjs
+
+✔ prerequisite: route/nav catalogs exist (run `npm run kb:extract` first if this fails) (1.1257ms)
+✔ generator produces the operational-cards.json index + matching .md cards (250.0635ms)
+✔ every card is well-formed: parseable front matter, valid route, permission consistent with the index (131.7203ms)
+✔ RBAC accuracy: at least one card carries a real (non-null) permission, and at least one is role-gated (1.1436ms)
+✔ determinism: running the generator twice produces byte-identical cards + index (364.545ms)
+✖ chunker ingests the new 'operational' sourceType: one chunk per card, route/permission meta line, sourcePath matches the index (1026.8819ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 5
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1784.8387
+
+✖ failing tests:
+
+test at scripts\ai-kb\buildOperationalCards.test.mjs:159:1
+✖ chunker ingests the new 'operational' sourceType: one chunk per card, route/permission meta line, sourcePath matches the index (1026.8819ms)
+  AssertionError [ERR_ASSERTION]: expected exactly one operational chunk per card
+  
+  194 !== 164
+  
+      at TestContext.<anonymous> (file:///D:/SOURCES/_twin_wt/scripts/ai-kb/buildOperationalCards.test.mjs:169:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 194,
+    expected: 164,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

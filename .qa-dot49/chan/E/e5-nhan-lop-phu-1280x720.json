@@ -1,0 +1,169 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1280x720",
+  "tag": "../.qa-dot49/chan/E",
+  "luc": "2026-09-12T01:35:04.861Z",
+  "ds": {
+    "/twin": {
+      "url": "/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "so": 2,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "soKhongTronVen": 0,
+      "soBiChe": 0,
+      "phu": [
+        "panel-trai*:288,207,224x489",
+        "bang-kpi-noi*:520,215,246x220",
+        "cum-trang-thai-du-lieu*:919,215,329x29",
+        "goi-y-chon-may*:864,255,384x27",
+        "lop-phu-dong-thoi-gian*:288,658,968x38",
+        "dai-hop-nhat:288,181,968x26"
+      ],
+      "chipNhanAn": {
+        "chu": "abnormal names only · 43 other names hidden",
+        "soAn": "43"
+      },
+      "chipSuCo": null,
+      "__demNhan": {
+        "ve": 2,
+        "tong": 45,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 43,
+        "vuotMep": 0,
+        "biChe": 4,
+        "deKhoiKhac": 1,
+        "deKhoiKhacDoLai": 1,
+        "soHopKhoi": 42,
+        "soVungCam": 12,
+        "soLopPhuDom": 5,
+        "soHopBadge": 7,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "lopTrungCanvas": true,
+      "ds": [
+        "SIM-L2-ROBOT · Unknown@993,445 166x24",
+        "SIM-L2-CONVEYOR · Unknown@645,466 191x24"
+      ]
+    },
+    "/twin?pv=tang:28": {
+      "url": "/twin?pv=tang%3A28&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "so": 2,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "soKhongTronVen": 0,
+      "soBiChe": 0,
+      "phu": [
+        "panel-trai*:288,207,224x489",
+        "bang-kpi-noi*:520,215,246x220",
+        "cum-trang-thai-du-lieu*:919,215,329x29",
+        "goi-y-chon-may*:864,255,384x27",
+        "lop-phu-dong-thoi-gian*:288,658,968x38",
+        "dai-hop-nhat:288,181,968x26"
+      ],
+      "chipNhanAn": {
+        "chu": "abnormal names only · 43 other names hidden",
+        "soAn": "43"
+      },
+      "chipSuCo": null,
+      "__demNhan": {
+        "ve": 2,
+        "tong": 45,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 43,
+        "vuotMep": 0,
+        "biChe": 4,
+        "deKhoiKhac": 1,
+        "deKhoiKhacDoLai": 1,
+        "soHopKhoi": 42,
+        "soVungCam": 12,
+        "soLopPhuDom": 5,
+        "soHopBadge": 7,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "lopTrungCanvas": true,
+      "ds": [
+        "SIM-L2-ROBOT · Unknown@993,445 166x24",
+        "SIM-L2-CONVEYOR · Unknown@644,466 191x24"
+      ]
+    },
+    "/twin/line/2": {
+      "url": "/twin/line/2",
+      "so": 12,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "soKhongTronVen": 0,
+      "soBiChe": 0,
+      "phu": [
+        "bang-kpi-noi*:296,133,246x220",
+        "ngan-mo-phong*:1008,133,240x28",
+        "khoi-dai-line:288,604,968x93",
+        "thanh-tren-line:288,80,968x45"
+      ],
+      "chipNhanAn": null,
+      "chipSuCo": null,
+      "__demNhan": {
+        "ve": 12,
+        "tong": 12,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 1,
+        "deKhoiKhacDoLai": 1,
+        "soHopKhoi": 12,
+        "soVungCam": 4,
+        "soLopPhuDom": 2,
+        "soHopBadge": 2,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "lopTrungCanvas": true,
+      "ds": [
+        "CONVEYOR · Unknown@669,397 144x24",
+        "ROBOT · Unknown@989,397 119x24",
+        "FCT · Unknown@629,371 101x24",
+        "PWR · Unknown@865,405 105x24",
+        "ASSY · Unknown@868,379 109x24",
+        "ICT · Unknown@570,397 97x24",
+        "SCREW · Unknown@863,454 122x24",
+        "PACK · Unknown@992,371 110x24",
+        "AVI · Unknown@457,401 97x24",
+        "AOI · Unknown@449,375 99x24",
+        "AGV · Unknown@1116,423 103x24",
+        "SPI · Unknown@334,427 97x24"
+      ]
+    }
+  },
+  "e5": {
+    "/twin": {
+      "dat": true,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "so": 2
+    },
+    "/twin?pv=tang:28": {
+      "dat": true,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "so": 2
+    },
+    "/twin/line/2": {
+      "dat": true,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "so": 12
+    }
+  }
+}

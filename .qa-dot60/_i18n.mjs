@@ -1,0 +1,21 @@
+import fs from 'fs'; import path from 'path';
+const ROOT='client/src'; const files=[];
+const norm=s=>s.split(path.sep).join('/');
+(function w(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);
+ if(e.isDirectory())w(p); else if(/[.](tsx?|jsx?)$/.test(e.name))files.push(norm(p));}})(ROOT);
+const isTest=f=>/[.](test|spec)[.]/.test(f);
+const DEAD=new Set(['client/src/pages/TwinHub.tsx','client/src/pages/DigitalTwinCenter.tsx','client/src/pages/DigitalTwinDashboard.tsx','client/src/pages/FactoryLiveMap3D.tsx','client/src/pages/FactoryFloorEditor.tsx','client/src/pages/CellTwinPlayer.tsx','client/src/components/FactoryFloor3D.tsx','client/src/components/twin/ArticulatedRobot.tsx','client/src/components/factory-scene/FactoryScene3D.tsx','client/src/components/factory-scene/machineMesh.tsx']);
+const keysOf=f=>{const s=fs.readFileSync(f,'utf8');return new Set([...s.matchAll(/\bt\(\s*["'`]([A-Za-z0-9_.\-]+)["'`]/g)].map(m=>m[1]));};
+const deadKeys=new Set(), liveKeys=new Set();
+for(const f of files){ if(isTest(f))continue; const ks=keysOf(f);
+  for(const k of ks) (DEAD.has(f)?deadKeys:liveKeys).add(k); }
+const orphan=[...deadKeys].filter(k=>!liveKeys.has(k)).sort();
+const locales=['vi','en','zh'].map(l=>[l,JSON.parse(fs.readFileSync(`client/src/i18n/locales/${l}.json`,'utf8'))]);
+const has=(o,k)=>k.split('.').reduce((a,p)=>a&&typeof a==='object'?a[p]:undefined,o)!==undefined;
+const inFile=orphan.filter(k=>locales.some(([,o])=>has(o,k)));
+console.log('keys dung boi trang CHET:',deadKeys.size);
+console.log('trong do KHONG trang song nao dung (mo coi neu xoa):',orphan.length);
+console.log('  -> co MAT trong locale json:',inFile.length);
+console.log('\nDS khoa mo coi CO trong locale:'); inFile.forEach(k=>console.log('  ',k));
+console.log('\nDS khoa mo coi KHONG co trong locale (chi fallback inline):',orphan.length-inFile.length);
+fs.writeFileSync('.qa-dot60/04-i18n-mocoi.json',JSON.stringify({orphan,inFile},null,1));

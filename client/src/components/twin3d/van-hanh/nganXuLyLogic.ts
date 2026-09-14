@@ -190,7 +190,7 @@ export function dangAnTam(shelvedUntil: number | null | undefined, bayGio: numbe
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 /** Loại vật thể mà bảng §9.3 phân biệt. */
-export type LoaiDich = "machine" | "station" | "line" | "workshop" | "factory";
+export type LoaiDich = "machine" | "station" | "line" | "workshop" | "factory" | "robot";
 
 export interface NutDieuHuong {
   /** Khoá i18n cho nhãn nút. */
@@ -227,6 +227,9 @@ export interface NutDieuHuong {
  *     /production-dashboard   → dashboard_view      (navigation.tsx:335)
  *     /andon                  → dashboard_view      (navigation.tsx:294)
  *     /corporate-dashboard    → dashboard_corporate (navigation.tsx:261)
+ *     /control-plane          → machine_control     (App.tsx:424)   ← Đợt 6 #21
+ *     /command-console        → machine_control     (App.tsx:422)   ← Đợt 6 #29
+ *     /robot/:id              → machine_status      (App.tsx:454)   ← Đợt 6 #24-29
  *
  * ⚠ `/machine-health` là REDIRECT sang `/device-monitor?tab=health`
  *   (`App.tsx:381`), nên nút trỏ thẳng tới đích để không phải nhảy hai lần.
@@ -239,6 +242,32 @@ export function nutDieuHuongCho(loai: LoaiDich, id: number): NutDieuHuong[] {
         { khoaNhan: "twin3d.vanHanh.dieuHuong.sucKhoeMay", href: "/device-monitor?tab=health", quyen: "machine_status" },
         { khoaNhan: "twin3d.vanHanh.dieuHuong.lichSu", href: `/history?machineId=${id}`, quyen: "history_view" },
         { khoaNhan: "twin3d.vanHanh.dieuHuong.truyXuat", href: `/traceability?machineId=${id}`, quyen: "analytics_oee" },
+        /*
+         * ★ Sổ kiểm §11 #21 — `gatedActions → /control-plane`.
+         *
+         * §11 xếp mục này vào "`NganXuLy` nhóm Mở chức năng", tức là CHỈ NỐI
+         * NÚT: bảng `gatedActions` vẫn sống ở `MachineCockpit` (#21 không nói
+         * "viết lại"), Twin chỉ cần mở được đường tới nơi thao tác.
+         *
+         * ⚠ `machine_control` lấy từ CHÍNH nơi cưỡng chế (`App.tsx:424`), không
+         *   đoán: khai rộng hơn ⇒ nút hiện rồi bị chặn (lỗi Khối D); khai hẹp
+         *   hơn ⇒ nút biến mất với đúng người cần nó, và không lỗi nào nổ.
+         */
+        { khoaNhan: "twin3d.vanHanh.dieuHuong.dieuKhien", href: `/control-plane?machineId=${id}`, quyen: "machine_control" },
+      ];
+    /*
+     * ★ Sổ kiểm §11 #24-#29 — RobotCockpit.
+     *
+     * Năm trong sáu mục (#24 teach/jog · #25 joints · #27 sparkline · #28 tab
+     * safety/anomalies · #29 gatedActions) có cột "Đích di trú" là **GIỮ Ở
+     * COCKPIT**. Nên phần Twin phải làm là MỘT ĐƯỜNG MỞ tới cockpit đó — không
+     * phải dựng lại sáu tính năng ở Twin. #26 (E-STOP) là ngoại lệ duy nhất:
+     * spec ghi "Nổi lên Twin", và nó được xử lý ở tầng badge, không ở đây.
+     */
+    case "robot":
+      return [
+        { khoaNhan: "twin3d.vanHanh.dieuHuong.robotCockpit", href: `/robot/${id}`, quyen: "machine_status" },
+        { khoaNhan: "twin3d.vanHanh.dieuHuong.banDieuKhien", href: `/command-console?robotId=${id}`, quyen: "machine_control" },
       ];
     case "station":
       return [
@@ -269,5 +298,120 @@ export function nutSuaBoTri(): NutDieuHuong {
     // Khớp `quyenThietKe()` của twinCanhRouter — hai quyền, ta lấy cái phổ biến hơn
     // ở vai kỹ thuật; component vẫn kiểm cả hai trước khi hiện.
     quyen: "machine_control",
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ T-4 (Đợt 5) — DANH SÁCH GÁN KỸ THUẬT VIÊN                              */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Ô tối thiểu mà dropdown "Gán kỹ thuật viên" cần từ `user.list`. */
+export interface NguoiCoTheGan {
+  id: number;
+  name?: string | null;
+  username?: string | null;
+  isActive?: boolean | null;
+}
+
+/**
+ * Lọc danh sách người có thể GÁN việc.
+ *
+ * ★ §9.2 — tài khoản đã VÔ HIỆU HOÁ không được nằm trong danh sách gán. Gán một
+ *   phiếu bảo trì cho người đã nghỉ việc là một phiếu KHÔNG AI NHẬN, và nó im
+ *   lặng: phiếu vẫn "đã gán", vẫn có tên người, vẫn trôi qua mọi báo cáo — chỉ
+ *   không có ai đang thực sự chờ nó. Đây cùng họ với lớp lỗi NT-3: một ô dữ liệu
+ *   trông đầy đủ trong khi thế giới thật đằng sau nó đã rỗng.
+ *
+ * ⚠ `isActive` VẮNG MẶT (`undefined`) được coi là CÒN hoạt động — `undefined`
+ *   nghĩa là "trường không được trả về", không phải "đã vô hiệu hoá". Chỉ
+ *   `false` mới loại. Suy ngược lại sẽ làm dropdown rỗng sạch khi hợp đồng
+ *   server đổi hình, và rỗng-vì-đọc-nhầm trông y hệt rỗng-vì-không-có-ai.
+ */
+export function nguoiGanDuoc(ds: readonly NguoiCoTheGan[] | null | undefined): NguoiCoTheGan[] {
+  return (ds ?? []).filter((u) => u.isActive !== false);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ §11 #60 (Đợt 8 lô D) — STATS AOI OK/NG/NTF/YIELD                       */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Hàng thô từ `dashboard.getMachineStats`.
+ *
+ * ⚠ Mọi trường `optional`: hợp đồng server trả thêm ba ô nhãn phạm vi và có thể
+ *   đổi hình, và một `undefined` lọt qua `Number()` thành `NaN` — thứ hiển thị
+ *   ra màn hình như một con số thật. Chuẩn hoá ở một chỗ, không ở JSX.
+ */
+export interface HangStatsAoi {
+  total?: number | null;
+  ok?: number | null;
+  ng?: number | null;
+  ntf?: number | null;
+  yieldRate?: number | null;
+  fpy?: number | null;
+}
+
+/**
+ * Bốn ô của #60 sau khi chuẩn hoá. `null` = **CHƯA ĐO ĐƯỢC**, KHÔNG phải 0.
+ */
+export interface StatsAoi {
+  total: number | null;
+  ok: number | null;
+  ng: number | null;
+  ntf: number | null;
+  /** % — `null` khi mẫu rỗng (chia cho 0), không phải 0 %. */
+  yieldRate: number | null;
+  fpy: number | null;
+  /** true khi mẫu thật sự rỗng: máy CÓ được đo, chỉ là 0 chiếc trong cửa sổ. */
+  mauRong: boolean;
+}
+
+/**
+ * ★★★ NT-3 TẠI Ô SỐ: "CHƯA ĐO ĐƯỢC" ≠ "ĐO ĐƯỢC 0" ≠ "0 %".
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đây là chỗ lớp lỗi CHẶN-2 quay lại dưới dạng khác. `getMachineStats` trả
+ * `{total:0, ok:0, ng:0, ntf:0, yieldRate:0}` khi **không có DB** — cùng hình
+ * dạng y hệt một máy chạy thật mà chưa kiểm chiếc nào trong cửa sổ. Nếu ta vẽ
+ * thẳng hàng đó ra, người vận hành đọc "Yield 0 %" và tưởng máy đang hỏng nặng.
+ *
+ * Ba trạng thái phải phân biệt được, và chúng có ba biểu hiện khác nhau:
+ *   1. **chưa đo được** (`dangTai`/`loi`/`hang == null`) ⇒ mọi ô `null` ⇒ UI vẽ `—`
+ *   2. **đo được, mẫu rỗng** (`total === 0`) ⇒ `mauRong=true`, tỉ lệ `null` ⇒ `—`
+ *      (đếm vẫn là 0 THẬT: "0 chiếc" là một sự thật, "0 %" thì không)
+ *   3. **đo được, có mẫu** ⇒ số thật
+ *
+ * ⚠ `yieldRate` KHÔNG được tính lại ở client. Server dùng `finalYield({ok, ntf,
+ *   total})` — NTF tính là PASS (quyết định #4 của repo). Tự tính `ok/total` ở
+ *   đây tạo **nguồn sự thật thứ hai** cho cùng một chỉ số, và hai bản sẽ lệch
+ *   ngay lần đầu ai đó đổi cách xử NTF (G12). Ta chỉ CHUẨN HOÁ, không TÍNH.
+ */
+export function docStatsAoi(
+  hang: HangStatsAoi | null | undefined,
+  daDo: boolean,
+): StatsAoi {
+  const RONG: StatsAoi = {
+    total: null, ok: null, ng: null, ntf: null,
+    yieldRate: null, fpy: null, mauRong: false,
+  };
+  if (!daDo || hang === null || hang === undefined) return RONG;
+
+  const so = (v: number | null | undefined): number | null =>
+    typeof v === "number" && Number.isFinite(v) ? v : null;
+
+  const total = so(hang.total);
+  // Hợp đồng hỏng hình (thiếu `total`) ⇒ coi như CHƯA ĐO, không coi như 0.
+  if (total === null) return RONG;
+
+  const mauRong = total === 0;
+  return {
+    total,
+    ok: so(hang.ok) ?? 0,
+    ng: so(hang.ng) ?? 0,
+    ntf: so(hang.ntf) ?? 0,
+    // ★ Mẫu rỗng ⇒ tỉ lệ `null`. `0/0` không phải 0 %.
+    yieldRate: mauRong ? null : so(hang.yieldRate),
+    fpy: mauRong ? null : so(hang.fpy),
+    mauRong,
   };
 }

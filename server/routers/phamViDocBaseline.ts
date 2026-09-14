@@ -118,11 +118,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/alertRouters.ts (2) ─────────────────────────────────────────────────────
   "server/routers/alertRouters.ts#alertRouter.getById",
   "server/routers/alertRouters.ts#alertRouter.listAll",
-  // ── server/routers/andonRouter.ts (4) ──────────────────────────────────────────────────────
-  "server/routers/andonRouter.ts#andonRouter.active",
-  "server/routers/andonRouter.ts#andonRouter.get",
-  "server/routers/andonRouter.ts#andonRouter.list",
-  "server/routers/andonRouter.ts#andonRouter.metrics",
   // ── server/routers/annotationComparisonRouter.ts (4) ───────────────────────────────────────
   "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.compareTwo",
   "server/routers/annotationComparisonRouter.ts#annotationComparisonRouter.getById",
@@ -152,10 +147,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/aoiPackageRouter.ts#aoiPackageRouter.listPackages",
   // ── server/routers/apiKeyRouter.ts (1) ─────────────────────────────────────────────────────
   "server/routers/apiKeyRouter.ts#apiKeyRouter.list",
-  // ── server/routers/assetCockpitRouter.ts (3) ───────────────────────────────────────────────
-  "server/routers/assetCockpitRouter.ts#assetCockpitRouter.machineAlarms",
-  "server/routers/assetCockpitRouter.ts#assetCockpitRouter.machineDetail",
-  "server/routers/assetCockpitRouter.ts#assetCockpitRouter.robotDetail",
   // ── server/routers/bomRouter.ts (5) ────────────────────────────────────────────────────────
   "server/routers/bomRouter.ts#bomRouter.feederReorderStatus",
   "server/routers/bomRouter.ts#bomRouter.getDefinition",
@@ -184,12 +175,11 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/deviceAdapterRouter.ts (2) ──────────────────────────────────────────────
   "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.get",
   "server/routers/deviceAdapterRouter.ts#deviceAdapterRouter.list",
-  // ── server/routers/digitalTwinRouter.ts (5) ────────────────────────────────────────────────
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.defectHeatmap",
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.predictionOverlay",
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.stationLoadHeatmap",
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.twinState",
-  "server/routers/digitalTwinRouter.ts#digitalTwinRouter.wipFlowState",
+  // ── server/routers/digitalTwinRouter.ts — ★ ĐỢT 14 LÔ Q1: 5 mục ĐÃ TRẢ, xoá khỏi sổ ────────
+  //    twinState · defectHeatmap · wipFlowState · stationLoadHeatmap · predictionOverlay đều đã
+  //    mang `phamViCua(ctx)` xuống tầng dữ liệu. Nghiệm thu hai chiều trên CSDL thật ở
+  //    `digitalTwinPhamVi.db.test.ts`; phân đôi toàn tập ở `phamViTwinCanh.unit.test.ts`.
+  //    (`whatIf` chưa từng có tên ở đây — nó là hàm thuần, không chạm CSDL.)
   // ── server/routers/ecnRouter.ts (2) ────────────────────────────────────────────────────────
   "server/routers/ecnRouter.ts#ecnRouter.getById",
   "server/routers/ecnRouter.ts#ecnRouter.list",
@@ -234,9 +224,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/erpAdminRouter.ts#erpAdminRouter.listOauthClients",
   "server/routers/erpAdminRouter.ts#erpAdminRouter.outboxDeadLetters",
   "server/routers/erpAdminRouter.ts#erpAdminRouter.outboxStatus",
-  // ── server/routers/factoryCommandRouter.ts (2) ─────────────────────────────────────────────
-  "server/routers/factoryCommandRouter.ts#factoryCommandRouter.machineDetail",
-  "server/routers/factoryCommandRouter.ts#factoryCommandRouter.overview",
   // ── server/routers/federationRouter.ts (7) ─────────────────────────────────────────────────
   "server/routers/federationRouter.ts#federationRouter.aggregateSummary",
   "server/routers/federationRouter.ts#federationRouter.alertRollup",
@@ -320,11 +307,13 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.getActive",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions",
-  // ── server/routers/maintenanceRouter.ts (4) ────────────────────────────────────────────────
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.getWorkOrder",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.listWorkOrders",
+  // ── server/routers/maintenanceRouter.ts (1) ────────────────────────────────────────────────
+  // ★ Đợt 49 (mục E) — XOÁ 3 dòng `getWorkOrder` · `listWorkOrders` · `summary`: bộ quét xếp cả ba
+  //   vào nhóm **S** (đã lọc phạm vi) từ trước baseline `d7a6a6c7`, nên §5 ("sổ nợ không được hoá
+  //   thạch") đỏ suốt từ Đợt 40. Trả nợ = XOÁ DÒNG, nhìn thấy được trong diff — không phải nới §5.
+  //   ⚠ Xoá khỏi sổ KHÔNG đổi dân số nhóm A (A do bộ quét đếm trên mã, sổ chỉ là danh sách miễn
+  //     trừ): đo A = 342 cả trước lẫn sau lượt xoá này.
   "server/routers/maintenanceRouter.ts#maintenanceRouter.partsBelowReorder",
-  "server/routers/maintenanceRouter.ts#maintenanceRouter.summary",
   // ── server/routers/maintenanceScheduleRouter.ts (2) ────────────────────────────────────────
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.get",
   "server/routers/maintenanceScheduleRouter.ts#maintenanceScheduleRouter.list",
@@ -458,9 +447,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/semanticsRouter.ts#semanticsRouter.compute",
   "server/routers/semanticsRouter.ts#semanticsRouter.get",
   "server/routers/semanticsRouter.ts#semanticsRouter.list",
-  // ── server/routers/sensorRouter.ts (2) ─────────────────────────────────────────────────────
-  "server/routers/sensorRouter.ts#sensorRouter.listTypes",
-  "server/routers/sensorRouter.ts#sensorRouter.readSeries",
   // ── server/routers/shiftConfigRouter.ts (2) ────────────────────────────────────────────────
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults",
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.list",
@@ -497,24 +483,22 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/traceabilityRouter.ts (2) ───────────────────────────────────────────────
   "server/routers/traceabilityRouter.ts#traceabilityRouter.byLot",
   "server/routers/traceabilityRouter.ts#traceabilityRouter.bySerial",
-  // ── server/routers/twinRouter.ts (7) ───────────────────────────────────────────────────────
+  // ── server/routers/twinRouter.ts (6) ───────────────────────────────────────────────────────
   "server/routers/twinRouter.ts#twinRouter.models.list",
   "server/routers/twinRouter.ts#twinRouter.models.resolve",
   "server/routers/twinRouter.ts#twinRouter.occupancyGrid",
   "server/routers/twinRouter.ts#twinRouter.replay",
   "server/routers/twinRouter.ts#twinRouter.sceneGraph",
   "server/routers/twinRouter.ts#twinRouter.twinModels",
-  "server/routers/twinRouter.ts#twinRouter.usdExport",
   // ── server/routers/userRouters.ts (1) ──────────────────────────────────────────────────────
   "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments",
   // ── server/routers/vda5050Router.ts (2) ────────────────────────────────────────────────────
   "server/routers/vda5050Router.ts#vda5050Router.listAgvs",
   // ↓ cùng lời khai "thước vừa sắc hơn" như khối `aiCalibrationRouter.ts` ở trên.
   "server/routers/vda5050Router.ts#vda5050Router.status",
-  // ── server/routers/wipRouter.ts (5) ────────────────────────────────────────────────────────
+  // ── server/routers/wipRouter.ts (4) ────────────────────────────────────────────────────────
   "server/routers/wipRouter.ts#wipRouter.dispatch",
   "server/routers/wipRouter.ts#wipRouter.dwellByStation",
-  "server/routers/wipRouter.ts#wipRouter.lineBalance",
   "server/routers/wipRouter.ts#wipRouter.list",
   "server/routers/wipRouter.ts#wipRouter.summary",
 ];

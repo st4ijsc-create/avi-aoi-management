@@ -1,0 +1,14 @@
+
+> synapse-platform@1.0.0 vision:validate
+> tsx scripts/run-vision-validation.mjs
+
+No manifest given — running the bundled SYNTHETIC study (labelled synthetic).
+Study "synthetic-vision-validation": 5 registration case(s), 5 SPI case(s) — running…
+Done in 2.4s
+
+Reports written:
+  D:\SOURCES\_twin_wt\validation-reports\vision-validation-2026-09-12T12-49-23.json
+  D:\SOURCES\_twin_wt\validation-reports\vision-validation-2026-09-12T12-49-23.md
+
+Registration %GRR(dx) = 0.7% (good), ndc=196
+SPI volume  %GRR      = 0.2% (good), ndc=918

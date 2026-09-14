@@ -1,0 +1,5 @@
+PHAN XU XONG 2026-09-13T15:01:50+07:00
+D-1 head: DAT 39 SAI 2 (y het cot 57, 0/48 o khac)
+D-1 nen : DAT 41 SAI 0 => dung 2/48 o khac = #15, #16
+Bat bien goc do bang CHU HIEN THI + DB: VAN DUNG (Khong ro/Unknown + NGOAI TUYEN/OFFLINE + 58 ngay; DB stopped, hb 2026-07-17)
+=> (a) NO THIET BI DO. Bo sung: o #20 cung mu ma van XANH GIA (doTuoi null x5 moc)

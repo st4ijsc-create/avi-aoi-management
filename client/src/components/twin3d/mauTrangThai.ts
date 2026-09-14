@@ -40,11 +40,29 @@
  * WebGL/three.js không parse được `oklch()`. Cám dỗ là hardcode hex ở đây — nhưng
  * hex cứng KHÔNG đổi theo theme sáng/tối, và §10.4 bắt 3D phải đúng ở CẢ HAI theme.
  *
- * Nên tệp này trả về **tên token** (`--destructive`), và `giaiMauCanh()` phân giải
- * token → rgb lúc chạy bằng `getComputedStyle` (chính trình duyệt tính oklch → rgb,
- * không cần thư viện màu). Đổi theme ⇒ gọi lại ⇒ cảnh đổi màu. Tách đôi như vậy còn
- * làm phần ÁNH XẠ (bảng dưới) test được trong môi trường **node** không DOM — vitest
- * của repo chạy `environment: "node"` (RB-8).
+ * Nên tệp này trả về **tên token** (`--destructive`), và `giaiMauCanh()` đọc giá trị
+ * token lúc chạy bằng `getComputedStyle`. Đổi theme ⇒ gọi lại ⇒ cảnh đổi màu. Tách
+ * đôi như vậy còn làm phần ÁNH XẠ (bảng dưới) test được trong môi trường **node**
+ * không DOM — vitest của repo chạy `environment: "node"` (RB-8).
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐÍNH CHÍNH (Đợt 8 lô D, G29) — CÂU "TRÌNH DUYỆT TỰ TÍNH oklch → rgb" LÀ **SAI**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản trước của đoạn này viết: *"chính trình duyệt tính oklch → rgb, không cần thư
+ * viện màu"*. Đo lại trên trang thật: `getPropertyValue("--warning")` trả nguyên văn
+ * `"oklch(78% .15 75)"`. **Custom property KHÔNG được CSS phân giải** — nó thay thế
+ * nguyên văn, và `getComputedStyle` trả lại đúng chuỗi tác giả đã viết. (Cả cách gán
+ * vào `color` của một phần tử dò cũng không cứu: Chrome nay giữ `oklch()` ở computed
+ * value.) Câu sai đó khiến hai lớp lỗi tồn tại hàng đợt mà không cổng nào bắt:
+ *   1. `THREE.Color("oklch(...)")` → **warn rồi trả TRẮNG**, không throw (G29);
+ *   2. `phaVeNen()` (`van-hanh/phamViCanh.ts`) trả **nguyên màu gốc** ⇒ "mờ 12 % cho
+ *      Line ngoài phạm vi" (§10C) **chưa từng có hiệu lực**.
+ *
+ * ⇒ `giaiMauCanh()` là **giá trị token thô** (có thể là `oklch()`). Ai đưa màu vào
+ *   three, hoặc vào một phép trộn số, PHẢI đi qua `van-hanh/mauThree.ts`
+ *   (`mauThree` / `mauHex` / `mauCss`) — nơi quy qua canvas 2D ra RGB thật.
+ *   Người tiêu thụ **DOM** (`background`, SVG `fill`) thì dùng thẳng được: ở đó
+ *   trình duyệt CÓ rasterise, nên `oklch()` hiển thị đúng.
  *
  * ⚠ Bảng màu ≤ 7 mã (ASM Guideline 6.1 — giới hạn trí nhớ ngắn hạn). Đếm token khác
  * nhau dùng dưới đây: packml-run, info, warning, alarm-medium, muted-foreground,
@@ -62,6 +80,16 @@ export type TrangThaiCanh =
   | "changeover"
   | "starved"
   | "blocked"
+  // ─ ★★★ Đợt 38 (Pareto #2 QA Đợt 37) — ba ô của TỪ VỰNG CHỈ HUY `CommandMachineStatus` ─
+  //   (`server/services/trangThaiMayTuoi.ts`). Server nay trả CÙNG một từ điển cho kho twin
+  //   (`traTrangThaiHangLoat`/`anhLichSu` qua `mapMachineStatus`) và fleet (`factoryCommand.overview`):
+  //   `stopped→idle`, `error→down`, mất nhịp tim→`offline`. Đo QA Đợt 37 D-4: máy 14 sống-dừng ⇒ `/twin`
+  //   "Stopped 11 s" cạnh overview `idle`; và `mayNen.trangThaiBaoCao` (từ overview) mang `idle`/`offline` mà
+  //   bảng này KHÔNG có ⇒ rơi `khong_ro` CÂM rồi "lật" sang `stopped` khi gói socket tới. Tám ô enum ở trên
+  //   GIỮ (studio/UNS/lịch sử còn nói bằng chúng); ba ô này là từ điển server nói với client.
+  | "idle"
+  | "down"
+  | "offline"
   // ─ hai trạng thái CHỈ TỒN TẠI trong cảnh 3D, không có trong DB ─
   /** Mất tín hiệu / dữ liệu quá 5 phút. NT-3: hạng nhất, không suy biến. */
   | "khong_ro"
@@ -153,6 +181,31 @@ const BANG_MAU: Readonly<Record<TrangThaiCanh, MauTrangThai>> = {
     laBatThuong: true,
     khoaNhan: "twin3d.trangThai.error",
   },
+  // ★★★ Đợt 38 — TỪ VỰNG CHỈ HUY: dùng LẠI token của ô tương đương (KHÔNG thêm màu — trần 7 mã ASM 6.1).
+  //   `idle` ≡ dừng chủ động (xám đậm) · `down` ≡ lỗi (màu bão hoà DUY NHẤT, cùng token với `error`) ·
+  //   `offline` ≡ mất kết nối: xám gạch chéo như `khong_ro` nhưng NHÃN riêng ("Mất kết nối" — server đã kết luận,
+  //   không phải "ta không biết"). Nhãn i18n ĐỒNG VĂN với `factoryCommand.status*` — `mauTrangThai.unit.test.ts` ghim.
+  idle: {
+    token: "--muted-foreground",
+    doMo: 1,
+    hoaTiet: "khong",
+    laBatThuong: false,
+    khoaNhan: "twin3d.trangThai.idle",
+  },
+  down: {
+    token: "--destructive",
+    doMo: 1,
+    hoaTiet: "khong",
+    laBatThuong: true,
+    khoaNhan: "twin3d.trangThai.down",
+  },
+  offline: {
+    token: "--muted",
+    doMo: 1,
+    hoaTiet: "gach_cheo",
+    laBatThuong: false,
+    khoaNhan: "twin3d.trangThai.offline",
+  },
   // ★★★ NT-3 — xám GẠCH CHÉO. Không bao giờ suy biến về khoẻ hay lỗi.
   khong_ro: {
     token: "--muted",
@@ -205,11 +258,33 @@ export function mauChoTrangThai(trangThai: unknown): MauTrangThai {
  */
 export type MucTuoi = "tuoi" | "cu" | "khong_ro";
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ T-3 (Đợt 5) — NGƯỠNG TƯƠI KHAI ĐÚNG MỘT LẦN                            */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*
+ * Hai ngưỡng này TỪNG tồn tại thành HAI BẢN SAO: số ma thuật `60_000`/`300_000`
+ * viết thẳng trong `mucTuoi()` dưới đây, và hằng `NGUONG_TUOI_MS`/`NGUONG_CU_MS`
+ * khai lại ở `van-hanh/trungThucDuLieu.ts`. Hai bản sao của một ngưỡng chỉ đồng ý
+ * với nhau cho tới lần sửa đầu tiên — và khi lệch, chúng KHÔNG nổ: màu 3D dùng
+ * bản này, ô đếm dùng bản kia, nên cùng một máy được tô "cũ" ở cảnh và đếm vào
+ * "không rõ" ở panel. Đúng bài học G12: "hai bản cài đặt" hiếm khi chỉ lệch MỘT chỗ.
+ *
+ * ⚠ HƯỚNG IMPORT — cố ý NGƯỢC với đề xuất ban đầu (cho `mauTrangThai` import từ
+ *   `trungThucDuLieu`). `trungThucDuLieu` ĐÃ import `mucTuoi` từ tệp này (:32),
+ *   nên nhập ngược lại tạo VÒNG TRÒN import. Tệp này là LÁ (0 import), nên nó
+ *   phải là nơi KHAI; `trungThucDuLieu` re-export để mọi call site cũ giữ nguyên.
+ */
+
+/** Dưới ngưỡng này là dữ liệu "tươi" (ms). */
+export const NGUONG_TUOI_MS = 60_000;
+/** Tới ngưỡng này còn là "cũ"; QUÁ nó là `khong_ro` (ms). NT-3 "quá 5 phút". */
+export const NGUONG_CU_MS = 300_000;
+
 export function mucTuoi(thoiDiemDuLieu: number | null | undefined, bayGio: number): MucTuoi {
   if (thoiDiemDuLieu === null || thoiDiemDuLieu === undefined) return "khong_ro";
   const tuoiMs = bayGio - thoiDiemDuLieu;
-  if (tuoiMs < 60_000) return "tuoi";
-  if (tuoiMs <= 300_000) return "cu";
+  if (tuoiMs < NGUONG_TUOI_MS) return "tuoi";
+  if (tuoiMs <= NGUONG_CU_MS) return "cu";
   return "khong_ro";
 }
 
@@ -242,8 +317,12 @@ export const TOKEN_DA_DUNG: readonly string[] = [
  * Phân giải tên token → chuỗi màu WebGL dùng được (`rgb(r, g, b)`).
  *
  * PHỤ THUỘC DOM — cố ý tách khỏi phần ánh xạ thuần ở trên để bảng màu test được
- * trong `environment: "node"`. Trình duyệt tự tính `oklch()` → `rgb()`, nên không
- * cần thư viện chuyển đổi màu nào.
+ * trong `environment: "node"`.
+ *
+ * ⚠ Trả về **GIÁ TRỊ THÔ của token**, KHÔNG phải rgb. `index.css` khai token bằng
+ *   `oklch()`, và custom property không được phân giải ⇒ hàm này trả chuỗi
+ *   `"oklch(...)"`. Dùng thẳng cho CSS/SVG thì đúng; đưa vào `THREE.Color` thì
+ *   **trắng câm** (G29). Đường vào three: `van-hanh/mauThree.ts`.
  *
  * `docGiaTri` được TIÊM VÀO (mặc định `getComputedStyle`) để test bơm giá trị giả
  * mà không cần jsdom.

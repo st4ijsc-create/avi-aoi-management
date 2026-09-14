@@ -1,0 +1,49 @@
+
+> synapse-platform@1.0.0 check:tests
+> cross-env NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit -p tsconfig.tests.json
+
+client/src/components/ai/bangTerminal.unit.test.ts(73,16): error TS2741: Property 'mucDo' is missing in type '{ tep: null; dong: null; cot: null; thongDiep: string; }' but required in type 'DiaDiemLoi'.
+server/_core/requireAnyPermissionKhoiC.db.test.ts(36,10): error TS2345: Argument of type '({ ctx, next }: { ctx: TrpcContext & { user: NonNullable<TrpcContext["user"]>; }; next: Function; }) => Promise<any>' is not assignable to parameter of type 'MiddlewareBuilder<{ req: Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>; res: Response<any, Record<string, any>>; user: { ...; } | null; sessionToken: string | ... 1 more ... | undefined; __luotXacMinhTotp: string | undefined; }, object, unknown, UnsetMarker> | MiddlewareFunction<...>'.
+  Type '({ ctx, next }: { ctx: TrpcContext & { user: NonNullable<TrpcContext["user"]>; }; next: Function; }) => Promise<any>' is not assignable to type 'MiddlewareFunction<TrpcContext, object, object, unknown, UnsetMarker>'.
+    Types of parameters '__0' and 'opts' are incompatible.
+      Type '{ ctx: { req: Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>; res: Response<any, Record<string, any>>; user: { ...; } | null; sessionToken: string | ... 1 more ... | undefined; __luotXacMinhTotp: string | undefined; }; ... 7 more ...; next: { ...; }; }' is not assignable to type '{ ctx: TrpcContext & { user: { id: number; name: string | null; position: string | null; role: "maintenance" | "user" | "admin" | "supervisor" | "quality_inspector" | "operator" | "engineer" | "viewer"; ... 14 more ...; lastSignedIn: Date; }; }; next: Function; }'.
+        Types of property 'ctx' are incompatible.
+          Type '{ req: Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>; res: Response<any, Record<string, any>>; user: { ...; } | null; sessionToken: string | ... 1 more ... | undefined; __luotXacMinhTotp: string | undefined; }' is not assignable to type 'TrpcContext & { user: { id: number; name: string | null; position: string | null; role: "maintenance" | "user" | "admin" | "supervisor" | "quality_inspector" | "operator" | "engineer" | "viewer"; ... 14 more ...; lastSignedIn: Date; }; }'.
+            Type '{ req: Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>; res: Response<any, Record<string, any>>; user: { ...; } | null; sessionToken: string | ... 1 more ... | undefined; __luotXacMinhTotp: string | undefined; }' is not assignable to type '{ user: { id: number; name: string | null; position: string | null; role: "maintenance" | "user" | "admin" | "supervisor" | "quality_inspector" | "operator" | "engineer" | "viewer"; ... 14 more ...; lastSignedIn: Date; }; }'.
+              Types of property 'user' are incompatible.
+                Type '{ id: number; name: string | null; position: string | null; role: "maintenance" | "user" | "admin" | "supervisor" | "quality_inspector" | "operator" | "engineer" | "viewer"; openId: string; ... 13 more ...; lastSignedIn: Date; } | null' is not assignable to type '{ id: number; name: string | null; position: string | null; role: "maintenance" | "user" | "admin" | "supervisor" | "quality_inspector" | "operator" | "engineer" | "viewer"; openId: string; ... 13 more ...; lastSignedIn: Date; }'.
+                  Type 'null' is not assignable to type '{ id: number; name: string | null; position: string | null; role: "maintenance" | "user" | "admin" | "supervisor" | "quality_inspector" | "operator" | "engineer" | "viewer"; openId: string; ... 13 more ...; lastSignedIn: Date; }'.
+server/_core/requireAnyPermissionKhoiC.db.test.ts(62,6): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { openId: string | SQL<unknown> | Placeholder<string, any>; id?: number | SQL<unknown> | Placeholder<string, any> | undefined; name?: string | SQL<unknown> | Placeholder<...> | null | undefined; ... 15 more ...; lastSignedIn?: Date | ... 2 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Type 'string' is not assignable to type '"maintenance" | "user" | "admin" | "supervisor" | "quality_inspector" | "operator" | "engineer" | "viewer" | SQL<unknown> | Placeholder<string, any> | undefined'.
+  Overload 2 of 2, '(values: { openId: string | SQL<unknown> | Placeholder<string, any>; id?: number | SQL<unknown> | Placeholder<string, any> | undefined; name?: string | SQL<unknown> | Placeholder<...> | null | undefined; ... 15 more ...; lastSignedIn?: Date | ... 2 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'openId' does not exist in type '{ openId: string | SQL<unknown> | Placeholder<string, any>; id?: number | SQL<unknown> | Placeholder<string, any> | undefined; name?: string | SQL<unknown> | Placeholder<...> | null | undefined; ... 15 more ...; lastSignedIn?: Date | ... 2 more ... | undefined; }[]'.
+server/_core/requireAnyPermissionKhoiC.db.test.ts(75,33): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { category: "history" | "andon" | "admin" | SQL<unknown> | "settings" | Placeholder<string, any> | "machine_control" | "dashboard" | "machine_monitoring" | "mqtt" | ... 6 more ... | "energy"; ... 13 more ...; grantedAt?: Date | ... 2 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Type 'string' is not assignable to type '"history" | "andon" | "admin" | SQL<unknown> | "settings" | Placeholder<string, any> | "machine_control" | "dashboard" | "machine_monitoring" | "mqtt" | "annotations" | ... 5 more ... | "energy"'.
+  Overload 2 of 2, '(values: { category: "history" | "andon" | "admin" | SQL<unknown> | "settings" | Placeholder<string, any> | "machine_control" | "dashboard" | "machine_monitoring" | "mqtt" | ... 6 more ... | "energy"; ... 13 more ...; grantedAt?: Date | ... 2 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'userId' does not exist in type '{ category: "history" | "andon" | "admin" | SQL<unknown> | "settings" | Placeholder<string, any> | "machine_control" | "dashboard" | "machine_monitoring" | "mqtt" | ... 6 more ... | "energy"; ... 13 more ...; grantedAt?: Date | ... 2 more ... | undefined; }[]'.
+server/routers/changeReasonGiaTienToBienThe.test.ts(62,57): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+server/routers/changeReasonGiaTienToBienThe.test.ts(63,64): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+server/routers/changeReasonGiaTienToBienThe.test.ts(64,59): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+server/routers/changeReasonGiaTienToBienThe.test.ts(68,53): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+server/routers/changeReasonGiaTienToBienThe.test.ts(69,45): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+server/services/aiLocalKnowledge.numPredictVscode.test.ts(94,96): error TS2345: Argument of type '"engineer"' is not assignable to parameter of type 'UserLevel | undefined'.
+server/services/aiLocalKnowledge.progKbRouteGate.test.ts(63,60): error TS2554: Expected 0 arguments, but got 1.
+server/services/aiLocalKnowledge.progKbRouteGate.test.ts(64,49): error TS2554: Expected 0 arguments, but got 1.
+server/services/aiLocalKnowledge.vscodeRouteGate.test.ts(121,21): error TS7006: Parameter 'server' implicitly has an 'any' type.
+server/services/aiLocalKnowledge.vscodeRouteGate.test.ts(121,29): error TS7006: Parameter 'tool' implicitly has an 'any' type.
+server/services/aiLocalKnowledge.vscodeRouteGate.test.ts(121,35): error TS7006: Parameter 'moTa' implicitly has an 'any' type.
+server/services/aiLocalKnowledge.vscodeRouteGate.test.ts(133,23): error TS7006: Parameter 'mucNho' implicitly has an 'any' type.
+server/services/aiLocalKnowledge.vscodeStudioMerge.test.ts(70,60): error TS2554: Expected 0 arguments, but got 1.
+server/services/aiLocalKnowledge.vscodeStudioMerge.test.ts(71,49): error TS2554: Expected 0 arguments, but got 1.
+server/services/aiLocalTools/grepLoaiTru.test.ts(54,35): error TS2322: Type 'unknown[]' is not assignable to type 'string[]'.
+  Type 'unknown' is not assignable to type 'string'.
+server/services/aiLocalTools/grepLoaiTru.test.ts(58,89): error TS2554: Expected 1 arguments, but got 2.
+server/services/aiLocalTools/grepLoaiTru.test.ts(61,110): error TS2554: Expected 1 arguments, but got 2.
+server/services/aiLocalTools/grepLoaiTru.test.ts(66,118): error TS2554: Expected 1 arguments, but got 2.
+server/services/aiLocalTools/grepLoaiTru.test.ts(68,116): error TS2554: Expected 1 arguments, but got 2.
+server/services/aiLocalTools/grepLoaiTru.test.ts(75,112): error TS2554: Expected 1 arguments, but got 2.
+server/services/aiLocalTools/grepLoaiTru.test.ts(82,106): error TS2554: Expected 1 arguments, but got 2.
+server/services/aiLocalTools/grepLoaiTru.test.ts(90,93): error TS2554: Expected 1 arguments, but got 2.
+server/services/aiLocalTools/grepLoaiTru.test.ts(92,105): error TS2554: Expected 1 arguments, but got 2.

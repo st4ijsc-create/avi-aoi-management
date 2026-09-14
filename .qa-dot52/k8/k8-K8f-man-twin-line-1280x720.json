@@ -1,0 +1,23 @@
+{
+  "luc": "2026-09-12T07:00:47.214Z",
+  "base": "http://localhost:3052",
+  "duong": "/twin/line/2",
+  "man": "man-twin-line",
+  "vp": "1280x720",
+  "mo": {
+    "msCanvas": 1789,
+    "msSanSang": 4742,
+    "coMayTrongKhung": true
+  },
+  "nhan": {
+    "id": 18,
+    "X": 741.265625,
+    "Y": 408.96875,
+    "chu": "CONVEYOR · Không rõ",
+    "soNhan": 12,
+    "loai": []
+  },
+  "toiNhan": true,
+  "urlSauNhan": "http://localhost:3052/twin/may/18",
+  "urlSauBack": "http://localhost:3052/twin/line/2?do=1"
+}

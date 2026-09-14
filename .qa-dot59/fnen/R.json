@@ -1,0 +1,842 @@
+{
+  "_cach": "cache",
+  "_vai": "e2e_tai_loE",
+  "_vp": "1600x900",
+  "_lo": "R",
+  "_luc": "2026-09-13T10:07:14.693Z",
+  "_base": "http://localhost:3059",
+  "twin": {
+    "url": "/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+    "canvasDom": 1,
+    "soCanvasKit": 1,
+    "demNhan": {
+      "ve": 4,
+      "tong": 45,
+      "ngoaiKhung": 0,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 41,
+      "vuotMep": 0,
+      "biChe": 3,
+      "deKhoiKhac": 2,
+      "deKhoiKhacDoLai": 2,
+      "soHopKhoi": 42,
+      "soVungCam": 13,
+      "soLopPhuDom": 5,
+      "soHopBadge": 8,
+      "suCoNgoaiKhung": 0,
+      "capConChong": 0
+    },
+    "lopTrungCanvas": true,
+    "soNhan": 4,
+    "tamTrong": 4,
+    "soBiChe": 0,
+    "nhanDs": [
+      {
+        "chu": "SIM-L2-ROBOT · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SIM-L2-CONVEYOR · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SIM-L1-ICT · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SIM-L2-AOI · Unknown",
+        "tamTrong": true,
+        "che": []
+      }
+    ],
+    "bbox": {
+      "man-twin-van-hanh": {
+        "x": 288,
+        "y": 133,
+        "w": 1288,
+        "h": 743,
+        "day": 876,
+        "phai": 1576
+      },
+      "man-twin-line": null,
+      "man-twin-may": null,
+      "man-twin-studio": null,
+      "khoi-canh-3d": {
+        "x": 288,
+        "y": 207,
+        "w": 1288,
+        "h": 669,
+        "day": 876,
+        "phai": 1576
+      },
+      "khoi-canh-may": null,
+      "cockpit-2d": null,
+      "khoi-dai-line": null,
+      "dai-line": null,
+      "vung-canvas": null
+    },
+    "oTram": [],
+    "chuKetNoi": "Live",
+    "voTieuDeApp": "Production (MES)",
+    "biChan": 0,
+    "coMan": {
+      "man-twin-van-hanh": 1,
+      "man-twin-line": 0,
+      "man-twin-may": 0,
+      "man-twin-studio": 0
+    },
+    "lyDoMay": null,
+    "lineRong": 0,
+    "soCanhBaoNgan": 0,
+    "nutAck": 0
+  },
+  "twinHangMay14": "SIM-L2-AOI Unknown 58 days",
+  "twinDaiHopNhat": {
+    "coNut": true,
+    "coDai": true,
+    "chong": []
+  },
+  "bamMay14Duoc": true,
+  "urlSauBamMay": "/twin/may/14",
+  "nganNhung": {
+    "url": "/twin/may/14",
+    "coNgan": 0
+  },
+  "line": {
+    "url": "/twin/line/2",
+    "canvasDom": 1,
+    "soCanvasKit": 1,
+    "demNhan": {
+      "ve": 12,
+      "tong": 12,
+      "ngoaiKhung": 0,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 0,
+      "vuotMep": 0,
+      "biChe": 0,
+      "deKhoiKhac": 0,
+      "deKhoiKhacDoLai": 0,
+      "soHopKhoi": 12,
+      "soVungCam": 5,
+      "soLopPhuDom": 2,
+      "soHopBadge": 3,
+      "suCoNgoaiKhung": 0,
+      "capConChong": 0
+    },
+    "lopTrungCanvas": true,
+    "soNhan": 12,
+    "tamTrong": 12,
+    "soBiChe": 0,
+    "nhanDs": [
+      {
+        "chu": "CONVEYOR · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "ROBOT · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "AOI · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "FCT · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "PWR · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "ASSY · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "ICT · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SCREW · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "PACK · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "AVI · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "AGV · Unknown",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SPI · Unknown",
+        "tamTrong": true,
+        "che": []
+      }
+    ],
+    "bbox": {
+      "man-twin-van-hanh": null,
+      "man-twin-line": {
+        "x": 288,
+        "y": 80,
+        "w": 1288,
+        "h": 796,
+        "day": 876,
+        "phai": 1576
+      },
+      "man-twin-may": null,
+      "man-twin-studio": null,
+      "khoi-canh-3d": {
+        "x": 288,
+        "y": 125,
+        "w": 1288,
+        "h": 659,
+        "day": 784,
+        "phai": 1576
+      },
+      "khoi-canh-may": null,
+      "cockpit-2d": null,
+      "khoi-dai-line": {
+        "x": 288,
+        "y": 784,
+        "w": 1288,
+        "h": 93,
+        "day": 876,
+        "phai": 1576
+      },
+      "dai-line": {
+        "x": 288,
+        "y": 784,
+        "w": 1288,
+        "h": 93,
+        "day": 876,
+        "phai": 1576
+      },
+      "vung-canvas": null
+    },
+    "oTram": [
+      {
+        "tid": "o-tram-13",
+        "x": 300,
+        "y": 811,
+        "w": 61,
+        "h": 55,
+        "day": 866,
+        "phai": 361
+      },
+      {
+        "tid": "o-tram-14",
+        "x": 374,
+        "y": 811,
+        "w": 61,
+        "h": 55,
+        "day": 866,
+        "phai": 435
+      },
+      {
+        "tid": "o-tram-15",
+        "x": 448,
+        "y": 811,
+        "w": 61,
+        "h": 55,
+        "day": 866,
+        "phai": 509
+      },
+      {
+        "tid": "o-tram-16",
+        "x": 522,
+        "y": 811,
+        "w": 61,
+        "h": 55,
+        "day": 866,
+        "phai": 583
+      },
+      {
+        "tid": "o-tram-17",
+        "x": 596,
+        "y": 811,
+        "w": 61,
+        "h": 55,
+        "day": 866,
+        "phai": 657
+      },
+      {
+        "tid": "o-tram-18",
+        "x": 670,
+        "y": 811,
+        "w": 76,
+        "h": 55,
+        "day": 866,
+        "phai": 747
+      },
+      {
+        "tid": "o-tram-19",
+        "x": 759,
+        "y": 811,
+        "w": 61,
+        "h": 55,
+        "day": 866,
+        "phai": 821
+      },
+      {
+        "tid": "o-tram-20",
+        "x": 833,
+        "y": 811,
+        "w": 61,
+        "h": 55,
+        "day": 866,
+        "phai": 895
+      },
+      {
+        "tid": "o-tram-21",
+        "x": 907,
+        "y": 811,
+        "w": 61,
+        "h": 55,
+        "day": 866,
+        "phai": 969
+      },
+      {
+        "tid": "o-tram-22",
+        "x": 981,
+        "y": 811,
+        "w": 61,
+        "h": 55,
+        "day": 866,
+        "phai": 1043
+      },
+      {
+        "tid": "o-tram-23",
+        "x": 1055,
+        "y": 811,
+        "w": 63,
+        "h": 55,
+        "day": 866,
+        "phai": 1118
+      },
+      {
+        "tid": "o-tram-24",
+        "x": 1131,
+        "y": 811,
+        "w": 62,
+        "h": 55,
+        "day": 866,
+        "phai": 1193
+      }
+    ],
+    "chuKetNoi": null,
+    "voTieuDeApp": "Production (MES)",
+    "biChan": 0,
+    "coMan": {
+      "man-twin-van-hanh": 0,
+      "man-twin-line": 1,
+      "man-twin-may": 0,
+      "man-twin-studio": 0
+    },
+    "lyDoMay": null,
+    "lineRong": 0,
+    "soCanhBaoNgan": 0,
+    "nutAck": 0
+  },
+  "camKhong": {
+    "x": 19.200000000000003,
+    "y": 21.367311858230227,
+    "z": 27.76373859388744,
+    "mucX": 19.200000000000003,
+    "mucZ": 12.755692603869027
+  },
+  "lineIdle1": {
+    "ms": 4000,
+    "khung": 0
+  },
+  "lineIdle2": {
+    "ms": 4000,
+    "khung": 0
+  },
+  "bamOTram14Duoc": true,
+  "urlSauBamOTram": "/twin/may/14",
+  "camCo": {
+    "x": 10,
+    "y": 4.999999999999999,
+    "z": 10.000000000000002,
+    "mucX": 0,
+    "mucZ": 0
+  },
+  "nhanLineCoCam": [],
+  "camViTriDoi": true,
+  "may": {
+    "url": "/twin/may/14",
+    "canvasDom": 1,
+    "soCanvasKit": 1,
+    "demNhan": {
+      "ve": 1,
+      "tong": 1,
+      "ngoaiKhung": 0,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 0,
+      "vuotMep": 0,
+      "biChe": 0,
+      "deKhoiKhac": 0,
+      "deKhoiKhacDoLai": 0,
+      "soHopKhoi": 3,
+      "soVungCam": 2,
+      "soLopPhuDom": 1,
+      "soHopBadge": 1,
+      "suCoNgoaiKhung": 0,
+      "capConChong": 0
+    },
+    "lopTrungCanvas": true,
+    "soNhan": 1,
+    "tamTrong": 1,
+    "soBiChe": 0,
+    "nhanDs": [
+      {
+        "chu": "SIM-L2-AOI · Unknown",
+        "tamTrong": true,
+        "che": []
+      }
+    ],
+    "bbox": {
+      "man-twin-van-hanh": null,
+      "man-twin-line": null,
+      "man-twin-may": {
+        "x": 288,
+        "y": 80,
+        "w": 1288,
+        "h": 796,
+        "day": 876,
+        "phai": 1576
+      },
+      "man-twin-studio": null,
+      "khoi-canh-3d": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "day": 449,
+        "phai": 1288
+      },
+      "khoi-canh-may": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "day": 449,
+        "phai": 1288
+      },
+      "cockpit-2d": {
+        "x": 288,
+        "y": 449,
+        "w": 1000,
+        "h": 427,
+        "day": 876,
+        "phai": 1288
+      },
+      "khoi-dai-line": null,
+      "dai-line": null,
+      "vung-canvas": null
+    },
+    "oTram": [],
+    "chuKetNoi": null,
+    "voTieuDeApp": "Production (MES)",
+    "biChan": 0,
+    "coMan": {
+      "man-twin-van-hanh": 0,
+      "man-twin-line": 0,
+      "man-twin-may": 1,
+      "man-twin-studio": 0
+    },
+    "lyDoMay": null,
+    "lineRong": 0,
+    "soCanhBaoNgan": 1,
+    "nutAck": 0
+  },
+  "mayNghia": {
+    "nhanMay": "SIM-L2-AOI · Unknown",
+    "soNhan3D": 1,
+    "trangThaiTuNhan3D": "Unknown",
+    "nganPhaiChu": "SIM-L2-AOI SIM-L2 AOI Unknown Data too old — status not trustworthy Updated 58 days ago AOI RESULTS no units inspected OK 0 NG 0 NTF 0 YIELD — Total inspected: 0 ALARMS (1) DOT37-QA-RAISED-M14 Unacknowledged OPEN MODULE Full cockpit Machine health Traceability Control plane",
+    "nganPhaiKhongRo": true,
+    "cockpitChu": "SIM-L2 AOI SIM-L2-AOI · AOI · Nhà máy ảo (SIM) · Dây chuyền ảo 2 OFFLINE Refresh Overview Health / PdM Telemetry Process results OEE Alarms Recipes IR programs Genealogy 3D model Maintenance Actions — OEE 0% Failure risk 1 Active alarms Disconnected Connection Identity Code SIM-L2-AOI Type AOI Model SIM-AOI Manufacturer ST4I-SIM Station SIM-L2-AOI-ST Line Dây chuyền ảo 2 Factory Nhà máy ảo (SIM) Corporate SIM Active active Resolved capability No declared capabilities Equipment class AOI Adapter kind vision Device type AOI PackML states Idle Starting Execute Completing Complete Holding Held Suspending Suspended Unsuspending Unholding Aborting Aborted Clearing Stopping Stopped Resetting Telemetry tags (5) Yield % NG count OK count Cycle time PackML state Live state Status offline PackML / op",
+    "cockpitOnOff": "OFFLINE",
+    "cockpitKetNoi": "Disconnected",
+    "cockpitStatusTho": "offline",
+    "tuoiTuCanh": null,
+    "tuoiTuNgan": "58 days",
+    "tuoiToanMan": "58 days",
+    "coChuChuaBao": false,
+    "coCanh": true,
+    "coNganPhai": true,
+    "coCockpit": true
+  },
+  "mayTab3d": {
+    "coTab": true,
+    "canvasDom": 1,
+    "soCanvasKit": 1
+  },
+  "dieuHuong": {
+    "sauVeLine": "/twin/line/2",
+    "sauBack": "/twin/may/14",
+    "sauF5": "/twin/may/14",
+    "sauVeNhaMay": "/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+    "backTuNhaMay": "/twin/may/14"
+  },
+  "mayMoc": [
+    {
+      "tMs": 3017,
+      "tuoiToanMan": "58 days",
+      "tuoiTuCanh": null,
+      "tuoiTuNgan": "58 days",
+      "coChuChuaBao": false,
+      "coCockpit": true,
+      "idle": {
+        "ms": 2000,
+        "khung": 0
+      }
+    },
+    {
+      "tMs": 10040,
+      "tuoiToanMan": "58 days",
+      "tuoiTuCanh": null,
+      "tuoiTuNgan": "58 days",
+      "coChuChuaBao": false,
+      "coCockpit": true,
+      "idle": {
+        "ms": 2000,
+        "khung": 0
+      }
+    },
+    {
+      "tMs": 19053,
+      "tuoiToanMan": "58 days",
+      "tuoiTuCanh": null,
+      "tuoiTuNgan": "58 days",
+      "coChuChuaBao": false,
+      "coCockpit": true,
+      "idle": {
+        "ms": 2000,
+        "khung": 0
+      }
+    },
+    {
+      "tMs": 31064,
+      "tuoiToanMan": "58 days",
+      "tuoiTuCanh": null,
+      "tuoiTuNgan": "58 days",
+      "coChuChuaBao": false,
+      "coCockpit": true,
+      "idle": {
+        "ms": 2000,
+        "khung": 0
+      }
+    },
+    {
+      "tMs": 48079,
+      "tuoiToanMan": "58 days",
+      "tuoiTuCanh": null,
+      "tuoiTuNgan": "58 days",
+      "coChuChuaBao": false,
+      "coCockpit": true,
+      "idle": {
+        "ms": 2000,
+        "khung": 0
+      }
+    }
+  ],
+  "studio": {
+    "tab-con-duong-b": {
+      "day": 876,
+      "canvasDom": 0,
+      "soCanvasKit": 0
+    },
+    "tab-con-duong-a": {
+      "day": 876,
+      "canvasDom": 0,
+      "soCanvasKit": 0
+    },
+    "tab-thiet-ke": {
+      "day": 876,
+      "canvasDom": 1,
+      "soCanvasKit": 1
+    }
+  },
+  "deepLink": {
+    "/twin": {
+      "coMan": true,
+      "tieuDeApp": "Production (MES)",
+      "url": "/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "msCanvas": null
+    },
+    "/twin/line/2": {
+      "coMan": true,
+      "tieuDeApp": "Production (MES)",
+      "url": "/twin/line/2",
+      "msCanvas": null
+    },
+    "/twin/may/14": {
+      "coMan": true,
+      "tieuDeApp": "Production (MES)",
+      "url": "/twin/may/14",
+      "msCanvas": 1224
+    },
+    "/twin-studio": {
+      "coMan": true,
+      "tieuDeApp": "Production (MES)",
+      "url": "/twin-studio",
+      "msCanvas": null
+    }
+  },
+  "redirect": [
+    {
+      "cu": "/digital-twin",
+      "dich": "/twin",
+      "urlCuoi": "/twin",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=overview",
+      "dich": "/twin",
+      "urlCuoi": "/twin",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=center",
+      "dich": "/twin",
+      "urlCuoi": "/twin",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=map",
+      "dich": "/twin",
+      "urlCuoi": "/twin",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=floor",
+      "dich": "/twin-studio",
+      "urlCuoi": "/twin-studio",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=layout",
+      "dich": "/twin-studio",
+      "urlCuoi": "/twin-studio",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=cell",
+      "dich": "/twin",
+      "urlCuoi": "/twin",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin?tab=rf",
+      "dich": "/rf-test-cell",
+      "urlCuoi": "/rf-test-cell",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/factory-live-map",
+      "dich": "/twin",
+      "urlCuoi": "/twin",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/factory-floor-editor",
+      "dich": "/twin-studio",
+      "urlCuoi": "/twin-studio",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/cell-twin",
+      "dich": "/twin",
+      "urlCuoi": "/twin",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/digital-twin-center",
+      "dich": "/twin",
+      "urlCuoi": "/twin",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/layout",
+      "dich": "/twin-studio",
+      "urlCuoi": "/twin-studio",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    },
+    {
+      "cu": "/rf-test-cell",
+      "dich": "/rf-test-cell",
+      "urlCuoi": "/rf-test-cell",
+      "toi": true,
+      "coTid": true,
+      "dat": true
+    }
+  ],
+  "redirectDoiChungTruot": true,
+  "urlPvLine": "/twin/may/14",
+  "api": {
+    "ovStatus": 200,
+    "m14Status": "offline",
+    "connected": false,
+    "issueOffline": {
+      "id": "offline-14",
+      "kind": "offline",
+      "machineId": 14,
+      "machineCode": "SIM-L2-AOI",
+      "severity": "warning",
+      "label": "Máy offline: SIM-L2-AOI",
+      "ageMinutes": 84045
+    },
+    "coCockpitApi": true
+  },
+  "factoryCommand": {
+    "url": "/factory-command",
+    "canvasDom": 1,
+    "soCanvasKit": 1,
+    "demNhan": {
+      "ve": 7,
+      "tong": 7,
+      "ngoaiKhung": 0,
+      "chongLap": 0,
+      "vuotTran": 0,
+      "tran": 30,
+      "biGiau": 0,
+      "vuotMep": 0,
+      "biChe": 0,
+      "deKhoiKhac": 0,
+      "deKhoiKhacDoLai": 0,
+      "soHopKhoi": 0,
+      "soVungCam": 0,
+      "soLopPhuDom": 0,
+      "soHopBadge": 0,
+      "suCoNgoaiKhung": 0,
+      "capConChong": 0
+    },
+    "lopTrungCanvas": true,
+    "soNhan": 7,
+    "tamTrong": 7,
+    "soBiChe": 0,
+    "nhanDs": [
+      {
+        "chu": "SIM-L1-AVI · Offline",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SIM-L1-SPI · Offline",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SIM-L1-ICT · Offline",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SIM-L1-AOI · Offline",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SIM-L2-AOI · Offline",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SIM-L2-CONVEYOR · Offline",
+        "tamTrong": true,
+        "che": []
+      },
+      {
+        "chu": "SIM-L2-ROBOT · Offline",
+        "tamTrong": true,
+        "che": []
+      }
+    ],
+    "bbox": {
+      "man-twin-van-hanh": null,
+      "man-twin-line": null,
+      "man-twin-may": null,
+      "man-twin-studio": null,
+      "khoi-canh-3d": {
+        "x": 289,
+        "y": 195,
+        "w": 954,
+        "h": 710,
+        "day": 904,
+        "phai": 1243
+      },
+      "khoi-canh-may": null,
+      "cockpit-2d": null,
+      "khoi-dai-line": null,
+      "dai-line": null,
+      "vung-canvas": null
+    },
+    "oTram": [],
+    "chuKetNoi": null,
+    "voTieuDeApp": "Machine Monitoring",
+    "biChan": 0,
+    "coMan": {
+      "man-twin-van-hanh": 0,
+      "man-twin-line": 0,
+      "man-twin-may": 0,
+      "man-twin-studio": 0
+    },
+    "lyDoMay": null,
+    "lineRong": 0,
+    "soCanhBaoNgan": 0,
+    "nutAck": 0
+  }
+}

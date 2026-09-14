@@ -1,0 +1,296 @@
+[
+  {
+    "vp": "1600x900",
+    "coNutCay": 1,
+    "soNode": 81,
+    "soNodeLine": 3,
+    "nodes": [
+      {
+        "tid": "node-cay-workshop:1",
+        "chu": "SIM-WS — Xưởng lắp ráp ảo (SIM)417"
+      },
+      {
+        "tid": "node-cay-line:1",
+        "chu": "SIM-L1 — Dây chuyền ảo 1175"
+      },
+      {
+        "tid": "node-cay-station:1",
+        "chu": "SIM-L1-SPI-ST — SIM-L1 SPI Station61"
+      },
+      {
+        "tid": "node-cay-machine:244",
+        "chu": "ESP32-ENV-01 — Cảm biến nhiệt-ẩm ESP32 p"
+      },
+      {
+        "tid": "node-cay-machine:245",
+        "chu": "GLUE-SIM-01 — Máy điểm keo pilot 01"
+      },
+      {
+        "tid": "node-cay-machine:243",
+        "chu": "SCRW-SIM-01 — Máy bắt vít pilot 01"
+      },
+      {
+        "tid": "node-cay-machine:1",
+        "chu": "SIM-L1-SPI — SIM-L1 SPI1"
+      },
+      {
+        "tid": "node-cay-machine:247",
+        "chu": "SN-SIM-0001 — Trạm vít demo"
+      },
+      {
+        "tid": "node-cay-machine:246",
+        "chu": "SN-SIMVERIFY-01 — SIM Verify Screwdriver"
+      },
+      {
+        "tid": "node-cay-station:2",
+        "chu": "SIM-L1-AOI-ST — SIM-L1 AOI Station12"
+      },
+      {
+        "tid": "node-cay-machine:2",
+        "chu": "SIM-L1-AOI — SIM-L1 AOI2"
+      },
+      {
+        "tid": "node-cay-station:3",
+        "chu": "SIM-L1-AVI-ST — SIM-L1 AVI Station11"
+      },
+      {
+        "tid": "node-cay-machine:3",
+        "chu": "SIM-L1-AVI — SIM-L1 AVI1"
+      },
+      {
+        "tid": "node-cay-station:4",
+        "chu": "SIM-L1-ICT-ST — SIM-L1 ICT Station11"
+      },
+      {
+        "tid": "node-cay-machine:4",
+        "chu": "SIM-L1-ICT — SIM-L1 ICT1"
+      },
+      {
+        "tid": "node-cay-station:5",
+        "chu": "SIM-L1-FCT-ST — SIM-L1 FCT Station1"
+      },
+      {
+        "tid": "node-cay-machine:5",
+        "chu": "SIM-L1-FCT — SIM-L1 FCT"
+      },
+      {
+        "tid": "node-cay-station:6",
+        "chu": "SIM-L1-CONVEYOR-ST — SIM-L1 CONVEYOR Sta"
+      },
+      {
+        "tid": "node-cay-machine:6",
+        "chu": "SIM-L1-CONVEYOR — SIM-L1 CONVEYOR"
+      },
+      {
+        "tid": "node-cay-station:7",
+        "chu": "SIM-L1-PWR-ST — SIM-L1 PWR Station1"
+      }
+    ],
+    "bam": [
+      {
+        "node": "node-cay-line:1",
+        "chu": "SIM-L1 — Dây chuyền ảo 1175",
+        "urlTruoc": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+        "url": "http://localhost:3054/twin/line/1",
+        "lineId": "1",
+        "toi": true,
+        "ve": true,
+        "canvas": 1,
+        "soCanvas": 1,
+        "calls": 6,
+        "may": 0,
+        "nhan": 18,
+        "oTram": 12,
+        "daiLine": 1,
+        "treTrongTrang": 0.2,
+        "png": ".qa-dot54/k9/k9-1600x900-node-cay-line:1.png",
+        "ok": true
+      },
+      {
+        "node": "node-cay-line:2",
+        "chu": "SIM-L2 — Dây chuyền ảo 2122",
+        "urlTruoc": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+        "url": "http://localhost:3054/twin/line/2",
+        "lineId": "2",
+        "toi": true,
+        "ve": true,
+        "canvas": 1,
+        "soCanvas": 1,
+        "calls": 6,
+        "may": 0,
+        "nhan": 12,
+        "oTram": 12,
+        "daiLine": 1,
+        "treTrongTrang": 0.4,
+        "png": ".qa-dot54/k9/k9-1600x900-node-cay-line:2.png",
+        "ok": true
+      },
+      {
+        "node": "node-cay-line:3",
+        "chu": "SIM-L3 — Dây chuyền ảo 312",
+        "urlTruoc": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+        "url": "http://localhost:3054/twin/line/3",
+        "lineId": "3",
+        "toi": true,
+        "ve": true,
+        "canvas": 1,
+        "soCanvas": 1,
+        "calls": 6,
+        "may": 0,
+        "nhan": 12,
+        "oTram": 12,
+        "daiLine": 1,
+        "treTrongTrang": 0.3,
+        "png": ".qa-dot54/k9/k9-1600x900-node-cay-line:3.png",
+        "ok": true
+      }
+    ]
+  },
+  {
+    "vp": "1280x720",
+    "coNutCay": 1,
+    "soNode": 81,
+    "soNodeLine": 3,
+    "nodes": [
+      {
+        "tid": "node-cay-workshop:1",
+        "chu": "SIM-WS — Xưởng lắp ráp ảo (SIM)417"
+      },
+      {
+        "tid": "node-cay-line:1",
+        "chu": "SIM-L1 — Dây chuyền ảo 1175"
+      },
+      {
+        "tid": "node-cay-station:1",
+        "chu": "SIM-L1-SPI-ST — SIM-L1 SPI Station61"
+      },
+      {
+        "tid": "node-cay-machine:244",
+        "chu": "ESP32-ENV-01 — Cảm biến nhiệt-ẩm ESP32 p"
+      },
+      {
+        "tid": "node-cay-machine:245",
+        "chu": "GLUE-SIM-01 — Máy điểm keo pilot 01"
+      },
+      {
+        "tid": "node-cay-machine:243",
+        "chu": "SCRW-SIM-01 — Máy bắt vít pilot 01"
+      },
+      {
+        "tid": "node-cay-machine:1",
+        "chu": "SIM-L1-SPI — SIM-L1 SPI1"
+      },
+      {
+        "tid": "node-cay-machine:247",
+        "chu": "SN-SIM-0001 — Trạm vít demo"
+      },
+      {
+        "tid": "node-cay-machine:246",
+        "chu": "SN-SIMVERIFY-01 — SIM Verify Screwdriver"
+      },
+      {
+        "tid": "node-cay-station:2",
+        "chu": "SIM-L1-AOI-ST — SIM-L1 AOI Station12"
+      },
+      {
+        "tid": "node-cay-machine:2",
+        "chu": "SIM-L1-AOI — SIM-L1 AOI2"
+      },
+      {
+        "tid": "node-cay-station:3",
+        "chu": "SIM-L1-AVI-ST — SIM-L1 AVI Station11"
+      },
+      {
+        "tid": "node-cay-machine:3",
+        "chu": "SIM-L1-AVI — SIM-L1 AVI1"
+      },
+      {
+        "tid": "node-cay-station:4",
+        "chu": "SIM-L1-ICT-ST — SIM-L1 ICT Station11"
+      },
+      {
+        "tid": "node-cay-machine:4",
+        "chu": "SIM-L1-ICT — SIM-L1 ICT1"
+      },
+      {
+        "tid": "node-cay-station:5",
+        "chu": "SIM-L1-FCT-ST — SIM-L1 FCT Station1"
+      },
+      {
+        "tid": "node-cay-machine:5",
+        "chu": "SIM-L1-FCT — SIM-L1 FCT"
+      },
+      {
+        "tid": "node-cay-station:6",
+        "chu": "SIM-L1-CONVEYOR-ST — SIM-L1 CONVEYOR Sta"
+      },
+      {
+        "tid": "node-cay-machine:6",
+        "chu": "SIM-L1-CONVEYOR — SIM-L1 CONVEYOR"
+      },
+      {
+        "tid": "node-cay-station:7",
+        "chu": "SIM-L1-PWR-ST — SIM-L1 PWR Station1"
+      }
+    ],
+    "bam": [
+      {
+        "node": "node-cay-line:1",
+        "chu": "SIM-L1 — Dây chuyền ảo 1175",
+        "urlTruoc": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+        "url": "http://localhost:3054/twin/line/1",
+        "lineId": "1",
+        "toi": true,
+        "ve": true,
+        "canvas": 1,
+        "soCanvas": 1,
+        "calls": 6,
+        "may": 0,
+        "nhan": 16,
+        "oTram": 12,
+        "daiLine": 1,
+        "treTrongTrang": 0.5,
+        "png": ".qa-dot54/k9/k9-1280x720-node-cay-line:1.png",
+        "ok": true
+      },
+      {
+        "node": "node-cay-line:2",
+        "chu": "SIM-L2 — Dây chuyền ảo 2122",
+        "urlTruoc": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+        "url": "http://localhost:3054/twin/line/2",
+        "lineId": "2",
+        "toi": true,
+        "ve": true,
+        "canvas": 1,
+        "soCanvas": 1,
+        "calls": 6,
+        "may": 0,
+        "nhan": 12,
+        "oTram": 12,
+        "daiLine": 1,
+        "treTrongTrang": 0.3,
+        "png": ".qa-dot54/k9/k9-1280x720-node-cay-line:2.png",
+        "ok": true
+      },
+      {
+        "node": "node-cay-line:3",
+        "chu": "SIM-L3 — Dây chuyền ảo 312",
+        "urlTruoc": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+        "url": "http://localhost:3054/twin/line/3",
+        "lineId": "3",
+        "toi": true,
+        "ve": true,
+        "canvas": 1,
+        "soCanvas": 1,
+        "calls": 6,
+        "may": 0,
+        "nhan": 12,
+        "oTram": 12,
+        "daiLine": 1,
+        "treTrongTrang": 0.3,
+        "png": ".qa-dot54/k9/k9-1280x720-node-cay-line:3.png",
+        "ok": true
+      }
+    ]
+  }
+]

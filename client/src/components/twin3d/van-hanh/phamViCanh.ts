@@ -23,7 +23,8 @@ import {
   type BBox,
   type DiemScene,
 } from "../heToaDo";
-import type { CapPhamVi, PhamVi } from "./duongDanTwin";
+import type { CapPhamVi, PhamVi, TuTheCamera } from "./duongDanTwin";
+import { byteMau } from "./byteMau";
 
 /** Thời lượng tween khi chuyển cấp (§10C.2). */
 export const TWEEN_DOI_CAP_MS = 500;
@@ -88,7 +89,23 @@ export function doMoTheoPhamVi(v: VatTheCoPhamVi, pv: PhamVi): number {
  */
 export const TI_LE_PHA_NGOAI_PHAM_VI = 0.72;
 
-/** Tách một chuỗi màu CSS `rgb(r, g, b)` / `#rrggbb` thành ba kênh 0–255. */
+/**
+ * Tách một chuỗi màu CSS thành ba kênh 0–255.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ G29 — TRƯỚC BẢN VÁ NÀY, HÀM CHỈ ĐỌC `rgb()`/`#hex`, VÀ `--muted` LÀ
+ *     `oklch(...)` ⇒ `phaVeNen()` TRẢ NGUYÊN MÀU GỐC ⇒ "MỜ 12 % CHO LINE
+ *     NGOÀI PHẠM VI" (§10C) **CHƯA TỪNG CÓ HIỆU LỰC**.
+ * ════════════════════════════════════════════════════════════════════════════
+ * Mã chạy, không lỗi, không cảnh báo, **không làm gì**. Đây là G5 ở dạng độc
+ * nhất: không phải "tập rỗng" mà là "phép biến đổi đồng nhất" — hàm được gọi
+ * với dữ liệu KHÁC RỖNG và trả về đúng đầu vào của nó.
+ *
+ * Nhánh thứ ba (`byteMau`) quy MỌI cú pháp màu CSS qua canvas 2D. Nó trả `null`
+ * trong `environment: "node"` (không DOM), nên module này VẪN THUẦN về phía
+ * test — hai nhánh regex đầu đủ cho mọi test node, và ca oklch được đo ở
+ * `phaVeNen.dom.test.tsx` (jsdom + canvas tiêm).
+ */
 function tachRgb(mau: string): [number, number, number] | null {
   const s = mau.trim();
   const m = s.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
@@ -103,7 +120,8 @@ function tachRgb(mau: string): [number, number, number] | null {
     const [r, g, b] = h3[1].split("");
     return [parseInt(r + r, 16), parseInt(g + g, 16), parseInt(b + b, 16)];
   }
-  return null;
+  // ★ oklch/oklab/lab/lch/color()/hwb — quy qua canvas 2D. `null` khi không DOM.
+  return byteMau(s);
 }
 
 /**
@@ -212,9 +230,12 @@ export function khungNhinLine(
   bbox: BBox,
   truc: "X" | "Z",
   trucDangTin: boolean,
+  khung?: KhungKhop,
 ): KhungNhin | null {
   if (!bboxCoThuc(bbox)) return null;
-  if (!trucDangTin) return khungNhinCho(bbox, "line");
+  // ★ Đợt 35 — có khung canvas ⇒ KHỚP khoảng cách để 8 đỉnh lọt frustum (`khopKhungNhin` cuối tệp).
+  const khop = (k: KhungNhin | null) => (k && khung ? khopKhungNhin(bbox, k, khung) : k);
+  if (!trucDangTin) return khop(khungNhinCho(bbox, "line"));
 
   const tam = tamBBox(bbox);
   const co = kichThuocBBox(bbox);
@@ -223,13 +244,37 @@ export function khungNhinLine(
   // Lùi theo trục PHỤ (vuông góc với dòng chảy) một khoảng đủ thấy hết bề ngang.
   const luiPhu = Math.max(4, (truc === "X" ? co.sau : co.rong) * 1.6 + banKinh * 0.5);
 
-  return {
+  return khop({
     viTri:
       truc === "X"
         ? [tam.x, tam.y + cao, tam.z + luiPhu]
         : [tam.x + luiPhu, tam.y + cao, tam.z],
     muc: [tam.x, tam.y, tam.z],
     banKinh,
+  });
+}
+
+/**
+ * ★★★ ĐỢT 33 (Pareto #9) — `?cam=` TRÊN MÀN LINE/MÁY KHÔNG ĐƯỢC NUỐT IM LẶNG.
+ *
+ * Đợt 32 a3b đo `/twin/line/2?cam=10,5,10,0,0` ⇒ `camDoiCamera: false`: tham số
+ * đọc được (`docCamera`), ghi được, nhưng **không màn mới nào dùng nó** — đúng lớp
+ * G67 "tính năng chết ở tầng đầu tiên". Hàm này biến tư thế camera trong URL
+ * thành một `KhungNhin` để `CanhVanHanh` bay tới, y như khung nhìn theo cấp.
+ *
+ * ★ `muc.y = 0`: `TuTheCamera` chỉ mang `mucX`/`mucZ` (mục ngắm trên sàn) — đó là
+ *   hợp đồng URL từ §9.4, không mở rộng ở đây (G40).
+ * ★ `banKinh` = khoảng cách camera↔mục (sàn 1 m): người gọi hiện không dùng nó để
+ *   đặt `far` (CanhVanHanh lấy theo cỡ sàn), giữ để hợp đồng `KhungNhin` không
+ *   có trường "vô nghĩa".
+ */
+export function khungNhinTuCamera(cam: TuTheCamera): KhungNhin {
+  const dx = cam.x - cam.mucX;
+  const dz = cam.z - cam.mucZ;
+  return {
+    viTri: [cam.x, cam.y, cam.z],
+    muc: [cam.mucX, 0, cam.mucZ],
+    banKinh: Math.max(1, Math.hypot(dx, cam.y, dz)),
   };
 }
 
@@ -304,4 +349,287 @@ export function capCha(cap: CapPhamVi): CapPhamVi | null {
     case "may":
       return "line";
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 35 (Pareto #5) — KHỚP KHUNG: MỌI ĐỈNH bbox LỌT FRUSTUM, CHỪA LỀ NHÃN     */
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*
+ * QA Đợt 32 a3 (1600×900) + đo lại Đợt 35 (`.qa-dot35/truoc/e4-line-2-*.json`):
+ * `khungNhinLine` chỉ dùng `HE_SO_CAO.line = 0,55` và một khoảng lùi theo bề
+ * ngang — nó KHÔNG biết canvas rộng/cao bao nhiêu, cũng không biết FOV. Kết
+ * quả trên chuyền 2 (12 máy, 27,5 m): **6/12** máy trong khung, cột WIP xuyên
+ * mép trên (709 pixel lạ ở 4 hàng đầu canvas), nửa dưới cảnh trống — ở CẢ hai
+ * viewport. Hệ số theo cấp là cảm giác; lọt khung là hình học.
+ *
+ * ⇒ Giữ NGUYÊN hướng nhìn của cấp (thấp, dọc trục chính — §10C.2), chỉ đổi
+ *   KHOẢNG CÁCH: tiến/lùi camera dọc hướng ấy tới khoảng NHỎ NHẤT mà cả 8 đỉnh
+ *   bbox (kèm đỉnh cột WIP, người gọi gộp) nằm trong frustum, chừa `lePx` mỗi
+ *   mép để nhãn của máy đầu/cuối chuyền vẫn vẽ TRỌN (`locNhan.hopTrongKhung`).
+ *   Module vẫn THUẦN: phép chiếu pinhole viết tay (lookAt, up +Y — cùng quy ước
+ *   `Matrix4.lookAt` của three), test được ở `environment: "node"`.
+ */
+
+/** FOV DỌC của `KhungCanh` (độ). G91: test đọc `fov = 45` từ chính `KhungCanh.tsx`. */
+export const FOV_DOC_MAC_DINH = 45;
+/**
+ * Lề pixel chừa quanh mép canvas khi khớp khung. Nhãn thật rộng 112–198 px
+ * (`locNhan.ts`), neo ở TÂM nóc máy ⇒ nửa nhãn ≤ 99 px thò ra mỗi bên. 100 để
+ * nhãn máy đầu/cuối không bị `hopTrongKhung` loại vì thò mép.
+ */
+export const LE_KHOP_KHUNG_PX = 100;
+
+/** Khung canvas để khớp khung nhìn. Thiếu ⇒ `khungNhinLine` giữ hành vi cũ. */
+export interface KhungKhop {
+  rongPx: number;
+  caoPx: number;
+  /** Mặc định {@link FOV_DOC_MAC_DINH}. */
+  fovDoc?: number;
+  /** Mặc định {@link LE_KHOP_KHUNG_PX}. */
+  lePx?: number;
+}
+
+/** Toạ độ chuẩn hoá thiết bị (NDC): |x|,|y| ≤ 1 là trong khung; `sau` = độ sâu (m) trước camera. */
+export interface DiemNdc {
+  x: number;
+  y: number;
+  sau: number;
+}
+
+/**
+ * Chiếu một điểm thế giới qua camera pinhole đặt tại `viTri` nhìn về `muc`
+ * (up = +Y, cùng quy ước `Matrix4.lookAt` của three) với FOV dọc `fovDoc` (độ)
+ * và tỉ lệ khung `tiLe` = rộng/cao. Trả `null` khi điểm ở sau/ngang camera.
+ */
+export function chieuNdc(
+  diem: DiemScene,
+  viTri: readonly [number, number, number],
+  muc: readonly [number, number, number],
+  fovDoc: number,
+  tiLe: number,
+): DiemNdc | null {
+  const fx0 = muc[0] - viTri[0];
+  const fy0 = muc[1] - viTri[1];
+  const fz0 = muc[2] - viTri[2];
+  const fl = Math.hypot(fx0, fy0, fz0);
+  if (fl === 0 || !Number.isFinite(fl)) return null;
+  const fx = fx0 / fl;
+  const fy = fy0 / fl;
+  const fz = fz0 / fl;
+  // right = forward × up(0,1,0) = (−f.z, 0, f.x); suy biến khi nhìn thẳng đứng ⇒ lấy +X.
+  let rx = -fz;
+  let rz = fx;
+  const rl = Math.hypot(rx, rz);
+  if (rl < 1e-9) {
+    rx = 1;
+    rz = 0;
+  } else {
+    rx /= rl;
+    rz /= rl;
+  }
+  // up' = right × forward
+  const ux = -rz * fy;
+  const uy = rz * fx - rx * fz;
+  const uz = rx * fy;
+  const vx = diem.x - viTri[0];
+  const vy = diem.y - viTri[1];
+  const vz = diem.z - viTri[2];
+  const sau = vx * fx + vy * fy + vz * fz;
+  if (!(sau > 1e-6)) return null;
+  const t = Math.tan((fovDoc * Math.PI) / 360);
+  return {
+    x: (vx * rx + vz * rz) / (sau * t * tiLe),
+    y: (vx * ux + vy * uy + vz * uz) / (sau * t),
+    sau,
+  };
+}
+
+/** Tám đỉnh của một bbox. */
+export function dinhBBox(b: BBox): DiemScene[] {
+  const ra: DiemScene[] = [];
+  for (const x of [b.minX, b.maxX]) for (const y of [b.minY, b.maxY]) for (const z of [b.minZ, b.maxZ]) ra.push({ x, y, z });
+  return ra;
+}
+
+/** Mọi điểm có lọt khung (với lề) từ tư thế camera này không? */
+export function lotKhung(
+  diem: readonly DiemScene[],
+  viTri: readonly [number, number, number],
+  muc: readonly [number, number, number],
+  khung: KhungKhop,
+): boolean {
+  if (!(khung.rongPx > 0) || !(khung.caoPx > 0)) return false;
+  const tiLe = khung.rongPx / khung.caoPx;
+  const fov = khung.fovDoc ?? FOV_DOC_MAC_DINH;
+  const le = khung.lePx ?? LE_KHOP_KHUNG_PX;
+  const bx = Math.max(0, 1 - (2 * le) / khung.rongPx);
+  const by = Math.max(0, 1 - (2 * le) / khung.caoPx);
+  for (const d of diem) {
+    const p = chieuNdc(d, viTri, muc, fov, tiLe);
+    if (!p || Math.abs(p.x) > bx || Math.abs(p.y) > by) return false;
+  }
+  return true;
+}
+
+/**
+ * Tiến/lùi camera DỌC hướng nhìn có sẵn của `goc` tới khoảng cách NHỎ NHẤT mà
+ * mọi đỉnh `bbox` lọt khung. Hướng (góc nghiêng, phía đứng), `muc`, `banKinh`
+ * giữ nguyên — đây là cách đổi "bao nhiêu xa" mà không đổi "nhìn từ đâu".
+ *
+ * Quét hình học d₀/8 → d₀·256 (bước 3 %) lấy s nhỏ nhất lọt, rồi bisection 12
+ * bước giữa (s/1,03; s]. Tất định. Không khớp được (bbox suy biến, khung lạ)
+ * ⇒ trả `goc` nguyên vẹn — không bay tới một chỗ bịa.
+ */
+export function khopKhungNhin(bbox: BBox, goc: KhungNhin, khung: KhungKhop): KhungNhin {
+  if (!bboxCoThuc(bbox)) return goc;
+  const dinh = dinhBBox(bbox);
+  const ux = goc.viTri[0] - goc.muc[0];
+  const uy = goc.viTri[1] - goc.muc[1];
+  const uz = goc.viTri[2] - goc.muc[2];
+  const d0 = Math.hypot(ux, uy, uz);
+  if (!(d0 > 0)) return goc;
+  const tai = (s: number): [number, number, number] => [
+    goc.muc[0] + (ux / d0) * s,
+    goc.muc[1] + (uy / d0) * s,
+    goc.muc[2] + (uz / d0) * s,
+  ];
+  let sDau: number | null = null;
+  let s = d0 / 8;
+  for (let i = 0; i < 400 && s <= d0 * 256; i += 1) {
+    if (lotKhung(dinh, tai(s), goc.muc, khung)) {
+      sDau = s;
+      break;
+    }
+    s *= 1.03;
+  }
+  if (sDau === null) return goc;
+  let lo = sDau / 1.03;
+  let hi = sDau;
+  for (let i = 0; i < 12; i += 1) {
+    const m = (lo + hi) / 2;
+    if (lotKhung(dinh, tai(m), goc.muc, khung)) hi = m;
+    else lo = m;
+  }
+  return { viTri: tai(hi), muc: goc.muc, banKinh: goc.banKinh };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 45 (mục 3) — DỊCH KHUNG DỌC: DẢI MÁY Ở NỬA GIỮA-DƯỚI, KHÔNG Ở TÂM     */
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*
+ * QA Đợt 44 (D-7 mục 2): sau khớp khung Đợt 35, chuyền 2 lọt 12/12 nhưng dải máy nằm
+ * ở ~48 % chiều cao canvas (đo `.qa-dot45/bbox-truoc.json`: tâm nhãn 0,43–0,58, TB
+ * 0,48–0,49 ở cả hai vp) — vì `khopKhungNhin` chỉ đổi KHOẢNG CÁCH và giữ `muc` ở TÂM
+ * bbox (kèm cột WIP 6 m), nên bbox được CĂN GIỮA khung: nửa trên là cột WIP + trời, nửa
+ * dưới là sàn trống. Bố cục đúng của một chuyền nhìn thấp dọc trục (§10C.2): cột WIP ở
+ * phần trên, máy ở phần giữa-dưới, sàn còn một dải mỏng làm nền.
+ *
+ * ⇒ Dịch CẢ camera lẫn mục theo cùng một vector dọc trục "lên" của camera (up′) — hướng
+ *   nhìn, khoảng cách, tỉ lệ và phép chiếu X GIỮ NGUYÊN; chỉ toạ độ Y trên màn của mọi
+ *   điểm trượt xuống. Sau khi dịch, KIỂM `lotKhung` (lề nhãn) — vượt thì co bước dịch
+ *   (bisection về 0) tới bước lớn nhất còn lọt; không lọt ở mọi bước ⇒ trả nguyên `goc`.
+ *   Thuần, tất định; E4 (12/12 + WIP trọn) vẫn là bất biến vì lọt-khung được kiểm lại.
+ */
+
+/**
+ * Tâm dọc (NDC y ∈ [−1, 1], âm = thấp hơn tâm màn) mà TÂM DẢI NỘI DUNG (bbox kèm WIP) được
+ * đặt vào ở cấp Line. −0,28 ⇒ tâm dải ở 64 % chiều cao canvas tính từ trên; với dải cao
+ * ~0,48 NDC (chuyền 2), máy rơi vào ~70–75 %, cột WIP lên tới ~50 %.
+ */
+export const TAM_DOC_NDC_LINE = -0.28;
+
+/** Trục "lên" của camera (up′ = right × forward, cùng quy ước `chieuNdc`). */
+function trucLenCamera(
+  viTri: readonly [number, number, number],
+  muc: readonly [number, number, number],
+): [number, number, number] | null {
+  const fx0 = muc[0] - viTri[0];
+  const fy0 = muc[1] - viTri[1];
+  const fz0 = muc[2] - viTri[2];
+  const fl = Math.hypot(fx0, fy0, fz0);
+  if (!(fl > 0) || !Number.isFinite(fl)) return null;
+  const fx = fx0 / fl;
+  const fy = fy0 / fl;
+  const fz = fz0 / fl;
+  let rx = -fz;
+  let rz = fx;
+  const rl = Math.hypot(rx, rz);
+  if (rl < 1e-9) {
+    rx = 1;
+    rz = 0;
+  } else {
+    rx /= rl;
+    rz /= rl;
+  }
+  return [-rz * fy, rz * fx - rx * fz, rx * fy];
+}
+
+/** Khoảng NDC y [min, max] của một tập điểm từ tư thế camera; `null` nếu có điểm không chiếu được. */
+export function khoangDocNdc(
+  diem: readonly DiemScene[],
+  viTri: readonly [number, number, number],
+  muc: readonly [number, number, number],
+  khung: KhungKhop,
+): { min: number; max: number; sauTB: number } | null {
+  if (!(khung.rongPx > 0) || !(khung.caoPx > 0) || diem.length === 0) return null;
+  const tiLe = khung.rongPx / khung.caoPx;
+  const fov = khung.fovDoc ?? FOV_DOC_MAC_DINH;
+  let min = Infinity;
+  let max = -Infinity;
+  let sau = 0;
+  for (const d of diem) {
+    const p = chieuNdc(d, viTri, muc, fov, tiLe);
+    if (!p) return null;
+    if (p.y < min) min = p.y;
+    if (p.y > max) max = p.y;
+    sau += p.sau;
+  }
+  return { min, max, sauTB: sau / diem.length };
+}
+
+/**
+ * Dịch `goc` (camera + mục cùng một vector dọc up′) để tâm dải `bbox` rơi vào `tamNdc`.
+ * Giữ hướng nhìn/khoảng cách/`banKinh`. Không lọt khung sau khi dịch ⇒ co bước; bước 0
+ * (= `goc`) mà cũng không lọt ⇒ trả `goc` nguyên vẹn (không bịa tư thế).
+ */
+export function dichKhungDoc(
+  bbox: BBox,
+  goc: KhungNhin,
+  khung: KhungKhop,
+  tamNdc: number = TAM_DOC_NDC_LINE,
+): KhungNhin {
+  if (!bboxCoThuc(bbox)) return goc;
+  const len = trucLenCamera(goc.viTri, goc.muc);
+  if (!len) return goc;
+  const dinh = dinhBBox(bbox);
+  const t = Math.tan(((khung.fovDoc ?? FOV_DOC_MAC_DINH) * Math.PI) / 360);
+  const tai = (s: number): KhungNhin => ({
+    viTri: [goc.viTri[0] + len[0] * s, goc.viTri[1] + len[1] * s, goc.viTri[2] + len[2] * s],
+    muc: [goc.muc[0] + len[0] * s, goc.muc[1] + len[1] * s, goc.muc[2] + len[2] * s],
+    banKinh: goc.banKinh,
+  });
+  // Lặp Newton đơn giản: y′ ≈ y − Δ/(sau·t) ⇒ Δ = (tâm − tamNdc)·sauTB·t; độ sâu từng đỉnh khác nhau
+  // nên lặp vài lượt cho hội tụ (tất định, không phụ thuộc thời gian).
+  let s = 0;
+  for (let i = 0; i < 8; i += 1) {
+    const k = tai(s);
+    const kd = khoangDocNdc(dinh, k.viTri, k.muc, khung);
+    if (!kd) return goc;
+    const tam = (kd.min + kd.max) / 2;
+    const buoc = (tam - tamNdc) * kd.sauTB * t;
+    if (Math.abs(buoc) < 1e-4) break;
+    s += buoc;
+  }
+  if (!(Math.abs(s) > 1e-6)) return goc;
+  if (lotKhung(dinh, tai(s).viTri, tai(s).muc, khung)) return tai(s);
+  // Vượt lề ⇒ bisection giữa 0 (gốc, giả định lọt) và s: bước LỚN NHẤT còn lọt.
+  if (!lotKhung(dinh, goc.viTri, goc.muc, khung)) return goc;
+  let lo = 0;
+  let hi = s;
+  for (let i = 0; i < 12; i += 1) {
+    const m = (lo + hi) / 2;
+    if (lotKhung(dinh, tai(m).viTri, tai(m).muc, khung)) lo = m;
+    else hi = m;
+  }
+  return tai(lo);
 }

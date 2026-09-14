@@ -1,0 +1,26 @@
+{
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot52/hd-truoc",
+  "may": 14,
+  "luc": "2026-09-12T08:26:40.801Z",
+  "url": "/twin?pv=factory%3A1&cam=51.38%2C19.68%2C45.11%2C19.13%2C12.85",
+  "kpiAndon": "6",
+  "bangKpi": "Metrics | 41 machines | Corporate · Nhà máy ảo (SIM) | Running | 0 | Down | 0 | Maintenance | 0 | Offline | 41 | Running rate | 0% | Average OEE | — | Machines w/ andon | 6 | PdM risk | 0 | OEE measured on 0/41 machines",
+  "daiCanhBao": "Alarms (7)\nAll7\nStop2\nCall2\nWarning3\nNormal0\nBACKLOG >24H (7)\n▲\nD5-CADUONG-ACK\nbacklog 5d\nAck\n▲\nAndon SIM-L1-SPI\nbacklog",
+  "badgeVo": [
+    "Alarms (7)",
+    "▲Andon SIM-L1-SPIbacklog 57dAck",
+    "Andon SIM-L1-SPIbacklog 57dAck",
+    "Andon SIM-L1-SPI",
+    "◆Andon SIM-L1-AOIbacklog 57dAck",
+    "Andon SIM-L1-AOIbacklog 57dAck",
+    "Andon SIM-L1-AOI",
+    "●Andon SIM-L1-AVIbacklog 57dAck",
+    "Andon SIM-L1-AVIbacklog 57dAck",
+    "Andon SIM-L1-AVI",
+    "●Andon SIM-L1-ICTbacklog 57dAck",
+    "Andon SIM-L1-ICTbacklog 57dAck"
+  ],
+  "nganMoPhongTrenTwin": 0
+}

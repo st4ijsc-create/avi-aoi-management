@@ -1,0 +1,202 @@
+{
+  "url": "http://localhost:3052/twin-studio",
+  "lang": "en",
+  "canvas": {
+    "x": 556,
+    "y": 312,
+    "w": 726,
+    "h": 457,
+    "day": 769,
+    "phai": 1283
+  },
+  "soCanvas": 1,
+  "lopPhu": [
+    {
+      "t": "thanh-cong-cu-canh",
+      "cheNhan": 0,
+      "rect": {
+        "x": 1181,
+        "y": 320,
+        "w": 94,
+        "h": 34,
+        "day": 354,
+        "phai": 1275
+      },
+      "z": 10
+    },
+    {
+      "t": "mini-map",
+      "cheNhan": 0,
+      "rect": {
+        "x": 1117,
+        "y": 603,
+        "w": 158,
+        "h": 158,
+        "day": 761,
+        "phai": 1275
+      },
+      "z": 10
+    },
+    {
+      "t": "thu-vien-asset",
+      "cheNhan": 0,
+      "rect": {
+        "x": 305,
+        "y": 769,
+        "w": 1254,
+        "h": 95,
+        "day": 863,
+        "phai": 1559
+      },
+      "z": 0
+    },
+    {
+      "t": "bang-thuoc-tinh",
+      "cheNhan": 0,
+      "rect": {
+        "x": 1284,
+        "y": 312,
+        "w": 275,
+        "h": 40,
+        "day": 352,
+        "phai": 1559
+      },
+      "z": 0
+    },
+    {
+      "t": "cay-phan-cap-twin",
+      "cheNhan": 0,
+      "rect": {
+        "x": 305,
+        "y": 312,
+        "w": 250,
+        "h": 457,
+        "day": 769,
+        "phai": 555
+      },
+      "z": 0
+    }
+  ],
+  "nhan": [],
+  "badge": [],
+  "chip": [],
+  "capChongNhan": 0,
+  "capChongBadge": 0,
+  "capChongNhanBadge": 0,
+  "badgeDoiCho": 0,
+  "cat": [],
+  "sel": [],
+  "tran": {
+    "docW": 1600,
+    "docH": 900,
+    "innerW": 1600,
+    "innerH": 900,
+    "manDay": 876,
+    "manRect": {
+      "x": 288,
+      "y": 133,
+      "w": 1288,
+      "h": 743,
+      "day": 876,
+      "phai": 1576
+    }
+  },
+  "vien": {
+    "thanh-cong-cu-canh": {
+      "rect": {
+        "x": 1181,
+        "y": 320,
+        "w": 94,
+        "h": 34,
+        "day": 354,
+        "phai": 1275
+      },
+      "chu": "",
+      "z": 10
+    },
+    "mini-map": {
+      "rect": {
+        "x": 1117,
+        "y": 603,
+        "w": 158,
+        "h": 158,
+        "day": 761,
+        "phai": 1275
+      },
+      "chu": "",
+      "z": 10
+    },
+    "khoi-canh-3d": {
+      "rect": {
+        "x": 556,
+        "y": 312,
+        "w": 726,
+        "h": 457,
+        "day": 769,
+        "phai": 1283
+      },
+      "chu": "",
+      "z": 0
+    },
+    "vung-canvas": {
+      "rect": {
+        "x": 556,
+        "y": 312,
+        "w": 726,
+        "h": 457,
+        "day": 769,
+        "phai": 1283
+      },
+      "chu": "",
+      "z": 0
+    },
+    "thu-vien-asset": {
+      "rect": {
+        "x": 305,
+        "y": 769,
+        "w": 1254,
+        "h": 95,
+        "day": 863,
+        "phai": 1559
+      },
+      "chu": "Asset libraryMachinesInfrastructureWarehousebuong kiem quang",
+      "z": 0
+    },
+    "bang-thuoc-tinh": {
+      "rect": {
+        "x": 1284,
+        "y": 312,
+        "w": 275,
+        "h": 40,
+        "day": 352,
+        "phai": 1559
+      },
+      "chu": "Select an object in the tree or in the 3D scene",
+      "z": 0
+    },
+    "cay-phan-cap-twin": {
+      "rect": {
+        "x": 305,
+        "y": 312,
+        "w": 250,
+        "h": 457,
+        "day": 769,
+        "phai": 555
+      },
+      "chu": "SIM-WS — Xưởng lắp ráp ảo (SIM)Unplaced machines (0)—Machine",
+      "z": 0
+    }
+  },
+  "font": {
+    "status": "loaded",
+    "soFace": 11,
+    "faceGeistLoaded": 3,
+    "faceMonoLoaded": 1,
+    "body": "Geist, ui-sans-serif, system-ui, sans-serif, \"Apple Color Em",
+    "nhanFont": null
+  },
+  "nutThu": {},
+  "demNhan": null,
+  "demBadge": null,
+  "tuongPhan": {}
+}

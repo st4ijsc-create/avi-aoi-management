@@ -49,10 +49,11 @@ import { FactoryScene2D } from "@/components/factory-scene";
 // webglcontextlost). Cùng chữ ký `FactorySceneProps` với `FactoryScene2D` nên chỗ
 // hoán đổi 2D/3D bên dưới không đổi.
 //
-// `factory-scene/FactoryScene3D.tsx` GIỮ NGUYÊN trên đĩa (spec §6.1: factory-scene
-// là NỀN của loi/, không viết lại). Đo được: sau thay đổi này KHÔNG còn màn nào
-// import nó — nó là đối chứng để so sánh hành vi, và `FactoryScene2D` vẫn là
-// fallback 2D chính thức, vẫn được màn này dùng qua nút toggle.
+// ★★★ Đợt 61 (QĐ-31): `factory-scene/FactoryScene3D.tsx` + `machineMesh.tsx` ĐÃ BỊ
+// XOÁ (675 dòng). Câu cũ ở đây ghi "GIỮ NGUYÊN trên đĩa … là đối chứng" — lời khai
+// ấy đã hết hạn: đo lại 2026-09-13 ra **0 chỗ dựng** trong client/ server/ e2e/,
+// chỗ tham chiếu sống duy nhất là dòng re-export của barrel. `FactoryScene2D` vẫn
+// là fallback 2D chính thức và vẫn được màn này dùng qua nút toggle.
 import { CanhNhaMay } from "@/components/twin3d/loi";
 
 import { Button } from "@/components/ui/button";

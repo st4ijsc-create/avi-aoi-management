@@ -52,6 +52,94 @@ export async function getLatestMachineStatus(machineId: number) {
   return result.length > 0 ? result[0] : null;
 }
 
+/**
+ * ★★★ TRẠNG THÁI TẬP MÁY — **MỘT** bản cài đặt tập-hợp, dùng chung.
+ *
+ * Rút ra từ thân `getAllMachinesWithStatus` (doc 54 Wave C) ở Đợt 6 để
+ * `twinCanh.trangThaiHangLoat` (§6.3) DÙNG LẠI thay vì chép sang một bản thứ
+ * hai. Luật G12: "hai bản cài đặt" chỉ đồng ý tới lần sửa đầu tiên, và khi lệch
+ * thì KHÔNG nổ — chỉ âm thầm cho cảnh 3D và bảng DOM nói khác nhau về cùng một
+ * máy. Đây đúng lớp lỗi mà `NGUONG_CU_MS` đã phải gộp về một nơi ở Đợt 5.
+ *
+ * ★ SỐ QUERY **CỐ ĐỊNH = 3**, không phụ thuộc số máy (§6.3 "KHÔNG N+1"):
+ *   1. `DISTINCT ON` — trạng thái mới nhất mỗi máy
+ *   2. `DISTINCT ON` — heartbeat mới nhất mỗi máy
+ *   3. `LEAD(...) OVER (PARTITION BY ...)` — uptime 24h theo cửa sổ
+ * Đo được bằng `demQueryTrangThai.unit`-style harness: N = 1 / 10 / 42 đều cho 3.
+ *
+ * ⚠ KHÔNG tự lọc phạm vi: người gọi phải truyền vào tập id ĐÃ qua cổng phạm vi.
+ *   Hàm này nhận `machineIds` như một sự thật đã kiểm — đặt cổng ở đây nữa sẽ
+ *   thành hai cổng nối tiếp và che mất chỗ cổng thật sự được áp.
+ */
+export interface TrangThaiTapMay {
+  latestStatusByMachine: Map<number, { status: string | null; ts: Date | null }>;
+  latestHeartbeatByMachine: Map<number, { status: string | null; ts: Date | null }>;
+  uptimeByMachine: Map<number, { online: number; offline: number }>;
+}
+
+export async function trangThaiTapMay(machineIds: readonly number[]): Promise<TrangThaiTapMay> {
+  const rong: TrangThaiTapMay = {
+    latestStatusByMachine: new Map(),
+    latestHeartbeatByMachine: new Map(),
+    uptimeByMachine: new Map(),
+  };
+  if (machineIds.length === 0) return rong;
+  const db = await getDb();
+  if (!db) return rong;
+
+  const idList = sql.join(machineIds.map((id) => sql`${id}`), sql`, `);
+
+  // Latest status per machine (DISTINCT ON → newest row per machineId).
+  // ★★★ Đợt 34 — `AT TIME ZONE 'UTC'`: cột naive lưu UTC, nhưng `db.execute` thô (postgres.js) đọc naive theo
+  //     giờ máy Node (+07 ⇒ lệch −7 h) trong khi `db.select()` typed đọc là UTC. Đây là nguồn mốc của kho twin
+  //     (`traTrangThaiHangLoat` → `chonNguonMocTuoi`): đối chứng máy 18 nhịp tim `now()` ⇒ twin "Updated 7 h ago"
+  //     cạnh cockpit "Last heartbeat 3 s". Ép timestamptz trong SQL — cùng vá với `factoryCommandService`.
+  const latestStatusRows = executeRows(await db.execute(sql`
+    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AT TIME ZONE 'UTC' AS ts
+    FROM machine_status_logs
+    WHERE "machineId" IN (${idList})
+    ORDER BY "machineId", "timestamp" DESC
+  `)) as Array<{ machine_id: number; status: string | null; ts: Date | null }>;
+  const latestStatusByMachine = new Map<number, { status: string | null; ts: Date | null }>();
+  for (const r of latestStatusRows) latestStatusByMachine.set(Number(r.machine_id), { status: r.status, ts: r.ts });
+
+  // Latest heartbeat per machine (DISTINCT ON → newest heartbeat per machineId).
+  const latestHeartbeatRows = executeRows(await db.execute(sql`
+    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AT TIME ZONE 'UTC' AS ts
+    FROM machine_heartbeats
+    WHERE "machineId" IN (${idList})
+    ORDER BY "machineId", "timestamp" DESC
+  `)) as Array<{ machine_id: number; status: string | null; ts: Date | null }>;
+  const latestHeartbeatByMachine = new Map<number, { status: string | null; ts: Date | null }>();
+  for (const r of latestHeartbeatRows) latestHeartbeatByMachine.set(Number(r.machine_id), { status: r.status, ts: r.ts });
+
+  // Uptime over the last 24h, set-based — mirrors getMachineUptimeStats exactly: only
+  // rows inside the window count, each row's interval runs to the next row (LEAD) and
+  // the last row's interval extends to NOW(). 'online' → online seconds, else offline.
+  const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const durationRows = executeRows(await db.execute(sql`
+    WITH ordered AS (
+      SELECT "machineId" AS machine_id, status, "timestamp" AS ts,
+             LEAD("timestamp") OVER (PARTITION BY "machineId" ORDER BY "timestamp") AS next_ts
+      FROM machine_status_logs
+      WHERE "timestamp" >= ${startTime.toISOString()} AND "machineId" IN (${idList})
+    )
+    SELECT machine_id,
+      COALESCE(SUM(CASE WHEN status = 'online'
+        THEN EXTRACT(EPOCH FROM (COALESCE(next_ts, NOW()) - ts)) ELSE 0 END), 0)::float AS online_sec,
+      COALESCE(SUM(CASE WHEN status <> 'online'
+        THEN EXTRACT(EPOCH FROM (COALESCE(next_ts, NOW()) - ts)) ELSE 0 END), 0)::float AS offline_sec
+    FROM ordered
+    GROUP BY machine_id
+  `)) as Array<{ machine_id: number; online_sec: number; offline_sec: number }>;
+  const uptimeByMachine = new Map<number, { online: number; offline: number }>();
+  for (const r of durationRows) {
+    uptimeByMachine.set(Number(r.machine_id), { online: Number(r.online_sec) || 0, offline: Number(r.offline_sec) || 0 });
+  }
+
+  return { latestStatusByMachine, latestHeartbeatByMachine, uptimeByMachine };
+}
+
 export async function getAllMachinesWithStatus(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
@@ -87,51 +175,10 @@ export async function getAllMachinesWithStatus(scope?: PhamViNguoiXem) {
   // regardless of fleet size. Mirrors getAllMachinesOEELive in oeeService. The return
   // shape is IDENTICAL to the per-machine path.
   const machineIds = allMachines.map((m) => m.machine.id);
-  const idList = sql.join(machineIds.map((id) => sql`${id}`), sql`, `);
-
-  // Latest status per machine (DISTINCT ON → newest row per machineId).
-  const latestStatusRows = executeRows(await db.execute(sql`
-    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AS ts
-    FROM machine_status_logs
-    WHERE "machineId" IN (${idList})
-    ORDER BY "machineId", "timestamp" DESC
-  `)) as Array<{ machine_id: number; status: string | null; ts: Date | null }>;
-  const latestStatusByMachine = new Map<number, { status: string | null; ts: Date | null }>();
-  for (const r of latestStatusRows) latestStatusByMachine.set(Number(r.machine_id), { status: r.status, ts: r.ts });
-
-  // Latest heartbeat per machine (DISTINCT ON → newest heartbeat per machineId).
-  const latestHeartbeatRows = executeRows(await db.execute(sql`
-    SELECT DISTINCT ON ("machineId") "machineId" AS machine_id, status, "timestamp" AS ts
-    FROM machine_heartbeats
-    WHERE "machineId" IN (${idList})
-    ORDER BY "machineId", "timestamp" DESC
-  `)) as Array<{ machine_id: number; status: string | null; ts: Date | null }>;
-  const latestHeartbeatByMachine = new Map<number, { status: string | null; ts: Date | null }>();
-  for (const r of latestHeartbeatRows) latestHeartbeatByMachine.set(Number(r.machine_id), { status: r.status, ts: r.ts });
-
-  // Uptime over the last 24h, set-based — mirrors getMachineUptimeStats exactly: only
-  // rows inside the window count, each row's interval runs to the next row (LEAD) and
-  // the last row's interval extends to NOW(). 'online' → online seconds, else offline.
-  const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const durationRows = executeRows(await db.execute(sql`
-    WITH ordered AS (
-      SELECT "machineId" AS machine_id, status, "timestamp" AS ts,
-             LEAD("timestamp") OVER (PARTITION BY "machineId" ORDER BY "timestamp") AS next_ts
-      FROM machine_status_logs
-      WHERE "timestamp" >= ${startTime.toISOString()} AND "machineId" IN (${idList})
-    )
-    SELECT machine_id,
-      COALESCE(SUM(CASE WHEN status = 'online'
-        THEN EXTRACT(EPOCH FROM (COALESCE(next_ts, NOW()) - ts)) ELSE 0 END), 0)::float AS online_sec,
-      COALESCE(SUM(CASE WHEN status <> 'online'
-        THEN EXTRACT(EPOCH FROM (COALESCE(next_ts, NOW()) - ts)) ELSE 0 END), 0)::float AS offline_sec
-    FROM ordered
-    GROUP BY machine_id
-  `)) as Array<{ machine_id: number; online_sec: number; offline_sec: number }>;
-  const uptimeByMachine = new Map<number, { online: number; offline: number }>();
-  for (const r of durationRows) {
-    uptimeByMachine.set(Number(r.machine_id), { online: Number(r.online_sec) || 0, offline: Number(r.offline_sec) || 0 });
-  }
+  // ★ Đợt 6 — DÙNG LẠI `trangThaiTapMay` thay vì giữ bản sao thứ hai của ba
+  //   truy vấn tập-hợp. Số query KHÔNG đổi (vẫn 1 + 3); chỗ khai giờ chỉ còn một.
+  const { latestStatusByMachine, latestHeartbeatByMachine, uptimeByMachine } =
+    await trangThaiTapMay(machineIds);
 
   // Assemble in JS — SAME output shape/type as the per-machine path.
   return allMachines.map((m) => {

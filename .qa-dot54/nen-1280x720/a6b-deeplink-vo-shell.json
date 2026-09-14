@@ -1,0 +1,78 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1280x720",
+  "luc": "2026-09-12T12:54:32.525Z",
+  "ds": {
+    "/twin": {
+      "coMan": true,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+        "activeApp": "active_app=production"
+      },
+      "url": "/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85"
+    },
+    "/twin/line/2": {
+      "coMan": true,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+        "activeApp": "active_app=production"
+      },
+      "url": "/twin/line/2"
+    },
+    "/twin/may/14": {
+      "coMan": true,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+        "activeApp": "active_app=production"
+      },
+      "url": "/twin/may/14"
+    },
+    "/twin-studio": {
+      "coMan": true,
+      "vo": {
+        "coSidebar": true,
+        "coContent": true,
+        "soLink": 0,
+        "links": [],
+        "tieuDeApp": "Production (MES)",
+        "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+        "activeApp": "active_app=production"
+      },
+      "url": "/twin-studio"
+    }
+  },
+  "voTuTwin": {
+    "coSidebar": true,
+    "coContent": true,
+    "soLink": 0,
+    "links": [],
+    "tieuDeApp": "Production (MES)",
+    "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+    "activeApp": "active_app=production"
+  },
+  "voSauGotoMay": {
+    "coSidebar": true,
+    "coContent": true,
+    "soLink": 0,
+    "links": [],
+    "tieuDeApp": "Production (MES)",
+    "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+    "activeApp": "active_app=production"
+  }
+}

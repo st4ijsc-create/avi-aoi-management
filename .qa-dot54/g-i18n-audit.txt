@@ -1,0 +1,23 @@
+
+> synapse-platform@1.0.0 i18n:audit
+> node scripts/i18n-audit.mjs
+
+=== i18n audit ===
+Locales: vi, en, zh | union keys: 18426
+
+[1] Parity gaps (keys missing per locale):
+  vi: 54 missing — e.g. admin.clearHistoryTitle, backup.cancel, backup.overwriteLabel, backup.overwriteHint, backup.confirmRestoreTitle, backup.confirmRestoreOverwriteBody, backup.confirmRestoreMergeBody, backup.confirmRestoreAction
+  en: 28 missing — e.g. home.viewDashboard, home.viewAPIDocs, home.statYieldRate, home.statUptime, home.statProductsPerDay, home.statMachines, home.navHistory, home.loginToStart
+  zh: 26 missing — e.g. admin.clearHistoryTitle, backup.cancel, backup.overwriteLabel, backup.overwriteHint, backup.confirmRestoreTitle, backup.confirmRestoreOverwriteBody, backup.confirmRestoreMergeBody, backup.confirmRestoreAction
+
+[2] t("key") with NO fallback but key missing from "vi": 8
+  users.name  (client\src\components\DataTable.tsx)
+  users.created  (client\src\components\DataTable.tsx)
+  backup.overwriteLabel  (client\src\pages\BackupRestore.tsx)
+  backup.overwriteHint  (client\src\pages\BackupRestore.tsx)
+  backup.confirmRestoreTitle  (client\src\pages\BackupRestore.tsx)
+  backup.cancel  (client\src\pages\BackupRestore.tsx)
+  backup.confirmRestoreAction  (client\src\pages\BackupRestore.tsx)
+  spc.noDataInRange  (client\src\pages\SPCAnalysis.tsx)
+
+Result: GAPS FOUND (parity=108, missing-no-fallback=8)

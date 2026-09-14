@@ -287,7 +287,103 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // `cayDay.*` (nhóm S, đã lọc tenant theo phiên — review đo tenant A + machineId của B ⇒ rỗng).
 // Chứng minh: A/B/C KHÔNG ĐỔI (363/8/472); D +1 và S +4 khớp từng thủ tục; tong +5 = 1+4.
 // Task 9 tự đo D=1101 khi Task 8 CHƯA commit ⇒ +1 D không thể là của Task 9 (0 `.mutation(`).
-const GHIM = { A: 363, B: 8, C: 472, D: 1101, S: 290, tong: 2234 } as const;
+// ★ 2026-09-07 (ĐỢT 14 LÔ Q1) — **A 363→358**, và CHỈ nhóm A. LÝ DO ĐO ĐƯỢC:
+// Lô Q1 vá hàng rào tenant cho `digitalTwinRouter` — ĐÚNG NĂM thủ tục rời nhóm (A):
+// `twinState` · `defectHeatmap` · `wipFlowState` · `stationLoadHeatmap` · `predictionOverlay`.
+// Cả năm nay mang `phamViCua(ctx)` xuống tầng dữ liệu, và năm dòng của chúng đã được XOÁ khỏi
+// `phamViDocBaseline.ts` (trả nợ = xoá dòng, không phải thêm miễn trừ).
+// Chứng minh độ lệch đúng bằng năm thủ tục ấy: đo trên CSDL thật, một tài khoản 0-nhà-máy
+// trước bản vá đọc được 43/43 máy + 4.707 WIP của SIM-FAC; sau bản vá đọc được **0**, trong khi
+// tài khoản ĐƯỢC gán vẫn đọc đủ 42 máy + 4.707 WIP (`digitalTwinPhamVi.db.test.ts`, hai chiều).
+// ⚠ Năm thủ tục này KHÔNG sang nhóm S mà rời khỏi tập đếm của A: bộ suy xếp nhóm theo dấu hiệu
+//   tĩnh, và `idsTrongPhamVi`/`congMaTenant` là đường lọc gián tiếp. Điều được ghim ở đây là
+//   **A giảm đúng 5**, không phải "S tăng 5".
+// ⚠⚠ C (472→475) và D (1101→1119) ĐANG LỆCH, và **KHÔNG PHẢI CỦA TÔI**: cả hai đã lệch y hệt khi
+//   đo trên HEAD SẠCH (tôi phục hồi ba tệp về bản HEAD rồi chạy lại đúng tập này — A:363 C:475
+//   D:1119). Đó là độ trôi của các lô chạy song song; **để nguyên cho bên đó ký**, đừng gộp vào
+//   con số này. Vì thế `tong` cũng giữ nguyên cách tính: chỉ A đổi.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 24 VIỆC 1 — **A: 355 → 351.** BỐN THỦ TỤC ĐỌC CỦA `andonRouter` ĐÃ ĐƯỢC GÁC.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// Lô R (Đợt 15) vá đường GHI (`acknowledge`/`resolve`) và dừng ở đó. Bốn thủ tục ĐỌC —
+// `active` · `get` · `list` · `metrics` — vẫn khai `async ({ input })` / `async ()`, tức KHÔNG
+// bóc `ctx`. Cả bốn có tên trong sổ nợ (`phamViDocBaseline.ts`, khối `andonRouter.ts (4)`), và
+// đợt này XOÁ đúng bốn dòng ấy — trả nợ nhìn thấy được trong diff.
+//
+// ★ Vì sao đây là mục nguy hiểm nhất trong bốn: `ShellAlertChip.tsx:43` gọi `andon.active` mỗi
+//   15 s ở **vỏ ứng dụng**, nên lỗ này hiện diện trên MỌI màn của MỌI vai có `andon/canView`.
+//
+// ★ ĐO HAI CHIỀU QUA HTTP THẬT (`dist`, vai KHÔNG-admin, `.qa-dot24/badge-hai-chieu.mts`):
+//     `operator1`   (0 hàng `user_factory_assignments`) — TRƯỚC: **7 hàng** · SAU: **0**
+//     `e2e_tai_loE` (1 nhà máy SIM-FAC)                 — TRƯỚC: 7 hàng · SAU: **7** (giữ nguyên)
+//   Chiều (+) là đối chứng bắt buộc: một `throw` vô điều kiện làm chiều (−) xanh mà đã giết
+//   chức năng. Ablation: gỡ đúng mệnh đề cổng khỏi `active` rồi dựng lại `dist` ⇒ `operator1`
+//   đọc lại được cả 7 — nhân quả đo được, không suy.
+//
+// ⚠⚠ A ghim 358 nhưng HEAD SẠCH đo được **355** — độ lệch 3 ấy **KHÔNG PHẢI CỦA TÔI** (đo bằng
+//   cách phục hồi `andonRouter.ts` về bản HEAD rồi chạy lại đúng tập này: A 355, sổ nợ còn 3 mục
+//   "đã vá mà chưa gỡ"). Cùng loại độ trôi mà chú thích C/D ở trên đã ghi. Tôi chỉ hạ A đúng **4**
+//   phần của mình (355 → 351) và **để nguyên 3 mục kia cho bên đó ký** — sửa hộ sẽ xoá mất dấu
+//   vết một khoản nợ chưa ai nhận.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 40 (QA Đợt 39 Pareto #2, G113) — **A: 351 → 346.** NĂM THỦ TỤC CỦA HAI ROUTER TWIN DÙNG LÀM
+// NGUỒN SỰ THẬT ĐÃ ĐƯỢC GÁC: `factoryCommandRouter.overview` · `.machineDetail` ·
+// `assetCockpitRouter.machineDetail` · `.robotDetail` · `.machineAlarms`. Cả năm có tên trong sổ nợ từ
+// 2026-08-18 (G81: sổ nợ biết trước mà không ai đọc) — đợt này XOÁ đúng năm dòng ấy.
+// ★ Đo trước vá qua HTTP thật (`.qa-dot39/qd18/B-1600x900.json`): `operator1` (0 gán) `overview(1)` ⇒ 41
+//   máy, `machineDetail(257)` ⇒ identity máy nhà máy khác. Lưới hai chiều:
+//   `factoryCommandAssetCockpitPhamVi.db.test.ts` (2 vai × 2 nhà máy × 5 thủ tục + robot mồ côi + admin).
+// ⚠⚠ Đo trên HEAD SẠCH (`34c4be3d`, phục hồi sổ nợ về bản HEAD rồi chạy lại đúng tập này): A 346 · C 474 ·
+//   D 1119 · S 320 · tong 2267 và §5 còn 3 mục `maintenanceRouter` "đã vá mà chưa gỡ" — tức §3/§5 ĐÃ ĐỎ
+//   TRƯỚC đợt này vì độ trôi C/D/S của các lô khác. Tôi chỉ hạ A đúng **5** phần của mình (351 → 346) và
+//   **để nguyên** C/D/S/tong + 3 mục kia cho bên đó ký — sửa hộ sẽ xoá dấu vết nợ chưa ai nhận.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 42 (QA Đợt 41 D-4, G116 "nhúng cockpit/nút cũ vào màn mới kéo theo router cũ chưa rào") —
+// **A: 346 → 342.** BỐN thủ tục của ba router CŨ mà BỐN MÀN TWIN MỚI gọi đã được gác:
+// `twinRouter.usdExport` (nút "Xuất USD" ở `/twin`) · `wipRouter.lineBalance` (`/twin/line` qua
+// `usePhanTichLine`) · `sensorRouter.listTypes` · `.readSeries` (tab Telemetry của cockpit nhúng
+// `/twin/may`). Cả bốn có tên trong sổ nợ từ 2026-08-18 (G81 lần hai) — đợt này XOÁ đúng bốn dòng ấy.
+// ★ Đo trước vá qua HTTP thật (`.qa-dot41/api-vai/{B,C}.json`): `operator1` (0 gán) `usdExport(1|18)` ⇒ 200 /
+//   41.850 B + 1.970 B (USDA CẢ HAI nhà máy); vai C (0 quyền, 0 gán) `lineBalance(2)` ⇒ 16 hàng;
+//   mọi vai `sensor.readSeries(m1)` ⇒ 24 điểm. Lưới: `twinBonManApiVaiPhamVi.db.test.ts` (tập thủ tục
+//   bốn màn gọi × 3 vai × 2 nhà máy, bất biến "grep N = phủ N") + `moduleReadsCockpitPhamVi.db.test.ts`.
+// ⚠⚠ Đo trên HEAD SẠCH (`6eec818f`, `.qa-dot42/census-truoc.log`): A 346 · C 474 · D 1119 · S 320 · tong 2267
+//   và §5 vẫn 3 mục `maintenanceRouter` — §3/§5 ĐÃ ĐỎ TRƯỚC đợt này (không đổi từ Đợt 40). Sau vá
+//   (`.qa-dot42/census-sau-va.log`): A 342 · S 324, phần còn lại y nguyên. Tôi chỉ hạ A đúng **4** phần
+//   của mình và **để nguyên** C/D/S/tong + 3 mục kia cho bên đó ký — cùng luật Đợt 40.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 49 (mục E) — **C 472→474 · D 1101→1119 · S 290→324 · tong 2234→2267.** VÀ LÝ DO KHÔNG
+//     PHẢI "ĐỘ TRÔI CỦA LÔ KHÁC" NHƯ BỐN KHỐI CHÚ THÍCH TRÊN ĐÃ VIẾT.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// Brief Đợt 49 hỏi đúng câu cần hỏi: *vì sao dân số đổi khi 0 commit chạm `server/` từ baseline
+// `d7a6a6c7`?* Đo, không đoán — chạy CHÍNH bộ quét này trên bốn cây `git archive` rời nhau
+// (`.qa-dot49/dem-census.mts`, thư mục tạm, KHÔNG đo trên worktree dùng chung):
+//
+//     2cb1f771 → A 363 · B 8 · C 470 · D 1097 · S 286 · tong 2224   (cây mà GHIM tự nhận là của nó)
+//     34c4be3d → A 351 · B 8 · C 474 · D 1119 · S 315 · tong 2267
+//     6eec818f → A 346 · B 8 · C 474 · D 1119 · S 320 · tong 2267
+//     d7a6a6c7 → A 342 · B 8 · C 474 · D 1119 · S 324 · tong 2267   (= HEAD hôm nay, `git diff
+//                 d7a6a6c7..HEAD -- server/` RỖNG)
+//
+// Hai điều đọc thẳng ra từ bảng này:
+//  1. **Không có gì trôi từ `d7a6a6c7`.** C/D/S/tong ở HEAD y hệt baseline. Tiền đề "dân số đổi"
+//     sai; thứ sai là GHIM, và nó đã sai TRƯỚC baseline.
+//  2. ★★★ **GHIM chưa bao giờ là một PHÉP ĐO.** Ở `2cb1f771` — cây mà chính chú thích GHIM viện
+//     dẫn — bộ quét cho C 470 · D 1097 · S 286 · tong 2224, KHÔNG phải 472/1101/290/2234. Con số
+//     ghim được sinh bằng **số học trên chú thích**: mỗi đợt cộng tay "+1 D", "+4 S" vào literal
+//     rồi ghi lý do, mà không lần nào chạy lại bộ quét. Sai số cộng dồn, và mỗi đợt sau lại giải
+//     thích phần dư bằng câu *"độ trôi của lô khác — để bên đó ký"* (bốn khối chú thích ở trên,
+//     từ Đợt 14 tới Đợt 42). Không ai ký, vì không có gì để ký: khoản nợ ấy không tồn tại.
+//
+// ⇒ Từ đây GHIM = SỐ ĐO ĐƯỢC trên cây HEAD, cả năm nhóm. A/B giữ nguyên (342/8) vì chúng đã được
+//   đo đúng ở Đợt 42. Nếu lượt sau thấy ô này đỏ: **chạy `.qa-dot49/dem-census.mts` trên cây
+//   COMMIT trước đã** — nếu số đo khác GHIM thì có thủ tục mới thật; nếu bằng thì cái sai là
+//   phép cộng tay của ai đó, như suốt Đợt 14→42.
+// ⚠ Brief Đợt 49 còn dặn "xoá 3 mục `maintenanceRouter` khỏi sổ nợ rồi HẠ `GHIM.A` tương ứng".
+//   Vế sau SAI: `GHIM.A` là dân số nhóm A do bộ quét ĐẾM trên mã, còn sổ nợ là danh sách miễn trừ;
+//   ba mục ấy đã rời nhóm A từ trước (§5 đỏ vì thế), nên xoá chúng khỏi sổ **không đổi A**. Đo:
+//   A = 342 trước và sau khi xoá. Hạ A xuống 339 mới đúng là "sửa cho xanh".
+const GHIM = { A: 342, B: 8, C: 474, D: 1119, S: 324, tong: 2267 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

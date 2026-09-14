@@ -1,0 +1,305 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+ ✓ server/routers/phamViTwinCanh.unit.test.ts (18 tests) 5ms
+ ✓ client/src/components/twin3d/van-hanh/giuDuLieuTruoc.unit.test.ts (6 tests) 4ms
+ ✓ server/_core/twinTrangThaiPhamVi.unit.test.ts (15 tests) 8ms
+ ✓ server/services/trangThaiMayTuoi.test.ts (24 tests) 7ms
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > thiết bị đo tự canh: `initializeSocket` thật đã đăng ký `connection` + handler `subscribe` trên socket
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+[Socket.io] Client connected: s1 type=browser user=51
+[Twin] trangThai broadcaster stopped
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > ★★★ (1) join `twin:1` ⇒ MỘT gói NGAY, trước khi đồng hồ chạy — và gói mang dữ liệu của `traTrangThaiHangLoat`
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+[Socket.io] Client connected: s1 type=browser user=51
+[Socket.io] s1 joined twin:1
+[Twin] trangThai broadcaster stopped
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > ★★★ (2)+(3) nhịp ĐÚNG 10 000 ms: 9 999 ⇒ vẫn 1 · 10 000 ⇒ 2 · 20 000 ⇒ 3 · 29 999 ⇒ vẫn 3
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+[Socket.io] Client connected: s1 type=browser user=51
+[Socket.io] s1 joined twin:1
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > ★★★ (2)+(3) nhịp ĐÚNG 10 000 ms: 9 999 ⇒ vẫn 1 · 10 000 ⇒ 2 · 20 000 ⇒ 3 · 29 999 ⇒ vẫn 3
+[Twin] trangThai broadcaster stopped
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) đối chứng phạm vi: người NGOÀI phạm vi join ⇒ KHÔNG vào phòng, 0 gói — kể cả sau 10 s
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+[Socket.io] Client connected: s2 type=browser user=48
+
+stderr | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) đối chứng phạm vi: người NGOÀI phạm vi join ⇒ KHÔNG vào phòng, 0 gói — kể cả sau 10 s
+[Socket.io] s2 TU CHOI join twin:1 - user=48 ngoai pham vi
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) đối chứng phạm vi: người NGOÀI phạm vi join ⇒ KHÔNG vào phòng, 0 gói — kể cả sau 10 s
+[Twin] trangThai broadcaster stopped
+
+ ✓ client/src/components/twin3d/van-hanh/dongThoiGian.unit.test.ts (25 tests) 17ms
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) không ai trong phòng ⇒ vòng 10 s KHÔNG đọc DB (không tốn truy vấn khi không ai xem)
+[Twin] WIP broadcaster started (read-only, gated)
+[Twin] trangThai broadcaster started (read-only, gated, 10s)
+[Socket.io] OEE broadcaster started (every 60s)
+[Socket.io] WebSocket server initialized
+[Twin] WIP broadcaster stopped
+
+stdout | server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts > ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > (−) không ai trong phòng ⇒ vòng 10 s KHÔNG đọc DB (không tốn truy vấn khi không ai xem)
+[Twin] trangThai broadcaster stopped
+
+ ✓ server/_core/twinTrangThaiBroadcaster.hanhVi.unit.test.ts (5 tests) 1103ms
+   ✓ ★★★ Đợt 40 (F) — nhịp phát `twin:trangThai`: ngay khi join + đúng mỗi 10 s (đồng hồ giả) > thiết bị đo tự canh: `initializeSocket` thật đã đăng ký `connection` + handler `subscribe` trên socket 670ms
+ ✓ client/src/components/twin3d/van-hanh/manMayNoiVaoTrang.unit.test.ts (41 tests) 18ms
+ ✓ client/src/components/twin3d/van-hanh/manMay.unit.test.ts (42 tests) 35ms
+ ✓ client/src/components/twin3d/van-hanh/dongThoiGian.dom.test.tsx (3 tests) 49ms
+ ✓ server/db/trangThaiHangLoat.unit.test.ts (19 tests) 11ms
+stdout | server/db/naiveTimestampQuaExecute.db.test.ts
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stdout | server/db/twinDemVatThePhamVi.db.test.ts > K2 — `demVatThe` lọc theo phạm vi tenant, hai chiều > ★★★ CHIỀU (−) — người gán nhà máy A đếm được **0** vật thể của tầng thuộc B
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/routers/factoryCommandAssetCockpitPhamVi.db.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/api/v1/moduleReadsCockpitPhamVi.db.test.ts
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+ ✓ server/services/ecosystem/assetCockpitService.test.ts (17 tests) 211ms
+ ✓ server/api/v1/lines.test.ts (20 tests) 539ms
+stdout | server/db/twinDemVatThePhamVi.db.test.ts > K2 — `demVatThe` lọc theo phạm vi tenant, hai chiều > ★★★ CHIỀU (−) — người gán nhà máy A đếm được **0** vật thể của tầng thuộc B
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+stdout | server/api/v1/moduleReads.test.ts > U4a — scope gating (no key → 401, wrong scope → 403, master → 200) > no key → 401 for every new endpoint
+[api/v1 state] state-read-p95 SLO provider registered (threshold 100ms — real measurement).
+
+stdout | server/api/v1/pdmModelReads.test.ts > W0-F — scope gating > no key → 401 on every new endpoint
+[api/v1 state] state-read-p95 SLO provider registered (threshold 100ms — real measurement).
+
+stdout | server/api/v1/assets.test.ts > W2-A2 — scope gating > no key → 401 on every endpoint
+[api/v1 state] state-read-p95 SLO provider registered (threshold 100ms — real measurement).
+
+stdout | server/routers/digitalTwinPhamVi.db.test.ts > Q1 — `digitalTwinRouter` lọc theo phạm vi tenant, hai chiều > twinState > ★★★ CHIỀU (+) — người gán A đọc được máy của A
+[Redis] REDIS_URL not configured, using in-memory cache fallback
+
+ ✓ server/db/twinDemVatThePhamVi.db.test.ts (6 tests) 925ms
+   ✓ K2 — `demVatThe` lọc theo phạm vi tenant, hai chiều > ★★★ CHIỀU (−) — người gán nhà máy A đếm được **0** vật thể của tầng thuộc B 591ms
+ ✓ server/api/v1/pdmModelReads.test.ts (15 tests) 459ms
+ ✓ server/db/naiveTimestampQuaExecute.db.test.ts (7 tests) 1062ms
+   ✓ ★★★ G104 — hai câu rời SQL của twinCanh.ts đi qua bản vá > (4) `traAnhLichSu(factoryId, T0 + 1 s)` ⇒ `capNhatLuc` của máy = T0 = NHỊP TIM (Đợt 38) — tuổi GIÂY, không 7 h; và `trangThai` = `running` (nhịp tim tươi tại mốc) 487ms
+ ✓ server/api/v1/assets.test.ts (26 tests) 737ms
+stdout | server/routers/digitalTwinPhamVi.db.test.ts > Q1 — `digitalTwinRouter` lọc theo phạm vi tenant, hai chiều > twinState > ★★★ CHIỀU (+) — người gán A đọc được máy của A
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+ ✓ server/api/v1/moduleReads.test.ts (21 tests) 895ms
+stdout | server/routers/factoryCommandAssetCockpitPhamVi.db.test.ts > Đợt 40 — factoryCommand + assetCockpit lọc theo phạm vi tenant, hai chiều > factoryCommand.overview — nguồn sự thật của ba màn twin > ★★★ CHIỀU (+) — người gán A hỏi A ⇒ thấy máy của A; danh sách nhà máy CHỈ có A
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stdout | server/api/v1/moduleReadsCockpitPhamVi.db.test.ts > Đợt 42 — HTTP v1 cockpit (`/machines/:id/detail`, `/robots/:id/detail`) theo phạm vi KHOÁ API > tầng service — `PhamViMaTenant` (trục ②) đi qua CÙNG bộ phân giải với trục ① > ★★★ CHIỀU (−) — khoá của A hỏi máy của B ⇒ `null` (cùng hình dạng với không tồn tại)
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stderr | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable.
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[OAuth] Initialized with baseURL: 
+
+stderr | server/routers/maintenanceAndonPhamVi.db.test.ts
+[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable.
+
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts
+[OAuth] Initialized with baseURL: 
+
+ ✓ server/routers/digitalTwinPhamVi.db.test.ts (15 tests) 1712ms
+   ✓ Q1 — `digitalTwinRouter` lọc theo phạm vi tenant, hai chiều > twinState > ★★★ CHIỀU (+) — người gán A đọc được máy của A 1021ms
+ ✓ server/api/v1/moduleReadsCockpitPhamVi.db.test.ts (13 tests) 1170ms
+Sourcemap for "D:/SOURCES/_twin_wt/node_modules/node-cron/dist/esm/node-cron.js" points to missing source files
+ ✓ server/routers/factoryCommandAssetCockpitPhamVi.db.test.ts (22 tests) 1714ms
+   ✓ Đợt 40 — factoryCommand + assetCockpit lọc theo phạm vi tenant, hai chiều > factoryCommand.overview — nguồn sự thật của ba màn twin > ★★★ CHIỀU (+) — người gán A hỏi A ⇒ thấy máy của A; danh sách nhà máy CHỈ có A 303ms
+   ✓ Đợt 40 — factoryCommand + assetCockpit lọc theo phạm vi tenant, hai chiều > factoryCommand.overview — nguồn sự thật của ba màn twin > admin thấy CẢ HAI (chiều dương của `PhamViNguoiXem` toàn quyền — không thêm mệnh đề nào) 324ms
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts
+[Presence] REDIS_URL not set — machine presence store is in-memory (single instance).
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[Presence] REDIS_URL not set — machine presence store is in-memory (single instance).
+
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts
+[Email Service] SMTP not configured, email notifications disabled
+[Email Service] Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD (or SMTP_PASS) to enable
+
+stdout | server/routers/maintenanceAndonPhamVi.db.test.ts > L-1 — đường GHI lọc theo phạm vi tenant, hai chiều > maintenance.createWorkOrder — LỖ L-1 CHÍNH > ★★★ CHIỀU (+) — người gán A TẠO ĐƯỢC phiếu cho máy của A, và hàng CÓ THẬT trong CSDL
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+ ✓ server/routers/maintenanceAndonPhamVi.db.test.ts (28 tests) 614ms
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[Email Service] SMTP not configured, email notifications disabled
+[Email Service] Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD (or SMTP_PASS) to enable
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts
+[SmartAlert] ALERT_RENOTIFY_COOLDOWN_MINUTES: thô=(chưa đặt) → hiệu lực=240 phút
+[SmartAlert] ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES: thô=(chưa đặt) → hiệu lực=0 phút
+[SmartAlert] ROUTE_ALERT_MAX_PER_WINDOW: thô=(chưa đặt) → hiệu lực=200 lượt/cửa sổ
+
+stdout | server/routers/twinBonManApiVaiPhamVi.db.test.ts > Đợt 42 — thủ tục bốn màn twin gọi × vai × nhà máy (lưới tự động, G116) > §1 'andon.active' > (0) người 0 gán — hỏi A lẫn B ⇒ chặn/rỗng, thân KHÔNG có mã của bất kỳ nhà máy nào
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+stderr | server/routers/twinBonManApiVaiPhamVi.db.test.ts > Đợt 42 — thủ tục bốn màn twin gọi × vai × nhà máy (lưới tự động, G116) > §1 'dashboard.getMachineStats' > (−) người gán A hỏi B ⇒ chặn/rỗng, thân KHÔNG có mã của B
+[SLOW QUERY] 216.6ms: select count(*), sum(case when "overallResult" = '?' then 0 else 0 end), sum(case when "overallResult" = '?' then 0 else 0 end), sum(case when "overallResult" = '?' then 0 else 0 end) from "product_in
+
+stderr | server/routers/twinBonManApiVaiPhamVi.db.test.ts > Đợt 42 — thủ tục bốn màn twin gọi × vai × nhà máy (lưới tự động, G116) > §1 'dashboard.getMachineStats' > (−) người gán A hỏi B ⇒ chặn/rỗng, thân KHÔNG có mã của B
+[SLOW QUERY] 219.2ms: SELECT COUNT(*)::int AS first_total, COUNT(*) FILTER (WHERE result = '?')::int AS first_pass FROM (SELECT DISTINCT ON ("product_inspections"."serialNumber") "product_inspections"."machineId" AS machin
+
+ ✓ server/routers/twinBonManApiVaiPhamVi.db.test.ts (115 tests) 7483ms
+   ✓ Đợt 42 — thủ tục bốn màn twin gọi × vai × nhà máy (lưới tự động, G116) > §1 'andon.active' > (0) người 0 gán — hỏi A lẫn B ⇒ chặn/rỗng, thân KHÔNG có mã của bất kỳ nhà máy nào 353ms
+   ✓ Đợt 42 — thủ tục bốn màn twin gọi × vai × nhà máy (lưới tự động, G116) > §1 'assetCockpit.machineDetail' > (+) người gán A hỏi A ⇒ CÓ — đối chứng dương, chống 'vá quá tay thành chặn tất cả' 438ms
+   ✓ Đợt 42 — thủ tục bốn màn twin gọi × vai × nhà máy (lưới tự động, G116) > §1 'factoryCommand.overview' > (+) người gán A hỏi A ⇒ CÓ — đối chứng dương, chống 'vá quá tay thành chặn tất cả' 322ms
+ ❯ server/routers/phamViDocCensus.test.ts (17 tests | 2 failed) 13472ms
+   × §3 — CON SỐ GHIM > ★ số từng nhóm ĐÚNG BẰNG số đã ghim 8ms
+     → Dân số thủ tục đã đổi. Sửa `GHIM` cho khớp SỐ ĐO ĐƯỢC và ghi lý do — đừng sửa cho xanh.: expected { A: 342, B: 8, C: 474, D: 1119, …(2) } to deeply equal { A: 342, B: 8, C: 472, D: 1101, …(2) }
+   × §5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH > ★★ mọi mục trong sổ vẫn ĐANG ở nhóm (A) — vá rồi thì phải GỠ DÒNG 4ms
+     → Mục này đã được vá nhưng còn tên trong sổ nợ. Xoá dòng của nó khỏi `phamViDocBaseline.ts`
+và giảm `GHIM.A` cho khớp — trả nợ phải NHÌN THẤY ĐƯỢC trong diff.: expected [ …(3) ] to deeply equal []
+   ✓ §7 — ĐỘT BIẾN THẬT: cổng có ĐỎ khi thêm một lượt đọc tenant KHÔNG LỌC không > ★★★ router rò MỚI ⇒ nhóm A + KHÔNG có trong sổ nợ; bản đã lọc ⇒ nhóm S 13424ms
+ ❯ server/routers/phamViTuyenCensus.test.ts (20 tests | 2 failed) 13847ms
+   × §1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không > ★★ BỀ MẶT TĨNH được GHIM — bộ suy KHÔNG phát biểu được gì về nó 11ms
+     → expected [ 'server/_core/index.ts:650', …(1) ] to deeply equal [ 'server/_core/index.ts:653', …(1) ]
+   × §3 — CON SỐ GHIM > ★ số từng nhóm ĐÚNG BẰNG số đã ghim 2ms
+     → Dân số tuyến đã đổi. Sửa `GHIM` cho khớp SỐ ĐO ĐƯỢC và ghi lý do — đừng sửa cho xanh.: expected { A: 81, C: 38, D: 72, S: 17, …(2) } to deeply equal { A: 81, C: 38, D: 71, S: 17, …(2) }
+   ✓ §7 — ĐỘT BIẾN THẬT: cổng có ĐỎ khi thêm một tuyến đọc tenant KHÔNG LỌC không > ★★★ tuyến rò MỚI ⇒ nhóm A + KHÔNG có trong sổ nợ; bản đã lọc ⇒ nhóm S 13822ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  server/routers/phamViDocCensus.test.ts > §3 — CON SỐ GHIM > ★ số từng nhóm ĐÚNG BẰNG số đã ghim
+AssertionError: Dân số thủ tục đã đổi. Sửa `GHIM` cho khớp SỐ ĐO ĐƯỢC và ghi lý do — đừng sửa cho xanh.: expected { A: 342, B: 8, C: 474, D: 1119, …(2) } to deeply equal { A: 342, B: 8, C: 472, D: 1101, …(2) }
+
+- Expected
++ Received
+
+  Object {
+    "A": 342,
+    "B": 8,
+-   "C": 472,
+-   "D": 1101,
+-   "S": 290,
+-   "tong": 2234,
++   "C": 474,
++   "D": 1119,
++   "S": 324,
++   "tong": 2267,
+  }
+
+ ❯ server/routers/phamViDocCensus.test.ts:415:7
+    413|       dem,
+    414|       "Dân số thủ tục đã đổi. Sửa `GHIM` cho khớp SỐ ĐO ĐƯỢC và ghi lý…
+    415|     ).toEqual(GHIM);
+       |       ^
+    416|   });
+    417| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  server/routers/phamViDocCensus.test.ts > §5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH > ★★ mọi mục trong sổ vẫn ĐANG ở nhóm (A) — vá rồi thì phải GỠ DÒNG
+AssertionError: Mục này đã được vá nhưng còn tên trong sổ nợ. Xoá dòng của nó khỏi `phamViDocBaseline.ts`
+và giảm `GHIM.A` cho khớp — trả nợ phải NHÌN THẤY ĐƯỢC trong diff.: expected [ …(3) ] to deeply equal []
+
+- Expected
++ Received
+
+- Array []
++ Array [
++   "server/routers/maintenanceRouter.ts#maintenanceRouter.getWorkOrder → nay là nhóm S",
++   "server/routers/maintenanceRouter.ts#maintenanceRouter.listWorkOrders → nay là nhóm S",
++   "server/routers/maintenanceRouter.ts#maintenanceRouter.summary → nay là nhóm S",
++ ]
+
+ ❯ server/routers/phamViDocCensus.test.ts:453:7
+    451|       "Mục này đã được vá nhưng còn tên trong sổ nợ. Xoá dòng của nó k…
+    452|         "và giảm `GHIM.A` cho khớp — trả nợ phải NHÌN THẤY ĐƯỢC trong …
+    453|     ).toEqual([]);
+       |       ^
+    454|   });
+    455| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  server/routers/phamViTuyenCensus.test.ts > §1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không > ★★ BỀ MẶT TĨNH được GHIM — bộ suy KHÔNG phát biểu được gì về nó
+AssertionError: expected [ 'server/_core/index.ts:650', …(1) ] to deeply equal [ 'server/_core/index.ts:653', …(1) ]
+
+- Expected
++ Received
+
+  Array [
+-   "server/_core/index.ts:653",
++   "server/_core/index.ts:650",
+    "server/_core/vite.ts:58",
+  ]
+
+ ❯ server/routers/phamViTuyenCensus.test.ts:125:58
+    123|     //   THẬT bằng socket thô (ghi trong báo cáo). Ghim danh sách để m…
+    124|     //   web vẫn phải được ký tên.
+    125|     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
+       |                                                          ^
+    126|       "server/_core/index.ts:653",
+    127|       "server/_core/vite.ts:58",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  server/routers/phamViTuyenCensus.test.ts > §3 — CON SỐ GHIM > ★ số từng nhóm ĐÚNG BẰNG số đã ghim
+AssertionError: Dân số tuyến đã đổi. Sửa `GHIM` cho khớp SỐ ĐO ĐƯỢC và ghi lý do — đừng sửa cho xanh.: expected { A: 81, C: 38, D: 72, S: 17, …(2) } to deeply equal { A: 81, C: 38, D: 71, S: 17, …(2) }
+
+- Expected
++ Received
+
+  Object {
+    "A": 81,
+    "C": 38,
+-   "D": 71,
++   "D": 72,
+    "S": 17,
+    "U": 16,
+-   "tong": 223,
++   "tong": 224,
+  }
+
+ ❯ server/routers/phamViTuyenCensus.test.ts:157:7
+    155|       dem,
+    156|       "Dân số tuyến đã đổi. Sửa `GHIM` cho khớp SỐ ĐO ĐƯỢC và ghi lý d…
+    157|     ).toEqual(GHIM);
+       |       ^
+    158|   });
+    159| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+ Test Files  2 failed | 22 passed (24)
+      Tests  4 failed | 536 passed (540)
+   Start at  05:22:17
+   Duration  29.60s (transform 17.29s, setup 1.41s, collect 100.18s, tests 46.10s, environment 1.72s, prepare 5.10s)
+

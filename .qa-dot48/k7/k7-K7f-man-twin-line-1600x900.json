@@ -1,0 +1,36 @@
+{
+  "luc": "2026-09-11T22:24:33.234Z",
+  "base": "http://localhost:3048",
+  "duong": "/twin/line/2",
+  "man": "man-twin-line",
+  "vp": "1600x900",
+  "mo": {
+    "msCanvas": 1157,
+    "msSanSang": 3759,
+    "coMayTrongKhung": true
+  },
+  "nhan": {
+    "id": 18,
+    "X": 888.625,
+    "Y": 530.8125,
+    "chu": "CONVEYOR · Không rõ",
+    "soNhan": 12,
+    "loai": []
+  },
+  "toiNhan": true,
+  "urlSauNhan": "http://localhost:3048/twin/may/18",
+  "urlSauBack": "http://localhost:3048/twin/line/2?do=1",
+  "khoi": {
+    "ok": true,
+    "X": 890.48859235867,
+    "Y": 594.775008813539,
+    "duoi": "CANVAS",
+    "hit": {
+      "ten": "twin3d-lo-may",
+      "batchId": 2,
+      "khoangCach": 23.507717694331763
+    }
+  },
+  "toiKhoi": true,
+  "urlSauKhoi": "http://localhost:3048/twin/may/18"
+}

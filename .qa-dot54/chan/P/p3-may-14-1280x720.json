@@ -1,0 +1,26 @@
+{
+  "tag": "../.qa-dot54/chan/P",
+  "vp": "1280x720",
+  "luc": "2026-09-12T13:26:39.039Z",
+  "status": {
+    "chu": "offline",
+    "tone": "error",
+    "cls": "inline-flex items-center justify-center rounded-md border font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-vi"
+  },
+  "connection": {
+    "chu": "offline",
+    "tone": "error",
+    "cls": "inline-flex items-center justify-center rounded-md border font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-vi"
+  },
+  "lastChange": {
+    "chu": "online · 9/7/2026, 1:51:22 AM",
+    "tone": "default",
+    "cls": "text-right"
+  },
+  "lastHeartbeat": {
+    "chu": "57d",
+    "tone": "default",
+    "cls": "text-right"
+  },
+  "header": "SIM-L2 AOI |  | SIM-L2-AOI · AOI · Nhà máy ảo (SIM) · Dây chuyền ảo 2 |  | OFFLINE | Refresh"
+}

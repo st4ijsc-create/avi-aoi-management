@@ -242,7 +242,7 @@ export default function NhapBanVe({ onXacNhan }: NhapBanVeProps) {
         )}
         {dangDoc ? t("twin3d.banVe.dangDoc") : t("twin3d.banVe.chonTep")}
       </Button>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-text-2">
         {t("twin3d.banVe.dinhDangNhan", {
           tranMb: Math.round(TRAN_BYTE / 1024 / 1024),
           tranTamGiac: TRAN_TAM_GIAC.toLocaleString("vi-VN"),
@@ -380,7 +380,7 @@ export default function NhapBanVe({ onXacNhan }: NhapBanVeProps) {
                   })}
                 </p>
 
-                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-text-2">
                   <span data-testid="so-tam-giac">
                     {t("twin3d.banVe.soTamGiac")}: {tomTat.soTamGiac.toLocaleString("vi-VN")}
                   </span>
@@ -416,7 +416,7 @@ export default function NhapBanVe({ onXacNhan }: NhapBanVeProps) {
                       </Badge>
                     )}
                     {tachTang?.khongTachDuoc && (
-                      <span className="text-xs text-muted-foreground" data-testid="khong-tach-duoc">
+                      <span className="text-xs text-text-2" data-testid="khong-tach-duoc">
                         {t("twin3d.banVe.khongTachDuoc")}
                       </span>
                     )}

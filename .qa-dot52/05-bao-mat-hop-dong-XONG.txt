@@ -1,0 +1,53 @@
+[Đợt 52 · mục 4] BẢO MẬT + HỢP ĐỒNG TRẠNG THÁI
+
+A. D-4 — MA TRẬN API × VAI (.qa-dot52/run-D4.log, thô .qa-dot52/api-vai/)
+   6 vai (A supervisor · B operator1 · C user tạm 0 quyền · D · M · ADM) × 48 lượt tRPC = 288 lượt
+   + 6 phiên socket + 5 lượt HTTP v1.
+   SO VỚI NỀN ĐỢT 50: tRPC LỆCH 0/288 · socket LỆCH 0/6 · HTTP v1 GIỐNG HỆT.
+   · operator1 (0 gán nhà máy): 200×30 · 403 PERMISSION_DENIED×5 · 404 ENTITY_NOT_FOUND×13.
+     DẤU VẾT nhà máy 1 (SIM): 0 · dấu vết nhà máy 18: 0.
+     Các lượt 200 trả VỎ RỖNG có khai: sucKhoeMay {khai:[],tong:0,tongMayTrongPhamVi:0} ·
+     anToanRobot {robot:[],tong:0} · getMachineStats {total:0,…,scopeApplied:true} · chiTietToaNha null.
+   · user tạm 0 quyền: 403×36 · 404×5 · 200×7 (đều vỏ rỗng) · dấu vết 0/0.
+   · API key thiếu scope: /machines/257/detail (nhà máy 18) ⇒ 404 (fail-closed, QĐ-25) ·
+     /machines/14/detail (SIM-FAC) ⇒ 200 · không khoá ⇒ 401 · id không tồn tại ⇒ 404 (cùng hình dạng).
+   · ĐÃ KIỂM MỘT NGHI NGỜ CỦA CHÍNH TÔI: digitalTwin.whatIf trả 200 + số cho vai 0 gán.
+     Đọc mã: `digitalTwinRouter.ts:218` là HÀM THUẦN — trạm + cycle time do CHÍNH NGƯỜI GỌI gửi lên,
+     không đọc CSDL; có lưới `digitalTwinPhamVi.db.test.ts:303 "whatIf — MIỄN TRỪ có lý do đo được"`.
+     ⇒ KHÔNG phải rò. (Ghi ra để lần sau khỏi nghi lại.)
+
+B. 4 LƯỚI PHẠM VI + CENSUS: 180/180 xanh (4 tệp) · census phamViDocCensus+phamViTuyenCensus 37/37 xanh (2 tệp).
+
+C. HỢP ĐỒNG TRẠNG THÁI 6 BỀ MẶT + ABLATION SỐNG (G105) — .qa-dot52/run-hopdong.log, hd-truoc/, hd-sau-hb/
+   Chèn MỘT nhịp tim now() cho máy 14 (hàng tạm, trap, đã xoá — hb 108→109→108):
+   | bề mặt                                   | TRƯỚC     | SAU nhịp tim |
+   | factoryCommand.overview.status           | offline   | idle      ← đổi |
+   | factoryCommand.machineDetail.status      | offline   | running   ← đổi |
+   | /twin hàng máy data-trang-thai           | khong_ro  | idle      ← đổi |
+   | /twin/line/2 ô trạm                      | khong_ro  | idle      ← đổi |
+   | /twin/may/14 chip trạng thái             | khong_ro  | idle ("Idle") ← đổi |
+   | cockpit 2D liveState                     | OFFLINE/Disconnected/57d | ONLINE/Connected/19s ← đổi |
+   ⇒ PHÉP ĐO SỐNG THẬT: 6/6 bề mặt phản ứng với một hàng nhịp tim. (Đối chứng dương của chính phép đo.)
+
+   ★★★ SAI — HAI BỀ MẶT NÓI HAI CHỮ KHI MÁY *ĐANG KẾT NỐI*:
+     factoryCommand.overview = "idle"   ≠   factoryCommand.machineDetail = "running"
+     (cùng máy 14, cùng thời điểm, cùng router `factoryCommand`).
+   Gốc rễ đọc tại nguồn, KHÔNG đoán:
+     · `factoryCommandService.ts:369-373` (overview) truyền `m.operationStatus` — đọc thẳng cột
+       `machines."operationStatus"`; máy 14 = **"stopped"** ⇒ mapMachineStatus ⇒ "idle". ĐÚNG.
+     · `factoryCommandService.ts:570-578` (machineDetail) truyền
+       `detail.liveState.value?.operationStatus ?? undefined`, mà `assetCockpit.machineDetail`
+       trả `liveState.value.operationStatus = **null**` (đo trực tiếp qua API, xem dưới)
+       ⇒ `null ?? undefined` = undefined ⇒ `mapMachineStatus` rơi vào nhánh `default:` ⇒ **"running"**.
+     · `trangThaiMayTuoi.ts:131-146`: `case "stopped" → idle`, `default: → running`.
+     · Bề mặt thứ ba cùng lỗi hình: `assetCockpitService.ts:580` gọi `mapMachineStatus(bangChung, **null**, now)`
+       ⇒ `statusMapped` của cockpit cũng sẽ là "running" cho MỌI máy đang kết nối.
+   Đo trực tiếp hợp đồng: assetCockpit.machineDetail → liveState.value có đủ khoá
+     [status, lastStatusChange, heartbeatStatus, lastHeartbeat, operationStatus, connected, statusMapped]
+     nhưng `operationStatus = null` trong khi DB `machines.operationStatus = "stopped"`.
+   VÌ SAO 8 ĐỢT TRƯỚC KHÔNG THẤY: trên DB dev mọi máy đều nhịp tim cũ ⇒ CẢ HAI bề mặt trả "offline"
+     và bằng nhau. Bất đồng CHỈ lộ khi máy THẬT SỰ kết nối — tức là trong production.
+   PHẠM VI ẢNH HƯỞNG: consumer duy nhất của `factoryCommand.machineDetail` là
+     `client/src/pages/FactoryCommandView.tsx:242` (màn CŨ /factory-command, ngăn chi tiết).
+     Ba màn Twin đọc `factoryCommand.overview` ⇒ UI Twin KHÔNG sai. Nhưng bất biến "MỘT hợp đồng
+     trạng thái" của Đợt 34 (đúng 4 nguồn API) thì ĐANG VỠ ở nguồn thứ hai.

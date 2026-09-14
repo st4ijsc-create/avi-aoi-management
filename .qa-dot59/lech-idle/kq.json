@@ -1,0 +1,255 @@
+{
+  "lech": {
+    "twin-1600x900": {
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 1288,
+        "h": 669
+      },
+      "lop": {
+        "lop-nhan-twin3d": {
+          "rect": {
+            "x": 288,
+            "y": 207,
+            "w": 1288,
+            "h": 669
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        },
+        "lop-canh-bao": {
+          "rect": {
+            "x": 288,
+            "y": 207,
+            "w": 1288,
+            "h": 669
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        }
+      },
+      "soCanvas": 1
+    },
+    "line-1600x900": {
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1288,
+        "h": 659
+      },
+      "lop": {
+        "lop-nhan-twin3d": {
+          "rect": {
+            "x": 288,
+            "y": 125,
+            "w": 1288,
+            "h": 659
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        },
+        "lop-canh-bao": {
+          "rect": {
+            "x": 288,
+            "y": 125,
+            "w": 1288,
+            "h": 659
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        }
+      },
+      "soCanvas": 1
+    },
+    "may-1600x900": {
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324
+      },
+      "lop": {
+        "lop-nhan-twin3d": {
+          "rect": {
+            "x": 288,
+            "y": 125,
+            "w": 1000,
+            "h": 324
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        },
+        "lop-canh-bao": null
+      },
+      "soCanvas": 1
+    },
+    "studio-1600x900": {
+      "canvas": {
+        "x": 556,
+        "y": 312,
+        "w": 726,
+        "h": 457
+      },
+      "lop": {
+        "lop-nhan-twin3d": null,
+        "lop-canh-bao": null
+      },
+      "soCanvas": 1
+    },
+    "twin-1280x720": {
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 968,
+        "h": 489
+      },
+      "lop": {
+        "lop-nhan-twin3d": {
+          "rect": {
+            "x": 288,
+            "y": 207,
+            "w": 968,
+            "h": 489
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        },
+        "lop-canh-bao": {
+          "rect": {
+            "x": 288,
+            "y": 207,
+            "w": 968,
+            "h": 489
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        }
+      },
+      "soCanvas": 1
+    },
+    "line-1280x720": {
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 968,
+        "h": 479
+      },
+      "lop": {
+        "lop-nhan-twin3d": {
+          "rect": {
+            "x": 288,
+            "y": 125,
+            "w": 968,
+            "h": 479
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        },
+        "lop-canh-bao": {
+          "rect": {
+            "x": 288,
+            "y": 125,
+            "w": 968,
+            "h": 479
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        }
+      },
+      "soCanvas": 1
+    },
+    "may-1280x720": {
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280
+      },
+      "lop": {
+        "lop-nhan-twin3d": {
+          "rect": {
+            "x": 288,
+            "y": 125,
+            "w": 680,
+            "h": 280
+          },
+          "lech": {
+            "x": 0,
+            "y": 0,
+            "w": 0,
+            "h": 0
+          }
+        },
+        "lop-canh-bao": null
+      },
+      "soCanvas": 1
+    },
+    "studio-1280x720": {
+      "canvas": {
+        "x": 492,
+        "y": 312,
+        "w": 541,
+        "h": 277
+      },
+      "lop": {
+        "lop-nhan-twin3d": null,
+        "lop-canh-bao": null
+      },
+      "soCanvas": 1
+    }
+  },
+  "idle": {
+    "twin": {
+      "ms": 40000,
+      "khung": 0,
+      "coBoDem": true
+    },
+    "line": {
+      "ms": 40000,
+      "khung": 0,
+      "coBoDem": true
+    },
+    "may": {
+      "ms": 40000,
+      "khung": 0,
+      "coBoDem": true
+    }
+  }
+}

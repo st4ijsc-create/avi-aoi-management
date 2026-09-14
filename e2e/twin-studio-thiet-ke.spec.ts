@@ -1,4 +1,18 @@
 import { test, expect, type Page } from "@playwright/test";
+import { duongRaBangChung, taoThuMuc } from "./duongRaBangChung";
+
+/**
+ * ★★★ ĐỢT 55 (C) — ĐƯỜNG RA BẰNG CHỨNG ĐI QUA HÀNG RÀO (G130).
+ *
+ * Trước Đợt 55 spec này ghi thẳng vào `.qa-studio` bằng đường ghim cứng. Đó đúng lớp lỗi đã
+ * làm mất bằng chứng ở Đợt 50: chạy lại để xem thử ⇒ ghi đè im lặng lên ảnh của lượt trước.
+ * `duongRaBangChung` áp bất biến *"thư mục đích ĐÃ CÓ TỆP ⇒ đổi đường ra + kêu to"*.
+ *
+ * CÁCH CHẠY (đổi chỗ ghi mà không phải sửa mã):
+ *     TWIN_E2E_ANH_STUDIO=<thư mục>   npx playwright test e2e/twin-studio-thiet-ke.spec.ts
+ *     QA_GHI_DE_BANG_CHUNG=1              ⇒ ép ghi đè `.qa-studio` (lối thoát CÓ CHỦ Ý)
+ */
+const ANH = duongRaBangChung("TWIN_E2E_ANH_STUDIO", ".qa-studio");
 
 /**
  * e2e Đợt 4 — màn Thiết kế `/twin-studio` (§7).
@@ -101,10 +115,24 @@ test.describe("Twin Studio — màn Thiết kế Đợt 4", () => {
       () =>
         (
           window as unknown as {
+            /*
+             * ★ Đợt 56 (mục B) — BA Ô BỊ THIẾU, thêm vào vì `e2e/` nay có `tsc` canh.
+             *   Khai tay ở đây từng chỉ có 3 ô đầu, trong khi 4 dòng `expect` bên dưới
+             *   đọc `helperLaObject3D`, `helperTrongScene`, `soConHelper`. Vì `e2e/`
+             *   chưa từng nằm trong tsconfig nào (xem `tsconfig.tests.json`), 3 ô thiếu
+             *   ấy không hề báo lỗi — chúng lặng lẽ là `undefined` **về kiểu**, còn lúc
+             *   chạy thì có giá trị thật nên test vẫn xanh. Đúng lớp "xanh vì lý do sai".
+             *   KHÔNG đổi một `expect` nào — chỉ nói thật về hình dạng đã có sẵn.
+             *   Nguồn sự thật: `CuaSoDoGizmo` trong
+             *   `client/src/components/twin3d/thiet-ke/GizmoBienDoi.tsx:90`.
+             */
             __gizmo?: {
               daGanHelper: boolean;
               tenLopHelper: string;
               controlsLaObject3D: boolean;
+              helperLaObject3D: boolean;
+              helperTrongScene: boolean;
+              soConHelper: number;
             };
           }
         ).__gizmo,
@@ -147,7 +175,7 @@ test.describe("Twin Studio — màn Thiết kế Đợt 4", () => {
     expect(tk!.calls).toBeGreaterThan(2);
 
     await page.getByTestId("khoi-canh-3d").screenshot({
-      path: "test-results/twin-studio-gizmo.png",
+      path: `${taoThuMuc(ANH)}/twin-studio-gizmo.png`,
     });
   });
 

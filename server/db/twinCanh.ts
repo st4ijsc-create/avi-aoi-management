@@ -28,7 +28,7 @@
  * tồn tại" với "có thật nhưng của tenant khác" — một câu riêng cho ca sau là một
  * oracle rò rỉ tồn-tại.
  */
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { appError } from "../_core/appError";
@@ -38,12 +38,23 @@ import {
   twinVatThe,
   twinDatCho,
   twinKichThuocLoai,
+  twinBanGhi,
   workshops,
   productionLines,
   stations,
   machines,
+  workstations,
+  // Đợt 7 nợ #26 — E-STOP nổi lên Twin. Robot KHÔNG vào được `twin_dat_cho`
+  // (enum `loaiThucThe` không có `robot`), nên an toàn đi đường RIÊNG.
+  robots,
+  robotTelemetry,
 } from "../../drizzle/schema";
 import { trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
+// Đợt 6 — cùng bộ bóc hàng thô mà `db/machine.ts` dùng (một quy ước, không hai).
+import { executeRows } from "../utils/kpi";
+// ★ Đợt 38 (Pareto #2 QA Đợt 37) — MỘT từ điển trạng thái (`CommandMachineStatus`) cho kho twin, replay VÀ fleet:
+//   cùng `mapMachineStatus` mà `factoryCommandService`/`assetCockpitService` dùng (module THUẦN, 0 import ⇒ không vòng).
+import { mapMachineStatus, trangThaiLichSuTaiMoc } from "../services/trangThaiMayTuoi";
 
 /** Nguồn của một giá trị — khớp `twinnguonenum`. */
 export type NguonGiaTri = "sinh" | "tay";
@@ -537,15 +548,51 @@ export async function ghiDeTuongBaoSinh(
   });
 }
 
-/** Đếm vật thể theo loại của một tầng — dùng cho đối soát và cho UI. */
-export async function demVatTheTheoTang(tangIds: readonly number[]) {
+/**
+ * Đếm vật thể theo loại của một tầng — dùng cho đối soát và cho UI.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ LÔ K/K2 — `scope` KHÔNG PHẢI THAM SỐ TUỲ CHỌN CHO VUI
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản trước hàm này KHÔNG nhận `scope`, và `twinCanhRouter.demVatThe` gọi nó
+ * bằng `async ({ input })` — **không bóc `ctx` ra một lần nào**. Hậu quả ĐO
+ * ĐƯỢC: `tangIds` là lời **TỰ KHAI của client**, nên bất kỳ ai qua được cổng
+ * `quyenThietKe("canView")` đều đếm được vật thể của MỌI tầng thuộc MỌI nhà
+ * máy — chỉ cần đoán một số nguyên. Đây đúng lớp lỗi đã có tên trong sổ dự án:
+ * *"hàng rào tenant lọc theo cột CLIENT TỰ KHAI"*.
+ *
+ * ⚠ Cổng quyền và hàng rào tenant là HAI trục khác nhau, và trục thứ hai vắng
+ *   mặt ở đây. `quyenThietKe` trả lời "vai này được xem thiết kế không"; nó
+ *   KHÔNG trả lời "nhà máy này có phải của người ấy không". Một cổng quyền xanh
+ *   che mất việc hàng rào tenant chưa từng được dựng.
+ *
+ * ⇒ Lọc theo ĐÚNG khuôn của `traDatChoTheoTang` (`:866`) — bản sao nguyên văn,
+ *   không dựng luật phạm vi thứ hai: suy nhà máy của từng tầng rồi hỏi
+ *   `trongPhamVi`. Tầng ngoài phạm vi bị LOẠI KHỎI DANH SÁCH, không ném lỗi:
+ *   một câu lỗi riêng cho ca "có thật nhưng của tenant khác" là một oracle rò
+ *   rỉ tồn-tại, đúng lý lẽ đã ghi ở `luuToaNha`.
+ *
+ * ⚠ `scope` **tuỳ chọn** giữ nguyên chiều DƯƠNG của `PhamViNguoiXem`: vắng danh
+ *   tính ⇒ `idsTrongPhamVi` trả `null` ⇒ KHÔNG lọc. Đó là hình dạng có thật của
+ *   lối gọi nội bộ (seed, script), và là thứ chặn "vá quá tay thành chặn tất cả".
+ */
+export async function demVatTheTheoTang(tangIds: readonly number[], scope?: PhamViNguoiXem) {
   const d = await getDb();
   if (!d) throw new DbUnavailableError();
   if (tangIds.length === 0) return [];
+
+  // ★ G12 — TÁI DÙNG `locTangTrongPhamVi` (`:1587`), KHÔNG viết bản thứ ba của
+  //   cùng một luật. Repo đã có HAI nơi hỏi "tầng nào người này được thấy"
+  //   (`traVungAnToan`, `luuVungAnToan`); một bản chép thứ ba là chỗ hai bản cài
+  //   đặt bắt đầu lệch nhau. Nó cũng rẻ hơn: MỘT truy vấn cho cả danh sách tầng
+  //   thay vì một truy vấn mỗi tầng.
+  const hopLe = await locTangTrongPhamVi(d, tangIds, scope ?? {});
+  if (hopLe.length === 0) return [];
+
   return d
     .select({ id: twinVatThe.id, tangId: twinVatThe.tangId, loai: twinVatThe.loai, nguon: twinVatThe.nguon })
     .from(twinVatThe)
-    .where(inArray(twinVatThe.tangId, [...tangIds]));
+    .where(inArray(twinVatThe.tangId, hopLe));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -625,6 +672,57 @@ async function nhaMayCuaTang(
   return nhaMayCuaToaNha(d, t.toaNhaId);
 }
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ THƯỜNG-1 — THỰC THỂ ĐÍCH PHẢI TỒN TẠI TRƯỚC KHI ĐẶT CHỖ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ca dương đo được trước bản vá: gửi `thucTheId: 999999` (không có hàng nào
+ * trong `machines`) → HTTP 200 `{"daGhi":1,"daTao":1}`. Hàng đặt chỗ trỏ tới
+ * một cái máy không tồn tại được ghi thành công và im lặng.
+ *
+ * ★ Vì sao đây là lỗi THẬT chứ không phải chuyện sạch sẽ: dải "Sức khoẻ dữ liệu"
+ *   của §7.1 đếm `datChoMoCoi` — đặt chỗ không khớp thực thể nào. Đường ghi này
+ *   CHÍNH LÀ nguồn sinh ra thứ mà phép đo kia phải đi dọn. Một hệ vừa sinh rác
+ *   vừa đếm rác của chính mình thì con số đếm được không nói lên điều gì về thế
+ *   giới.
+ *
+ * ⚠ VÌ SAO KIỂM Ở ĐÂY CHỨ KHÔNG PHẢI THÊM FOREIGN KEY:
+ *   `twin_dat_cho` có MỘT cặp cột `(loaiThucThe, thucTheId)` trỏ tới NĂM bảng
+ *   khác nhau (khoá đa hình). Postgres KHÔNG có FK đa hình — muốn dùng FK phải
+ *   tách thành năm cột nullable + năm ràng buộc, tức đổi schema và di trú toàn
+ *   bộ dữ liệu đang có. Kiểm ở tầng ghi bắt đúng lớp lỗi đó với chi phí một
+ *   query trên mỗi LOẠI (không phải mỗi hàng).
+ *
+ * ⚠ KHÔNG chống được đua: một máy bị xoá giữa lúc kiểm và lúc ghi vẫn lọt. Cửa
+ *   sổ đó hẹp và hậu quả là một hàng mồ côi — đúng thứ dải Sức khoẻ đã đếm
+ *   được. Khai rõ giới hạn thay vì để người sau tưởng đây là bảo đảm tuyệt đối.
+ *
+ * @returns danh sách khoá `loai:id` KHÔNG tồn tại (rỗng = mọi thực thể có thật).
+ */
+async function thucTheKhongTonTai(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  hangs: readonly { loaiThucThe: DatChoGhi["loaiThucThe"]; thucTheId: number }[],
+): Promise<string[]> {
+  const bang = {
+    workshop: workshops,
+    line: productionLines,
+    station: stations,
+    machine: machines,
+    workstation: workstations,
+  } as const;
+
+  const thieu: string[] = [];
+  for (const loai of new Set(hangs.map((h) => h.loaiThucThe))) {
+    const ids = [...new Set(hangs.filter((h) => h.loaiThucThe === loai).map((h) => h.thucTheId))];
+    if (ids.length === 0) continue;
+    const t = bang[loai];
+    const co = await d.select({ id: t.id }).from(t).where(inArray(t.id, ids));
+    const coSet = new Set(co.map((r) => r.id));
+    for (const id of ids) if (!coSet.has(id)) thieu.push(`${loai}:${id}`);
+  }
+  return thieu;
+}
+
 /** Kết quả một lượt ghi hàng loạt. */
 export interface KetQuaGhiHangLoat {
   daGhi: number;
@@ -675,6 +773,26 @@ export async function ghiDatChoHangLoat(
     const factoryId = await nhaMayCuaTang(d, tangId);
     if (factoryId === null) return null;
     if (!(await trongPhamVi("factory", factoryId, scope))) return null;
+  }
+
+  // ── ★★★ THƯỜNG-1 — cổng TỒN TẠI, xem `thucTheKhongTonTai` ─────────────────
+  //
+  // ⚠ Ném BAD_REQUEST chứ KHÔNG trả `null`: `null` ở hàm này đã mang nghĩa
+  //   "ngoài phạm vi / tầng không tồn tại" và người gọi dịch nó thành NOT_FOUND
+  //   `twinTang`. Gộp hai ca vào một mã trả về sẽ báo cho người dùng rằng TẦNG
+  //   sai trong khi thứ sai là MÁY — chẩn đoán dẫn nhầm hướng.
+  //
+  // ⚠ Thông báo có liệt kê khoá thiếu. Đây KHÔNG phải rò rỉ oracle tồn-tại như
+  //   cổng phạm vi ở trên: tới được đây nghĩa là người gọi ĐÃ qua cổng phạm vi
+  //   của tầng đích, và các khoá này do CHÍNH họ vừa gửi lên.
+  const thieu = await thucTheKhongTonTai(d, hangs);
+  if (thieu.length > 0) {
+    throw appError(
+      "BAD_REQUEST",
+      "ENTITY_NOT_FOUND",
+      { entity: "twinDatCho", thucThe: thieu.slice(0, 20).join(", ") },
+      `Thực thể không tồn tại: ${thieu.slice(0, 20).join(", ")}${thieu.length > 20 ? ` (+${thieu.length - 20})` : ""}`,
+    );
   }
 
   // Đếm hàng ĐÃ CÓ trước khi ghi, để phân biệt tạo mới với cập nhật. Đây là con
@@ -885,4 +1003,1272 @@ export async function traKichThuocTheoLoai() {
     sauMm: chuoiRaSo(h.sauMm) ?? 0,
     laGiaDinh: h.laGiaDinh,
   }));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 6 (§6.3) — TRẠNG THÁI HÀNG LOẠT CHO VÒNG RENDER CỦA `/twin`        */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Một máy kèm trạng thái đã xét tuổi — hình dạng §6.3 của `trangThaiHangLoat`.
+ *
+ * ★★★ `doTuoiGiay` là ô QUAN TRỌNG NHẤT, và nó có `null` THẬT.
+ *
+ * §6.3 ghi cột `doTuoiGiay`, nhưng một `number` đơn thuần KHÔNG diễn đạt nổi ba
+ * trạng thái mà G15/NT-3 đòi: *đã đo · đang đo · **chưa từng đo***. Nếu máy chưa
+ * bao giờ báo cáo mà ta trả `0`, client đọc được "vừa cập nhật xong 0 giây
+ * trước" — tức là câu NÓI DỐI mạnh nhất có thể về một máy đã im lặng vĩnh viễn.
+ *
+ * ⇒ `capNhatLuc = null` **và** `doTuoiGiay = null` ⇔ CHƯA TỪNG có dữ liệu.
+ *   Đo được trên DB này: 2/42 máy rơi vào ca đó (xem docblock
+ *   `trungThucDuLieu.ts`). Không phải ca lý thuyết.
+ */
+export interface TrangThaiMayHangLoat {
+  machineId: number;
+  ma: string;
+  ten: string;
+  loaiMay: string | null;
+  isActive: boolean;
+  stationId: number | null;
+  /**
+   * ★ Đợt 38 — TỪ VỰNG CHỈ HUY `CommandMachineStatus` qua `mapMachineStatus` (nhịp tim ⊕ `operationStatus`):
+   *   CÙNG chữ với `factoryCommand.overview` và cockpit. Trước: `operationStatus` THÔ (`stopped`) ⇒ hai từ vựng
+   *   cho một máy sống-dừng (`/twin` "Stopped" · fleet `idle`). `null` CHỈ ở ảnh lịch sử khi chưa có bằng chứng ≤ mốc.
+   */
+  trangThai: string | null;
+  /** Điểm sức khoẻ 0-100 nếu có; `null` = chưa đo (NT-3.5: `—`, không phải `0`). */
+  diemSucKhoe: number | null;
+  /** ms epoch của DỮ LIỆU (không phải thời điểm render). `null` = chưa từng có. */
+  capNhatLuc: number | null;
+  /** Tuổi dữ liệu (giây). `null` = CHƯA TỪNG báo cáo — KHÔNG được quy về 0. */
+  doTuoiGiay: number | null;
+  /** Uptime 24h (%) — `null` khi cửa sổ 24h không có bản ghi nào để tính. */
+  uptimePhanTram: number | null;
+}
+
+/**
+ * Trạng thái toàn bộ máy của một nhà máy — **SỐ QUERY CỐ ĐỊNH, KHÔNG N+1** (§6.3).
+ *
+ * Tổng: 4 truy vấn cây phân cấp (`traCayPhanCapNhaMay`) + 1 đọc `machines` +
+ * 3 của `trangThaiTapMay` — **không phụ thuộc số máy**. Đo được: N = 1…42 đều
+ * cho `trangThaiTapMay` = 3 query (xem thông điệp commit `trangThaiTapMay`).
+ *
+ * ★ DÙNG LẠI `trangThaiTapMay` của `db/machine.ts`, KHÔNG chép ba truy vấn sang
+ *   đây. Luật G12 — xem docblock của hàm đó.
+ *
+ * ⚠ `bayGio` là THAM SỐ, không phải `Date.now()` ẩn: `doTuoiGiay` phải tất định
+ *   trong test, và một `Date.now()` nằm sâu trong tầng db là thứ test không với
+ *   tới được.
+ */
+/**
+ * ★★★ PHÉP QUY TUỔI — hàm THUẦN, tách khỏi I/O để TEST ĐƯỢC.
+ *
+ * Tách ra vì hai quyết định dưới đây đều do PHÉP ĐO ép ra chứ không hiển nhiên,
+ * nên chúng phải có test ghim; mà một hàm chạm DB thì test phải dựng DB, và
+ * test cần DB là test hay bị tắt. Xem `traTrangThaiHangLoat` cho phần I/O.
+ *
+ * Hai luật hàm này cưỡng chế:
+ *  1. Mốc tươi = **NHỊP TIM**, không trộn `machine_status_logs` (xem docblock
+ *     trong `traTrangThaiHangLoat` — đo được 3 conveyor tự khai 0,4 ngày trong
+ *     khi im lặng 51,7 ngày).
+ *  2. Chưa từng có dữ liệu ⇒ `capNhatLuc`/`doTuoiGiay` = **`null`**, KHÔNG phải
+ *     `0`. `0` nghĩa là "vừa cập nhật xong", tức câu nói dối mạnh nhất có thể
+ *     về một máy im lặng vĩnh viễn (NT-3.5).
+ */
+/**
+ * ★★★ ĐỢT 6 VÁ THƯỜNG-4 — CHỌN NGUỒN MỐC TƯƠI, TÁCH RA ĐỂ TEST ĐƯỢC.
+ *
+ * ⚠ VÙNG MÙ ĐÃ CÓ (QA đo 2026-09-07): `quyTuoiMay` là hàm thuần và có 14 test
+ * xanh, NHƯNG nó chỉ nhận `{hbBang, hbMay}` — nó KHÔNG BAO GIỜ THẤY
+ * `machine_status_logs`. Việc chọn "lấy nguồn nào làm mốc" nằm ở CHỖ GỌI, và
+ * chỗ gọi thì KHÔNG test nào với tới. QA tiêm đúng vào đó — đổi thành
+ * `max(status_log, heartbeat)` — và **14/14 test VẪN XANH**.
+ *
+ * Đây ĐÚNG là lỗi mà Đợt 6 tự gây rồi tự sửa (G19): 3 băng tải im lặng 51,7
+ * ngày tự khai thành 0,4 ngày. Tự sửa mà KHÔNG ghim thì lần sau lại trôi về.
+ *
+ * ⇒ Phép chọn nguồn nay là HÀM THUẦN CÓ EXPORT, và test import ĐÚNG nó.
+ *
+ * ★★★ LUẬT NÓ CƯỠNG CHẾ: mốc tươi CHỈ lấy từ NHỊP TIM — `machines.lastHeartbeat`
+ * và bảng `machine_heartbeats`, cùng một đại lượng chỉ khác chỗ lưu. TUYỆT ĐỐI
+ * KHÔNG trộn `machine_status_logs`: một hàng log trạng thái là SỰ KIỆN, không
+ * phải phép đo "máy này còn nói chuyện với ta không". Trộn vào là làm máy đã
+ * ngừng gửi nhịp tim 52 ngày tự khai là mới 0,4 ngày.
+ *
+ * ★ Chữ ký CỐ Ý nhận cả `statusLogTs` dù KHÔNG dùng: để một đột biến "trộn
+ *   status_log vào" phải sửa ĐÚNG hàm này (nơi có test soi), thay vì lặng lẽ
+ *   thêm một nguồn ở chỗ gọi mà không test nào thấy.
+ */
+export function chonNguonMocTuoi(nguon: {
+  hbBang: Date | string | null | undefined;
+  hbMay: Date | string | null | undefined;
+  statusLogTs?: Date | string | null | undefined;
+}): { hbBang: Date | string | null | undefined; hbMay: Date | string | null | undefined } {
+  // `statusLogTs` được nhận rồi VỨT ĐI — có chủ đích, xem docblock.
+  void nguon.statusLogTs;
+  return { hbBang: nguon.hbBang, hbMay: nguon.hbMay };
+}
+
+export function quyTuoiMay(
+  nguon: {
+    hbBang: Date | string | null | undefined;
+    hbMay: Date | string | null | undefined;
+  },
+  bayGio: number,
+): { capNhatLuc: number | null; doTuoiGiay: number | null } {
+  const moc: number[] = [];
+  for (const v of [nguon.hbBang, nguon.hbMay]) {
+    if (v == null) continue;
+    const t = new Date(v).getTime();
+    if (Number.isFinite(t)) moc.push(t);
+  }
+  if (moc.length === 0) return { capNhatLuc: null, doTuoiGiay: null };
+  const capNhatLuc = Math.max(...moc);
+  // `Math.max(0, …)`: đồng hồ lệch vài giây không được thành tuổi ÂM — một nhãn
+  // "cập nhật -3 giây trước" làm người đọc nghi ngờ cả màn hình.
+  return { capNhatLuc, doTuoiGiay: Math.max(0, Math.round((bayGio - capNhatLuc) / 1000)) };
+}
+
+/**
+ * Uptime % từ hai khoảng giây. `null` khi cửa sổ 24h KHÔNG có bản ghi nào —
+ * "chưa đo" chứ không phải "0% = chết hẳn" (NT-3.5).
+ */
+export function quyUptime(up: { online: number; offline: number } | undefined): number | null {
+  if (!up) return null;
+  const tong = up.online + up.offline;
+  if (tong <= 0) return null;
+  return Math.round((up.online / tong) * 1000) / 10;
+}
+
+export async function traTrangThaiHangLoat(
+  factoryId: number,
+  bayGio: number,
+  scope?: PhamViNguoiXem,
+): Promise<TrangThaiMayHangLoat[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  // Cổng phạm vi nằm TRONG `traCayPhanCapNhaMay` — nhà máy ngoài phạm vi trả cây
+  // rỗng, nên danh sách máy cũng rỗng. Không đặt cổng thứ hai ở đây: hai cổng nối
+  // tiếp che mất chỗ cổng thật sự được áp (cùng lý lẽ ở `trangThaiTapMay`).
+  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  if (cay.may.length === 0) return [];
+
+  const ids = cay.may.map((m) => m.id);
+  const { trangThaiTapMay } = await import("./machine");
+  const tap = await trangThaiTapMay(ids);
+
+  // `operationStatus` + `lastHeartbeat` + `healthScore` sống ở chính bảng `machines`.
+  const hangMay = await d
+    .select({
+      id: machines.id,
+      operationStatus: machines.operationStatus,
+      lastHeartbeat: machines.lastHeartbeat,
+    })
+    .from(machines)
+    .where(inArray(machines.id, ids));
+  const theoId = new Map(hangMay.map((m) => [m.id, m]));
+
+  return cay.may.map((m) => {
+    const bosung = theoId.get(m.id);
+    const tt = tap.latestStatusByMachine.get(m.id);
+    const hb = tap.latestHeartbeatByMachine.get(m.id);
+
+    /*
+     * ★★★ THỜI ĐIỂM DỮ LIỆU = **NHỊP TIM**, KHÔNG phải `max` của mọi nguồn.
+     *
+     * ⚠ Bản viết đầu của Đợt 6 lấy `max(status_log, heartbeat, lastHeartbeat)`
+     * với lý lẽ "máy sống mà trạng thái lâu không đổi thì đừng báo động giả".
+     * PHÉP ĐO BÁC BỎ lý lẽ đó:
+     *
+     *   SIM-L1/L2/L3-CONVEYOR — `operationStatus='running'`
+     *     machines.lastHeartbeat  = 2026-07-17  (im lặng 52 ngày)
+     *     machine_heartbeats max  = 2026-07-17  (im lặng 52 ngày)
+     *     machine_status_logs max = 2026-09-06  (0,4 ngày)  ← `max` chọn ô này
+     *
+     * Tức là `max` làm ba cái máy đã ngừng gửi nhịp tim 52 ngày **tự khai là mới
+     * 0,4 ngày**, chỉ vì có một hàng log trạng thái được ghi gần đây. Đó ĐÚNG là
+     * lớp lỗi mà `trungThucDuLieu.tsTrangThaiTuIssues` đã phải vá một lần rồi:
+     * *"RAISE một andon lên máy 2 làm ô tươi nhảy 0 → 1"* — một sự kiện KHÔNG
+     * PHẢI phép đo trạng thái làm máy im lặng trông như vừa gửi tín hiệu.
+     *
+     * ⇒ Chỉ nhịp tim mới trả lời được câu "máy này CÒN NÓI CHUYỆN với ta không".
+     *   Lấy `max` của hai nguồn nhịp tim (`machines.lastHeartbeat` và bảng
+     *   `machine_heartbeats`) — cùng đại lượng, chỉ khác chỗ lưu — và KHÔNG trộn
+     *   `machine_status_logs` vào. Kết quả khớp `trungThucDuLieu.ts`: 2/42 máy
+     *   CHƯA TỪNG báo cáo (`lastHeartbeat IS NULL`, đo được), 3 máy `running`
+     *   rơi vào `khong_ro` vì im lặng 52 ngày.
+     */
+    /*
+     * ★★★ THƯỜNG-4 — việc chọn nguồn đi qua `chonNguonMocTuoi`, là hàm THUẦN
+     * CÓ TEST GHIM. Trước đây phép chọn nằm THẲNG ở đây và không test nào với
+     * tới, nên QA đổi nó thành `max(status_log, heartbeat)` mà 14/14 vẫn xanh.
+     * `tt` (log trạng thái) được TRUYỀN VÀO rồi bị hàm đó VỨT ĐI — có chủ đích:
+     * để muốn trộn nó vào thì phải sửa ĐÚNG hàm đang có test soi.
+     */
+    const nguonMoc = chonNguonMocTuoi({
+      hbBang: hb?.ts,
+      hbMay: bosung?.lastHeartbeat,
+      statusLogTs: tt?.ts,
+    });
+    const { capNhatLuc, doTuoiGiay } = quyTuoiMay(nguonMoc, bayGio);
+
+    const up = tap.uptimeByMachine.get(m.id);
+
+    return {
+      machineId: m.id,
+      ma: m.ma,
+      ten: m.ten,
+      loaiMay: m.loaiMay ?? null,
+      isActive: m.isActive ?? false,
+      stationId: m.stationId ?? null,
+      /*
+       * ★★★ ĐỢT 38 (Pareto #2 QA Đợt 37) — MỘT TỪ ĐIỂN. Trước: `operationStatus` THÔ (`stopped`) ⇒ `/twin` in
+       *   "Stopped 11 s" cho máy 14 sống-dừng trong khi `factoryCommand.overview` (cùng máy, cùng giây) nói `idle`;
+       *   và nền của trang (`mayNen` từ overview) mang `idle`/`offline` mà `BANG_MAU` client không có ⇒ `khong_ro`
+       *   câm rồi "lật" khi gói socket tới. Nay qua ĐÚNG `mapMachineStatus` với CÙNG bằng chứng (log + nhịp tim
+       *   `capNhatLuc` = `chonNguonMocTuoi`) như fleet/cockpit ⇒ ba bề mặt không thể lệch chữ (G12).
+       */
+      trangThai: mapMachineStatus(
+        { logStatus: tt?.status, logTs: tt?.ts, nhipTimTs: capNhatLuc },
+        bosung?.operationStatus,
+        bayGio,
+      ),
+      /*
+       * ★ `diemSucKhoe` = `null` — "CHƯA ĐO", và đó là câu ĐÚNG, không phải chỗ chưa làm.
+       *
+       * Đo được: `machines` KHÔNG có cột `healthScore` (đã thử và `tsc` bác bỏ);
+       * điểm sức khoẻ sống ở `machine_health_history` (`schema/machine.ts:85`),
+       * tức là một bảng lịch sử cần thêm MỘT truy vấn nữa. Thêm truy vấn thứ tư
+       * ở đây sẽ làm yếu chính thứ procedure này tồn tại để bảo đảm (số query cố
+       * định cho vòng render), nên món đó để nguyên là NỢ CÓ KHAI.
+       *
+       * ⇒ Trả `null` (⇒ UI hiện `—`) chứ TUYỆT ĐỐI không trả `0` hay `100`: một
+       *   `0` ở ô sức khoẻ nói "máy này hỏng nặng", một `100` nói "máy hoàn hảo",
+       *   và cả hai đều là lời khai bịa về một đại lượng chưa hề đọc (NT-3.5).
+       */
+      diemSucKhoe: null,
+      capNhatLuc,
+      doTuoiGiay,
+      uptimePhanTram: quyUptime(up),
+    };
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 6 (§9.8) — ẢNH LỊCH SỬ CHO TUA LẠI                                 */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Ảnh trạng thái toàn nhà máy TẠI một mốc thời gian — nguồn của scrubber (§9.8).
+ *
+ * ★★★ NGUỒN: `machine_status_logs` (đo được 7.661 dòng, mới nhất 2026-09-06).
+ *   KHÔNG dùng `oee_metrics`/`machine_heartbeats` cho lớp phủ này: đo 2026-09-07
+ *   thấy hai bảng đó dừng ở **2026-07-17** (~52 ngày trước). Chúng KHÔNG rỗng
+ *   như spec cũ ghi — chúng CŨ, và đó là lý do khác nhau dẫn tới cùng một kết
+ *   luận hiển thị: mọi máy rơi vào `khong_ro` qua THANG TUỔI, chứ không qua một
+ *   danh sách bảng-rỗng viết cứng (danh sách viết cứng sẽ mục đúng như spec cũ
+ *   đã mục — hôm nay `ot_telemetry` có 24,4 triệu dòng và vẫn tươi).
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ HAI TỪ VỰNG TRẠNG THÁI — ĐO ĐƯỢC, VÀ KHÔNG ĐƯỢC TRỘN
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đo 2026-09-07, `SELECT status, count(*) FROM machine_status_logs GROUP BY 1`:
+ *
+ *     online   4.171
+ *     offline  3.490
+ *
+ * ĐÚNG HAI giá trị. Trong khi `machines.operationStatus` là `operationStatusEnum`
+ * với TÁM giá trị (`running`/`stopped`/`error`/`maintenance`/`warming_up`/
+ * `changeover`/`starved`/`blocked`).
+ *
+ * ⇒ `machine_status_logs` là **NHẬT KÝ KẾT NỐI**, KHÔNG phải lịch sử trạng thái
+ *   vận hành. Nó KHÔNG tái dựng được `running` hay `error`.
+ *
+ * ⚠ Bản viết đầu của Đợt 6 trả thẳng `status` thô ra client. Hậu quả CÂM đo được:
+ *   `mauChoTrangThai` (mauTrangThai.ts:192) rơi về `BANG_MAU.khong_ro` cho mọi
+ *   giá trị lạ — nên tua lại vẽ TOÀN BỘ nhà máy thành xám gạch chéo "Không rõ",
+ *   không lỗi, không cảnh báo. Một cái máy ĐANG CHẠY lúc 14:32 hiện ra là "không
+ *   rõ" — tức là tua lại nói dối về quá khứ, đúng lớp lỗi §9.8 cảnh báo khi hai
+ *   đường lệch nhau.
+ *
+ * ⇒ (Đợt 6) Ánh xạ tường minh `offline → stopped`, `online → running` — và (Đợt 38) BỊ THAY: QA Đợt 37 D-4 đo
+ *   máy 14 im lặng 54 ngày ⇒ live `offline` mà tua-tại-bây-giờ khai **`running 3,2 ngày`**; chèn một log `online`
+ *   `now()` ⇒ **`running 1 s`**. Hàng log là SỰ KIỆN CHUYỂN, không phải tín hiệu sống (G105) — Đợt 34 đã đưa fleet +
+ *   cockpit về luật nhịp tim, replay là đường thứ ba còn sót, và §9.8 đổ nó vào CÙNG kho với gói socket.
+ *
+ * ⇒ ★★★ ĐỢT 38 — MỘT TỪ ĐIỂN: bằng chứng CẮT TẠI MỐC (log ≤ mốc, NHỊP TIM ≤ mốc — cùng `chonNguonMocTuoi` như live)
+ *   đi qua `trangThaiLichSuTaiMoc` (= `mapMachineStatus` với `now = mốc`, `services/trangThaiMayTuoi.ts`):
+ *     không nhịp tim tươi tại mốc  → `offline`   (kể cả khi vừa có log `online`)
+ *     nhịp tim tươi tại mốc        → `running`   ★ XẤP XỈ CÓ KHAI — xem `LICH_SU_LA_XAP_XI`
+ *     không bằng chứng nào ≤ mốc   → `null`      (⇒ `khong_ro`: không bịa quá khứ)
+ *   `capNhatLuc`/`doTuoiGiay` cũng là NHỊP TIM tại mốc — tuổi tính TỪ MỐC, cùng đại lượng với live.
+ *
+ * ⚠⚠ `running` khi có nhịp tim là một XẤP XỈ, không phải sự thật: một máy có kết nối
+ *   vẫn có thể đang `maintenance`/`starved`/`error`. DB KHÔNG lưu `operationStatus` theo
+ *   thời gian, nên ta KHAI xấp xỉ ấy ở đây và ở `LICH_SU_LA_XAP_XI`, để UI nói được
+ *   *"tua lại chỉ dựng được KẾT NỐI, không dựng được chế độ vận hành"* thay vì trình
+ *   bày một quá khứ chi tiết hơn dữ liệu thật (NT-4).
+ *
+ * ★ `DISTINCT ON` lấy hàng MỚI NHẤT **không muộn hơn** `mocMs` cho mỗi máy —
+ *   đúng nghĩa "trạng thái tại thời điểm T", không phải "hàng gần T nhất" (hàng
+ *   gần nhất có thể nằm ở TƯƠNG LAI so với T, và lấy nó là nhìn trộm tương lai).
+ *
+ * ⚠ SỐ QUERY CỐ ĐỊNH = 4 cây phân cấp + 1 ảnh. Không N+1.
+ */
+/**
+ * Tua lại dựng được KẾT NỐI, KHÔNG dựng được chế độ vận hành. Cờ này đi kèm mọi
+ * ảnh lịch sử để UI khai đúng giới hạn đó (NT-4) thay vì trình bày một quá khứ
+ * chi tiết hơn dữ liệu thật.
+ */
+export const LICH_SU_LA_XAP_XI = true;
+
+export async function traAnhLichSu(
+  factoryId: number,
+  mocMs: number,
+  scope?: PhamViNguoiXem,
+): Promise<TrangThaiMayHangLoat[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  if (cay.may.length === 0) return [];
+
+  const ids = cay.may.map((m) => m.id);
+  const moc = new Date(mocMs);
+  const idList = sql.join(ids.map((id) => sql`${id}`), sql`, `);
+
+  // ★★★ Đợt 35 (G104) — `AT TIME ZONE 'UTC'`: cột `timestamp` naive lưu UTC, nhưng `db.execute` thô
+  //     (postgres.js) đọc naive theo giờ máy Node (+07 ⇒ lệch −7 h) trong khi drizzle typed đọc UTC.
+  //     `ts` rời SQL thành `capNhatLuc` ⇒ ảnh lịch sử (tua) khai tuổi 7 h cho hàng vừa ghi. Cùng vá
+  //     với `trangThaiTapMay` (Đợt 34). Lưới: `naiveTimestampQuaExecute.db.test.ts`.
+  const hangLog = executeRows(
+    await d.execute(sql`
+      SELECT DISTINCT ON ("machineId")
+             "machineId" AS machine_id, status, "timestamp" AT TIME ZONE 'UTC' AS ts
+      FROM machine_status_logs
+      WHERE "machineId" IN (${idList})
+        AND "timestamp" <= ${moc.toISOString()}
+      ORDER BY "machineId", "timestamp" DESC
+    `),
+  ) as Array<{ machine_id: number; status: string | null; ts: Date | null }>;
+
+  /*
+   * ★★★ ĐỢT 38 (Pareto #2 QA Đợt 37) — NHỊP TIM TẠI MỐC, cùng hai nguồn `chonNguonMocTuoi` như live
+   *   (`machine_heartbeats` ≤ mốc + `machines.lastHeartbeat` nếu ≤ mốc). Hàng log KHÔNG còn là mốc tuổi
+   *   (trước: `capNhatLuc = ts` của log ⇒ máy chết 54 ngày khai "3,2 ngày" khi tua). Hai câu thô cùng đi qua
+   *   `AT TIME ZONE 'UTC'` (G104). Số query CỐ ĐỊNH = 4 cây + 1 log + 1 nhịp tim + 1 `machines` — không N+1.
+   *   `machine_heartbeats` nhỏ (108 hàng, đo 2026-09-10) — không cần chỉ mục mới.
+   */
+  const hangHb = executeRows(
+    await d.execute(sql`
+      SELECT DISTINCT ON ("machineId")
+             "machineId" AS machine_id, "timestamp" AT TIME ZONE 'UTC' AS ts
+      FROM machine_heartbeats
+      WHERE "machineId" IN (${idList})
+        AND "timestamp" <= ${moc.toISOString()}
+      ORDER BY "machineId", "timestamp" DESC
+    `),
+  ) as Array<{ machine_id: number; ts: Date | null }>;
+  const hangMay = await d
+    .select({ id: machines.id, lastHeartbeat: machines.lastHeartbeat })
+    .from(machines)
+    .where(inArray(machines.id, ids));
+
+  const logTheoId = new Map<number, { status: string | null; ts: Date | null }>();
+  for (const r of hangLog) logTheoId.set(Number(r.machine_id), { status: r.status, ts: r.ts });
+  const hbTheoId = new Map<number, Date | null>();
+  for (const r of hangHb) hbTheoId.set(Number(r.machine_id), r.ts);
+  const lastHbTheoId = new Map<number, Date | null>();
+  for (const r of hangMay) {
+    const t = r.lastHeartbeat == null ? null : new Date(r.lastHeartbeat).getTime();
+    // Cột `machines.lastHeartbeat` chỉ là bằng chứng TẠI MỐC khi nó không muộn hơn mốc — không nhìn trộm tương lai.
+    lastHbTheoId.set(r.id, t != null && Number.isFinite(t) && t <= mocMs ? (r.lastHeartbeat as Date) : null);
+  }
+
+  return cay.may.map((m) => {
+    const h = logTheoId.get(m.id);
+    // ★ Cùng phép chọn nguồn có test ghim như live (THƯỜNG-4): log được truyền vào rồi bị VỨT ĐI có chủ đích.
+    const nguonMoc = chonNguonMocTuoi({
+      hbBang: hbTheoId.get(m.id),
+      hbMay: lastHbTheoId.get(m.id),
+      statusLogTs: h?.ts,
+    });
+    // Tuổi tính TỪ MỐC ĐANG XEM, không từ bây giờ (§9.8).
+    const { capNhatLuc, doTuoiGiay } = quyTuoiMay(nguonMoc, mocMs);
+    return {
+      machineId: m.id,
+      ma: m.ma,
+      ten: m.ten,
+      loaiMay: m.loaiMay ?? null,
+      isActive: m.isActive ?? false,
+      stationId: m.stationId ?? null,
+      /*
+       * ★ `null` khi TẠI MỐC ĐÓ máy chưa từng có bản ghi nào (không log, không nhịp tim) — và đó là câu
+       *   đúng: ta không biết nó ở trạng thái gì lúc 08:00 nếu bản ghi đầu tiên của nó là 09:00. Điền
+       *   `offline`/`stopped` vào đây sẽ là bịa ra một quá khứ. Còn lại: CÙNG từ điển với live (Đợt 38).
+       */
+      trangThai: trangThaiLichSuTaiMoc({ logStatus: h?.status ?? null, logTs: h?.ts, nhipTimTs: capNhatLuc }, mocMs),
+      diemSucKhoe: null,
+      capNhatLuc,
+      doTuoiGiay,
+      uptimePhanTram: null,
+    };
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ★★★ §11 #26 — TRẠNG THÁI AN TOÀN (E-STOP) CỦA ROBOT TRONG MỘT NHÀ MÁY
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * Trả robot của một nhà máy kèm HAI nguồn tín hiệu E-STOP, để
+ * `tomTatAnToan()` ở client quy về ba trạng thái `nhan|nha|khong_ro`.
+ *
+ * ════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO ĐƯỜNG RIÊNG, KHÔNG MỞ RỘNG `canhThietKe`/`twin_dat_cho`
+ * ════════════════════════════════════════════════════════════════════════
+ * Đo được 2026-09-07:
+ *   • `twin_dat_cho.loaiThucThe` là enum `workshop|line|station|machine|
+ *     workstation` (`drizzle/schema/twin3d.ts`) — **KHÔNG có `robot`**. Thêm
+ *     giá trị enum là một migration + đổi hợp đồng của 5 procedure ghi; đó là
+ *     việc của Đợt 7, không phải điều kiện để an toàn hiện lên màn hình.
+ *   • `duongDanTwin.unit.test.ts:57` ghim `docPhamVi("robot:1") === null` —
+ *     robot KHÔNG địa chỉ hoá được trong cảnh.
+ *
+ * ⇒ Và nó KHÔNG CẦN phải địa chỉ hoá được. §3 NT-2 luật 1 nói rõ: *"Badge alarm
+ *   vẽ ở KHÔNG GIAN MÀN HÌNH, không ở không gian thế giới"* — chính là để một
+ *   góc camera không bao giờ che được một tín hiệu an toàn. Dải E-STOP của
+ *   `/twin` là một banner 2D ở đỉnh trang, nên nó cần biết *robot NÀO đang
+ *   nhấn*, KHÔNG cần biết robot ấy đứng ở toạ độ mm nào. Chờ enum mới để hiện
+ *   được một banner là buộc an toàn xếp hàng sau hình học.
+ *
+ * ★ Phạm vi nhà máy đi qua ĐÚNG `traCayPhanCapNhaMay` — cùng bộ phân giải mà mọi
+ *   đường dữ liệu khác của Twin dùng (BG-127: độc lập phải ở mô hình, không ở
+ *   người đo). Robot neo vào nhà máy qua `lineId`/`stationId`; ta nhận CẢ HAI
+ *   đường vì `robots.lineId` và `robots.stationId` đều nullable và dữ liệu thật
+ *   dùng `lineId` (3/3 robot dev có `lineId=1`, `stationId=NULL`).
+ *
+ * ★★★ `isEnabled = false` bị LOẠI, và đó là quyết định có lý do: một robot đã
+ *   vô hiệu hoá không có người vận hành nào đang đứng cạnh, nên mạch an toàn của
+ *   nó không phải là câu hỏi của ca trực. Ngược lại `status`/`estop` KHÔNG được
+ *   lọc — lọc theo trạng thái chính là bỏ mất tập ta đi tìm.
+ *
+ * ★ `estop` lấy từ hàng telemetry MỚI NHẤT mỗi robot (`DISTINCT ON`). Robot
+ *   chưa từng có telemetry ⇒ `estop = null` ⇒ `khong_ro`, KHÔNG phải `nha`
+ *   (NT-3: không có dữ liệu ≠ bình thường).
+ */
+export interface AnToanRobot {
+  id: number;
+  ma: string;
+  ten: string;
+  /** `robots.status` — `"estop"` là một GIÁ TRỊ của cột này (fleetRouter.ts:325). */
+  status: string | null;
+  /** Cờ E-STOP từ telemetry mới nhất. `null` = CHƯA ĐỌC ĐƯỢC. */
+  estop: boolean | null;
+  /**
+   * Mốc telemetry mới nhất — `null` khi robot chưa từng báo cáo.
+   *
+   * ★ Lấy từ cột `timestamp` (MỐC ĐO của thiết bị), KHÔNG phải `createdAt`
+   *   (mốc GHI HÀNG). Hai cột cùng tồn tại trên `robot_telemetry`, và chọn
+   *   nhầm cột ghi làm một lô backfill cũ tự khai là vừa đo xong — đúng lớp
+   *   lỗi "giả tươi" mà NT-3.4 cấm. `timestamp` cũng là cột ĐƯỢC ĐÁNH CHỈ MỤC
+   *   (`idx_robot_telemetry_robot_time`), nên đây còn là lựa chọn đúng về đọc.
+   */
+  capNhatLuc: number | null;
+}
+
+export async function traAnToanRobot(
+  factoryId: number,
+  scope?: PhamViNguoiXem,
+): Promise<AnToanRobot[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  // Cổng phạm vi nằm TRONG `traCayPhanCapNhaMay` (nhà máy ngoài phạm vi ⇒ cây
+  // rỗng ⇒ không robot nào). Không đặt cổng thứ hai: hai cổng nối tiếp che mất
+  // chỗ cổng thật sự được áp — cùng lý lẽ đã ghi ở `traTrangThaiHangLoat`.
+  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  const chuyenIds = cay.chuyen.map((c) => c.id);
+  const tramIds = cay.tram.map((t) => t.id);
+  if (chuyenIds.length === 0 && tramIds.length === 0) return [];
+
+  const dieuKien = [];
+  if (chuyenIds.length > 0) dieuKien.push(inArray(robots.lineId, chuyenIds));
+  if (tramIds.length > 0) dieuKien.push(inArray(robots.stationId, tramIds));
+
+  const hangRobot = await d
+    .select({
+      id: robots.id,
+      ma: robots.code,
+      ten: robots.name,
+      status: robots.status,
+    })
+    .from(robots)
+    .where(
+      and(
+        eq(robots.isEnabled, true),
+        dieuKien.length === 1 ? dieuKien[0] : sql`(${dieuKien[0]} OR ${dieuKien[1]})`,
+      ),
+    );
+  if (hangRobot.length === 0) return [];
+
+  const ids = hangRobot.map((r) => r.id);
+  /*
+   * ★★★ ĐỢT 50 MỤC B — MỘT CÂU `LIMIT 1` CHO MỖI ROBOT, KHÔNG `DISTINCT ON` CẢ BẢNG.
+   * ══════════════════════════════════════════════════════════════════════════
+   * `DISTINCT ON ("robotId") … ORDER BY "robotId","timestamp" DESC` buộc Postgres
+   * sắp TOÀN BỘ hàng của các robot ấy trước khi bỏ đi tất cả trừ hàng đầu mỗi nhóm.
+   * 7 chunk ĐÃ NÉN đi đường SkipScan (1 hàng/0,03 ms — rẻ), nhưng 3 chunk CHƯA NÉN
+   * thì Seq Scan + `Sort Method: external merge Disk` 3.424 + 7.664 + 3.344 kB trên
+   * 566.167 hàng. Đo trên DB dev 2026-09-12 (`.qa-dot50/B-do.json`):
+   *     CŨ   (DISTINCT ON)      190,4 – 206,7 ms   · EXPLAIN Execution 264,0 ms
+   *     MỚI  (LIMIT 1/robot)     0,9 – 16,2 ms     · EXPLAIN 9/10 chunk "never executed"
+   *     (đối chứng UNION ALL     1,6 – 2,3 ms — cùng md5, không chọn vì dựng chuỗi SQL)
+   * ⇒ ĐẦU RA GIỐNG TỪNG BYTE: md5 `f61c1d63…` cho CẢ BA hình dạng chạy trong CÙNG
+   *   một snapshot `REPEATABLE READ` (bảng đang được sim ghi thêm — so ngoài
+   *   transaction sẽ là so hai tập dữ liệu khác nhau, không phải so hai câu).
+   *
+   * ★ `AT TIME ZONE 'UTC'` GIỮ NGUYÊN ở từng câu (G104 — `db.execute` thô đọc
+   *   `timestamp` naive lệch −7 h nếu bỏ). Lưới `naiveTimestampQuaExecute.db.test.ts`
+   *   ca (5) đo đúng `capNhatLuc` của hàm này bằng hàng `now()` chèn thật.
+   *
+   * ★ Hợp đồng KHÔNG đổi: robot không có telemetry vẫn vắng khỏi `teleTheoId`
+   *   ⇒ `estop: null` ("CHƯA ĐỌC ĐƯỢC"), không phải `false`.
+   */
+  const BUOC_TELE = 8;
+  const teleTheoId = new Map<number, { estop: boolean | null; ts: Date | null }>();
+  for (let i = 0; i < ids.length; i += BUOC_TELE) {
+    const lo = ids.slice(i, i + BUOC_TELE);
+    const ket = await Promise.all(
+      lo.map((id) =>
+        d.execute(sql`
+          SELECT "robotId" AS robot_id, estop, "timestamp" AT TIME ZONE 'UTC' AS ts
+          FROM robot_telemetry
+          WHERE "robotId" = ${id}
+          ORDER BY "timestamp" DESC
+          LIMIT 1
+        `),
+      ),
+    );
+    for (const kq of ket) {
+      const hang = executeRows(kq) as Array<{ robot_id: number; estop: boolean | null; ts: Date | null }>;
+      for (const r of hang) teleTheoId.set(Number(r.robot_id), { estop: r.estop, ts: r.ts });
+    }
+  }
+
+  return hangRobot.map((r) => {
+    const t = teleTheoId.get(r.id);
+    return {
+      id: r.id,
+      ma: r.ma,
+      ten: r.ten,
+      status: r.status ?? null,
+      // `?? null` chứ KHÔNG `?? false`: chưa có telemetry ⇒ CHƯA ĐỌC ĐƯỢC.
+      estop: t?.estop ?? null,
+      capNhatLuc: t?.ts ? new Date(t.ts).getTime() : null,
+    };
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ĐỢT 8 LÔ C — VÙNG AN TOÀN (§11.1 #5 hiển thị, §11.7 #42 CRUD)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ★★★ ĐO ĐƯỢC TRƯỚC KHI VIẾT (Đợt 7 §11c.4, đo lại 2026-09-07 bằng phiên này):
+//     `twin_vat_the` = 4 hàng, TOÀN `loai='tuong'`, **0 hàng `'vung'`**.
+//     ⇒ #5 và #42 chưa làm ở CẢ TẦNG DỮ LIỆU. Mọi phép đo trên dữ liệu có sẵn
+//     trước đợt này là phép đo trên TẬP RỖNG (G5).
+//
+// ★★★ §11c.3 ghi `VeVungPolygon.tsx` là đích của #42 — tệp đó KHÔNG TỒN TẠI, và
+//     `FactoryFloorEditor.tsx:444` khi ấy là nơi DUY NHẤT CRUD vùng an toàn.
+//     ★★★ ĐỢT 61 (QĐ-31): `FactoryFloorEditor.tsx` ĐÃ BỊ XOÁ (đo DB hai mô hình
+//     rời nhau: `factory_zones` 0 · `safety_zones` 0 · `machines.layout*` 0/43).
+//     Đường này nay là đường DUY NHẤT.
+//
+// ⚠ `factory_zones` (bảng cũ) dùng toạ độ 0–1; ở đây là **mm**, nhất quán với
+//   phần còn lại của Twin. KHÔNG di trú dữ liệu — bảng cũ đo được 0 dòng.
+
+/** Một hàng vùng an toàn trả về cho client. `diemDa` đã chuẩn hoá thành cặp số. */
+export interface VungAnToanRa {
+  id: number;
+  tangId: number;
+  ten: string;
+  diemDa: [number, number][] | null;
+  viTriXMm: number;
+  viTriYMm: number;
+  viTriZMm: number;
+  caoMm: number | null;
+  mau: string | null;
+  daKhoa: boolean;
+  hienThi: boolean;
+  nguon: "tay" | "sinh";
+}
+
+/**
+ * `diemDa` (jsonb) → cặp số đã kiểm.
+ *
+ * ★ jsonb KHÔNG có lược đồ. Một hàng ghi bằng tay hoặc bởi một bản cũ có thể
+ *   chứa bất cứ gì; trả thẳng nó ra client là để client tự nổ. Lọc ở ĐÂY, một
+ *   lần, thay vì mỗi nơi đọc tự phòng thân.
+ */
+function docDiemDaJsonb(gt: unknown): [number, number][] | null {
+  if (!Array.isArray(gt)) return null;
+  const ra: [number, number][] = [];
+  for (const c of gt) {
+    if (!Array.isArray(c) || c.length < 2) continue;
+    const x = Number(c[0]);
+    const y = Number(c[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    ra.push([x, y]);
+  }
+  return ra.length > 0 ? ra : null;
+}
+
+/** Đọc mọi vùng an toàn của các tầng đã cho, đã lọc phạm vi tenant. */
+export async function traVungAnToan(
+  tangIds: readonly number[],
+  scope: PhamViNguoiXem,
+): Promise<VungAnToanRa[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  if (tangIds.length === 0) return [];
+
+  const hopLe = await locTangTrongPhamVi(d, tangIds, scope);
+  if (hopLe.length === 0) return [];
+
+  const hang = await d
+    .select()
+    .from(twinVatThe)
+    .where(and(inArray(twinVatThe.tangId, hopLe), eq(twinVatThe.loai, "vung")))
+    .orderBy(asc(twinVatThe.thuTu), asc(twinVatThe.id));
+
+  return hang.map((h) => ({
+    id: h.id,
+    tangId: h.tangId,
+    ten: h.ten,
+    diemDa: docDiemDaJsonb(h.diemDa),
+    // ★ numeric → string qua driver. `Number(...)` TƯỜNG MINH, xem docblock đầu tệp.
+    viTriXMm: Number(h.viTriXMm),
+    viTriYMm: Number(h.viTriYMm),
+    viTriZMm: Number(h.viTriZMm),
+    caoMm: h.caoMm == null ? null : Number(h.caoMm),
+    mau: h.mau,
+    daKhoa: h.daKhoa,
+    hienThi: h.hienThi,
+    nguon: h.nguon,
+  }));
+}
+
+/**
+ * Lọc danh sách tầng xuống những tầng NGƯỜI GỌI được thấy.
+ *
+ * ★ Tra ngược `twin_tang → twin_toa_nha → factoryId` rồi mới kiểm phạm vi —
+ *   KHÔNG tin `tangId` trong input. Đây là cùng khuôn mà `ghiDeTuongBaoSinh`
+ *   dùng; bài học `pham-vi-tenant-dot-lon`: lọc theo cột client tự khai là
+ *   không có hàng rào.
+ */
+async function locTangTrongPhamVi(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  tangIds: readonly number[],
+  scope: PhamViNguoiXem,
+): Promise<number[]> {
+  const tang = await d
+    .select({ id: twinTang.id, toaNhaId: twinTang.toaNhaId })
+    .from(twinTang)
+    .where(inArray(twinTang.id, [...tangIds]));
+  const ra: number[] = [];
+  for (const t of tang) {
+    const factoryId = await nhaMayCuaToaNha(d, t.toaNhaId);
+    if (factoryId !== null && (await trongPhamVi("factory", factoryId, scope))) ra.push(t.id);
+  }
+  return ra;
+}
+
+/** Payload ghi một vùng an toàn. */
+export interface VungAnToanGhi {
+  id?: number;
+  tangId: number;
+  ten: string;
+  diemDa: [number, number][];
+  viTriXMm: number;
+  viTriYMm: number;
+  viTriZMm: number;
+  caoMm: number;
+  mau: string;
+}
+
+/**
+ * Tạo hoặc sửa MỘT vùng an toàn. Trả `null` khi ngoài phạm vi (không phân biệt
+ * "không tồn tại" với "của tenant khác" — oracle rò rỉ tồn-tại).
+ *
+ * ★★★ NT-4 — ghi `nguon: 'tay'`. Vùng an toàn LUÔN do người vẽ; không có đường
+ *   sinh tự động nào tạo ra chúng. Ghi `'sinh'` ở đây sẽ khiến `ghiDeTuongBaoSinh`
+ *   và mọi đường "xoá rồi sinh lại" tương lai **cuốn mất công vẽ tay** — đúng
+ *   lớp lỗi G5b đã bắt được ở `seed-twin-mau.ts`.
+ */
+export async function luuVungAnToan(
+  input: VungAnToanGhi,
+  scope: PhamViNguoiXem,
+): Promise<{ id: number } | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const hopLe = await locTangTrongPhamVi(d, [input.tangId], scope);
+  if (hopLe.length === 0) return null;
+
+  const gt = {
+    tangId: input.tangId,
+    loai: "vung" as const,
+    ten: input.ten,
+    diemDa: input.diemDa,
+    viTriXMm: soRaChuoi(input.viTriXMm),
+    viTriYMm: soRaChuoi(input.viTriYMm),
+    viTriZMm: soRaChuoi(input.viTriZMm),
+    caoMm: soRaChuoi(input.caoMm),
+    mau: input.mau,
+    nguon: "tay" as const,
+    updatedAt: new Date(),
+  };
+
+  if (input.id != null) {
+    // ★ Ràng `loai='vung'` vào mệnh đề WHERE: không có nó thì một `id` trỏ vào
+    //   hàng TƯỜNG sẽ bị ghi đè thành vùng, và bốn bức tường bao của tầng biến
+    //   mất mà không có lỗi nào. `id` đến từ client nên phải coi là tự khai.
+    const cu = await d
+      .select({ id: twinVatThe.id, tangId: twinVatThe.tangId })
+      .from(twinVatThe)
+      .where(and(eq(twinVatThe.id, input.id), eq(twinVatThe.loai, "vung")))
+      .limit(1);
+    if (cu.length === 0) return null;
+    // Hàng có thật, nhưng có thể thuộc TẦNG KHÁC ngoài phạm vi.
+    const okCu = await locTangTrongPhamVi(d, [cu[0].tangId], scope);
+    if (okCu.length === 0) return null;
+
+    await d.update(twinVatThe).set(gt).where(eq(twinVatThe.id, input.id));
+    return { id: input.id };
+  }
+
+  const [moi] = await d.insert(twinVatThe).values(gt).returning({ id: twinVatThe.id });
+  return { id: moi.id };
+}
+
+/**
+ * Xoá MỘT vùng an toàn.
+ *
+ * ★★★ Ràng `loai='vung'` — đây là hàng rào chống xoá nhầm TƯỜNG. Một `DELETE`
+ *   chỉ theo `id` sẽ xoá được bất kỳ vật thể cảnh nào, kể cả bốn bức tường bao
+ *   mà `sinhTuongBao` dựng, và người dùng chỉ phát hiện khi vỏ nhà biến mất.
+ *
+ * Trả `false` khi không xoá được (không tồn tại, sai loại, hoặc ngoài phạm vi)
+ * — một câu trả lời, không phải một ngoại lệ.
+ */
+export async function xoaVungAnToan(id: number, scope: PhamViNguoiXem): Promise<boolean> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const cu = await d
+    .select({ id: twinVatThe.id, tangId: twinVatThe.tangId })
+    .from(twinVatThe)
+    .where(and(eq(twinVatThe.id, id), eq(twinVatThe.loai, "vung")))
+    .limit(1);
+  if (cu.length === 0) return false;
+
+  const ok = await locTangTrongPhamVi(d, [cu[0].tangId], scope);
+  if (ok.length === 0) return false;
+
+  await d.delete(twinVatThe).where(and(eq(twinVatThe.id, id), eq(twinVatThe.loai, "vung")));
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Gán model 3D — hàng rào tenant (§7.4, §10B.2) — #18
+// ---------------------------------------------------------------------------
+
+/** Phạm vi gán của một model: đúng một máy, hay cả một chủng loại. */
+export type PhamViGanModel =
+  | { phamVi: "may"; machineId: number }
+  | { phamVi: "chung_loai"; loaiMay: string };
+
+/**
+ * Người gọi có được phép gán model ở phạm vi này không.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO MỘT ĐĂNG BẠ KHÔNG-TENANT VẪN CẦN HÀNG RÀO TENANT
+ * ════════════════════════════════════════════════════════════════════════════
+ * `equipment_3d_models` không treo vào chuỗi phân cấp, nên thoạt nhìn nó giống
+ * `twin_kich_thuoc_loai` — một bảng tra chung, miễn hàng rào. Nhưng thứ được
+ * ghi vào đó là **một liên kết tới `machines.id`**, và hệ quả của liên kết đó
+ * hiện ra trong cảnh 3D của tenant sở hữu máy ấy.
+ *
+ * ⇒ Không kiểm thì bất kỳ ai qua được cổng `settings_factory`/`machine_control`
+ *   của **nhà máy mình** cũng đổi được hình khối một máy của **nhà máy khác**.
+ *   Không rò dữ liệu (không đọc gì của họ), nhưng ghi được vào cảnh của họ —
+ *   và một thay đổi thị giác câm là thứ khó truy nhất.
+ *
+ * ★ Dùng ĐÚNG `trongPhamVi("machine", …)` — bộ phân giải mà mọi đường khác đi
+ *   qua. Tự lọc theo `machines.factoryId` ở đây là dựng bộ luật phân quyền thứ
+ *   hai, thứ `hierarchy.ts` cấm (và là gốc của lớp lỗi BG-127).
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ CẤP CHỦNG LOẠI — ĐÒI SỞ HỮU ÍT NHẤT MỘT MÁY CỦA LOẠI ĐÓ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Một hàng cấp chủng loại KHÔNG trỏ tới máy nào, nên không có id để kiểm. Câu
+ * hỏi đúng là "người này có máy loại đó không": có thì việc gán ảnh hưởng máy
+ * của chính họ (và của người khác cùng loại — xem cảnh báo dưới); không có thì
+ * họ đang đổi hình cho một chủng loại mà họ không vận hành máy nào.
+ *
+ * ⚠ NÓI THẲNG GIỚI HẠN: đăng bạ **không có cột phạm vi cho hàng cấp loại**, nên
+ *   một hàng `AOI` là TOÀN CỤC — nó đổi hình máy AOI của MỌI tenant. Hàng rào
+ *   này thu hẹp *ai được ghi*, KHÔNG thu hẹp *ai bị ảnh hưởng*. Sửa triệt để
+ *   cần thêm cột phạm vi vào `equipment_3d_models`, tức MIGRATION — ngoài phạm
+ *   vi lô này (brief cấm). Ghi lại ở đây thay vì để lời khai "đã có hàng rào"
+ *   che mất chuyện nửa còn lại chưa được rào.
+ */
+export async function duocGanModel(
+  pv: PhamViGanModel,
+  scope: PhamViNguoiXem,
+): Promise<boolean> {
+  if (pv.phamVi === "may") {
+    return trongPhamVi("machine", pv.machineId, scope);
+  }
+
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  // Mọi máy thuộc chủng loại này (không lọc phạm vi ở SQL — để `trongPhamVi`
+  // quyết, một bộ luật duy nhất).
+  const cungLoai = await d
+    .select({ id: machines.id })
+    .from(machines)
+    .where(eq(machines.machineType, pv.loaiMay as typeof machines.machineType.enumValues[number]));
+  if (cungLoai.length === 0) return false;
+
+  for (const m of cungLoai) {
+    if (await trongPhamVi("machine", m.id, scope)) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Bản ghi bố cục — `twin_ban_ghi` (§5.3, §11 #55)
+// ---------------------------------------------------------------------------
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ HỢP ĐỒNG PHIÊN BẢN — ĐỌC LƯỢC ĐỒ THẬT RỒI MỚI VIẾT
+ * ════════════════════════════════════════════════════════════════════════════
+ * §11c.2 xếp #55 vào lớp lỗi **L-3**: bảng có, migration có (`drizzle/0351…:158`),
+ * **0 dòng và 0 mã đọc/ghi**. *"Bảng tồn tại không phải là tính năng tồn tại."*
+ *
+ * Lược đồ đo lại trên DB dev 2026-09-07 (`\d twin_ban_ghi`), KHÔNG đọc từ spec:
+ *
+ *   id serial PK · "tangId" int NOT NULL → twin_tang ON DELETE CASCADE
+ *   nhan varchar(255) NOT NULL · "anhChup" jsonb NOT NULL
+ *   "daXuatBan" bool NOT NULL DEFAULT false · "nguoiTao" int → users(id)
+ *   "createdAt" timestamptz NOT NULL DEFAULT now()
+ *   idx: ("tangId") · ("tangId","daXuatBan")
+ *
+ * ⇒ **HỢP ĐỒNG NÀY DÙNG ĐƯỢC, KHÔNG CẦN MIGRATION.** `anhChup` là jsonb tự
+ *   chứa, đúng thứ §5.3 đòi: một bản đã xuất bản không đổi hình khi ai đó sửa
+ *   bảng sống. Lô này vì thế KHÔNG đổi lược đồ (brief cấm, và cũng không cần).
+ *
+ * ★★★ HAI THIẾU SÓT CỦA LƯỢC ĐỒ — BÁO LẠI, KHÔNG TỰ VÁ BẰNG MIGRATION:
+ *
+ *   (a) KHÔNG có `UNIQUE ("tangId", nhan)`. Hai bản ghi trùng tên trên cùng một
+ *       tầng là hợp lệ với DB, và người dùng không phân biệt được chúng trong
+ *       danh sách. Ta cưỡng chế ở tầng ghi (`luuBanGhi` tìm-trước-khi-tạo), và
+ *       nói thẳng rằng đó là hàng rào MỀM: hai lượt ghi đồng thời vẫn lọt được.
+ *       Vá cứng cần một unique index ⇒ migration ⇒ đợt sau.
+ *
+ *   (b) KHÔNG có ràng buộc "mỗi tầng nhiều nhất MỘT bản đã xuất bản". §5.3 nói
+ *       *"Màn Vận hành chỉ đọc bản đã xuất bản"* — số ít. Với DB hiện tại, N bản
+ *       cùng `daXuatBan = true` là hợp lệ, và màn Vận hành sẽ phải chọn bừa một
+ *       cái. `xuatBanBanGhi` vì thế HẠ CỜ mọi bản khác trong CÙNG MỘT lượt ghi;
+ *       nhưng một partial unique index mới là thứ làm điều đó không lách được.
+ */
+
+/** Một bản ghi bố cục, đã lọc phạm vi. `anhChup` KHÔNG trả trong danh sách. */
+export interface BanGhiTomTat {
+  id: number;
+  tangId: number;
+  nhan: string;
+  daXuatBan: boolean;
+  nguoiTao: number | null;
+  createdAt: Date;
+  /** Số thực thể trong ảnh chụp — để danh sách nói được "bản này có gì". */
+  soDatCho: number;
+}
+
+/**
+ * Hình dạng của `anhChup`.
+ *
+ * ★★★ ẢNH CHỤP PHẢI TỰ CHỨA — KHÔNG JOIN LẠI BẢNG SỐNG.
+ *   Đây là toàn bộ lý do bảng này tồn tại (§5.3). Một "ảnh chụp" chỉ lưu danh
+ *   sách id rồi đọc lại `twin_dat_cho` lúc khôi phục KHÔNG phải ảnh chụp: nó
+ *   đổi hình mỗi khi ai đó kéo một máy, và "khôi phục bản v3" sẽ cho ra bố cục
+ *   hôm nay chứ không phải bố cục hôm ghi v3.
+ */
+export interface AnhChupBoCuc {
+  /** Phiên bản HÌNH DẠNG của chính ảnh chụp — không phải phiên bản bố cục. */
+  phienBan: 1;
+  ghiLuc: string;
+  datCho: Array<{
+    loaiThucThe: string;
+    thucTheId: number;
+    viTriXMm: number;
+    viTriYMm: number;
+    viTriZMm: number;
+    quatX: number;
+    quatY: number;
+    quatZ: number;
+    quatW: number;
+    rongMm?: number | null;
+    caoMm?: number | null;
+    sauMm?: number | null;
+    daKhoa?: boolean;
+    hienThi?: boolean;
+  }>;
+}
+
+/**
+ * ★ Vì sao có `phienBan` trong chính jsonb dù cột đã tên là "bản ghi":
+ *   `daXuatBan`/`nhan` là phiên bản của BỐ CỤC (thứ người dùng đặt tên).
+ *   `phienBan` là phiên bản của LƯỢC ĐỒ JSON — thứ mã đọc phải biết để không
+ *   đọc nhầm một ảnh chụp cũ bằng luật mới. Trộn hai khái niệm đó vào một số là
+ *   cách chắc chắn để một ngày nào đó "v3" nghĩa là hai thứ khác nhau.
+ */
+export function laAnhChupHopLe(gt: unknown): gt is AnhChupBoCuc {
+  if (typeof gt !== "object" || gt === null) return false;
+  const o = gt as Record<string, unknown>;
+  if (o.phienBan !== 1) return false;
+  return Array.isArray(o.datCho);
+}
+
+/** Danh sách bản ghi của các tầng đã cho — KHÔNG kèm `anhChup` (có thể rất to). */
+export async function traBanGhi(
+  tangIds: readonly number[],
+  scope: PhamViNguoiXem,
+): Promise<BanGhiTomTat[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+  if (tangIds.length === 0) return [];
+
+  const hopLe = await locTangTrongPhamVi(d, tangIds, scope);
+  if (hopLe.length === 0) return [];
+
+  const hang = await d
+    .select()
+    .from(twinBanGhi)
+    .where(inArray(twinBanGhi.tangId, hopLe))
+    .orderBy(desc(twinBanGhi.createdAt), desc(twinBanGhi.id));
+
+  return hang.map((h) => ({
+    id: h.id,
+    tangId: h.tangId,
+    nhan: h.nhan,
+    daXuatBan: h.daXuatBan,
+    nguoiTao: h.nguoiTao,
+    createdAt: h.createdAt,
+    // ★ Đếm ở đây, KHÔNG gửi cả `anhChup` xuống rồi để client đếm: một bản ghi
+    //   42 máy là ~15 KB, và danh sách 20 bản là 300 KB cho một con số.
+    soDatCho: laAnhChupHopLe(h.anhChup) ? h.anhChup.datCho.length : 0,
+  }));
+}
+
+/** Một bản ghi ĐẦY ĐỦ (kèm `anhChup`) — chỉ đọc khi thật sự khôi phục. */
+export async function traMotBanGhi(
+  id: number,
+  scope: PhamViNguoiXem,
+): Promise<{ id: number; tangId: number; nhan: string; daXuatBan: boolean; anhChup: AnhChupBoCuc } | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const [h] = await d.select().from(twinBanGhi).where(eq(twinBanGhi.id, id)).limit(1);
+  if (!h) return null;
+  const hopLe = await locTangTrongPhamVi(d, [h.tangId], scope);
+  if (hopLe.length === 0) return null;
+  // jsonb KHÔNG có lược đồ — lọc ở ĐÂY, một lần (cùng lý lẽ `docDiemDaJsonb`).
+  if (!laAnhChupHopLe(h.anhChup)) return null;
+
+  return {
+    id: h.id,
+    tangId: h.tangId,
+    nhan: h.nhan,
+    daXuatBan: h.daXuatBan,
+    anhChup: h.anhChup,
+  };
+}
+
+export interface LuuBanGhiInput {
+  tangId: number;
+  nhan: string;
+  anhChup: AnhChupBoCuc;
+  nguoiTao?: number | null;
+}
+
+/**
+ * Tạo một bản ghi mới, hoặc GHI ĐÈ bản cùng tên trên cùng tầng.
+ *
+ * ★★★ TÌM-TRƯỚC-KHI-TẠO, vì lược đồ KHÔNG có `UNIQUE ("tangId", nhan)`.
+ *   Không có bước này thì bấm "Lưu bản ghi" hai lần với cùng cái tên tạo ra hai
+ *   hàng trùng tên, và danh sách hiện hai dòng y hệt nhau — người dùng không có
+ *   cách nào biết cái nào là cái họ vừa lưu.
+ *
+ * ⚠ HÀNG RÀO MỀM: hai lượt ghi ĐỒNG THỜI vẫn lọt được cả hai (không có unique
+ *   index để DB từ chối). Đây là giới hạn của lược đồ hiện tại, được báo lại
+ *   thay vì tự thêm migration (brief cấm). Xác suất thấp — một người dùng, một
+ *   nút — nhưng nó có thật và không nên nằm im.
+ */
+export async function luuBanGhi(input: LuuBanGhiInput, scope: PhamViNguoiXem) {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const hopLe = await locTangTrongPhamVi(d, [input.tangId], scope);
+  if (hopLe.length === 0) return null;
+
+  const [cu] = await d
+    .select({ id: twinBanGhi.id })
+    .from(twinBanGhi)
+    .where(and(eq(twinBanGhi.tangId, input.tangId), eq(twinBanGhi.nhan, input.nhan)))
+    .limit(1);
+
+  if (cu) {
+    const [ket] = await d
+      .update(twinBanGhi)
+      .set({ anhChup: input.anhChup as unknown as Record<string, unknown> })
+      .where(eq(twinBanGhi.id, cu.id))
+      .returning();
+    return ket ?? null;
+  }
+
+  const [ket] = await d
+    .insert(twinBanGhi)
+    .values({
+      tangId: input.tangId,
+      nhan: input.nhan,
+      anhChup: input.anhChup as unknown as Record<string, unknown>,
+      nguoiTao: input.nguoiTao ?? null,
+      // ★ `daXuatBan` CỐ Ý để mặc định false. Lưu một bản nháp không được đẩy
+      //   nó ra màn Vận hành đang chạy — đó là cả lý do cột này tồn tại.
+    })
+    .returning();
+  return ket ?? null;
+}
+
+/**
+ * Xuất bản MỘT bản ghi, và HẠ CỜ mọi bản khác của cùng tầng.
+ *
+ * ★★★ HAI LƯỢT GHI, MỘT TRANSACTION. Hạ cờ trước rồi nâng cờ sau mà không bọc
+ *   transaction để lại một cửa sổ trong đó tầng KHÔNG có bản nào xuất bản —
+ *   và màn Vận hành đọc đúng lúc đó sẽ thấy nhà máy rỗng. Cửa sổ ấy dài vài
+ *   mili giây, tức nó sẽ xảy ra, và nó sẽ không tái lập được khi đi tìm.
+ *
+ * ⚠ Vì sao ở ĐÂY bọc transaction được trong khi `dungNhaXuong` (N-1) thì không:
+ *   phép kiểm phạm vi đã chạy XONG trước khi mở transaction, và trong transaction
+ *   chỉ còn hai câu UPDATE trên MỘT bảng. Không có `trongPhamVi` nào phải chạy
+ *   bên trong `tx`, nên không có bộ luật phân quyền thứ hai nào bị sinh ra.
+ */
+export async function xuatBanBanGhi(id: number, scope: PhamViNguoiXem) {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const [h] = await d
+    .select({ id: twinBanGhi.id, tangId: twinBanGhi.tangId })
+    .from(twinBanGhi)
+    .where(eq(twinBanGhi.id, id))
+    .limit(1);
+  if (!h) return null;
+  const hopLe = await locTangTrongPhamVi(d, [h.tangId], scope);
+  if (hopLe.length === 0) return null;
+
+  return d.transaction(async (tx) => {
+    await tx
+      .update(twinBanGhi)
+      .set({ daXuatBan: false })
+      .where(and(eq(twinBanGhi.tangId, h.tangId), eq(twinBanGhi.daXuatBan, true)));
+    const [ket] = await tx
+      .update(twinBanGhi)
+      .set({ daXuatBan: true })
+      .where(eq(twinBanGhi.id, id))
+      .returning();
+    return ket ?? null;
+  });
+}
+
+/**
+ * Xoá một bản ghi.
+ *
+ * ★ KHÔNG chặn xoá bản đang xuất bản, nhưng NÓI RA qua giá trị trả về: người
+ *   gọi biết mình vừa gỡ thứ màn Vận hành đang đọc và cảnh báo được. Chặn hẳn
+ *   sẽ khoá người dùng lại với một bản họ muốn bỏ, và họ không có đường ra.
+ */
+export async function xoaBanGhi(
+  id: number,
+  scope: PhamViNguoiXem,
+): Promise<{ daXoa: boolean; daTungXuatBan: boolean } | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const [h] = await d
+    .select({ id: twinBanGhi.id, tangId: twinBanGhi.tangId, daXuatBan: twinBanGhi.daXuatBan })
+    .from(twinBanGhi)
+    .where(eq(twinBanGhi.id, id))
+    .limit(1);
+  if (!h) return null;
+  const hopLe = await locTangTrongPhamVi(d, [h.tangId], scope);
+  if (hopLe.length === 0) return null;
+
+  await d.delete(twinBanGhi).where(eq(twinBanGhi.id, id));
+  return { daXoa: true, daTungXuatBan: h.daXuatBan };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ĐỢT 21 LÔ Z — A-4: SỨC KHOẺ MÁY + NGUY CƠ HỎNG (§14.5.1, mục G-1 / F-15)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ★★★ ĐO ĐƯỢC TRƯỚC KHI VIẾT (2026-09-08, DB dev `aoi_management`):
+//     machine_health_history        180.800 hàng · mới nhất 2026-09-08 09:40
+//     43/43 máy có ≥ 1 hàng · 42/43 máy có hàng trong 24h · 1 máy cũ 18 ngày
+//     healthScore          NULL 0/180.800 · miền [55…100]
+//     predictedFailureRisk NULL 0/180.800 · 48.550 hàng khác 0
+//     maintenanceUrgency   NULL 0/180.800 · LOW 158.439 · MEDIUM 10.476
+//                                         · CRITICAL 6.199 · HIGH 5.728
+//
+//     ⇒ G50 ĐƯỢC KIỂM, KHÔNG ĐƯỢC GIẢ ĐỊNH. "Có dữ liệu" ≠ "dùng được" là bài học
+//     `product_inspections` (2.880 hàng mà 2.880/2.880 `factoryCode` NULL ⇒ vai
+//     không-admin thấy 0). Ở đây phép đếm NULL trên bốn cột được chạy THẬT và ra
+//     0 trên cả bốn — đó là cơ sở để A-4 được xây, và nó là số chứ không phải
+//     niềm tin rằng bảng có hàng thì bảng dùng được.
+//
+// ★★★ VÌ SAO KHÔNG DÙNG `digitalTwin.twinState` — nó có `phamViCua` (Q1 đã vá,
+//     `digitalTwinRouter.ts:85`), nên đây KHÔNG phải chuyện G49. Hai lý do khác:
+//
+//     1. **Nó KHÔNG trả mốc thời gian.** `twinState` trả `healthScore` trần, đã
+//        vứt `timestamp` sau khi dùng để sắp xếp. Một điểm sức khoẻ không kèm mốc
+//        thì `conHanSucKhoe` không kiểm được hạn, và G30 nói thẳng: giá trị từ
+//        bảng phân tích phải kèm HẠN HIỆU LỰC. Với một bảng lịch sử mà máy cũ
+//        nhất cách 18 ngày, đây không phải lo xa — nó là ca đo được.
+//     2. **Nó kéo TOÀN BỘ hàng của mọi máy về app-layer rồi mới lọc** (`.orderBy`
+//        trên cả tập, dedupe bằng `Map` trong vòng lặp JS). Với 180.800 hàng và
+//        43 máy, đó là ~4.200 hàng/máy đi qua dây cho MỘT số. `DISTINCT ON` đẩy
+//        phép chọn xuống Postgres và trả đúng 43 hàng — cùng kỹ thuật
+//        `traAnToanRobot` đã dùng cho `robot_telemetry`.
+//
+// ⇒ Đường mới này KHÔNG đụng `twinState`; `DigitalTwinDashboard.tsx:49` vẫn chạy
+//   nguyên như cũ. §14.5.5 D-3 xếp bảng máy của màn đó vào nhóm "không lên 3D",
+//   nhưng rút nó là việc của lô khác — lô này không xoá màn.
+
+/** Một lời khai sức khoẻ của MỘT máy — khớp `KhaiSucKhoe` phía client. */
+export interface SucKhoeMayRa {
+  machineId: number;
+  ma: string;
+  /** `healthScore` 0–100. `null` = CHƯA ĐO, không phải 0 (NT-3.5). */
+  diem: number | null;
+  /** `predictedFailureRisk` 0–100. `null` = chưa đo. */
+  nguyCo: number | null;
+  /** `maintenanceUrgency` — nguyên văn enum CSDL (G24). */
+  mucKhan: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+  /** `recommendedMaintenanceDate` ms epoch. Đo được: NULL 108.624/180.842 hàng. */
+  hanBaoTri: number | null;
+  /** ms epoch của chính bản ghi — thứ `conHanSucKhoe` cần (G30). */
+  mocMs: number | null;
+}
+
+const MUC_KHAN_HOP_LE = new Set(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+
+/**
+ * Sức khoẻ MỚI NHẤT của mỗi máy trong một nhà máy, đã lọc phạm vi tenant.
+ *
+ * ★★★ G49 — CỔNG PHẠM VI NẰM TRONG `traCayPhanCapNhaMay`, đúng chỗ và ĐÚNG MỘT
+ *   chỗ. Nhà máy ngoài phạm vi ⇒ cây rỗng ⇒ `ids` rỗng ⇒ trả `[]`. KHÔNG đặt
+ *   cổng thứ hai ở đây: hai cổng nối tiếp che mất chỗ cổng thật sự được áp —
+ *   nguyên văn lý lẽ đã ghi ở `traAnToanRobot` và `traTrangThaiHangLoat`.
+ *
+ * ★ `DISTINCT ON ("machineId") … ORDER BY "machineId", "createdAt" DESC` — MỘT
+ *   truy vấn, trả đúng ≤ N hàng cho N máy. Số truy vấn CỐ ĐỊNH (2: cây + sức
+ *   khoẻ), không phụ thuộc số máy.
+ *
+ * ⚠ Sắp theo `"createdAt"` chứ KHÔNG `"timestamp"`: hai cột này khác nhau
+ *   (`timestamp` = mốc của KỲ ĐO, `createdAt` = lúc hàng được GHI), và `createdAt`
+ *   là cái trả lời đúng câu "lời khai này bao nhiêu tuổi". `twinState` sắp theo
+ *   `timestamp` — khác lựa chọn, và đây là chỗ nói ra sự khác đó thay vì để hai
+ *   đường âm thầm bất đồng.
+ */
+export async function traSucKhoeMay(
+  factoryId: number,
+  scope?: PhamViNguoiXem,
+): Promise<SucKhoeMayRa[]> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  if (cay.may.length === 0) return [];
+
+  const ids = cay.may.map((m) => m.id);
+  const maTheoId = new Map(cay.may.map((m) => [m.id, m.ma]));
+
+  const hang = executeRows(
+    await d.execute(sql`
+      SELECT DISTINCT ON ("machineId")
+             "machineId"                   AS machine_id,
+             "healthScore"                 AS diem,
+             "predictedFailureRisk"        AS nguy_co,
+             "maintenanceUrgency"::text    AS muc_khan,
+             "recommendedMaintenanceDate"  AS han_bao_tri,
+             "createdAt"                   AS moc
+      FROM machine_health_history
+      WHERE "machineId" IN (${sql.join(
+        ids.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      ORDER BY "machineId", "createdAt" DESC
+    `),
+  ) as Array<{
+    machine_id: number;
+    diem: number | string | null;
+    nguy_co: number | string | null;
+    muc_khan: string | null;
+    han_bao_tri: Date | string | null;
+    moc: Date | string | null;
+  }>;
+
+  /*
+   * ★ `Number(...)` TƯỜNG MINH cho mọi cột số. `healthScore` là `integer` nên
+   *   driver trả number, NHƯNG `executeRows` đi qua `d.execute` (SQL thô) và
+   *   kiểu ở đó không được drizzle bảo chứng. Ép ở đây một lần, kèm chặn NaN —
+   *   rẻ hơn nhiều so với một `NaN` lặng lẽ chảy tới `hangSucKhoe()` và biến
+   *   mọi so sánh ngưỡng thành `false` (⇒ mọi máy ra hạng `khoe`, cổng xanh).
+   */
+  const so = (v: unknown): number | null => {
+    if (v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const moc = (v: Date | string | null): number | null => {
+    if (v == null) return null;
+    const t = v instanceof Date ? v.getTime() : Date.parse(v);
+    return Number.isFinite(t) ? t : null;
+  };
+
+  return hang.map((h) => {
+    const id = Number(h.machine_id);
+    return {
+      machineId: id,
+      ma: maTheoId.get(id) ?? String(id),
+      diem: so(h.diem),
+      nguyCo: so(h.nguy_co),
+      /*
+       * ★ Giá trị enum LẠ ⇒ `null`, không ép bừa. Enum CSDL đo được có đúng bốn
+       *   nhãn, nhưng một migration tương lai thêm nhãn thứ năm sẽ chảy qua đây;
+       *   trả nguyên văn chuỗi lạ ra client là để `hangSucKhoe` gặp một giá trị
+       *   nó không biết và im lặng xếp sai hạng.
+       */
+      mucKhan:
+        h.muc_khan != null && MUC_KHAN_HOP_LE.has(h.muc_khan)
+          ? (h.muc_khan as SucKhoeMayRa["mucKhan"])
+          : null,
+      hanBaoTri: moc(h.han_bao_tri),
+      mocMs: moc(h.moc),
+    };
+  });
 }

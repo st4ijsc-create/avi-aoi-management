@@ -1,0 +1,119 @@
+{
+  "__soCanvas": 1,
+  "canvasDom": 1,
+  "drawCalls": 6,
+  "nhanLine": {
+    "canvas": {
+      "x": 288,
+      "y": 125,
+      "w": 1288,
+      "h": 659
+    },
+    "lop": {
+      "x": 288,
+      "y": 125,
+      "w": 1288,
+      "h": 659
+    },
+    "so": 12,
+    "tamTrong": 12,
+    "ds": [
+      {
+        "text": "CONVEYOR · Unknown",
+        "x": 816,
+        "y": 519,
+        "w": 144,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "ROBOT · Unknown",
+        "x": 1263,
+        "y": 519,
+        "w": 119,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "FCT · Unknown",
+        "x": 751,
+        "y": 493,
+        "w": 101,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "PWR · Unknown",
+        "x": 922,
+        "y": 582,
+        "w": 105,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "ASSY · Unknown",
+        "x": 1005,
+        "y": 556,
+        "w": 109,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "ICT · Unknown",
+        "x": 667,
+        "y": 519,
+        "w": 97,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "SCREW · Unknown",
+        "x": 1085,
+        "y": 527,
+        "w": 122,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "PACK · Unknown",
+        "x": 1181,
+        "y": 493,
+        "w": 110,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "AVI · Unknown",
+        "x": 530,
+        "y": 525,
+        "w": 97,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "AOI · Unknown",
+        "x": 496,
+        "y": 499,
+        "w": 99,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "AGV · Unknown",
+        "x": 1358,
+        "y": 493,
+        "w": 103,
+        "h": 24,
+        "tamTrong": true
+      },
+      {
+        "text": "SPI · Unknown",
+        "x": 411,
+        "y": 551,
+        "w": 97,
+        "h": 24,
+        "tamTrong": true
+      }
+    ]
+  }
+}

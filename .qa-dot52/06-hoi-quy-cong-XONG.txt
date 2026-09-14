@@ -1,0 +1,8 @@
+[Đợt 52 · mục 5] HỒI QUY + MỌI CỔNG package.json — xem bảng đầy đủ ở BAO-CAO.md §7
+vitest twin3d 103 tệp/2 452 · phạm vi 180/180 · census 2/37 · kiemvo 30 · presence 11 · twincanh 7 ·
+fleet 21/187 (+fleetRollout 1/13) · e2e bấm cảnh 16/16 · playwright --list 151/30
+CỔNG: check 0 · i18n:check 0 · lint:tokens 0 (report-only) · i18n:audit 0 (gaps) · kb:stale-check 0 ·
+vision:validate 0 · lake:verify 0 · kiem-vo-app-https 0
+ĐỎ: check:tests exit 1 / 32 lỗi TS (5 trong twin3d/van-hanh) · kb:operational-cards:test exit 1 (194≠164,
+nợ có sẵn TẠI HEAD: 193≠163) · ext:check exit 2 (thiếu @types/vscode) · vitest toàn bộ 96 tệp/196 test đỏ (0 trong twin3d)
+CHƯA CHẠY có lý do: test:e2e toàn bộ (spec ghi DB dev ngoài trap) · build/db:*/sim:*/bench/ai-eval

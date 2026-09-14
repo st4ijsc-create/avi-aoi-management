@@ -301,3 +301,98 @@ describe("robotAlarms — per-robot safety → ISA-18.2", () => {
     expect(alarms[0].source).toBe("safety");
   });
 });
+
+/* ════════════════════════════════════════════════════════════════════════════ */
+/* ★★★ Đợt 34 (Pareto #1 QA Đợt 32) — `liveState.connected`: NHỊP TIM quyết định, log `online` không   */
+/* ════════════════════════════════════════════════════════════════════════════ */
+/*
+ * Số đo thật 2026-09-10 (`.qa-dot34/truoc/db-may-14.json`): máy 14 log `online` ~3 ngày (một lần khởi
+ * động lại, 42 máy cùng ~8 giây), heartbeat 54 ngày — bản cũ `(status ?? "offline") === "online" || hb < 5′`
+ * cho `connected = true` ⇒ cockpit "ONLINE · Connected" cho một máy im lặng 54 ngày.
+ * Hàng `machine_status_logs` là SỰ KIỆN chuyển trạng thái (`recordPresence` chỉ ghi khi đổi; `socket.ts`
+ * ghi lúc connect/disconnect) — tuổi của nó không đo "máy còn nói chuyện không". Nhịp tim mới đo được.
+ * ★ G5 hai chiều: hai cửa ⇒ FALSE, hai đối chứng nhịp tim tươi ⇒ TRUE.
+ */
+describe("★★★ Đợt 34 — liveState.connected: nhịp tim quyết định", () => {
+  const PHUT = 60_000;
+  const NGAY = 24 * 60 * PHUT;
+  it("máy 14 thật: log online 3 ngày + heartbeat 54 ngày ⇒ connected FALSE (status vẫn online — trung thực về log)", async () => {
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 3 * NGAY) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 54 * NGAY) });
+    const d = await machineDetail(7);
+    expect(d!.liveState.available).toBe(true);
+    expect(d!.liveState.value!.status).toBe("online");
+    expect(d!.liveState.value!.connected).toBe(false);
+    // ★ Đợt 40 (QA Đợt 39 #3) — trường ĐÃ ÁNH XẠ cùng từ điển fleet: máy im lặng 54 ngày ⇒ `offline`,
+    //   trong khi `status` thô vẫn `online` (giữ nguyên hợp đồng cũ, thêm trường mới).
+    expect(d!.liveState.value!.statusMapped).toBe("offline");
+  });
+  it("★ CHỖ BRIEF SAI: log online 10 GIÂY + heartbeat 54 ngày ⇒ vẫn FALSE (tuổi log không phải liveness)", async () => {
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 10_000) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 54 * NGAY) });
+    const d = await machineDetail(7);
+    expect(d!.liveState.value!.connected).toBe(false);
+  });
+  it("★ ĐỐI CHỨNG: heartbeat 10 giây (bảng machine_heartbeats) + log online 3 ngày ⇒ TRUE — gate không giết máy sống", async () => {
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 3 * NGAY) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 10_000) });
+    const d = await machineDetail(7);
+    expect(d!.liveState.value!.connected).toBe(true);
+    /*
+     * ★★★ ĐỢT 53 (QA lần 8, SAI #2) — Ô NÀY ĐỔI TỪ `running` SANG `idle`, VÀ ĐÓ LÀ BẢN VÁ.
+     *
+     * Đợt 40 viết `expect(...).toBe("running")` với lý lẽ *"không `operationStatus` ở lớp này"* —
+     * tức chính lưới này GHIM cái hành vi đã làm `factoryCommand.machineDetail` nói "running"
+     * trong khi `overview` nói "idle" cho CÙNG máy, CÙNG giây (đo được trên dist 3053 khi chèn
+     * nhịp tim `now()`: `.qa-dot53/hd-truoc-co-hb/tong.json`).
+     * Nay: hàng `machines` giả ở `beforeEach` KHÔNG có `operationStatus` ⇒ `undefined` ⇒ `idle`
+     * ("đang kết nối, KHÔNG BIẾT làm gì"), không còn là lời khai "đang chạy".
+     */
+    expect(d!.liveState.value!.operationStatus).toBeNull();
+    expect(d!.liveState.value!.statusMapped).toBe("idle");
+  });
+  it("★★★ Đợt 53 — `operationStatus` ĐI QUA hợp đồng liveState và quyết định `statusMapped`", async () => {
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 3 * NGAY) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 10_000) });
+    // Cột THẬT của `machines` — cùng cột mà `factoryCommand.overview` đọc (`factoryCommandService:369`).
+    for (const [cot, mong] of [
+      ["running", "running"],
+      ["stopped", "idle"],
+      ["error", "down"],
+      ["maintenance", "maintenance"],
+    ] as const) {
+      (dbRows["machines"][0] as Record<string, unknown>).operationStatus = cot;
+      const d = await machineDetail(7);
+      expect(d!.liveState.value!.operationStatus).toBe(cot);
+      expect(d!.liveState.value!.statusMapped).toBe(mong);
+    }
+    // Máy im lặng thì cột vận hành KHÔNG cứu được — bằng chứng kết nối vẫn quyết định trước.
+    (dbRows["machines"][0] as Record<string, unknown>).operationStatus = "running";
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 54 * NGAY) });
+    expect((await machineDetail(7))!.liveState.value!.statusMapped).toBe("offline");
+  });
+  it("★ ĐỐI CHỨNG: chỉ machines.lastHeartbeat tươi (bảng heartbeat cũ) ⇒ TRUE, và lastHeartbeat = mốc đã chọn (max)", async () => {
+    const moc = Date.now() - 20_000;
+    (dbRows["machines"][0] as any).lastHeartbeat = new Date(moc);
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 3 * NGAY) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 54 * NGAY) });
+    const d = await machineDetail(7);
+    expect(d!.liveState.value!.connected).toBe(true);
+    expect(d!.liveState.value!.lastHeartbeat).toBe(moc);
+  });
+  it("log `offline` ghi SAU nhịp tim tươi ⇒ FALSE (đã ngắt); ghi TRƯỚC ⇒ TRUE (đã nối lại)", async () => {
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 30_000) });
+    getLatestMachineStatus.mockResolvedValue({ status: "offline", timestamp: new Date(Date.now() - 5_000) });
+    expect((await machineDetail(7))!.liveState.value!.connected).toBe(false);
+    getLatestMachineStatus.mockResolvedValue({ status: "offline", timestamp: new Date(Date.now() - 60_000) });
+    expect((await machineDetail(7))!.liveState.value!.connected).toBe(true);
+  });
+  it("không có log nào + không heartbeat ⇒ FALSE, lastHeartbeat null (fail-closed, NT-3.5)", async () => {
+    getLatestMachineStatus.mockResolvedValue(null);
+    getLatestMachineHeartbeat.mockResolvedValue(null);
+    const d = await machineDetail(7);
+    expect(d!.liveState.value!.status).toBeNull();
+    expect(d!.liveState.value!.lastHeartbeat).toBeNull();
+    expect(d!.liveState.value!.connected).toBe(false);
+  });
+});

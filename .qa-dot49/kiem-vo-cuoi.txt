@@ -1,0 +1,2 @@
+[kiem-vo-app-https] ĐẠT client/index.html: tài nguyên ngoài 0 · meta CSP 0 · http(s):// thô 0 (chuỗi trong script nội tuyến/chú thích: 0)
+[kiem-vo-app-https] ĐẠT dist/public/index.html: tài nguyên ngoài 0 · meta CSP 0 · http(s):// thô 31 (chuỗi trong script nội tuyến/chú thích: 31)

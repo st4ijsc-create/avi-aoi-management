@@ -1,0 +1,30 @@
+{
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot52/hd-truoc",
+  "may": 14,
+  "luc": "2026-09-12T08:26:32.427Z",
+  "url": "/twin/may/14",
+  "nganDoTuoiSom": {
+    "luc": 1789201580319,
+    "chu": "Updated 57 days ago",
+    "giay": "4950010",
+    "chip": "khong_ro"
+  },
+  "chip": {
+    "trangThai": "khong_ro",
+    "chu": "SIM-L2-AOI\nAOI\nUnknown\nHealth 61 % · warning"
+  },
+  "nganDoTuoi": {
+    "chu": "Updated 57 days ago",
+    "giay": "4950015"
+  },
+  "badgeQuaCu": 0,
+  "cockpit": {
+    "headerBadge": "OFFLINE",
+    "connected": "Disconnected",
+    "liveState": "Live state Status offline PackML / op — Last change online · 9/7/2026, 1:51:22 AM Heartbeat running Last heartbeat 57d Connection offline",
+    "lastHeartbeat": "Last heartbeat 57d",
+    "lastChange": "Last change online · 9/7/2026, 1:51:22 AM Heartbeat"
+  }
+}

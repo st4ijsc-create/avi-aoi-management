@@ -1,0 +1,56 @@
+=== EXPLAIN machine_health_history — 2026-09-12T11:51:39.876Z ===
+
+--- index co san ---
+idx_health_machine  CREATE INDEX idx_health_machine ON public.machine_health_history USING btree ("machineId")
+idx_health_machine_code  CREATE INDEX idx_health_machine_code ON public.machine_health_history USING btree ("machineCode")
+idx_health_machine_created_desc  CREATE INDEX idx_health_machine_created_desc ON public.machine_health_history USING btree ("machineId", "createdAt" DESC)
+idx_health_machine_time  CREATE INDEX idx_health_machine_time ON public.machine_health_history USING btree ("machineId", "timestamp")
+idx_health_score  CREATE INDEX idx_health_score ON public.machine_health_history USING btree ("healthScore")
+idx_health_timestamp  CREATE INDEX idx_health_timestamp ON public.machine_health_history USING btree ("timestamp")
+machine_health_history_pkey  CREATE UNIQUE INDEX machine_health_history_pkey ON public.machine_health_history USING btree (id)
+uq_machine_health_history_machine_ts  CREATE UNIQUE INDEX uq_machine_health_history_machine_ts ON public.machine_health_history USING btree ("machineId", "timestamp")
+
+--- so hang: 216255 ---
+
+════ C-cu (DISTINCT ON, khong WHERE, ORDER BY timestamp) ════
+[lan 1 NGUOI 136 ms]
+Unique  (cost=32065.62..33134.51 rows=43 width=28) (actual time=113.777..133.255 rows=43 loops=1)
+  Buffers: shared hit=349 read=5008, temp read=1114 written=1117
+  ->  Sort  (cost=32065.62..32600.06 rows=213777 width=28) (actual time=113.774..126.141 rows=216255 loops=1)
+        Sort Key: "machineId", "timestamp" DESC
+        Sort Method: external merge  Disk: 8912kB
+        Buffers: shared hit=349 read=5008, temp read=1114 written=1117
+        ->  Seq Scan on machine_health_history  (cost=0.00..8023.21 rows=213777 width=28) (actual time=0.036..38.554 rows=216255 loops=1)
+              Buffers: shared hit=343 read=5008
+Planning:
+  Buffers: shared hit=35 read=4
+Planning Time: 0.231 ms
+Execution Time: 134.539 ms
+[lan 2 AM 156 ms] Planning Time: 0.152 ms · Execution Time: 153.342 ms
+[lan 3 AM 153 ms] Planning Time: 0.248 ms · Execution Time: 151.057 ms
+[lan 4 AM 133 ms] Planning Time: 0.122 ms · Execution Time: 130.955 ms
+[lan 5 AM 121 ms] Planning Time: 0.171 ms · Execution Time: 117.892 ms
+[lan 6 AM 117 ms] Planning Time: 0.127 ms · Execution Time: 114.539 ms
+
+════ C-moi (DISTINCT ON, ORDER BY createdAt DESC = cot co index QD-27) ════
+[lan 1 NGUOI 1 ms]
+Result  (cost=0.42..23.80 rows=43 width=28) (actual time=0.029..0.315 rows=43 loops=1)
+  Buffers: shared hit=124 read=53
+  ->  Unique  (cost=0.42..23.80 rows=43 width=28) (actual time=0.027..0.308 rows=43 loops=1)
+        Buffers: shared hit=124 read=53
+        ->  Custom Scan (SkipScan) on machine_health_history  (cost=0.42..23.69 rows=43 width=28) (actual time=0.026..0.302 rows=43 loops=1)
+              Buffers: shared hit=124 read=53
+              ->  Index Scan using idx_health_machine_created_desc on machine_health_history  (cost=0.42..27993.54 rows=213777 width=28) (actual time=0.020..0.291 rows=43 loops=1)
+                    Buffers: shared hit=124 read=53
+Planning:
+  Buffers: shared hit=7 read=1
+Planning Time: 0.187 ms
+Execution Time: 0.341 ms
+[lan 2 AM 1 ms] Planning Time: 0.075 ms · Execution Time: 0.142 ms
+[lan 3 AM 1 ms] Planning Time: 0.060 ms · Execution Time: 0.135 ms
+[lan 4 AM 1 ms] Planning Time: 0.054 ms · Execution Time: 0.114 ms
+[lan 5 AM 1 ms] Planning Time: 0.047 ms · Execution Time: 0.107 ms
+[lan 6 AM 1 ms] Planning Time: 0.046 ms · Execution Time: 0.102 ms
+
+--- DOI CHUNG DAU RA ---
+cu 43 hang · moi 43 hang · GIONG HET: true

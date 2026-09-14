@@ -1,0 +1,128 @@
+{
+  "luc": "2026-09-11T22:25:19.865Z",
+  "base": "http://localhost:3048",
+  "duong": "/twin/line/2",
+  "man": "man-twin-line",
+  "vp": "1280x720",
+  "me": {
+    "cache": true,
+    "ten": "e2e_tai_loE",
+    "status": 200,
+    "ct": "application/json"
+  },
+  "mo": {
+    "msCanvas": 1087,
+    "msSanSang": 3671,
+    "coMayTrongKhung": true
+  },
+  "coChe": {
+    "soObject": 1,
+    "coHandler": 1,
+    "trongScene": 1,
+    "ten": [
+      "twin3d-lo-may-su-kien"
+    ]
+  },
+  "lop": {
+    "canvas": [
+      288,
+      125,
+      968,
+      479
+    ],
+    "lopNhan": [
+      288,
+      125,
+      968,
+      479
+    ],
+    "lopBadge": [
+      288,
+      125,
+      968,
+      479
+    ],
+    "soBadge": 2,
+    "soNhan": 12
+  },
+  "may": {
+    "id": 13,
+    "X": 448.76592105575673,
+    "Y": 466.1958306953846,
+    "cv": [
+      288,
+      125,
+      968,
+      478.5
+    ],
+    "soTrongKhung": 12,
+    "loai": [],
+    "hit": {
+      "ten": "twin3d-lo-may",
+      "batchId": 0,
+      "khoangCach": 27.814421945879776
+    }
+  },
+  "cursorTrenMay": "pointer",
+  "san": {
+    "X": 772,
+    "Y": 163.28
+  },
+  "cursorTrenSan": "auto",
+  "urlTruocSan": "http://localhost:3048/twin/line/2?do=1",
+  "urlSauSan": "http://localhost:3048/twin/line/2?do=1",
+  "camTruoc": {
+    "x": 19.199999999999996,
+    "y": 21.847814931672122,
+    "z": 28.114010617409512,
+    "mucX": 19.199999999999996,
+    "mucZ": 12.708306073405515
+  },
+  "camSau": {
+    "x": 12.125501465017441,
+    "y": 21.847814931672122,
+    "z": 26.393597556442153,
+    "mucX": 19.199999999999996,
+    "mucZ": 12.708306073405515
+  },
+  "urlSauKeo": "http://localhost:3048/twin/line/2?do=1",
+  "may2": {
+    "id": 23,
+    "X": 950.4129033831897,
+    "Y": 323.1372703909226,
+    "cv": [
+      288,
+      125,
+      968,
+      478.5
+    ],
+    "soTrongKhung": 10,
+    "loai": [],
+    "hit": {
+      "ten": "twin3d-lo-may",
+      "batchId": 1,
+      "khoangCach": 31.608952152624518
+    }
+  },
+  "msPlaywright": 3024,
+  "urlSauBam": "http://localhost:3048/twin/may/21",
+  "treTrongTrang": 0.2,
+  "veXong": {
+    "coCanvas": true,
+    "onDinh": true,
+    "msVeXong": 3006
+  },
+  "manMay": {
+    "coMan": true,
+    "canvasDom": 1,
+    "canvasTrongMan": 1,
+    "__soCanvas": 1,
+    "dangTai": 0,
+    "spin": 0,
+    "calls": 3,
+    "thanhTren": "Nhà máy›Dây chuyền ảo 2›SIM-L2 SCREW",
+    "h1": "SIM-L2 SCREW",
+    "cockpit": 1,
+    "lyDo": null
+  }
+}

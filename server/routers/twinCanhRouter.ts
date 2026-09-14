@@ -36,15 +36,38 @@
  * xưởng nhỏ đi 1000 lần, đúng lớp lỗi §10A.1.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { requireAnyPermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
 import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
+// ── #18 (§7.4, §10B.2) — nhập model 3D. TÁI DÙNG đăng bạ đã có, không dựng bản
+//    thứ hai: `registerModel` idempotent theo `modelKey` và `pickBestModel` của
+//    cùng module đã cài đúng thứ tự ưu tiên ba cấp mà §10B.2 mô tả.
+import { listModels, registerModel } from "../services/twin/modelRegistry";
+import { validateUpload } from "../_core/uploadValidation";
+
+/**
+ * Trần dung lượng cho model MÁY — 15 MB (§7.4 và §10B.2 ghi cùng con số).
+ *
+ * ⚠ CHẶT HƠN trần `model3d` = 100 MB của `uploadValidation.ts`. Xem docblock của
+ *   `taiModelMay` để biết vì sao kiểm thêm ở đây thay vì hạ trần chung.
+ */
+const NGUONG_BYTE_MODEL = 15 * 1024 * 1024;
 import { phamViCua } from "./_phamViNguoiXem";
 import {
   demVatTheTheoTang,
+  traVungAnToan,
+  luuVungAnToan,
+  xoaVungAnToan,
   ganAnhNenTang,
+  duocGanModel,
+  // ── Đợt 12 lô M (#55) — bản ghi bố cục theo tên ──
+  traBanGhi,
+  traMotBanGhi,
+  luuBanGhi,
+  xuatBanBanGhi,
+  xoaBanGhi,
   ghiDeTuongBaoSinh,
   luuTang,
   luuToaNha,
@@ -59,6 +82,13 @@ import {
   traCayPhanCapNhaMay,
   traDatChoTheoTang,
   traKichThuocTheoLoai,
+  // ── Đợt 6 (§6.3) — trạng thái hàng loạt cho vòng render `/twin` ──
+  traTrangThaiHangLoat,
+  traAnhLichSu,
+  LICH_SU_LA_XAP_XI,
+  // ── Đóng nợ #26 (§11) — E-STOP nổi lên Twin ──
+  traAnToanRobot,
+  traSucKhoeMay,
 } from "../db/twinCanh";
 
 /**
@@ -89,6 +119,85 @@ function quyenThietKe(hanhDong: "canView" | "canCreate" | "canEdit" | "canDelete
     { module: "settings_factory", action: hanhDong },
     { module: "machine_control", action: hanhDong },
   ]);
+}
+
+/**
+ * §6.4 — cổng quyền màn **VẬN HÀNH** (`/twin`): `analytics_oee` **HOẶC**
+ * `machine_status`.
+ *
+ * ⚠⚠ KHÁC `quyenThietKe` và sự khác đó là CỐ Ý. `/twin` (xem) và `/twin-studio`
+ * (sửa bố cục) là hai màn khác nhau với hai tập người dùng khác nhau; dùng chung
+ * một cổng sẽ hoặc chặn người trực ca khỏi màn xem, hoặc mở đường sửa bố cục cho
+ * người chỉ được xem. Đo trên seed thật (`congQuyenTwin.unit.test.ts`): trong 4
+ * vai non-admin chỉ `supervisor1` có `analytics_oee`, ba vai kia có
+ * `machine_status` ⇒ nếu cổng này chỉ khai `analytics_oee` thì 3/4 người trực ca
+ * mất màn Vận hành.
+ *
+ * ★ Khớp ĐÚNG tập mà ô nav `/twin` khai (`requiredPermissionAny:
+ *   ["analytics_oee", "machine_status"]`) — luật Khối D "một lối vào rồi TỪ
+ *   CHỐI": nav và router phải nói cùng một câu.
+ */
+function quyenVanHanh(hanhDong: "canView" | "canEdit") {
+  return requireAnyPermission([
+    { module: "analytics_oee", action: hanhDong },
+    { module: "machine_status", action: hanhDong },
+  ]);
+}
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 10 LÔ H2 — CỔNG **ĐỌC HÌNH HỌC**, chỗ lớp lỗi Khối D thật sự nằm
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ba thủ tục ĐỌC (`danhSachToaNha`, `chiTietToaNha`, `canhThietKe`) phục vụ
+ * **HAI** màn: `/twin-studio` (sửa bố cục) và `/twin` (chỉ xem). Trước lô H
+ * chúng đứng trên `quyenThietKe` — cổng của màn SỬA. Hậu quả **đo được trên
+ * tài khoản thật**, không phải suy luận:
+ *
+ *   `operator1` (userId 48, seed) có **ĐÚNG MỘT** quyền: `machine_status`.
+ *   · `navigation.tsx:446` cho vào `/twin` bằng `analytics_oee` HOẶC
+ *     `machine_status` ⇒ mục menu HIỆN, `RouteGuard` CHO QUA.
+ *   · rồi `canhThietKe` đòi `settings_factory`/`machine_control` ⇒ **FORBIDDEN**.
+ *   ⇒ Thấy menu, bấm vào, và màn nói "không có quyền đọc bố cục nhà máy".
+ *   Đây ĐÚNG là "một lối vào rồi TỪ CHỐI" của Khối D, chiều XUÔI.
+ *
+ * ⚠ Vì sao KHÔNG siết cổng nav lại cho khớp (phương án (a)): làm thế là **xoá
+ *   `/twin` khỏi `operator1`/`maint1`** — chính những vai mà màn Vận hành sinh
+ *   ra để phục vụ, và là đảo ngược bản vá Đợt 5 CHẶN-1 vốn đã đo được (1/4 vai
+ *   → 4/4). Sửa một lỗi "vào rồi bị chặn" bằng cách "không cho vào nữa" là
+ *   đóng cửa thay vì mở đường.
+ *
+ * ⚠⚠ **KHÔNG PHẢI NỚI QUYỀN ÂM THẦM.** Ba điều được ĐO, không được khai:
+ *   1. Chỉ ĐỌC hình học được mở. MỌI đường GHI (`luuToaNha`, `luuTang`,
+ *      `xoaToaNha`, `luuHangLoat`, `dungNhaXuong`, `sinhTuongBao`,
+ *      `vungAnToan*`, `goKhoiMatBang`) **giữ nguyên `quyenThietKe`**.
+ *      `congDocHinhHoc.unit.test.ts` liệt kê TOÀN BỘ thủ tục của router và ghim
+ *      danh sách ĐỌC-mở là đúng ba tên — thêm tên thứ tư vào đây thì test đỏ.
+ *   2. **Phạm vi tenant KHÔNG đi qua cổng quyền.** Nó đi qua
+ *      `trongPhamVi("factory", factoryId, phamViCua(ctx))`
+ *      (`server/db/twinCanh.ts:250,270`) — một trục HOÀN TOÀN RỜI với module
+ *      quyền. Mở `analytics_oee`/`machine_status` không cho ai thấy thêm một
+ *      nhà máy nào; nó chỉ đổi *quyền nào* mở được hình học của nhà máy mà
+ *      người đó **vốn đã ở trong phạm vi**.
+ *   3. `/twin-studio` KHÔNG bị mở ra: lối vào của nó là ô nav riêng
+ *      (`settings_factory`/`machine_control`) mà `RouteGuard navHref` tra lại.
+ *
+ * ★ Cổng này là HỢP của hai cổng, không phải cổng thứ ba: ai vào được màn Thiết
+ *   kế vẫn đọc được y như trước (không ai mất gì), ai vào được màn Vận hành nay
+ *   đọc được thứ màn đó cần. Viết bằng `quyenThietKe`+`quyenVanHanh` gộp lại
+ *   thay vì gõ lại bốn tên module: gõ tay lần thứ ba là chỗ hai bản cài đặt bắt
+ *   đầu lệch nhau (G12).
+ */
+export const MODULE_DOC_HINH_HOC = [
+  "settings_factory",
+  "machine_control",
+  "analytics_oee",
+  "machine_status",
+] as const;
+
+function quyenDocHinhHoc() {
+  return requireAnyPermission(
+    MODULE_DOC_HINH_HOC.map((module) => ({ module, action: "canView" as const })),
+  );
 }
 
 /**
@@ -218,7 +327,7 @@ export const twinCanhRouter = router({
 
   /** Danh sách toà nhà của một nhà máy. Ngoài phạm vi ⇒ mảng RỖNG. */
   danhSachToaNha: protectedProcedure
-    .use(quyenThietKe("canView"))
+    .use(quyenDocHinhHoc())
     .input(z.object({ factoryId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       return traToaNhaTheoNhaMay(input.factoryId, phamViCua(ctx));
@@ -226,7 +335,7 @@ export const twinCanhRouter = router({
 
   /** Một toà nhà kèm các tầng, numeric đã quy về number. */
   chiTietToaNha: protectedProcedure
-    .use(quyenThietKe("canView"))
+    .use(quyenDocHinhHoc())
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       return traToaNhaKemTang(input.id, phamViCua(ctx));
@@ -440,6 +549,276 @@ export const twinCanhRouter = router({
     }),
 
   // -------------------------------------------------------------------------
+  // Nhập model 3D cho máy / chủng loại (§7.4, §10B.2) — #18
+  // -------------------------------------------------------------------------
+
+  /**
+   * Danh sách model đã đăng ký, ĐỦ để client tự giải phân giải 3 cấp.
+   *
+   * ★★★ VÌ SAO MỘT LƯỢT `list` CHỨ KHÔNG 43 LƯỢT `resolve`.
+   *   `twin.models.resolve` trả model cho MỘT thiết bị. Cảnh Twin có 42 máy;
+   *   gọi resolve cho từng máy là 42 vòng mạng mỗi lần mở màn, và mỗi vòng lại
+   *   quét cả bảng (`resolveModel` `select ... where status='active'`). Bảng
+   *   registry rất nhỏ (5 hàng đo được 2026-09-07), nên tải nguyên nó MỘT LẦN
+   *   rồi để `napModel.chonModelChoMay` áp cùng thứ tự ưu tiên là rẻ hơn hai bậc
+   *   độ lớn — và `napModel.unit.test.ts` ghim rằng hai bên cho CÙNG kết quả.
+   */
+  danhSachModel: protectedProcedure
+    .use(quyenThietKe("canView"))
+    .query(async ({ ctx }) => {
+      /*
+       * ★★★ VÌ SAO ĐỌC KHÔNG LỌC MÀ VẪN BÓC `ctx` — VÀ VÌ SAO KHÔNG IM LẶNG.
+       *   `equipment_3d_models` KHÔNG có cột phạm vi cho hàng cấp chủng loại
+       *   (xem `duocGanModel`), nên không có gì để lọc theo tenant ở đây. Nhưng
+       *   danh tính vẫn được TRÍCH và ĐI XUỐNG: lời gọi dưới đây quyết định
+       *   những hàng cấp MÁY nào người này được thấy — một hàng trỏ tới máy
+       *   ngoài phạm vi là một lời khai về máy mà người này không được biết là
+       *   có tồn tại (oracle rò rỉ tồn-tại).
+       */
+      const scope = phamViCua(ctx);
+      const hang = await listModels({ status: "active", limit: 500 });
+      const loc: typeof hang = [];
+      for (const m of hang) {
+        if (m.machineId == null) {
+          loc.push(m);
+          continue;
+        }
+        if (await duocGanModel({ phamVi: "may", machineId: m.machineId }, scope)) loc.push(m);
+      }
+      // Trả ĐÚNG các cột client cần. Không trả `notes`/`createdBy`/`scope`:
+      // cảnh 3D không dùng chúng, và mỗi cột thừa là một cột phải giữ tương
+      // thích về sau.
+      return loc.map((m) => ({
+        id: m.id,
+        modelKey: m.modelKey,
+        modelUri: m.modelUri,
+        machineId: m.machineId,
+        equipmentId: m.equipmentId,
+        equipmentClass: m.equipmentClass,
+        version: m.version,
+        status: m.status,
+        conversionStatus: m.conversionStatus,
+        bounds: m.bounds,
+      }));
+    }),
+
+  /**
+   * Tải một tệp .glb/.gltf lên và ĐĂNG KÝ nó cho MỘT MÁY hoặc cho CẢ CHỦNG LOẠI.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ VÌ SAO CÓ THỦ TỤC NÀY KHI `twin.models.uploadAndRegister` ĐÃ TỒN TẠI
+   * ════════════════════════════════════════════════════════════════════════
+   * `twinRouter.ts:129 uploadAndRegister` chạy thật và có người dùng thật
+   * (`MachineCockpit.tsx:740`) — nhưng nó **chỉ gán được cấp MÁY**: `machineId`
+   * là trường bắt buộc và `modelKey` viết cứng `machine-<id>`. §10B.2 gọi cấp
+   * CHỦNG LOẠI là "cấp đáng dùng nhất" (một tệp cho `AOI` là 14 máy đổi hình
+   * cùng lúc) và không có đường nào tới nó từ giao diện.
+   *
+   * ⚠ KHÔNG sửa `uploadAndRegister` để nới `machineId` thành optional: nó là
+   *   đường đang phục vụ màn cockpit, và nới một trường bắt buộc thành tuỳ chọn
+   *   làm mọi lỗi "quên truyền machineId" từ chỗ BỊ TỪ CHỐI thành chỗ GHI NHẦM
+   *   một hàng vô chủ. Thủ tục mới nói rõ ý định bằng trường `phamVi`.
+   *
+   * ★ TÁI DÙNG, KHÔNG CHÉP: `validateUpload(buf,"model3d")` (magic bytes glTF
+   *   `0x46546C67` + JSON `"asset"`) và `registerModel` (idempotent theo
+   *   `modelKey`, tự tăng `version`) là CÙNG hai hàm mà đường cũ dùng. Chép lại
+   *   chúng là tạo bản thứ hai để trôi (G12).
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ TRẦN 15 MB Ở ĐÂY CHẶT HƠN TRẦN 100 MB CỦA `validateUpload`
+   * ════════════════════════════════════════════════════════════════════════
+   * `uploadValidation.ts:18` đặt trần `model3d` = 100 MB — đúng cho một tài sản
+   * đơn lẻ xem trong cockpit. §7.4 và §10B.2 đều ghi **15 MB** cho model MÁY, vì
+   * máy nhân lên 43 lần và nằm gần camera. Ta kiểm THÊM ở đây thay vì hạ trần
+   * chung: hạ trần chung sẽ chặn luôn đường cockpit mà không ai yêu cầu.
+   *
+   * ★ Client đã chặn cùng ngưỡng ở `kiemTraAsset.chamModel` TRƯỚC khi đọc tệp.
+   *   Hai lớp là cố ý (phòng thủ nhiều lớp): lớp client tiết kiệm cho người dùng
+   *   một lượt tải 40 MB, lớp server là lớp DUY NHẤT không bỏ qua được.
+   */
+  taiModelMay: protectedProcedure
+    .use(quyenThietKe("canCreate"))
+    .input(
+      z
+        .object({
+          /** `may` = gán đúng máy này; `chung_loai` = mọi máy cùng loại. */
+          phamVi: z.enum(["may", "chung_loai"]),
+          machineId: z.number().int().positive().optional(),
+          /** Giá trị `machineTypeEnum`, ví dụ `AOI`. Bắt buộc khi phạm vi là chủng loại. */
+          loaiMay: z.string().trim().min(1).max(64).optional(),
+          tenTep: z.string().trim().min(1).max(256),
+          /** base64 của byte tệp. Trần thật do `NGUONG_BYTE_MODEL` cưỡng chế. */
+          noiDungBase64: z.string().min(1).max(30_000_000),
+          /** Số tam giác client đo được — GHI LẠI, không dùng để quyết định. */
+          soTamGiac: z.number().int().nonnegative().max(100_000_000).optional(),
+          /** BBox đo được, ghi vào cột `bounds` (§10B.2 — NULL ở 5/5 hàng). */
+          bounds: z.record(z.string(), z.unknown()).optional(),
+        })
+        // ★ Cưỡng chế bằng LƯỢC ĐỒ, không bằng một `if` trong thân hàm: sai
+        //   hình dạng bị chặn ở biên và thông điệp lỗi nói đúng trường nào.
+        .refine((v) => (v.phamVi === "may" ? v.machineId != null : v.loaiMay != null), {
+          message: "phamVi='may' can machineId; phamVi='chung_loai' can loaiMay",
+        }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      /*
+       * ★★★ HÀNG RÀO TENANT TRƯỚC MỌI THỨ KHÁC — kể cả trước khi chạm tệp.
+       *   Kiểm sau khi đã `storagePut` nghĩa là một người ngoài phạm vi vẫn ghi
+       *   được một tệp lên đĩa rồi mới bị từ chối: rác câm, và một kênh ghi.
+       *
+       * ⚠ `ENTITY_NOT_FOUND` chứ KHÔNG `FORBIDDEN`: "máy này của tenant khác" và
+       *   "máy này không tồn tại" phải nói CÙNG MỘT CÂU, nếu không thủ tục trở
+       *   thành một oracle dò id máy của tenant khác (quy ước đầu `twinCanh.ts`).
+       */
+      const phamViGan =
+        input.phamVi === "may"
+          ? ({ phamVi: "may", machineId: input.machineId! } as const)
+          : ({ phamVi: "chung_loai", loaiMay: input.loaiMay! } as const);
+      if (!(await duocGanModel(phamViGan, phamViCua(ctx)))) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "machine" },
+          input.phamVi === "may"
+            ? `May id=${input.machineId} khong ton tai hoac ngoai pham vi`
+            : `Khong co may nao loai ${input.loaiMay} trong pham vi`,
+        );
+      }
+
+      if (process.env.STORAGE_MODE !== "local") {
+        throw appError(
+          "CONFLICT",
+          "FEATURE_DISABLED",
+          { feature: "twinLocalStorage" },
+          "Bat STORAGE_MODE=local de tai va phuc vu model 3D.",
+        );
+      }
+
+      const buf = Buffer.from(input.noiDungBase64, "base64");
+
+      // ★ Trần 15 MB của §10B.2 — kiểm TRƯỚC `validateUpload` để thông điệp nói
+      //   đúng ngưỡng mà người dùng vừa vượt, không phải ngưỡng 100 MB chung.
+      if (buf.length > NGUONG_BYTE_MODEL) {
+        throw appError(
+          "PAYLOAD_TOO_LARGE",
+          "INVALID_VALUE",
+          { field: "noiDungBase64" },
+          `Model 3D vuot tran ${Math.round(NGUONG_BYTE_MODEL / 1048576)} MB (tep ${(buf.length / 1048576).toFixed(1)} MB)`,
+        );
+      }
+
+      // ★★★ MAGIC BYTES, KHÔNG PHẢI ĐUÔI TỆP. Đổi tên `x.exe` thành `x.glb` là
+      //   việc của một cú rename; `validateUpload` đọc 4 byte đầu (`glTF`) hoặc
+      //   khoá `"asset"` của glTF JSON nên nó không bị lừa bằng cách đó.
+      const v = validateUpload(buf, "model3d");
+      if (!v.ok) {
+        throw appError(
+          v.status === 413 ? "PAYLOAD_TOO_LARGE" : "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "noiDungBase64" },
+          v.error ?? "Tep khong phai glTF 2.0 hop le.",
+        );
+      }
+
+      const duoi = v.detectedMime === "model/gltf-binary" ? "glb" : "gltf";
+      /*
+       * ════════════════════════════════════════════════════════════════════
+       * ★★★ LƯU DƯỚI `models/`, KHÔNG PHẢI `twin-assets/` — LỖI ĐÃ ĐO ĐƯỢC
+       * ════════════════════════════════════════════════════════════════════
+       * §7.4 viết: allowlist "chỉ mở thêm đúng tiền tố `/uploads/twin-assets/`".
+       * Bản đầu của thủ tục này làm đúng câu đó và **tệp tải lên không đọc lại
+       * được** — nghiệm thu ca dương trên trình duyệt thật (2026-09-07) cho:
+       *
+       *   GET /uploads/twin-assets/loai-AOI-…glb  →  403
+       *   {"code":"image_path_shape_unknown",
+       *    "message":"… unknown top-level directory 'twin-assets'"}
+       *
+       * Vì `server/routes/_uyQuyenAnh.ts:209 THU_MUC_TAC_TAO` là một allowlist
+       * ĐÓNG, và docblock của nó nói rõ đó là hành vi CỐ Ý: *"một thư mục mới
+       * xuất hiện dưới `uploads/` phải làm cổng ĐỎ, chứ không được thừa hưởng
+       * lời phán 'chắc là tác tạo' của những cái đã biết."*
+       *
+       * ⇒ Hai đường sửa: (a) thêm `twin-assets` vào allowlist ủy quyền ảnh, hay
+       *   (b) dùng đúng thư mục đã được cho phép. Chọn (b): `models/` là nơi
+       *   `twin.models.uploadAndRegister` đã ghi từ trước (`machine-<id>-<ts>.glb`),
+       *   nên cả hai đường nhập model dùng CHUNG một thư mục và một luật uỷ
+       *   quyền — thay vì hai. Sửa (a) là nới một cổng an ninh cho một tiện lợi
+       *   đặt tên, và nó nằm ngoài phạm vi lô này.
+       *
+       * ★ Tiền tố `twin-` trong TÊN TỆP vẫn phân biệt được tài sản do màn Thiết
+       *   kế sinh ra, mà không cần một thư mục mới.
+       *
+       * ⚠ LỖI NÀY KHÔNG MỘT TEST ĐƠN VỊ NÀO BẮT ĐƯỢC: đường ghi trả 200, hàng
+       *   registry đúng, `bounds` đúng. Chỉ lượt ĐỌC LẠI trên trình duyệt thật
+       *   mới lộ ra — và nếu không đo, biểu hiện duy nhất là máy đó lặng lẽ rơi
+       *   về khối mặc định, đúng cái hành vi mà `ModelErrorBoundary` được thiết
+       *   kế để làm khi model hỏng THẬT.
+       */
+      const khoaTep = `models/twin-${input.phamVi === "may" ? `may-${input.machineId}` : `loai-${input.loaiMay}`}-${Date.now()}-${nanoid(6)}.${duoi}`;
+      let modelUri: string;
+      try {
+        const daTai = await storagePut(khoaTep, buf, v.detectedMime ?? "model/gltf-binary");
+        modelUri = daTai.url;
+      } catch {
+        throw appError(
+          "INTERNAL_SERVER_ERROR",
+          "OPERATION_FAILED",
+          { operation: "taiModelMay" },
+          "Khong luu duoc tep model 3D",
+        );
+      }
+
+      /*
+       * ════════════════════════════════════════════════════════════════════
+       * ★★★ `modelKey` QUYẾT ĐỊNH IDEMPOTENCE — VÀ HAI PHẠM VI PHẢI KHÁC KHOÁ
+       * ════════════════════════════════════════════════════════════════════
+       * `registerModel` cập nhật TẠI CHỖ hàng cùng `modelKey` và tăng `version`.
+       * Nếu cấp máy và cấp chủng loại dùng chung khuôn khoá thì tải một model
+       * cho `AOI` sẽ GHI ĐÈ model riêng của máy 7 — người dùng mất tài sản đã
+       * gán mà không có cảnh báo nào. Hai tiền tố `twin-may-` / `twin-loai-`
+       * giữ hai không gian tên rời nhau.
+       *
+       * ★ Cũng KHÁC khuôn `machine-<id>` của đường cockpit, cố ý: đường này
+       *   không được lặng lẽ đè lên model mà cockpit đã đăng ký.
+       *
+       * ★★★ `machineId: null` cho hàng cấp CHỦNG LOẠI là BẮT BUỘC, không phải
+       *   tuỳ ý. `pickBestModel` (server) và `chonModelChoMay` (client) đều chỉ
+       *   coi một hàng là cấp chủng loại khi `machineId == null && equipmentId
+       *   == null`. Điền machineId vào đây làm hàng đó "vô hình" ở cấp loại.
+       */
+      const modelKey =
+        input.phamVi === "may"
+          ? `twin-may-${input.machineId}`
+          : `twin-loai-${input.loaiMay}`;
+
+      const ket = await registerModel({
+        modelKey,
+        modelUri,
+        machineId: input.phamVi === "may" ? (input.machineId ?? null) : null,
+        equipmentClass: input.phamVi === "chung_loai" ? (input.loaiMay ?? null) : null,
+        modelKind: "gltf",
+        sourceFormat: "gltf",
+        conversionStatus: "ready",
+        bounds: input.bounds ?? null,
+        notes:
+          input.soTamGiac === undefined
+            ? null
+            : `twin-studio: ${input.soTamGiac} tam giac, ${buf.length} byte, ${input.tenTep}`,
+        createdBy: ctx.user?.id ?? null,
+      });
+
+      return {
+        ok: ket.ok,
+        id: ket.id ?? null,
+        modelUri,
+        modelKey,
+        version: ket.version ?? 1,
+        soByte: buf.length,
+        phamVi: input.phamVi,
+      };
+    }),
+
+  // -------------------------------------------------------------------------
   // Dựng nguyên một nhà xưởng — bước [Tạo] của form 3 bước (§10A.2)
   // -------------------------------------------------------------------------
 
@@ -591,12 +970,21 @@ export const twinCanhRouter = router({
       return { soTuong: soGhi };
     }),
 
-  /** Đếm vật thể theo tầng — cho UI và cho phép đối soát hai mô hình rời. */
+  /**
+   * Đếm vật thể theo tầng — cho UI và cho phép đối soát hai mô hình rời.
+   *
+   * ★★★ LÔ K/K2 — thủ tục này TỪNG khai `async ({ input })`, tức là **không bóc
+   *   `ctx` một lần nào**, trong khi bốn thủ tục đọc quanh nó (`:311`, `:319`,
+   *   `:355`, `:377`) đều truyền `phamViCua(ctx)`. Vì `tangIds` do CLIENT TỰ
+   *   KHAI, thiếu sót ấy biến cổng quyền `quyenThietKe` thành hàng rào duy
+   *   nhất — mà nó chỉ trả lời "vai này xem được thiết kế không", KHÔNG trả lời
+   *   "nhà máy này có phải của người ấy không". Xem `db/twinCanh.demVatTheTheoTang`.
+   */
   demVatThe: protectedProcedure
     .use(quyenThietKe("canView"))
     .input(z.object({ tangIds: z.array(z.number().int().positive()).max(200) }))
-    .query(async ({ input }) => {
-      const hang = await demVatTheTheoTang(input.tangIds);
+    .query(async ({ input, ctx }) => {
+      const hang = await demVatTheTheoTang(input.tangIds, phamViCua(ctx));
       return { tong: hang.length, hang };
     }),
 
@@ -613,7 +1001,7 @@ export const twinCanhRouter = router({
    *   một lớp lỗi có thật của giao diện nhiều-nguồn, và nó không kêu.
    */
   canhThietKe: protectedProcedure
-    .use(quyenThietKe("canView"))
+    .use(quyenDocHinhHoc())
     .input(
       z.object({
         factoryId: z.number().int().positive(),
@@ -630,7 +1018,45 @@ export const twinCanhRouter = router({
         input.tangIds && input.tangIds.length > 0
           ? await traDatChoTheoTang(input.tangIds, scope)
           : [];
-      return { ...cay, datCho, kichThuoc };
+      /*
+       * ★★★ ĐỢT 8 LÔ C — VÙNG AN TOÀN (§11.1 #5).
+       *   Đo được trước đợt này: `twin_vat_the` 4 hàng, TOÀN `loai='tuong'`,
+       *   **0 hàng `'vung'`**. Trước dòng này, màn Thiết kế KHÔNG có đường nào
+       *   để biết một vùng an toàn tồn tại — nên #5 chưa làm ở cả tầng dữ liệu
+       *   LẪN tầng vận chuyển. Đây là nửa "đọc"; nửa "ghi" là ba thủ tục
+       *   `vungAnToan*` ở dưới (#42).
+       */
+      const vung =
+        input.tangIds && input.tangIds.length > 0
+          ? await traVungAnToan(input.tangIds, scope)
+          : [];
+
+      /*
+       * ════════════════════════════════════════════════════════════════════
+       * ★★★ THƯỜNG-2(b) — "RỖNG VÌ YÊN ỔN" ≠ "RỖNG VÌ CHƯA ĐƯỢC GÁN"
+       * ════════════════════════════════════════════════════════════════════
+       * Đo được: `user_factory_assignments` chỉ có 2 hàng, CẢ HAI của userId 51.
+       * `supervisor1`/`maint1` qua được cổng quyền rồi thấy màn RỖNG — và màn
+       * này nói "0 máy" y hệt như khi nhà máy thật sự chưa xếp máy nào. Đó đúng
+       * là thứ NT-3 cấm: hai thế giới khác hẳn nhau mà giao diện phát biểu giống
+       * nhau, nên người dùng đi tìm lỗi ở chỗ không có lỗi.
+       *
+       * ★ Dùng ĐÚNG `resolveTenantFactoryScope` — bộ phân giải mà chính đường dữ
+       *   liệu đi qua — chứ KHÔNG tự tính lại. Hai bộ suy độc lập canh hai nửa
+       *   một câu là lớp lỗi đã cắn dự án này (xem `mqttOeeRouters.getScopeLabels`).
+       *
+       * ⚠ Trả ĐÚNG BA Ô CHỮ của `scope.labels`. `filter` của drizzle mang tham
+       *   chiếu vòng và từng làm `dashboard.getStats` trả 500 cho MỌI người dùng
+       *   (2026-08-17); `resolveTenantFactoryScope` đã lọc qua `scopeLabelsOf`
+       *   nên nó không có đường ra tới đây.
+       */
+      const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+      const nhan = await resolveTenantFactoryScope({
+        userId: ctx.user?.id,
+        userRole: ctx.user?.role,
+      });
+
+      return { ...cay, datCho, kichThuoc, vung, ...nhan.labels };
     }),
 
   /**
@@ -642,6 +1068,188 @@ export const twinCanhRouter = router({
    *   mọi công chỉnh tay biến mất ở lần bấm "Sinh tự động" kế tiếp — không lỗi,
    *   không cảnh báo, chỉ là máy về chỗ cũ.
    */
+  /**
+   * ★★★ §6.3 — TRẠNG THÁI HÀNG LOẠT cho vòng render của `/twin`. KHÔNG N+1.
+   *
+   * Thay cho `machineStatus.listWithStatus` ở vòng render. Số truy vấn CỐ ĐỊNH,
+   * không phụ thuộc số máy — đo được N = 1…42 đều cho `trangThaiTapMay` = 3
+   * query (N+1 thật sẽ cho 3/6/…/126).
+   *
+   * ⚠ **ĐÍNH CHÍNH SPEC (§6.3) — tiền đề "N+1" đã KHÔNG còn đúng khi Đợt 6 đo.**
+   * §6.3 viết `listWithStatus` "chạy 3 query con mỗi máy". Đo lại 2026-09-07:
+   * `db/machine.ts` đã được doc 54 Wave C (`d467c6b5`) viết lại thành tập-hợp
+   * (`DISTINCT ON` + `LEAD`) từ trước — đúng kỹ thuật mà §6.3 kê đơn. Việc của
+   * Đợt 6 vì thế KHÔNG phải "vá N+1" mà là dựng procedure hình dạng §6.3 **dùng
+   * lại** đường tập-hợp đó (`trangThaiTapMay`), thay vì chép nó sang bản thứ hai.
+   * Báo lại thay vì tự sửa spec.
+   *
+   * ★ `bayGio` do SERVER đặt, không nhận từ client: `doTuoiGiay` là số dùng để
+   *   quyết định máy có bị xếp `khong_ro` hay không, nên để client tự khai đồng
+   *   hồ là mở đường cho một trình duyệt lệch giờ tự tuyên bố dữ liệu của mình
+   *   còn tươi.
+   */
+  trangThaiHangLoat: protectedProcedure
+    .use(quyenVanHanh("canView"))
+    .input(z.object({ factoryId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const bayGio = Date.now();
+      const may = await traTrangThaiHangLoat(input.factoryId, bayGio, phamViCua(ctx));
+
+      /*
+       * ★★★ G15 — TRẢ CẢ `bayGio` CỦA SERVER, và đây không phải ô thừa.
+       *
+       * Client tính "cập nhật N giây trước" bằng đồng hồ CỦA NÓ sẽ sai đúng bằng
+       * độ lệch giữa hai đồng hồ. Trên một màn mà >5 phút nghĩa là "Không rõ",
+       * một trình duyệt lệch 6 phút sẽ tô xám gạch chéo TOÀN BỘ nhà máy đang
+       * chạy tốt — hoặc tệ hơn theo chiều ngược lại. Trả mốc của server cho phép
+       * client quy chiếu về cùng một đồng hồ.
+       */
+      const capNhatMoiNhat = may.reduce<number | null>(
+        (max, m) => (m.capNhatLuc == null ? max : max == null || m.capNhatLuc > max ? m.capNhatLuc : max),
+        null,
+      );
+
+      return {
+        may,
+        bayGio,
+        // `null` (KHÔNG phải 0) khi KHÔNG máy nào từng báo cáo — NT-3.5.
+        capNhatMoiNhat,
+        // Đếm rỗng khác đếm bằng 0: `tong` luôn là số ĐÃ đo (độ dài mảng).
+        tong: may.length,
+      };
+    }),
+
+  /**
+   * ★★★ §11 #26 — AN TOÀN (E-STOP) CỦA ROBOT, NỔI LÊN TỔNG QUAN.
+   *
+   * ⚠ Thủ tục RIÊNG, không nhét vào `trangThaiHangLoat`: hai câu hỏi khác nhau
+   *   trên hai bảng khác nhau, và gộp lại sẽ làm một lỗi đọc telemetry robot
+   *   đánh sập cả vòng render trạng thái máy. Tách ra thì mất tín hiệu an toàn
+   *   là mất ĐÚNG dải an toàn, và nó nói ra điều đó.
+   *
+   * ★★★ G21 — QUYỀN CỦA NGƯỜI NHẬN, không phải phép nhóm theo dữ liệu. Cổng là
+   *   `quyenVanHanh("canView")` = `analytics_oee` **HOẶC** `machine_status`,
+   *   CÙNG cổng mà `/twin` và `trangThaiHangLoat` dùng. Lý do dùng lại thay vì
+   *   khai một cổng thứ ba: ai đã được xem màn Vận hành thì phải thấy được tín
+   *   hiệu an toàn của chính màn ấy — một dải E-STOP mà người trực ca không có
+   *   quyền đọc là dải E-STOP không tồn tại. Ngược lại, ai KHÔNG qua nổi cổng
+   *   `/twin` thì cũng không gọi được thủ tục này.
+   *
+   * ★ Phạm vi nhà máy: `phamViCua(ctx)` → `traCayPhanCapNhaMay` (xem
+   *   `traAnToanRobot`). Không có đường vòng nào lấy robot ngoài phạm vi.
+   */
+  anToanRobot: protectedProcedure
+    .use(quyenVanHanh("canView"))
+    .input(z.object({ factoryId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const robot = await traAnToanRobot(input.factoryId, phamViCua(ctx));
+      /*
+       * ★ Trả `bayGio` của SERVER cùng lý lẽ G15 đã ghi ở `trangThaiHangLoat`:
+       *   client không được tự khai đồng hồ khi quyết định dữ liệu còn tươi hay
+       *   không.
+       */
+      return { robot, bayGio: Date.now(), tong: robot.length };
+    }),
+
+  /**
+   * ★★★ ĐỢT 21 LÔ Z — A-4: SỨC KHOẺ MÁY + NGUY CƠ HỎNG (§14.5.1, F-15, mục G-1).
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ G49 — THỦ TỤC THỨ 21 CỦA ROUTER NÀY, VÀ NÓ CÓ `phamViCua(ctx)`
+   * ════════════════════════════════════════════════════════════════════════
+   * Brief của lô ghi rõ: cả 20 thủ tục hiện có của `twinCanhRouter` đã có
+   * `phamViCua`, đừng đẻ cái thứ 21 thiếu. Nó ở đây, và nó là cổng DUY NHẤT —
+   * `traSucKhoeMay` áp phạm vi bên trong qua `traCayPhanCapNhaMay`, nên một
+   * `factoryId` tự khai ngoài phạm vi trả `[]` chứ không trả sức khoẻ máy của
+   * tenant khác.
+   *
+   * ★ Cổng quyền `quyenVanHanh("canView")` — CÙNG cổng với `anToanRobot` và
+   *   `trangThaiHangLoat`, không phải cổng thứ ba. Sức khoẻ máy là **thông tin
+   *   vận hành đọc-chỉ** giống hệt trạng thái và E-STOP; dựng một cổng riêng
+   *   cho nó nghĩa là một vai có thể thấy máy E-STOP mà không thấy máy sắp
+   *   hỏng, và không ai có thể nói vì sao đó lại là ranh giới đúng.
+   *
+   * ★ `bayGio` do SERVER đặt — cùng lý lẽ G15 đã ghi ở `trangThaiHangLoat` và
+   *   `anToanRobot`. `conHanSucKhoe` quyết định một lời khai còn được vẽ hay
+   *   không; để client tự khai đồng hồ là mở đường cho một trình duyệt lệch giờ
+   *   tự tuyên bố dữ liệu 18 ngày tuổi của mình còn tươi.
+   *
+   * ★★★ `tongCoKhai` KHÁC `tong` — G9 (ĐƠN VỊ CỦA CON SỐ).
+   *   `tong` = số máy TRẢ VỀ (có ít nhất một hàng trong `machine_health_history`)
+   *   `tongMayTrongPhamVi` = số máy của nhà máy mà người gọi được thấy
+   *   Chênh lệch giữa hai số này chính là "số máy CHƯA từng được đo sức khoẻ" —
+   *   một đại lượng thật mà client cần để nói "6/43" chứ không phải "6/?" hay,
+   *   tệ hơn, "6/6". Trả cả hai ở đây thay vì để client tự trừ từ một truy vấn
+   *   khác: hai nguồn cho hai nửa một câu là lớp lỗi đã cắn dự án này.
+   */
+  sucKhoeMay: protectedProcedure
+    .use(quyenVanHanh("canView"))
+    .input(z.object({ factoryId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const scope = phamViCua(ctx);
+      const [khai, cay] = await Promise.all([
+        traSucKhoeMay(input.factoryId, scope),
+        traCayPhanCapNhaMay(input.factoryId, scope),
+      ]);
+      /*
+       * ★ Mốc MỚI NHẤT trong tập — để header khai tuổi của LỚP NÀY, tách khỏi
+       *   tuổi của lớp trạng thái. Hai lớp đọc hai bảng có nhịp ghi khác nhau;
+       *   một ô tuổi chung sẽ lấy cái tươi hơn và làm lớp cũ trông như còn sống
+       *   (đúng chế độ hỏng `max`-của-mọi-nguồn mà `chonNguonMocTuoi` đã vá).
+       */
+      const mocMoiNhat = khai.reduce<number | null>(
+        (max, k) => (k.mocMs == null ? max : max == null || k.mocMs > max ? k.mocMs : max),
+        null,
+      );
+      return {
+        khai,
+        bayGio: Date.now(),
+        mocMoiNhat,
+        tong: khai.length,
+        tongMayTrongPhamVi: cay.may.length,
+      };
+    }),
+
+  /**
+   * ★★★ §9.8 — ẢNH LỊCH SỬ TẠI MỘT MỐC, nguồn của scrubber tua lại.
+   *
+   * ★ CÙNG hình dạng trả về với `trangThaiHangLoat`, và đó là điều kiện để
+   *   §9.8 ("CÙNG MỘT state store cho live và replay") thực hiện được: client
+   *   đổ cả hai vào đúng một `apDung()` mà không cần nhánh riêng.
+   *
+   * ⚠ `moc` là ms epoch. Trần 24h quá khứ theo §9.8 ("thanh kéo 24 h qua"); mốc
+   *   ở TƯƠNG LAI bị từ chối — nhìn trộm tương lai không phải tua lại.
+   */
+  anhLichSu: protectedProcedure
+    .use(quyenVanHanh("canView"))
+    .input(
+      z.object({
+        factoryId: z.number().int().positive(),
+        moc: z.number().int().positive(),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      /*
+       * ★ KẸP mốc thay vì ném lỗi: scrubber gửi mốc liên tục khi người dùng kéo,
+       *   và một `throw` giữa chừng làm cảnh nhấp nháy lỗi trong lúc kéo. Kẹp về
+       *   biên là hành vi đúng của một thanh trượt — và biên vẫn được cưỡng chế,
+       *   nên không có đường nhìn trộm tương lai hay đọc quá 24 h.
+       */
+      const bayGio = Date.now();
+      const TRAN_24H = 24 * 60 * 60 * 1000;
+      const moc = Math.min(Math.max(input.moc, bayGio - TRAN_24H), bayGio);
+      const may = await traAnhLichSu(input.factoryId, moc, phamViCua(ctx));
+      const capNhatMoiNhat = may.reduce<number | null>(
+        (max, m) => (m.capNhatLuc == null ? max : max == null || m.capNhatLuc > max ? m.capNhatLuc : max),
+        null,
+      );
+      // `bayGio` trả về là MỐC ĐÃ KẸP — client phải xét tuổi theo mốc thật sự
+      // được đọc, không theo mốc nó đã xin.
+      // ★ Đợt 40 (QA Đợt 39 #3) — KHAI giới hạn của ảnh lịch sử ngay trong gói: `LICH_SU_LA_XAP_XI` tồn tại từ
+      //   Đợt 6 mà 0 UI đọc (i18n/hằng cho tính năng chưa có UI = chỉ báo QA sớm). Client dựng nhãn từ cờ này.
+      return { may, bayGio: moc, capNhatMoiNhat, tong: may.length, laXapXi: LICH_SU_LA_XAP_XI };
+    }),
+
   luuHangLoat: protectedProcedure
     .use(quyenThietKe("canEdit"))
     .input(
@@ -716,6 +1324,228 @@ export const twinCanhRouter = router({
       return { daGo: true };
     }),
 
+  /* ═══════════════════════════════════════════════════════════════════════
+     ĐỢT 8 LÔ C — CRUD VÙNG AN TOÀN (§11.7 #42)
+     ═══════════════════════════════════════════════════════════════════════
+
+     ★★★ §11c.3 ghi đích của #42 là `VeVungPolygon.tsx` — tệp đó **KHÔNG TỒN
+         TẠI**, và `FactoryFloorEditor.tsx:444` khi ấy là **nơi DUY NHẤT** CRUD
+         vùng an toàn trong hệ. Đây là đường THAY THẾ đầu tiên.
+         ★★★ ĐỢT 61 (QĐ-31): `FactoryFloorEditor` **ĐÃ BỊ XOÁ** — lý do hoãn cũ
+         ("mất tính năng thật") hết hạn khi đo lại DB bằng hai mô hình rời nhau:
+         `factory_zones` 0 hàng, `safety_zones` 0 hàng, `machines.layout*` 0/43.
+         Tuyến này nay là tuyến DUY NHẤT ghi vùng an toàn.
+
+     ★ Cổng quyền: `canEdit` cho ghi, `canDelete` cho xoá — KHÔNG dùng chung một
+       mức. Vẽ lại một vùng và xoá hẳn nó là hai hậu quả khác nhau.
+  */
+
+  /**
+   * Tạo hoặc sửa MỘT vùng an toàn (polygon mm).
+   *
+   * ★ Trần 200 đỉnh khớp `SO_DINH_TOI_DA` của `vungAnToan.ts` — hai cổng, cùng
+   *   một con số. Lệch nhau thì client cho vẽ cái server từ chối, và người dùng
+   *   mất công vẽ rồi nhận lỗi ở bước Lưu.
+   *
+   * ⚠ `z.tuple` cho từng đỉnh (KHÔNG `z.array(z.number())`): một mảng 3 phần tử
+   *   lọt qua `array` và ghi vào jsonb, rồi mọi nơi đọc phải tự đoán phần tử thứ
+   *   ba là gì. Hình dạng phải bị cưỡng chế ở cổng vào.
+   */
+  luuVungAnToan: protectedProcedure
+    .use(quyenThietKe("canEdit"))
+    .input(
+      z.object({
+        id: z.number().int().positive().optional(),
+        tangId: z.number().int().positive(),
+        ten: z.string().trim().min(1).max(255),
+        diemDa: z.array(z.tuple([z.number().finite(), z.number().finite()])).min(3).max(200),
+        viTriXMm: z.number().finite(),
+        viTriYMm: z.number().finite(),
+        viTriZMm: z.number().finite(),
+        caoMm: z.number().finite().positive().max(10_000_000),
+        mau: z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const kq = await luuVungAnToan(
+        { ...input, diemDa: input.diemDa.map(([x, y]) => [x, y] as [number, number]) },
+        phamViCua(ctx),
+      );
+      if (!kq) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "twinVatThe" },
+          "Tầng hoặc vùng không tồn tại, hoặc ngoài phạm vi",
+        );
+      }
+      return kq;
+    }),
+
+  /**
+   * Xoá MỘT vùng an toàn.
+   *
+   * ★★★ Tầng DB ràng `loai='vung'` vào cả `SELECT` lẫn `DELETE`. Không có ràng
+   *   buộc đó thì thủ tục này xoá được **bất kỳ** hàng `twin_vat_the` nào theo
+   *   id — kể cả bốn bức tường bao mà `sinhTuongBao` dựng — và người dùng chỉ
+   *   phát hiện khi vỏ nhà biến mất khỏi cảnh.
+   */
+  xoaVungAnToan: protectedProcedure
+    .use(quyenThietKe("canDelete"))
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const xong = await xoaVungAnToan(input.id, phamViCua(ctx));
+      if (!xong) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "twinVatThe" },
+          "Vùng không tồn tại hoặc ngoài phạm vi",
+        );
+      }
+      return { daXoa: true };
+    }),
+
+
+  // -------------------------------------------------------------------------
+  // Bản ghi bố cục theo tên — `twin_ban_ghi` (§5.3, §11 #55)
+  // -------------------------------------------------------------------------
+
+  /**
+   * ★ Lược đồ Zod của một ảnh chụp. Chặt ở BIÊN, không ở giữa.
+   *   `anhChup` là `jsonb NOT NULL` — DB nhận bất cứ JSON nào, kể cả `{}`. Một
+   *   ảnh chụp rỗng lưu được, xuất bản được, và màn Vận hành đọc ra một nhà máy
+   *   trống mà không lỗi nào nổ. Lược đồ này là chỗ duy nhất chặn được điều đó.
+   */
+  danhSachBanGhi: protectedProcedure
+    .use(quyenThietKe("canView"))
+    .input(z.object({ tangIds: z.array(z.number().int().positive()).min(1).max(50) }))
+    .query(async ({ input, ctx }) => {
+      return traBanGhi(input.tangIds, phamViCua(ctx));
+    }),
+
+  /** Một bản ghi ĐẦY ĐỦ — chỉ gọi khi thật sự khôi phục, `anhChup` có thể vài trăm KB. */
+  chiTietBanGhi: protectedProcedure
+    .use(quyenThietKe("canView"))
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const kq = await traMotBanGhi(input.id, phamViCua(ctx));
+      if (!kq) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "twinBanGhi" },
+          `Ban ghi id=${input.id} khong ton tai hoac ngoai pham vi`,
+        );
+      }
+      return kq;
+    }),
+
+  /**
+   * Lưu bố cục HIỆN TẠI thành một bản ghi có TÊN.
+   *
+   * ★★★ ẢNH CHỤP ĐẾN TỪ CLIENT, VÀ ĐÓ LÀ QUYẾT ĐỊNH CÓ Ý THỨC.
+   *   Cách khác là server tự đọc `twin_dat_cho` rồi tự chụp. Nhưng người dùng
+   *   bấm "Lưu bản ghi" khi đang nhìn bố cục ĐANG SỬA (có thể có thay đổi chưa
+   *   ghi), và một ảnh chụp đọc từ DB sẽ lưu bố cục ĐÃ LƯU — tức không phải thứ
+   *   họ vừa nhìn. Hai bố cục khác nhau mang cùng một cái tên là đúng thứ mà
+   *   tính năng này sinh ra để tránh.
+   *
+   * ⚠ Đánh đổi: client tự khai nội dung ảnh chụp. Nó KHÔNG mở lỗ phân quyền —
+   *   `tangId` vẫn qua `locTangTrongPhamVi`, và ảnh chụp không ghi vào bảng
+   *   sống nào (khôi phục là một lượt `luuHangLoat` riêng, có cổng riêng). Cái
+   *   client tự khai chỉ nằm trong chính bản ghi của họ.
+   */
+  luuBanGhi: protectedProcedure
+    .use(quyenThietKe("canCreate"))
+    .input(
+      z.object({
+        tangId: z.number().int().positive(),
+        nhan: z.string().trim().min(1).max(255),
+        anhChup: z.object({
+          phienBan: z.literal(1),
+          ghiLuc: z.string().min(1).max(64),
+          // ★ `.min(1)` — một ảnh chụp RỖNG bị chặn ở biên. Xem docblock trên.
+          datCho: z
+            .array(
+              z.object({
+                loaiThucThe: z.string().min(1).max(32),
+                thucTheId: z.number().int().positive(),
+                viTriXMm: z.number().finite(),
+                viTriYMm: z.number().finite(),
+                viTriZMm: z.number().finite(),
+                quatX: z.number().finite(),
+                quatY: z.number().finite(),
+                quatZ: z.number().finite(),
+                quatW: z.number().finite(),
+                rongMm: z.number().finite().nullable().optional(),
+                caoMm: z.number().finite().nullable().optional(),
+                sauMm: z.number().finite().nullable().optional(),
+                daKhoa: z.boolean().optional(),
+                hienThi: z.boolean().optional(),
+              }),
+            )
+            .min(1)
+            .max(TRAN_LO_DAT_CHO),
+        }),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const kq = await luuBanGhi(
+        { ...input, nguoiTao: ctx.user?.id ?? null },
+        phamViCua(ctx),
+      );
+      if (!kq) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "twinTang" },
+          `Tang id=${input.tangId} khong ton tai hoac ngoai pham vi`,
+        );
+      }
+      return kq;
+    }),
+
+  /**
+   * XUẤT BẢN một bản ghi — đây là lượt ghi DUY NHẤT chạm tới màn Vận hành.
+   *
+   * ★ `canEdit` chứ không `canCreate`: xuất bản không tạo gì mới, nó đổi thứ
+   *   người khác đang xem. Hai hành động khác nhau về hậu quả nên đi qua hai
+   *   cổng khác nhau — kể cả khi hôm nay hai cổng cùng cho một tập người.
+   */
+  xuatBanBanGhi: protectedProcedure
+    .use(quyenThietKe("canEdit"))
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const kq = await xuatBanBanGhi(input.id, phamViCua(ctx));
+      if (!kq) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "twinBanGhi" },
+          `Ban ghi id=${input.id} khong ton tai hoac ngoai pham vi`,
+        );
+      }
+      return kq;
+    }),
+
+  xoaBanGhi: protectedProcedure
+    .use(quyenThietKe("canDelete"))
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const kq = await xoaBanGhi(input.id, phamViCua(ctx));
+      if (!kq) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "twinBanGhi" },
+          `Ban ghi id=${input.id} khong ton tai hoac ngoai pham vi`,
+        );
+      }
+      // ★ Nói ra rằng vừa gỡ bản màn Vận hành đang đọc — người gọi cảnh báo được.
+      return kq;
+    }),
+
   /**
    * XEM TRƯỚC sinh tự động — CHẠY THUẬT TOÁN NHƯNG KHÔNG GHI GÌ (§7.3).
    *
@@ -755,9 +1585,36 @@ export const twinCanhRouter = router({
    *   thì mất bảo vệ, còn "không có hàng để ghi" thì không sửa nhầm được.
    *
    * ★ Mọi hàng ghi ra mang `nguon='sinh'` ⇒ badge vàng "chưa đo" hiện đúng.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ QUYỀN — `adminProcedure`, KHÔNG phải `quyenThietKe("canCreate")`
+   * ════════════════════════════════════════════════════════════════════════
+   * §6.4 dòng 755 xếp "Sinh tự động, xuất bản phiên bản" vào cột `adminRoleProcedure`,
+   * TÁCH khỏi ba dòng canView/canEdit/canCreate ở trên. Bản đầu dùng
+   * `quyenThietKe("canCreate")` và hậu quả được dựng thành CA DƯƠNG, không phải
+   * suy đoán: cấp `user_factory_assignments` cho `supervisor1` (vai supervisor,
+   * KHÔNG admin, KHÔNG có `settings_factory`) rồi gọi procedure này → HTTP 200
+   * `{"daGhi":81}`. Một tài khoản không-admin ĐÃ ghi đè 81 hàng bố cục.
+   *
+   * Vì sao mức quyền ở đây phải CHẶT HƠN các mutation khác của chính router này:
+   * kéo-thả một máy sửa MỘT hàng và người làm nhìn thấy ngay kết quả, nên
+   * `canEdit` là đủ. `sinhTuDong` ghi đè TOÀN BỘ bố cục trong một lượt (đo được:
+   * 81 hàng) — đây là thao tác phá huỷ nhất của màn Thiết kế, và thứ duy nhất
+   * cứu dữ liệu chỉnh tay là luật NT-4 `nguon='tay'` ở `sinhBoCuc`.
+   *
+   * ⚠ TÊN TRONG SPEC KHÔNG TỒN TẠI TRONG MÃ. Spec viết `adminRoleProcedure`;
+   *   `server/_core/trpc.ts` KHÔNG export định danh nào tên đó (có
+   *   `adminProcedure` và factory `roleProcedure(...)`). Chọn `adminProcedure` vì
+   *   nó đúng NGHĨA spec mô tả (vai admin) và là khuôn mà ~20 router khác trong
+   *   repo đã dùng. Chênh lệch TÊN này đã báo lại ở cổng ra, không tự sửa spec.
+   *
+   * ⚠ `adminProcedure` KÈM cổng 2FA (`batBuoc2FA()` — `trpc.ts:373`): ở triển
+   *   khai internet-facing (`AUTH_2FA_BAT_BUOC` ≠ "0") admin CHƯA bật 2FA sẽ
+   *   nhận `TWO_FACTOR_NOT_SET_UP` chứ không phải chạy được. Đó là hành vi ĐÚNG
+   *   theo §8.4, nhưng nó là thay đổi hành vi thật nên ghi ra đây thay vì để ai
+   *   đó phát hiện lúc nửa đêm.
    */
-  sinhTuDong: protectedProcedure
-    .use(quyenThietKe("canCreate"))
+  sinhTuDong: adminProcedure
     .input(
       z.object({
         factoryId: z.number().int().positive(),

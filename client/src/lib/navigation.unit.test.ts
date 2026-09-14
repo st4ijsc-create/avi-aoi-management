@@ -16,12 +16,14 @@
  *  - Admin bypass is intact (admin passes every gated item regardless of
  *    `requiredRole`), including the still-admin-only `/ai-datasets`.
  */
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import {
   hasAccessToItem,
   getFilteredNavGroups,
   filterNavGroupsByMode,
   defaultNavModeForRole,
+  getNavItemByHref,
   getRequiredPermissionForHref,
   getAcceptedPermissionsForHref,
   type NavGroup,
@@ -72,28 +74,92 @@ describe("navigation.tsx — engineer AI nav widening (doc69 Wave 0-C)", () => {
 });
 
 /**
- * Lô 5 Mục 2 — `getRequiredPermissionForHref`: MỘT NGUỒN cho "quyền của route đích",
- * dùng để sửa lớp lỗi "một lối vào rồi TỪ CHỐI" (mục điều hướng/tile/quicklink khai quyền
- * X trong khi đích thật đòi quyền Y). Ghim hai điều:
- *  1. `/digital-twin` (đích thật của `/layout` sau khi <Redirect> — Khối D Task 1) trả
- *     đúng "analytics_oee" — đây là quyền mà `DataManagementHub.tsx`/`DataSettings.tsx`
- *     phải dùng cho tile/quicklink "layout", KHÔNG PHẢI "settings_factory" đã khai trước
- *     Lô 5 (BG mới, xem lo-5-report.md).
- *  2. `/layout` (mục điều hướng cũ) trả `undefined` — mục này đã bị XOÁ khỏi `navGroups`
- *     ở Khối D Task 2 (04265a03). Không được suy luận nhầm quyền từ một href không còn
- *     mục nav — `undefined` là câu trả lời ĐÚNG, nơi gọi phải tự có fallback rõ ràng.
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 62 mục A — CỔNG QUYỀN CỦA LỐI VÀO "LAYOUT" = CỔNG CỦA **ĐÍCH THẬT**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Lô 5 Mục 2 dựng `getRequiredPermissionForHref` để hai màn (`DataManagementHub`,
+ * `DataSettings`) thôi chép tay chuỗi quyền cho ô/liên kết "Layout". Nó chữa được
+ * *cách chép*, nhưng không chữa được *chép của ai*: cả hai hỏi quyền của
+ * **`/digital-twin`** — một route từ Đợt 21 CHỈ CÒN LÀ REDIRECT. Đích thật (Đợt 61)
+ * là `/twin-studio`, gate `settings_factory` **HOẶC** `machine_control`.
+ *
+ * Đo trên cổng 3062 bằng vai THẬT, trước bản vá (`.qa-dot62/A-TRUOC/`):
+ *   · `analytics_oee` một mình   → THẤY ô, bấm vào **bị TỪ CHỐI**  (dead-end)
+ *   · `machine_control` một mình → **KHÔNG thấy ô**, mà vào được   (lối vào bị giấu)
+ *   · `engineer1` (SEED THẬT)    → **KHÔNG thấy** liên kết, mà vào được
+ *
+ * Ba điều ghim dưới đây, và mỗi điều bắt một cách hỏng KHÁC nhau:
+ *  1. `/twin-studio` trả ĐÚNG TẬP HAI quyền — ai thu nó về một quyền sẽ đỏ.
+ *  2. `getRequiredPermissionForHref("/twin-studio")` trả `undefined` — hàm
+ *     một-quyền **không đọc nổi** route quyền-HOẶC. Ghim cái bẫy CÂM này để nơi
+ *     gọi sau đừng dùng nhầm hàm rồi rơi về fallback đoán mò.
+ *  3. Hai màn kia KHÔNG được nhắc tới `/digital-twin` nữa (quét NGUỒN, không
+ *     quét hành vi): một bản vá đúng mà để lại lời gọi cũ ở màn thứ ba sẽ tái
+ *     diễn y hệt, và không phép đo hành vi nào ở đây thấy được.
  */
-describe("navigation.tsx — getRequiredPermissionForHref (Lô 5 Mục 2, một nguồn quyền-theo-route)", () => {
-  it("/digital-twin (đích thật sau redirect của /layout) trả 'analytics_oee'", () => {
-    expect(getRequiredPermissionForHref("/digital-twin")).toBe("analytics_oee");
+describe("navigation.tsx — cổng quyền lối vào Layout (Đợt 62 mục A)", () => {
+  it("★★★ `/twin-studio` (ĐÍCH THẬT) trả ĐÚNG tập hai quyền, không phải một", () => {
+    expect(getAcceptedPermissionsForHref("/twin-studio")).toEqual([
+      "settings_factory",
+      "machine_control",
+    ]);
+  });
+
+  it("★★★ BẪY CÂM: hàm một-quyền trả `undefined` cho `/twin-studio` (route quyền-HOẶC)", () => {
+    expect(getRequiredPermissionForHref("/twin-studio")).toBeUndefined();
   });
 
   it("/layout (mục nav ĐÃ XOÁ ở Khối D Task 2) trả undefined — không suy ra quyền sai", () => {
     expect(getRequiredPermissionForHref("/layout")).toBeUndefined();
+    expect(getAcceptedPermissionsForHref("/layout")).toEqual([]);
   });
 
-  it("một href không tồn tại trong navGroups cũng trả undefined", () => {
+  it("một href không tồn tại trong navGroups cũng trả undefined / tập rỗng", () => {
     expect(getRequiredPermissionForHref("/khong-ton-tai-lo5")).toBeUndefined();
+    expect(getAcceptedPermissionsForHref("/khong-ton-tai-lo5")).toEqual([]);
+  });
+
+  it("★★★ hai màn quick-link KHÔNG còn tra quyền qua `/digital-twin` (quét nguồn)", () => {
+    for (const tep of ["../pages/DataManagementHub.tsx", "../pages/DataSettings.tsx"]) {
+      const nguon = readFileSync(new URL(tep, import.meta.url), "utf8");
+      expect(nguon, `${tep} còn tra quyền của một route CHỈ LÀ REDIRECT`).not.toContain(
+        'getRequiredPermissionForHref("/digital-twin")',
+      );
+      // và phải tra bằng hàm ĐỌC ĐƯỢC TẬP, không phải hàm một-quyền
+      expect(nguon, `${tep} phải dùng getAcceptedPermissionsForHref`).toContain(
+        'getAcceptedPermissionsForHref',
+      );
+      // ⚠ Không có fallback chuỗi cứng: nó chính là thứ biến "mục nav biến mất"
+      //   thành "ô hiện cho tất cả" trong im lặng.
+      expect(nguon, `${tep} còn fallback chuỗi quyền cứng`).not.toContain('?? "analytics_oee"');
+    }
+  });
+
+  it("★★★ Đợt 62 C — ô nav `/digital-twin` ĐÃ XOÁ, và không ai còn tra quyền qua nó", () => {
+    // Ô này là DÒNG MENU THỨ HAI trỏ vào một route chỉ-là-redirect. Đợt 21 giữ nó
+    // vì hai màn quick-link tra quyền qua chính nó; mục A đã gỡ điều kiện chặn ấy.
+    expect(getNavItemByHref("/digital-twin")).toBeUndefined();
+    expect(getRequiredPermissionForHref("/digital-twin")).toBeUndefined();
+    expect(getAcceptedPermissionsForHref("/digital-twin")).toEqual([]);
+  });
+
+  it("★★★ Đợt 62 C — xoá ô nav KHÔNG được kéo theo lối vào bằng URL", () => {
+    // Cái bị bỏ là dòng menu trùng, KHÔNG phải bookmark cũ. Nếu ai đó "dọn nốt"
+    // <Route path="/digital-twin"> thì 8 đường vào cũ của bảng dinhTuyenTwinCu
+    // chết câm — ô này bắt đúng ca đó, ở tầng rẻ nhất.
+    const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+    expect(app).toContain('<Route path="/digital-twin">');
+  });
+
+  it("★★★ href của lối vào và href dùng tra quyền là MỘT HẰNG (không thể lệch)", () => {
+    // Bất biến CẤU TRÚC, không phải bất biến giá trị: kể cả khi ai đó đổi đích,
+    // hai bên vẫn đổi cùng lúc vì chúng là cùng một biến.
+    const hub = readFileSync(new URL("../pages/DataManagementHub.tsx", import.meta.url), "utf8");
+    expect(hub).toContain("const LAYOUT_TILE_PERMISSION_ANY = getAcceptedPermissionsForHref(LAYOUT_TILE_HREF);");
+    expect(hub).toContain("href: LAYOUT_TILE_HREF");
+    const ds = readFileSync(new URL("../pages/DataSettings.tsx", import.meta.url), "utf8");
+    expect(ds).toContain("const layoutQuyenChapNhan = getAcceptedPermissionsForHref(LAYOUT_QUICKLINK_HREF);");
+    expect(ds).toContain("href: LAYOUT_QUICKLINK_HREF");
   });
 });
 
@@ -233,8 +299,33 @@ describe("★★★ Đợt 3 CHẶN-1 — /twin-studio nhận quyền HOẶC (§
     );
   });
 
-  it("getAcceptedPermissionsForHref vẫn đúng cho route MỘT quyền và route không tồn tại", () => {
-    expect(getAcceptedPermissionsForHref("/twin")).toEqual(["analytics_oee"]);
+  it("getAcceptedPermissionsForHref vẫn đúng cho `/twin` và route không tồn tại", () => {
+    /*
+     * ════════════════════════════════════════════════════════════════════════
+     * ★★★ ĐỢT 22 — KỲ VỌNG NÀY BỊ SỬA, VÀ **MÃ SẢN PHẨM THÌ KHÔNG**
+     * ════════════════════════════════════════════════════════════════════════
+     * Bản cũ ghim `["analytics_oee"]` với tiêu đề *"route MỘT quyền"*. Đó là
+     * một **bánh cóc đã hết hạn**: Đợt 5 CHẶN-1 đã cố ý nới `/twin` sang
+     * `requiredPermissionAny: ["analytics_oee", "machine_status"]`
+     * (`navigation.tsx:475`), vì đo được rằng trong 4 vai non-admin của seed
+     * chỉ `supervisor1` có `analytics_oee` — `engineer1`/`maint1`/`operator1`
+     * đều CHỈ có `machine_status`, tức **3/4 vai vận hành bị chặn khỏi chính
+     * màn Vận hành**, không lỗi nào nổ.
+     *
+     * ⇒ Ca này đỏ vì **nó đang đo một thế giới không còn tồn tại**, không phải
+     *   vì mã hỏng. Đo được: nó đỏ **y hệt ở `HEAD`** (`17a3f4c6`), trước mọi
+     *   thay đổi của Đợt 22 — tức nó KHÔNG phải hồi quy của đợt này.
+     *
+     * ★★★ VÀ ĐÂY LÀ CHỖ PHẢI CẨN THẬN: "sửa test cho xanh" là công thức chuẩn
+     *   để giấu một lỗi thật. Nó hợp lệ ở đây vì có **đối chứng chiều ngược**
+     *   ngay phía trên (`/twin` + `machine_control` ⇒ `false`) vẫn XANH: tập
+     *   quyền được nới đúng MỘT phần tử có lý lẽ đo được, chứ không bị mở toang.
+     *   Nếu ai đó nới `/twin` thêm nữa, ca ấy và ca này cùng đỏ.
+     */
+    expect([...getAcceptedPermissionsForHref("/twin")].sort()).toEqual([
+      "analytics_oee",
+      "machine_status",
+    ]);
     expect(getAcceptedPermissionsForHref("/khong-ton-tai-dot3")).toEqual([]);
   });
 

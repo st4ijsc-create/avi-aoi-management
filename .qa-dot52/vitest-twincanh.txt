@@ -1,0 +1,14 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+stdout | server/db/twinCanhTrungMa.db.test.ts > Đợt 3 CHẶN-2 (mig 0355) — trùng mã: xoá mềm không được chiếm chỗ vĩnh viễn > ★★★ TOÀ NHÀ — xoá mềm rồi TẠO LẠI cùng mã phải THÀNH CÔNG (ngõ cụt đã mở)
+[Database] Connecting to PostgreSQL...
+[Database] Connected successfully
+
+ ✓ server/db/twinCanhTrungMa.db.test.ts (7 tests) 118ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  15:02:08
+   Duration  1.63s (transform 443ms, setup 20ms, collect 1.01s, tests 118ms, environment 0ms, prepare 94ms)
+

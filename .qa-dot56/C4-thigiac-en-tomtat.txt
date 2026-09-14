@@ -1,0 +1,6 @@
+=== DOT 56 · thi giac lang=en tren dist MOI (cong 3056) ===
+so trang thai do : 24
+tong nhan do     : 126
+tong badge do    : 56
+VI PHAM          : 0
+  (0 — moi nhan/badge trong canvas, khong bi che, khong cap chong, 1 canvas, khong tran)

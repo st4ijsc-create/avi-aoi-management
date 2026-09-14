@@ -19,13 +19,22 @@ import {
   demTheoTrangThai,
   demTheoTuoi,
   doiSoatCanh,
+  gopTinhTrang,
   hienSo,
   nhanDoTuoi,
+  nhanTuoiDocDuoc,
   thoiDiemDuLieuMoiNhat,
   tsTrangThaiTuIssues,
+  tsTrangThaiTheoMay,
   trangThaiHienThi,
   type MayVanHanh,
 } from "./trungThucDuLieu";
+// ★ T-3 — nhập THẲNG từ module KHAI để đối chiếu hai đường. Nếu ai đó khai lại
+// một bản sao ở `trungThucDuLieu`, hai vế sẽ tách nhau và test dưới đỏ.
+import {
+  NGUONG_CU_MS as NGUONG_CU_MS_GOC,
+  NGUONG_TUOI_MS as NGUONG_TUOI_MS_GOC,
+} from "../mauTrangThai";
 
 const BAY_GIO = Date.parse("2026-09-06T12:00:00.000Z");
 
@@ -267,15 +276,296 @@ describe("hienSo — ★ NT-3.5 đếm RỖNG khác đếm 0", () => {
 
 describe("nhanDoTuoi", () => {
   it("trả số giây và cờ đỏ khi quá 60 giây", () => {
-    expect(nhanDoTuoi(BAY_GIO - 12_000, BAY_GIO)).toEqual({ giay: 12, do: false });
-    expect(nhanDoTuoi(BAY_GIO - 90_000, BAY_GIO)).toEqual({ giay: 90, do: true });
+    expect(nhanDoTuoi(BAY_GIO - 12_000, BAY_GIO)).toMatchObject({ giay: 12, do: false });
+    expect(nhanDoTuoi(BAY_GIO - 90_000, BAY_GIO)).toMatchObject({ giay: 90, do: true });
   });
 
   it("chưa từng có dữ liệu ⇒ giay null + đỏ (UI hiện '—')", () => {
-    expect(nhanDoTuoi(null, BAY_GIO)).toEqual({ giay: null, do: true });
+    expect(nhanDoTuoi(null, BAY_GIO)).toEqual({ giay: null, do: true, rut: null, quaCu: true });
   });
 
   it("★ đồng hồ client chạy TRƯỚC server ⇒ kẹp về 0, không hiện 'cập nhật -3 giây trước'", () => {
     expect(nhanDoTuoi(BAY_GIO + 3_000, BAY_GIO).giay).toBe(0);
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 23 M4 — "Updated 1572061s ago" (18 NGÀY) HIỆN NHƯ BÌNH THƯỜNG   */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  it("★★★ ca THẬT đo được: 1.572.061 giây ⇒ rút về 18 NGÀY, và quaCu = true", () => {
+    // Con số nguyên văn từ ảnh tự chụp `.qa-dot23/M1-nhan-thu-ca-hai.png`.
+    const n = nhanDoTuoi(BAY_GIO - 1_572_061_000, BAY_GIO);
+    expect(n.giay).toBe(1_572_061); // số THÔ giữ nguyên cho `data-giay`
+    expect(n.rut).toEqual({ so: 18, donVi: "ngay" });
+    expect(n.quaCu).toBe(true);
+  });
+
+  it("★ G30 — `do` KHÔNG phân biệt 61 giây với 18 ngày; `quaCu` thì có", () => {
+    // Đây là toàn bộ lý do ô `quaCu` tồn tại: hai giá trị dưới cùng `do=true`,
+    // nên một màn chỉ đọc `do` sẽ vẽ 18 ngày y như 61 giây.
+    const hoiCu = nhanDoTuoi(BAY_GIO - 61_000, BAY_GIO);
+    const raCu = nhanDoTuoi(BAY_GIO - 1_572_061_000, BAY_GIO);
+    expect(hoiCu.do).toBe(true);
+    expect(raCu.do).toBe(true);
+    expect(hoiCu.quaCu).toBe(false); // 61s < NGUONG_CU_MS (300s)
+    expect(raCu.quaCu).toBe(true);
+  });
+
+  it("★ mốc quaCu đúng bằng NGUONG_CU_MS, không lệch một bậc", () => {
+    expect(nhanDoTuoi(BAY_GIO - NGUONG_CU_MS, BAY_GIO).quaCu).toBe(false);
+    expect(nhanDoTuoi(BAY_GIO - NGUONG_CU_MS - 1, BAY_GIO).quaCu).toBe(true);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 23 M4 — nhanTuoiDocDuoc: ĐƠN VỊ NGƯỜI ĐỌC ĐƯỢC, KHÔNG GIÂY SỐNG    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("nhanTuoiDocDuoc", () => {
+  /**
+   * `t` GIẢ trả thẳng KHOÁ + tham số, nên test khẳng định được **khoá nào được
+   * chọn** thay vì khẳng định một chuỗi tiếng Việt. Đây chính là cách tránh lỗi
+   * *"(17 ngày ago)"*: bài test không được biết ngôn ngữ nào đang bật.
+   */
+  const tGia = (khoa: string, _md: string, opt?: Record<string, unknown>) =>
+    `${khoa}|${JSON.stringify(opt ?? {})}`;
+
+  it("★★★ 1.572.061 giây KHÔNG còn in ra giây — dùng khoá ĐƠN VỊ NGÀY", () => {
+    const s = nhanTuoiDocDuoc(nhanDoTuoi(BAY_GIO - 1_572_061_000, BAY_GIO), tGia);
+    expect(s).toBe('twin3d.moPhong.donVi.ngay|{"n":18}');
+    // Đối chứng NGƯỢC: chuỗi KHÔNG được chứa số giây sống.
+    expect(s).not.toContain("1572061");
+  });
+
+  it("dưới 60 giây vẫn in GIÂY — đó là đơn vị đúng ở nhịp làm mới của màn", () => {
+    expect(nhanTuoiDocDuoc(nhanDoTuoi(BAY_GIO - 12_000, BAY_GIO), tGia)).toBe(
+      'twin3d.vanHanh.donViGiay|{"n":12}',
+    );
+  });
+
+  it("★ DÙNG LẠI ba khoá `twin3d.moPhong.donVi.*`, không đẻ bộ khoá thứ hai (G12)", () => {
+    const gio = nhanTuoiDocDuoc(nhanDoTuoi(BAY_GIO - 3 * 3_600_000, BAY_GIO), tGia);
+    const phut = nhanTuoiDocDuoc(nhanDoTuoi(BAY_GIO - 5 * 60_000, BAY_GIO), tGia);
+    expect(gio).toBe('twin3d.moPhong.donVi.gio|{"n":3}');
+    expect(phut).toBe('twin3d.moPhong.donVi.phut|{"n":5}');
+  });
+
+  it("chưa từng có dữ liệu ⇒ '—', không phải '0 giây'", () => {
+    expect(nhanTuoiDocDuoc(nhanDoTuoi(null, BAY_GIO), tGia)).toBe("—");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ CHẶN-2 — TRUY VẤN BỊ TỪ CHỐI KHÔNG ĐƯỢC HIỆN THÀNH `0`                 */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("gopTinhTrang — 403 phải ra `—` + banner, KHÔNG ra `0`", () => {
+  const ok = (ten: string) => ({ ten, dangTai: false, loi: false, ma: null });
+  const tuChoi = (ten: string) => ({ ten, dangTai: false, loi: true, ma: "FORBIDDEN" });
+  const loiMang = (ten: string) => ({ ten, dangTai: false, loi: true, ma: "INTERNAL_SERVER_ERROR" });
+  const dangTai = (ten: string) => ({ ten, dangTai: true, loi: false, ma: null });
+
+  it("mọi truy vấn OK ⇒ chuaDo false, không tên nào bị nêu", () => {
+    const r = gopTinhTrang([ok("twinCanh.canhThietKe"), ok("andon.active")]);
+    expect(r).toEqual({ chuaDo: false, biTuChoi: [], loiKhac: [] });
+  });
+
+  it("★ CA DƯƠNG THẬT — maint1 bị 403 ở `andon.active`", () => {
+    // Đây là ca ĐO ĐƯỢC trên trình duyệt, không phải ca dựng: `maint1` không có
+    // quyền đọc andon, truy vấn trả FORBIDDEN, mảng rơi về [] và `isLoading` đã
+    // false ⇒ bản cũ in "Cảnh báo (0)".
+    const r = gopTinhTrang([
+      ok("twinCanh.canhThietKe"),
+      ok("factoryCommand.overview"),
+      tuChoi("andon.active"),
+    ]);
+    expect(r.chuaDo).toBe(true);
+    expect(r.biTuChoi).toEqual(["andon.active"]);
+    expect(r.loiKhac).toEqual([]);
+  });
+
+  it("★ hienSo NHẬN cờ đó ⇒ '—', trong khi số 0 THẬT vẫn ra '0'", () => {
+    // Ghim đúng chỗ nối bị thiếu: mảng rỗng vì 403 và mảng rỗng vì thật sự
+    // không có cảnh báo nào là HAI câu khác nhau, và chỉ cờ này tách được.
+    const r = gopTinhTrang([tuChoi("andon.active")]);
+    expect(hienSo(0, r.chuaDo)).toBe("—");
+    const sach = gopTinhTrang([ok("andon.active")]);
+    expect(hienSo(0, sach.chuaDo)).toBe("0");
+  });
+
+  it("★ 403 TÁCH khỏi lỗi mạng — hai cái dẫn tới hai hành động khác nhau", () => {
+    // Gộp chung thì banner sẽ bảo người mất mạng đi xin quyền, và bảo người
+    // thiếu quyền đi thử lại. Cả hai lời khuyên đều sai.
+    const r = gopTinhTrang([tuChoi("andon.active"), loiMang("factoryCommand.overview")]);
+    expect(r.biTuChoi).toEqual(["andon.active"]);
+    expect(r.loiKhac).toEqual(["factoryCommand.overview"]);
+    expect(r.chuaDo).toBe(true);
+  });
+
+  it("lỗi KHÔNG phải 403 vẫn bật chuaDo — số vẫn chưa có nghĩa", () => {
+    const r = gopTinhTrang([loiMang("andon.active")]);
+    expect(r.chuaDo).toBe(true);
+    expect(r.biTuChoi).toEqual([]);
+  });
+
+  it("đang tải bật chuaDo nhưng KHÔNG nêu tên — chưa có gì để trách", () => {
+    const r = gopTinhTrang([dangTai("andon.active")]);
+    expect(r).toEqual({ chuaDo: true, biTuChoi: [], loiKhac: [] });
+  });
+
+  it("nêu ĐÍCH DANH nhiều truy vấn bị từ chối, giữ nguyên thứ tự khai", () => {
+    const r = gopTinhTrang([tuChoi("twinCanh.canhThietKe"), ok("x"), tuChoi("andon.active")]);
+    expect(r.biTuChoi).toEqual(["twinCanh.canhThietKe", "andon.active"]);
+  });
+
+  it("★ CA CÂM HƠN 403 — truy vấn `enabled:false` chưa từng chạy", () => {
+    // Đo thật với `maint1`: `factory.list` trả `[]` kèm HTTP **200** (KHÔNG 403),
+    // nên `factoryId` ở lại null và canhQ/overviewQ bị enabled:false. react-query
+    // để isLoading=false + isError=false ⇒ ô đếm in `0` trông y như một nhà máy
+    // đã đo xong và rỗng thật. Không lỗi nào nổ.
+    const r = gopTinhTrang([
+      ok("factory.list"),
+      { ten: "twinCanh.canhThietKe", dangTai: false, loi: false, ma: null, chuaChay: true },
+      { ten: "factoryCommand.overview", dangTai: false, loi: false, ma: null, chuaChay: true },
+    ]);
+    expect(r.chuaDo).toBe(true);
+    expect(hienSo(0, r.chuaDo)).toBe("—");
+  });
+
+  it("★ chưa-chạy KHÔNG bị nêu tên trong banner — không ai từ chối họ cả", () => {
+    // Nêu tên sẽ gửi người dùng đi xin một quyền mà họ không hề thiếu.
+    const r = gopTinhTrang([
+      { ten: "twinCanh.canhThietKe", dangTai: false, loi: false, ma: null, chuaChay: true },
+    ]);
+    expect(r.biTuChoi).toEqual([]);
+    expect(r.loiKhac).toEqual([]);
+    expect(r.chuaDo).toBe(true);
+  });
+
+  it("chuaChay=false không bật gì — cờ vắng mặt phải trung tính", () => {
+    const r = gopTinhTrang([{ ten: "x", dangTai: false, loi: false, ma: null, chuaChay: false }]);
+    expect(r.chuaDo).toBe(false);
+  });
+
+  it("danh sách rỗng ⇒ không chuaDo (không tự bịa lỗi khi chưa hỏi gì)", () => {
+    expect(gopTinhTrang([])).toEqual({ chuaDo: false, biTuChoi: [], loiKhac: [] });
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ T-3 — MỘT NGƯỠNG, KHÔNG HAI BẢN SAO                                    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("T-3 — ngưỡng tươi dùng chung với `mauTrangThai`", () => {
+  const T0 = 1_700_000_000_000;
+
+  it("hai hằng re-export mang đúng giá trị spec NT-3", () => {
+    // SỐ VIẾT TAY — không suy lại từ chính hằng đang đo.
+    expect(NGUONG_TUOI_MS).toBe(60_000);
+    expect(NGUONG_CU_MS).toBe(300_000);
+  });
+
+  it("★ hằng ở đây LÀ CHÍNH hằng của `mauTrangThai`, không phải bản sao", () => {
+    // Đây là phép đo cốt lõi của T-3: hai module phải trỏ vào MỘT ô nhớ. Nếu ai
+    // khai lại số ở một bên, ô này đỏ dù cả hai bên vẫn "tự nhất quán".
+    expect(NGUONG_TUOI_MS).toBe(NGUONG_TUOI_MS_GOC);
+    expect(NGUONG_CU_MS).toBe(NGUONG_CU_MS_GOC);
+  });
+
+  it("★ biên HÀNH VI ở đúng 5 PHÚT — số viết tay, bắt cả ca đổi hằng", () => {
+    // Ba test kia đều dùng hằng ở CẢ HAI vế nên chúng trôi theo mọi đột biến của
+    // hằng. Ô này ghim spec NT-3 bằng SỐ THẬT: "quá 5 phút là không rõ". Đổi
+    // ngưỡng mà không đổi spec thì phải đỏ ở đây.
+    const mk = (tuoiMs: number) =>
+      trangThaiHienThi(
+        { id: 1, ma: "M1", ten: "M1", loaiMay: "AOI", trangThaiBaoCao: "running",
+          thoiDiemDuLieu: T0 - tuoiMs, isActive: true, stationId: null, lineId: null },
+        T0,
+      ).tuoi;
+    expect(mk(300_000)).toBe("cu");
+    expect(mk(300_001)).toBe("khong_ro");
+  });
+
+  it("★ biên của `trangThaiHienThi` DI CHUYỂN theo hằng — nối thật, không trùng hợp", () => {
+    // Hằng đúng mà hàm vẫn đọc số cứng thì hai ô trên vẫn xanh. Ô này bắt ca đó:
+    // nó hỏi HÀNH VI ở đúng hai bên biên do hằng quy định.
+    const tren = trangThaiHienThi(
+      { id: 1, ma: "M1", ten: "M1", loaiMay: "AOI", trangThaiBaoCao: "running",
+        thoiDiemDuLieu: T0 - NGUONG_CU_MS, isActive: true, stationId: null, lineId: null },
+      T0,
+    );
+    const duoi = trangThaiHienThi(
+      { id: 1, ma: "M1", ten: "M1", loaiMay: "AOI", trangThaiBaoCao: "running",
+        thoiDiemDuLieu: T0 - NGUONG_CU_MS - 1, isActive: true, stationId: null, lineId: null },
+      T0,
+    );
+    expect(tren.tuoi).toBe("cu");
+    expect(duoi.tuoi).toBe("khong_ro");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 34 (Pareto #1) — `tsTrangThaiTheoMay`: MỘT hàm cho ba màn, server thắng   */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+describe("★★★ Đợt 34 — tsTrangThaiTheoMay: ưu tiên `tsTrangThai` của server, issue chỉ là đường lùi", () => {
+  const ISO = "2026-09-06T11:00:00.000Z";
+  const MS = Date.parse(ISO);
+
+  it("nút CÓ `tsTrangThai` ⇒ mốc = Date.parse(ISO); issue `offline` CÙNG máy bị bỏ qua (server thắng)", () => {
+    const m = tsTrangThaiTheoMay(
+      [{ id: 14, tsTrangThai: ISO }],
+      [{ kind: "offline", machineId: 14, ageMinutes: 3 }],
+      BAY_GIO,
+    );
+    expect(m.get(14)).toBe(MS);
+    expect(m.get(14)).not.toBe(BAY_GIO - 3 * 60_000);
+  });
+
+  it("★★★ `tsTrangThai: null` = CHƯA TỪNG báo cáo THẬT ⇒ null, KHÔNG rơi về issue `offline` ageMinutes=0", () => {
+    // Server cho máy chưa từng có gì một issue `offline` với `ageMinutes: 0` (hợp đồng cũ). Rơi về nó
+    // sẽ cho `bayGio − 0` = "vừa xong" — đúng lời nói dối NT-3.5 cấm: "chưa từng" thành "tươi".
+    const m = tsTrangThaiTheoMay(
+      [{ id: 9, tsTrangThai: null }],
+      [{ kind: "offline", machineId: 9, ageMinutes: 0 }],
+      BAY_GIO,
+    );
+    expect(m.has(9)).toBe(true);
+    expect(m.get(9)).toBeNull();
+    expect(nhanDoTuoi(m.get(9) ?? null, BAY_GIO).giay).toBeNull(); // ⇒ UI "Never reported" — và CHỈ ca này
+  });
+
+  it("trường VẮNG (server cũ) ⇒ rơi về `tsTrangThaiTuIssues` — hành vi trước Đợt 34 giữ nguyên", () => {
+    const m = tsTrangThaiTheoMay(
+      [{ id: 7 }, { id: 8 }],
+      [{ kind: "offline", machineId: 7, ageMinutes: 3 }],
+      BAY_GIO,
+    );
+    expect(m.get(7)).toBe(BAY_GIO - 3 * 60_000);
+    expect(m.get(8)).toBeNull();
+  });
+
+  it("ISO rác ⇒ null (không đoán), không ném", () => {
+    const m = tsTrangThaiTheoMay([{ id: 1, tsTrangThai: "khong-phai-iso" }], [], BAY_GIO);
+    expect(m.get(1)).toBeNull();
+  });
+
+  it("★ CA THẬT 2026-09-10: 43 máy log `online`, 0 issue `offline` — trước: 0 mốc; sau: mọi máy có mốc", () => {
+    const may = Array.from({ length: 43 }, (_, i) => ({
+      id: i + 1,
+      // 2/42 máy của DB này chưa từng có nhịp tim ⇒ null THẬT.
+      tsTrangThai: i < 2 ? null : "2026-07-16T17:13:29.993Z",
+    }));
+    const truoc = tsTrangThaiTuIssues([], BAY_GIO); // vòng lặp cũ của ba trang
+    const sau = tsTrangThaiTheoMay(may, [], BAY_GIO);
+    expect(truoc.size).toBe(0);
+    expect([...sau.values()].filter((v) => v != null).length).toBe(41);
+    expect([...sau.values()].filter((v) => v == null).length).toBe(2);
+    // Mốc 54 ngày ⇒ vẫn `khong_ro`, nhưng nhãn là "54 ngày" chứ không phải "Never reported".
+    expect(nhanDoTuoi(sau.get(3) ?? null, BAY_GIO).giay).not.toBeNull();
+  });
+
+  it("thứ tự nút không đổi kết quả; máy không có trong `machines[]` thì không có mốc (Map không chứa)", () => {
+    const m = tsTrangThaiTheoMay([{ id: 2, tsTrangThai: ISO }], [{ kind: "offline", machineId: 5, ageMinutes: 1 }], BAY_GIO);
+    expect(m.has(5)).toBe(false);
   });
 });

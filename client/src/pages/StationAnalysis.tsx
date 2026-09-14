@@ -154,10 +154,46 @@ const AI_SUB_TABS: { id: AiSubTab; label: string; icon: any }[] = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-export default function StationAnalysis() {
+/**
+ * Station analysis BODY — no `DashboardLayout`, `stationId` is a PARAMETER.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ WHY THIS SPLIT EXISTS (Đợt 10 lô G, 2026-09-07)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Owner requirement: *"xem chi tiết của máy/Line không sử dụng redirect chuyển
+ * trang … cần dialog hoặc modal … để ng dùng không cần rời màn hình 3D digital
+ * Twin"*. The Twin operations screen (`/twin`) must show this analysis IN PLACE.
+ *
+ * Before this split the page read its own route (`useParams<{id}>()`), so
+ * mounting it anywhere else yielded `stationId = NaN` → the "invalid station id"
+ * branch. That is a SILENT failure: no error, just the wrong content.
+ *
+ * The split follows the precedent already proven in this repo —
+ * `MachineCockpit.tsx:720` `MachineCockpitBody({machineId, embedded})`, embedded
+ * by `MachineWorkspace.tsx:78`.
+ *
+ * ⚠ BEHAVIOUR OF `/station-analysis/:id` IS UNCHANGED. The route (`App.tsx:336`)
+ *   mounts the `default` export below, which reads the same param the same way
+ *   and wraps the same `DashboardLayout`. Nothing inside the body was added,
+ *   removed, or reordered — only the two `<DashboardLayout>` frames moved out.
+ *
+ * ★ `useSearch()` stays INSIDE the body on purpose: it reads `?dp/from/to` once
+ *   on mount for the date preset. On `/twin` those params are simply absent, so
+ *   the body falls back to its documented default (`"1w"`) — the same thing that
+ *   happens when someone opens `/station-analysis/5` with no query string.
+ *
+ * @param embedded reserved for density tweaks; kept for signature parity with
+ *   `MachineCockpitBody` so both embed sites read the same.
+ */
+export function StationAnalysisBody({
+  stationId,
+  embedded = false,
+}: {
+  stationId: number;
+  embedded?: boolean;
+}) {
+  void embedded;
   const { t } = useTranslation();
-  const params = useParams<{ id: string }>();
-  const stationId = Number(params.id);
 
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [qcSubTab, setQcSubTab] = useState<QcSubTab>("histogram");
@@ -331,20 +367,18 @@ export default function StationAnalysis() {
 
   if (isNaN(stationId)) {
     return (
-      <DashboardLayout>
-        <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-          <ShieldAlert className="h-12 w-12 mb-3" />
-          <p>{t("stationAnalysis.invalidStationId")}</p>
-          <Link href="/production-dashboard" className="text-primary hover:underline mt-2 text-sm">
-            {t("stationAnalysis.backToDashboard")}
-          </Link>
-        </div>
-      </DashboardLayout>
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+        <ShieldAlert className="h-12 w-12 mb-3" />
+        <p>{t("stationAnalysis.invalidStationId")}</p>
+        <Link href="/production-dashboard" className="text-primary hover:underline mt-2 text-sm">
+          {t("stationAnalysis.backToDashboard")}
+        </Link>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
+    <>
       {/* ── Off-screen report print view: mounts EVERY chart (all tabs + the
           measurement-mode SPC + board image + NG gallery) from prefetched data so
           ReportExportButton captures them regardless of the active tab (§6.3/§6.5).
@@ -620,6 +654,21 @@ export default function StationAnalysis() {
           )}
         </div>
       </div>
+    </>
+  );
+}
+
+/**
+ * Standalone route wrapper — reads `/station-analysis/:id` and frames the body
+ * in the app shell. This is what `App.tsx:336` mounts, so the route behaves
+ * exactly as it did before the body was split out.
+ */
+export default function StationAnalysis() {
+  const params = useParams<{ id: string }>();
+  const stationId = Number(params.id);
+  return (
+    <DashboardLayout>
+      <StationAnalysisBody stationId={stationId} />
     </DashboardLayout>
   );
 }

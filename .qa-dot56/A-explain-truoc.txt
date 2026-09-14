@@ -1,0 +1,205 @@
+=== DOT 56 muc A — EXPLAIN AM 4 cau DISTINCT ON (truoc) — 2026-09-12T15:05:49.788Z ===
+TIEU CHI BENH THAT (G137): quet > 50 000 hang  HOAC  external merge  HOAC  AM > 20 ms
+
+════════ Q1 dong252 machine_status_logs (ORDER BY timestamp DESC) ════════
+so hang bang machine_status_logs: 7814
+--- index co san ---
+  idx_status_logs_machine  CREATE INDEX idx_status_logs_machine ON public.machine_status_logs USING btree ("machineId")
+  idx_status_logs_status  CREATE INDEX idx_status_logs_status ON public.machine_status_logs USING btree (status)
+  idx_status_logs_timestamp  CREATE INDEX idx_status_logs_timestamp ON public.machine_status_logs USING btree ("timestamp")
+  machine_status_logs_pkey  CREATE UNIQUE INDEX machine_status_logs_pkey ON public.machine_status_logs USING btree (id)
+
+[lan 1 NGUOI] Execution 4.15 ms
+Unique  (cost=738.20..778.47 rows=283 width=24) (actual time=3.173..3.855 rows=43 loops=1)
+  Buffers: shared hit=121
+  ->  Sort  (cost=738.20..758.33 rows=8054 width=24) (actual time=3.165..3.480 rows=7814 loops=1)
+        Sort Key: "machineId", "timestamp" DESC
+        Sort Method: quicksort  Memory: 498kB
+        Buffers: shared hit=121
+        ->  Seq Scan on machine_status_logs  (cost=0.00..215.68 rows=8054 width=24) (actual time=0.044..1.027 rows=7814 loops=1)
+              Buffers: shared hit=115
+Planning:
+  Buffers: shared hit=24 read=4
+Planning Time: 0.390 ms
+Execution Time: 4.150 ms
+
+[5 lan AM] 3.218 · 3.962 · 3.611 · 3.601 · 3.060 ms  ⇒ trung vi 3.601 ms
+[plan AM lan cuoi]
+Unique  (cost=738.20..778.47 rows=283 width=24) (actual time=2.412..2.903 rows=43 loops=1)
+  Buffers: shared hit=115
+  ->  Sort  (cost=738.20..758.33 rows=8054 width=24) (actual time=2.406..2.629 rows=7814 loops=1)
+        Sort Key: "machineId", "timestamp" DESC
+        Sort Method: quicksort  Memory: 498kB
+        Buffers: shared hit=115
+        ->  Seq Scan on machine_status_logs  (cost=0.00..215.68 rows=8054 width=24) (actual time=0.028..0.819 rows=7814 loops=1)
+              Buffers: shared hit=115
+Planning:
+  Buffers: shared hit=2
+Planning Time: 0.298 ms
+Execution Time: 3.060 ms
+
+>>> CHAN DOAN: bang 7814 hang · am(trung vi) 3.601 ms · external merge: false · uoc quet toi da 8054 hang ⇒ BENH THAT = KHONG
+
+════════ Q2 dong264 machine_heartbeats (ORDER BY timestamp DESC) ════════
+so hang bang machine_heartbeats: 108
+--- index co san ---
+  idx_heartbeats_machine  CREATE INDEX idx_heartbeats_machine ON public.machine_heartbeats USING btree ("machineId")
+  idx_heartbeats_timestamp  CREATE INDEX idx_heartbeats_timestamp ON public.machine_heartbeats USING btree ("timestamp")
+  machine_heartbeats_pkey  CREATE UNIQUE INDEX machine_heartbeats_pkey ON public.machine_heartbeats USING btree (id, "timestamp")
+
+[lan 1 NGUOI] Execution 0.601 ms
+Result  (cost=72.99..92.45 rows=200 width=20) (actual time=0.178..0.245 rows=36 loops=1)
+  Buffers: shared hit=74 read=1
+  ->  Unique  (cost=72.99..92.45 rows=200 width=20) (actual time=0.163..0.227 rows=36 loops=1)
+        Buffers: shared hit=74 read=1
+        ->  Merge Append  (cost=72.99..89.95 rows=1000 width=12) (actual time=0.161..0.220 rows=36 loops=1)
+              Sort Key: machine_heartbeats."machineId", machine_heartbeats."timestamp" DESC
+              Buffers: shared hit=74 read=1
+              ->  Custom Scan (SkipScan) on _hyper_5_13_chunk  (cost=10.39..12.43 rows=200 width=12) (actual time=0.118..0.173 rows=36 loops=1)
+                    Buffers: shared hit=72 read=1
+                    ->  Custom Scan (ColumnarScan) on _hyper_5_13_chunk  (cost=10.39..2151.30 rows=210000 width=12) (actual time=0.086..0.135 rows=36 loops=1)
+                          Buffers: shared hit=72 read=1
+                          ->  Index Scan using "compress_hyper_6_58_chunk_machineId__ts_meta_v2_first_times_idx" on compress_hyper_6_58_chunk  (cost=0.14..51.30 rows=210 width=56) (actual time=0.041..0.071 rows=36 loops=1)
+                                Buffers: shared hit=72 read=1
+              ->  Sort  (cost=31.29..32.29 rows=400 width=12) (actual time=0.028..0.028 rows=0 loops=1)
+                    Sort Key: _hyper_5_94_chunk."machineId", _hyper_5_94_chunk."timestamp" DESC
+                    Sort Method: quicksort  Memory: 25kB
+                    Buffers: shared hit=1
+                    ->  Seq Scan on _hyper_5_94_chunk  (cost=0.00..14.00 rows=400 width=12) (actual time=0.017..0.017 rows=0 loops=1)
+                          Buffers: shared hit=1
+              ->  Sort  (cost=31.29..32.29 rows=400 width=12) (actual time=0.013..0.013 rows=0 loops=1)
+                    Sort Key: _hyper_5_98_chunk."machineId", _hyper_5_98_chunk."timestamp" DESC
+                    Sort Method: quicksort  Memory: 25kB
+                    Buffers: shared hit=1
+                    ->  Seq Scan on _hyper_5_98_chunk  (cost=0.00..14.00 rows=400 width=12) (actual time=0.007..0.007 rows=0 loops=1)
+                          Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=46 read=1
+Planning Time: 0.828 ms
+Execution Time: 0.601 ms
+
+[5 lan AM] 0.321 · 0.281 · 0.605 · 0.385 · 0.474 ms  ⇒ trung vi 0.385 ms
+[plan AM lan cuoi]
+Result  (cost=72.99..92.45 rows=200 width=20) (actual time=0.165..0.290 rows=36 loops=1)
+  Buffers: shared hit=75
+  ->  Unique  (cost=72.99..92.45 rows=200 width=20) (actual time=0.138..0.253 rows=36 loops=1)
+        Buffers: shared hit=75
+        ->  Merge Append  (cost=72.99..89.95 rows=1000 width=12) (actual time=0.129..0.237 rows=36 loops=1)
+              Sort Key: machine_heartbeats."machineId", machine_heartbeats."timestamp" DESC
+              Buffers: shared hit=75
+              ->  Custom Scan (SkipScan) on _hyper_5_13_chunk  (cost=10.39..12.43 rows=200 width=12) (actual time=0.059..0.165 rows=36 loops=1)
+                    Buffers: shared hit=73
+                    ->  Custom Scan (ColumnarScan) on _hyper_5_13_chunk  (cost=10.39..2151.30 rows=210000 width=12) (actual time=0.055..0.152 rows=36 loops=1)
+                          Buffers: shared hit=73
+                          ->  Index Scan using "compress_hyper_6_58_chunk_machineId__ts_meta_v2_first_times_idx" on compress_hyper_6_58_chunk  (cost=0.14..51.30 rows=210 width=56) (actual time=0.029..0.086 rows=36 loops=1)
+                                Buffers: shared hit=73
+              ->  Sort  (cost=31.29..32.29 rows=400 width=12) (actual time=0.055..0.056 rows=0 loops=1)
+                    Sort Key: _hyper_5_94_chunk."machineId", _hyper_5_94_chunk."timestamp" DESC
+                    Sort Method: quicksort  Memory: 25kB
+                    Buffers: shared hit=1
+                    ->  Seq Scan on _hyper_5_94_chunk  (cost=0.00..14.00 rows=400 width=12) (actual time=0.041..0.041 rows=0 loops=1)
+                          Buffers: shared hit=1
+              ->  Sort  (cost=31.29..32.29 rows=400 width=12) (actual time=0.013..0.013 rows=0 loops=1)
+                    Sort Key: _hyper_5_98_chunk."machineId", _hyper_5_98_chunk."timestamp" DESC
+                    Sort Method: quicksort  Memory: 25kB
+                    Buffers: shared hit=1
+                    ->  Seq Scan on _hyper_5_98_chunk  (cost=0.00..14.00 rows=400 width=12) (actual time=0.007..0.007 rows=0 loops=1)
+                          Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=32
+Planning Time: 1.802 ms
+Execution Time: 0.474 ms
+
+>>> CHAN DOAN: bang 108 hang · am(trung vi) 0.385 ms · external merge: false · uoc quet toi da 210000 hang ⇒ BENH THAT = KHONG
+
+════════ Q3 dong277 machine_positions (ORDER BY updatedAt DESC) ════════
+so hang bang machine_positions: 0
+--- index co san ---
+  idx_positions_layout  CREATE INDEX idx_positions_layout ON public.machine_positions USING btree ("layoutId")
+  idx_positions_machine  CREATE INDEX idx_positions_machine ON public.machine_positions USING btree ("machineId")
+  machine_positions_pkey  CREATE UNIQUE INDEX machine_positions_pkey ON public.machine_positions USING btree (id)
+
+[lan 1 NGUOI] Execution 0.099 ms
+Unique  (cost=2.29..2.47 rows=36 width=40) (actual time=0.044..0.044 rows=0 loops=1)
+  Buffers: shared hit=1
+  ->  Sort  (cost=2.29..2.38 rows=36 width=40) (actual time=0.043..0.043 rows=0 loops=1)
+        Sort Key: "machineId", "updatedAt" DESC
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=1
+        ->  Seq Scan on machine_positions  (cost=0.00..1.36 rows=36 width=40) (actual time=0.025..0.025 rows=0 loops=1)
+              Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=22 read=4
+Planning Time: 0.594 ms
+Execution Time: 0.099 ms
+
+[5 lan AM] 0.083 · 0.102 · 0.053 · 0.064 · 0.059 ms  ⇒ trung vi 0.064 ms
+[plan AM lan cuoi]
+Unique  (cost=2.29..2.47 rows=36 width=40) (actual time=0.027..0.028 rows=0 loops=1)
+  Buffers: shared hit=1
+  ->  Sort  (cost=2.29..2.38 rows=36 width=40) (actual time=0.027..0.027 rows=0 loops=1)
+        Sort Key: "machineId", "updatedAt" DESC
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=1
+        ->  Seq Scan on machine_positions  (cost=0.00..1.36 rows=36 width=40) (actual time=0.018..0.018 rows=0 loops=1)
+              Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=2
+Planning Time: 0.279 ms
+Execution Time: 0.059 ms
+
+>>> CHAN DOAN: bang 0 hang · am(trung vi) 0.064 ms · external merge: false · uoc quet toi da 36 hang ⇒ BENH THAT = KHONG
+
+════════ Q4 dong317 machine_health_history (ORDER BY createdAt DESC — DA VA dot53) ════════
+so hang bang machine_health_history: 217683
+--- index co san ---
+  idx_health_machine  CREATE INDEX idx_health_machine ON public.machine_health_history USING btree ("machineId")
+  idx_health_machine_code  CREATE INDEX idx_health_machine_code ON public.machine_health_history USING btree ("machineCode")
+  idx_health_machine_created_desc  CREATE INDEX idx_health_machine_created_desc ON public.machine_health_history USING btree ("machineId", "createdAt" DESC)
+  idx_health_machine_time  CREATE INDEX idx_health_machine_time ON public.machine_health_history USING btree ("machineId", "timestamp")
+  idx_health_score  CREATE INDEX idx_health_score ON public.machine_health_history USING btree ("healthScore")
+  idx_health_timestamp  CREATE INDEX idx_health_timestamp ON public.machine_health_history USING btree ("timestamp")
+  machine_health_history_pkey  CREATE UNIQUE INDEX machine_health_history_pkey ON public.machine_health_history USING btree (id)
+  uq_machine_health_history_machine_ts  CREATE UNIQUE INDEX uq_machine_health_history_machine_ts ON public.machine_health_history USING btree ("machineId", "timestamp")
+
+[lan 1 NGUOI] Execution 0.628 ms
+Result  (cost=0.42..23.80 rows=43 width=28) (actual time=0.080..0.527 rows=43 loops=1)
+  Buffers: shared hit=124 read=53
+  ->  Unique  (cost=0.42..23.80 rows=43 width=28) (actual time=0.071..0.513 rows=43 loops=1)
+        Buffers: shared hit=124 read=53
+        ->  Custom Scan (SkipScan) on machine_health_history  (cost=0.42..23.69 rows=43 width=28) (actual time=0.068..0.504 rows=43 loops=1)
+              Buffers: shared hit=124 read=53
+              ->  Index Scan using idx_health_machine_created_desc on machine_health_history  (cost=0.42..27993.54 rows=213777 width=28) (actual time=0.066..0.496 rows=43 loops=1)
+                    Buffers: shared hit=124 read=53
+Planning:
+  Buffers: shared hit=20 read=2
+Planning Time: 0.274 ms
+Execution Time: 0.628 ms
+
+[5 lan AM] 0.195 · 0.252 · 0.298 · 0.167 · 0.372 ms  ⇒ trung vi 0.252 ms
+[plan AM lan cuoi]
+Result  (cost=0.42..23.80 rows=43 width=28) (actual time=0.026..0.345 rows=43 loops=1)
+  Buffers: shared hit=177
+  ->  Unique  (cost=0.42..23.80 rows=43 width=28) (actual time=0.022..0.337 rows=43 loops=1)
+        Buffers: shared hit=177
+        ->  Custom Scan (SkipScan) on machine_health_history  (cost=0.42..23.69 rows=43 width=28) (actual time=0.020..0.330 rows=43 loops=1)
+              Buffers: shared hit=177
+              ->  Index Scan using idx_health_machine_created_desc on machine_health_history  (cost=0.42..27993.54 rows=213777 width=28) (actual time=0.018..0.324 rows=43 loops=1)
+                    Buffers: shared hit=177
+Planning:
+  Buffers: shared hit=2
+Planning Time: 0.160 ms
+Execution Time: 0.372 ms
+
+>>> CHAN DOAN: bang 217683 hang · am(trung vi) 0.252 ms · external merge: false · uoc quet toi da 213777 hang ⇒ BENH THAT = CO
+
+
+=== TOM TAT ===
+Q1 dong252 machine_status_logs (ORDER BY timestamp DESC)
+   hang=7814 am=3.601ms seq=true Sort Method: quicksort  Memory: 498kB quet<=8054 ⇒ BENH=KHONG
+Q2 dong264 machine_heartbeats (ORDER BY timestamp DESC)
+   hang=108 am=0.385ms seq=true Sort Method: quicksort  Memory: 25kB quet<=210000 ⇒ BENH=KHONG
+Q3 dong277 machine_positions (ORDER BY updatedAt DESC)
+   hang=0 am=0.064ms seq=true Sort Method: quicksort  Memory: 25kB quet<=36 ⇒ BENH=KHONG
+Q4 dong317 machine_health_history (ORDER BY createdAt DESC — DA VA dot53)
+   hang=217683 am=0.252ms seq=false (khong sort) quet<=213777 ⇒ BENH=CO

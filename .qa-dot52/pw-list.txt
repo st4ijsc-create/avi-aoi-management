@@ -1,0 +1,188 @@
+
+[bang-chung] *** .qa-dot22 DA CO 35 tep (bang chung cua dot truoc).
+[bang-chung] Duong ra DOI sang: .qa-dot22-lai-20260912-080537
+[bang-chung] Muon cho khac: TWIN_E2E_ANH_DOT22=<thu muc>  ·  muon ghi de that: QA_GHI_DE_BANG_CHUNG=1
+
+
+[bang-chung] *** .qa-dot23 DA CO 10 tep (bang chung cua dot truoc).
+[bang-chung] Duong ra DOI sang: .qa-dot23-lai-20260912-080537
+[bang-chung] Muon cho khac: TWIN_E2E_ANH_DOT23=<thu muc>  ·  muon ghi de that: QA_GHI_DE_BANG_CHUNG=1
+
+
+[bang-chung] *** .qa-dot24 DA CO 28 tep (bang chung cua dot truoc).
+[bang-chung] Duong ra DOI sang: .qa-dot24-lai-20260912-080537
+[bang-chung] Muon cho khac: TWIN_E2E_ANH_DOT24=<thu muc>  ·  muon ghi de that: QA_GHI_DE_BANG_CHUNG=1
+
+
+[bang-chung] *** .qa-dot26 DA CO 12 tep (bang chung cua dot truoc).
+[bang-chung] Duong ra DOI sang: .qa-dot26-lai-20260912-080537
+[bang-chung] Muon cho khac: TWIN_E2E_ANH_DOT26=<thu muc>  ·  muon ghi de that: QA_GHI_DE_BANG_CHUNG=1
+
+
+[bang-chung] *** .qa-dot31 DA CO 52 tep (bang chung cua dot truoc).
+[bang-chung] Duong ra DOI sang: .qa-dot31-lai-20260912-080537
+[bang-chung] Muon cho khac: TWIN_E2E_ANH_DOT31=<thu muc>  ·  muon ghi de that: QA_GHI_DE_BANG_CHUNG=1
+
+
+[bang-chung] *** .qa-dot38/e2e DA CO 6 tep (bang chung cua dot truoc).
+[bang-chung] Duong ra DOI sang: .qa-dot38/e2e-lai-20260912-080537
+[bang-chung] Muon cho khac: TWIN_E2E_ANH_DOT38=<thu muc>  ·  muon ghi de that: QA_GHI_DE_BANG_CHUNG=1
+
+
+[bang-chung] *** .qa-dot47/e2e DA CO 20 tep (bang chung cua dot truoc).
+[bang-chung] Duong ra DOI sang: .qa-dot47/e2e-lai-20260912-080537
+[bang-chung] Muon cho khac: TWIN_E2E_ANH=<thu muc>  ·  muon ghi de that: QA_GHI_DE_BANG_CHUNG=1
+
+Listing tests:
+  [chromium] › api-health.spec.ts:8:3 › API smoke › GET /health trả về trạng thái ok
+  [chromium] › api-health.spec.ts:16:3 › API smoke › GET /api/oauth/providers trả danh sách provider (external API)
+  [chromium] › dashboard.spec.ts:9:3 › App shell smoke › root route render không lỗi
+  [chromium] › dashboard.spec.ts:19:3 › App shell smoke › trang dashboard có thể truy cập (redirect login hoặc render)
+  [chromium] › login.spec.ts:7:3 › Login page smoke › trang /login hiển thị và có input + nút submit
+  [chromium] › overview-responsive.spec.ts:39:5 › Tổng quan @ 1280×800 — không tràn ngang (no hScroll) › /login không tràn ngang tại 1280px
+  [chromium] › overview-responsive.spec.ts:39:5 › Tổng quan @ 1280×800 — không tràn ngang (no hScroll) › /dashboard không tràn ngang tại 1280px
+  [chromium] › overview-responsive.spec.ts:39:5 › Tổng quan @ 1280×800 — không tràn ngang (no hScroll) › /control-tower không tràn ngang tại 1280px
+  [chromium] › overview-responsive.spec.ts:39:5 › Tổng quan @ 1280×800 — không tràn ngang (no hScroll) › /ops-console không tràn ngang tại 1280px
+  [chromium] › overview-responsive.spec.ts:39:5 › Tổng quan @ 1280×800 — không tràn ngang (no hScroll) › /andon không tràn ngang tại 1280px
+  [chromium] › overview-responsive.spec.ts:39:5 › Tổng quan @ 1280×800 — không tràn ngang (no hScroll) › /drill-down không tràn ngang tại 1280px
+  [chromium] › overview-responsive.spec.ts:39:5 › Tổng quan @ 1280×800 — không tràn ngang (no hScroll) › /corporate-dashboard không tràn ngang tại 1280px
+  [chromium] › overview-responsive.spec.ts:39:5 › Tổng quan @ 1280×800 — không tràn ngang (no hScroll) › /executive không tràn ngang tại 1280px
+  [chromium] › overview-responsive.spec.ts:39:5 › Tổng quan @ 1280×800 — không tràn ngang (no hScroll) › /command-center không tràn ngang tại 1280px
+  [chromium] › product-setup.spec.ts:27:3 › Product pages — guarded-route smoke › /products renders (auth-guarded, no 5xx)
+  [chromium] › product-setup.spec.ts:38:3 › Product pages — guarded-route smoke › /product-onboarding wizard route renders (auth-guarded, no 5xx)
+  [chromium] › product-setup.spec.ts:78:3 › Product setup — authenticated happy path › create product → add measurement point → set a limit → release
+  [chromium] › qa-dot5-chan1.spec.ts:14:3 › CHAN-1 — engineer1 (non-admin, khong co analytics_oee) VAO DUOC /twin
+  [chromium] › qa-dot5-chan1.spec.ts:14:3 › CHAN-1 — maint1 (non-admin, khong co analytics_oee) VAO DUOC /twin
+  [chromium] › qa-dot5-chan2.spec.ts:10:1 › CHAN-2 — tai khoan bi 403 thay '—' va banner, KHONG thay '0'
+  [chromium] › qa-dot6-viewport.spec.ts:23:3 › THUONG-3 — moi dieu khien TRONG khung nhin o 1280x1249
+  [chromium] › qa-dot6-viewport.spec.ts:23:3 › THUONG-3 — moi dieu khien TRONG khung nhin o 1366x768
+  [chromium] › qa-t1-badge-chonglap.spec.ts:15:1 › T1 — badge canh bao KHONG con cap chong lap (bbox DOM that)
+  [chromium] › twin-dot22-nghiem-thu.spec.ts:186:1 › A1 — /twin mac dinh (cap nha may), 1280x720, e2e_tai_loE
+  [chromium] › twin-dot22-nghiem-thu.spec.ts:204:1 › A2 — /twin?pv=tang, cap tang
+  [chromium] › twin-dot22-nghiem-thu.spec.ts:224:1 › A3 — /twin?pv=line:1 ⇒ redirect /twin/line/1 (QĐ-23), cap line co canh
+  [chromium] › twin-dot22-nghiem-thu.spec.ts:249:1 › A4 — /twin?xem=machine:2 ⇒ redirect /twin/may/2 (QĐ-23), panel may (NganXuLy + cockpit) MO
+  [chromium] › twin-dot22-nghiem-thu.spec.ts:285:1 › A7 — ngan Mo phong MO
+  [chromium] › twin-dot22-nghiem-thu.spec.ts:311:1 › B1 — /twin mac dinh o 1920x1080
+  [chromium] › twin-dot22-nghiem-thu.spec.ts:329:1 › Z4 — cay phan cap MO, roll-up hien so THAT
+  [chromium] › twin-dot22-nghiem-thu.spec.ts:395:1 › C1 — operator1 thay MAN RONG: canh trong, cay 0 hang (chua duoc gan nha may)
+  [chromium] › twin-dot23-do-nhan.spec.ts:125:1 › Đ23-M1 — mật độ nhãn ĐỌC ĐƯỢC ở tư thế camera ghim
+  [chromium] › twin-dot24-nghiem-thu.spec.ts:43:1 › V1 — badge vỏ: operator1 (0 gán) KHÔNG khai số cảnh báo
+  [chromium] › twin-dot24-nghiem-thu.spec.ts:52:1 › V2 — badge vỏ: e2e_tai_loE (1 nhà máy) VẪN thấy cảnh báo của mình
+  [chromium] › twin-dot24-nghiem-thu.spec.ts:61:1 › V3 — nút chỉ-nhãn-bất-thường: có mặt, bấm được, đổi URL và đổi SỐ NHÃN
+  [chromium] › twin-dot24-nghiem-thu.spec.ts:108:1 › V4 — L-5: ?xem=machine:<id ngoài phạm vi> ⇒ /twin/may/<id> NÓI RA lý do
+  [chromium] › twin-dot24-nghiem-thu.spec.ts:147:1 › V5 — operator1 (0 gán): /twin?xem=machine:1 ⇒ /twin/may/1 nói 'chưa được gán nhà máy' (chuaGanNhaMay), badge KHÔNG khai số
+  [chromium] › twin-dot24-nghiem-thu.spec.ts:171:1 › V6 — ĐỐI CHỨNG: ?xem=machine:<id TRONG phạm vi> ⇒ /twin/may/1 vẫn MỞ THÂN (cockpit), không bị chặn
+  [chromium] › twin-dot26-tach-trang.spec.ts:101:1 › D26-A — operator1 VÀO ĐƯỢC /twin (chống cổng CHẶT)
+  [chromium] › twin-dot26-tach-trang.spec.ts:111:1 › D26-B — ★★★ operator1 KHÔNG THẤY liên kết sang studio (ẩn-không-disable)
+  [chromium] › twin-dot26-tach-trang.spec.ts:125:1 › D26-C — ★★★ operator1 KHÔNG VÀO ĐƯỢC /twin-studio (chống cổng RỘNG)
+  [chromium] › twin-dot26-tach-trang.spec.ts:142:1 › D26-D — engineer1 VÀO ĐƯỢC /twin
+  [chromium] › twin-dot26-tach-trang.spec.ts:150:1 › D26-E — ★★★ ĐỐI CHỨNG DƯƠNG: engineer1 THẤY liên kết sang studio
+  [chromium] › twin-dot26-tach-trang.spec.ts:164:1 › D26-F — ★★★ ĐỐI CHỨNG DƯƠNG: engineer1 VÀO ĐƯỢC /twin-studio
+  [chromium] › twin-dot26-tach-trang.spec.ts:173:1 › D26-G — ★ LIÊN KẾT THẬT SỰ ĐI: bấm nút trên /twin ⇒ tới /twin-studio
+  [chromium] › twin-dot26-tach-trang.spec.ts:191:1 › D26-H — ★★★ G40: `/layout` (ý định SỬA) tới /twin-studio, không tới màn chỉ-đọc
+  [chromium] › twin-dot26-tach-trang.spec.ts:201:1 › D26-I — ★★★ G76: `e2e_tai_loE` (CÓ dữ liệu + CÓ quyền) THẤY liên kết
+  [chromium] › twin-dot26-tach-trang.spec.ts:220:1 › D26-J — ★★★ RB-4 vẫn giữ SAU khi tách: điều hướng KHÔNG đẻ context thứ hai
+  [chromium] › twin-dot31-may.spec.ts:140:1 › A1 — /twin/may/14: bbox trong viewport, 1 canvas, cockpit 2D + NganXuLy THẬT trong DOM
+  [chromium] › twin-dot31-may.spec.ts:227:1 › A2 — /twin/may/257 (máy THẬT, nhà máy khác): màn NÓI RA `ngoaiPhamVi`, không cảnh rỗng câm
+  [chromium] › twin-dot31-may.spec.ts:241:1 › A3 — /twin/may/abc: id không hợp lệ ⇒ vỏ rẽ nhánh, KHÔNG canvas nào từng mount
+  [chromium] › twin-dot31-may.spec.ts:252:1 › A4 — breadcrumb `‹ Line` ĐI THẬT: từ máy 14 tới /twin/line/2 (màn Đợt 30)
+  [chromium] › twin-dot31-may.spec.ts:292:1 › A5 — ★★★ G91 NỢ CÓ SẴN: bấm tab 3D của cockpit ⇒ 2 canvas DOM mà `__soCanvas` vẫn 1 (mù)
+  [chromium] › twin-dot31-may.spec.ts:329:1 › B1 — operator1 (có `machine_status`, 0 nhà máy): QUA cổng route, thân NÓI `chuaGanNhaMay` (L-5, Đợt 34 D)
+  [chromium] › twin-dot31-may.spec.ts:355:1 › B2 — ★★★ user TẠM 0 quyền: RouteGuard CHẶN, 0 canvas, tRPC 403 `PERMISSION_DENIED` (G43)
+  [chromium] › twin-dot38-nghiem-thu.spec.ts:93:3 › P5 @1600x900 — Line/Máy/Studio KHÔNG cuộn dọc: scrollHeight === innerHeight
+  [chromium] › twin-dot38-nghiem-thu.spec.ts:93:3 › P5 @1280x720 — Line/Máy/Studio KHÔNG cuộn dọc: scrollHeight === innerHeight
+  [chromium] › twin-dot38-nghiem-thu.spec.ts:111:1 › P4 @1600 — /twin/may/14 tab 3D: DOM canvas = __soCanvas = 1 ở ba trạng thái tab (mặc định → 3D → đóng)
+  [chromium] › twin-dot38-nghiem-thu.spec.ts:135:1 › P7 @1280 — /twin/line/2 dải trạm: không cuộn ngang, 12 ô, mã không bị cắt, tiền tố in một lần, ≤ 1 tên bị ẩn
+  [chromium] › twin-dot38-nghiem-thu.spec.ts:165:1 › P6 @1600 — /twin: chỉ báo kết nối tới `truc_tiep` ≤ 2.5 s (broadcaster phát ngay khi join)
+  [chromium] › twin-dot38-nghiem-thu.spec.ts:189:1 › P3 @1600 — /twin/may/14 Live state: Status suy từ `connected` (máy 14 nhịp tim 54 ngày ⇒ offline, KHÔNG tone success)
+  [chromium] › twin-dot47-bam-canh.spec.ts:189:5 › T1a+b+e+f — /twin @1600x900: bấm TÂM KHỐI máy ⇒ /twin/may/:id ≤ 500 ms; rê ⇒ pointer; sàn ⇒ không đổi; cơ chế sạch
+  [chromium] › twin-dot47-bam-canh.spec.ts:297:5 › T1c — /twin @1600x900: bấm NHÃN (pointer-events:none) ⇒ điều hướng tới máy của nhãn
+  [chromium] › twin-dot47-bam-canh.spec.ts:337:5 › T1d — /twin @1600x900: KÉO 200 px bắt đầu trên máy ⇒ camera đổi, URL không đổi
+  [chromium] › twin-dot47-bam-canh.spec.ts:379:5 › T1g — /twin @1600x900: bấm TÂM KHỐI của máy bị NHÃN MÁY KHÁC đè ⇒ vẫn mở đúng máy ấy
+  [chromium] › twin-dot47-bam-canh.spec.ts:189:5 › T1a+b+e+f — /twin/line/2 @1600x900: bấm TÂM KHỐI máy ⇒ /twin/may/:id ≤ 500 ms; rê ⇒ pointer; sàn ⇒ không đổi; cơ chế sạch
+  [chromium] › twin-dot47-bam-canh.spec.ts:297:5 › T1c — /twin/line/2 @1600x900: bấm NHÃN (pointer-events:none) ⇒ điều hướng tới máy của nhãn
+  [chromium] › twin-dot47-bam-canh.spec.ts:337:5 › T1d — /twin/line/2 @1600x900: KÉO 200 px bắt đầu trên máy ⇒ camera đổi, URL không đổi
+  [chromium] › twin-dot47-bam-canh.spec.ts:379:5 › T1g — /twin/line/2 @1600x900: bấm TÂM KHỐI của máy bị NHÃN MÁY KHÁC đè ⇒ vẫn mở đúng máy ấy
+  [chromium] › twin-dot47-bam-canh.spec.ts:189:5 › T1a+b+e+f — /twin @1280x720: bấm TÂM KHỐI máy ⇒ /twin/may/:id ≤ 500 ms; rê ⇒ pointer; sàn ⇒ không đổi; cơ chế sạch
+  [chromium] › twin-dot47-bam-canh.spec.ts:297:5 › T1c — /twin @1280x720: bấm NHÃN (pointer-events:none) ⇒ điều hướng tới máy của nhãn
+  [chromium] › twin-dot47-bam-canh.spec.ts:337:5 › T1d — /twin @1280x720: KÉO 200 px bắt đầu trên máy ⇒ camera đổi, URL không đổi
+  [chromium] › twin-dot47-bam-canh.spec.ts:379:5 › T1g — /twin @1280x720: bấm TÂM KHỐI của máy bị NHÃN MÁY KHÁC đè ⇒ vẫn mở đúng máy ấy
+  [chromium] › twin-dot47-bam-canh.spec.ts:189:5 › T1a+b+e+f — /twin/line/2 @1280x720: bấm TÂM KHỐI máy ⇒ /twin/may/:id ≤ 500 ms; rê ⇒ pointer; sàn ⇒ không đổi; cơ chế sạch
+  [chromium] › twin-dot47-bam-canh.spec.ts:297:5 › T1c — /twin/line/2 @1280x720: bấm NHÃN (pointer-events:none) ⇒ điều hướng tới máy của nhãn
+  [chromium] › twin-dot47-bam-canh.spec.ts:337:5 › T1d — /twin/line/2 @1280x720: KÉO 200 px bắt đầu trên máy ⇒ camera đổi, URL không đổi
+  [chromium] › twin-dot47-bam-canh.spec.ts:379:5 › T1g — /twin/line/2 @1280x720: bấm TÂM KHỐI của máy bị NHÃN MÁY KHÁC đè ⇒ vẫn mở đúng máy ấy
+  [chromium] › twin-lo-f.spec.ts:57:3 › Lo F — nghiem thu F1/F2/F3/F4 › F1 — BA o chon ton tai va DOI DUOC (truoc: 0 <select> trong ca man)
+  [chromium] › twin-lo-f.spec.ts:102:3 › Lo F — nghiem thu F1/F2/F3/F4 › F2 — banner KHONG con khai '373 may chua xep cho'
+  [chromium] › twin-lo-f.spec.ts:145:3 › Lo F — nghiem thu F1/F2/F3/F4 › F3 — ?pv=tapdoan khai dung theo SO NHA MAY TAI KHOAN THAT SU THAY
+  [chromium] › twin-lo-f.spec.ts:173:3 › Lo F — nghiem thu F1/F2/F3/F4 › F4 — kich thuoc canvas o 1280x720
+  [chromium] › twin-lo-m.spec.ts:26:1 › LO M — #18/#43/#55 co mat trong DOM that o /twin-studio
+  [chromium] › twin-lo-u-tuong-tac.spec.ts:185:5 › Lo U — /twin (Van hanh) › U-ORBIT keo trai 20 buoc — /twin
+  [chromium] › twin-lo-u-tuong-tac.spec.ts:201:5 › Lo U — /twin (Van hanh) › U-ZOOM wheel 10 nac — /twin
+  [chromium] › twin-lo-u-tuong-tac.spec.ts:215:5 › Lo U — /twin (Van hanh) › U-PAN chuot phai 20 buoc — /twin
+  [chromium] › twin-lo-u-tuong-tac.spec.ts:185:5 › Lo U — /twin-studio (Thiet ke) › U-ORBIT keo trai 20 buoc — /twin-studio
+  [chromium] › twin-lo-u-tuong-tac.spec.ts:201:5 › Lo U — /twin-studio (Thiet ke) › U-ZOOM wheel 10 nac — /twin-studio
+  [chromium] › twin-lo-u-tuong-tac.spec.ts:215:5 › Lo U — /twin-studio (Thiet ke) › U-PAN chuot phai 20 buoc — /twin-studio
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:333:3 › V1 — transform gizmo (/twin-studio) › V1-0 gizmo CO MOUNT khong (RB-1: getHelper trong scene)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:355:5 › V1 — transform gizmo (/twin-studio) › V1-translate keo gizmo — do do doi anh
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:355:5 › V1 — transform gizmo (/twin-studio) › V1-rotate keo gizmo — do do doi anh
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:355:5 › V1 — transform gizmo (/twin-studio) › V1-scale keo gizmo — do do doi anh
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:417:5 › V1 — transform gizmo (/twin-studio) › V1-BAM-translate keo DUNG can gizmo
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:417:5 › V1 — transform gizmo (/twin-studio) › V1-BAM-rotate keo DUNG can gizmo
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:417:5 › V1 — transform gizmo (/twin-studio) › V1-BAM-scale keo DUNG can gizmo
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:565:3 › V1 — transform gizmo (/twin-studio) › V1-XOAY-DAI keo vong xoay quang DAI (doi chung cua V1-BAM-rotate)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:646:3 › V1 — transform gizmo (/twin-studio) › V1-XOAY-TAT-SNAP keo NGAN nhung tat snap
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:745:3 › V1 — transform gizmo (/twin-studio) › V1-BA-TRUC keo lan luot vong DO(X) / LUC(Y) / LAM(Z)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:872:3 › V1 — transform gizmo (/twin-studio) › V1-GAN xoay Y sau khi zoom SAT vao may
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:985:3 › V1 — transform gizmo (/twin-studio) › V1-CHAN-DOAN doc proxy.rotation.y moi khung trong luc keo xoay
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1115:3 › V1 — transform gizmo (/twin-studio) › V1-DOI-CHUNG khong cham chuot
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1131:3 › V2 — quy ket long task luc zoom /twin › V2-ZOOM voi PerformanceObserver + CPU profile
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1200:3 › V2 — quy ket long task luc zoom /twin › V2-DOI-CHUNG dung yen (long task NEN)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1214:3 › V2 — quy ket long task luc zoom /twin › V2-ZOOM-LAN-2 (zoom lan thu hai, cung phien)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1249:3 › V3 — ba thao tac con lai › V3-CHON-MAY (/twin, click canh 3D)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1259:3 › V3 — ba thao tac con lai › V3-CHON-MAY-DS (/twin, click hang danh sach)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1272:3 › V3 — ba thao tac con lai › V3-DOI-PHAM-VI (/twin, breadcrumb)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1290:3 › V3 — ba thao tac con lai › V3-PANEL (/twin, thu/mo panel trai + phai)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1338:3 › V4 — san 'KHONG THUC HIEN DUOC' › V4-A ngay sau khi tai (khong cho on dinh)
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1352:5 › V4 — san 'KHONG THUC HIEN DUOC' › V4-B CPU throttle x4
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1352:5 › V4 — san 'KHONG THUC HIEN DUOC' › V4-B CPU throttle x6
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1352:5 › V4 — san 'KHONG THUC HIEN DUOC' › V4-B CPU throttle x10
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1352:5 › V4 — san 'KHONG THUC HIEN DUOC' › V4-B CPU throttle x20
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1365:3 › V4 — san 'KHONG THUC HIEN DUOC' › V4-B-studio CPU throttle x10 tren /twin-studio
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1384:3 › V4 — san 'KHONG THUC HIEN DUOC' › V4-B-QUY-KET CPU profile duoi throttle x6
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1449:3 › V4 — san 'KHONG THUC HIEN DUOC' › V4-C thao tac trong luc tRPC dang chay
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1469:3 › V4 — san 'KHONG THUC HIEN DUOC' › V4-D sau khi mo ngan nhung
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1481:3 › V4 — san 'KHONG THUC HIEN DUOC' › V4-E keo lien tiep 6 lan khong nghi
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1504:3 › V4 — san 'KHONG THUC HIEN DUOC' › V4-F tha chuot NGOAI canvas
+  [chromium] › twin-lo-v-tuong-tac.spec.ts:1527:3 › V4 — san 'KHONG THUC HIEN DUOC' › V4-G quay lai sau khi tab bi an
+  [chromium] › twin-lo-w-nghiem-thu.spec.ts:21:1 › W1 — thanh cong cu Thiet ke: CON diChuyen+xoay, KHONG con Co gian
+  [chromium] › twin-lo-x-mo-phong.spec.ts:51:1 › X1 — ngan Mo phong HIEN tren canh, doc duoc, va khai LY DO honest-null
+  [chromium] › twin-lo-x-mo-phong.spec.ts:110:1 › X2 — `?thu=moPhong` THU ngan lai, va khu hoi qua URL (G40)
+  [chromium] › twin-lo-x-mo-phong.spec.ts:141:1 › X3 — #35 phat lai: chon workflow THAT => Gantt co thanh, nut buoc DOI moc
+  [chromium] › twin-lo-y-bo-cuc.spec.ts:90:1 › Y-ĐO — ti le canvas 3D tren 1280x720, hai trang thai
+  [chromium] › twin-lo-y-noi-lo-z.spec.ts:69:1 › NỐI-1 — B-3: huy hiệu CƠ CHẾ GIAO SỐ sống, và khai một trong 5 hạng
+  [chromium] › twin-lo-y-noi-lo-z.spec.ts:101:1 › NỐI-2 — A-4: truy vấn sucKhoeMay CHẠY và trả lời khai (đo qua mạng)
+  [chromium] › twin-lo-y-noi-lo-z.spec.ts:141:1 › NỐI-3 — A-6: nguồn VÙNG rỗng ⇒ cảnh không vẽ vùng, và đó là ĐÚNG
+  [chromium] › twin-lo-y-qd16-quyen.spec.ts:63:1 › QD16-A — operator1 VÀO ĐƯỢC /twin (chống CỔNG CHẶT / tai nạn CHẶN-1)
+  [chromium] › twin-lo-y-qd16-quyen.spec.ts:112:1 › QD16-B — operator1 KHÔNG thấy nút 'Sửa bố cục' (chống CỔNG RỘNG)
+  [chromium] › twin-lo-y-qd16-quyen.spec.ts:136:1 › QD16-C — ★ ĐỐI CHỨNG DƯƠNG: engineer1 vào được VÀ thấy nút 'Sửa bố cục'
+  [chromium] › twin-lo-y-redirect.spec.ts:76:1 › Y-URL — 14 đường vào cũ đều tới đích, không đường nào chết
+  [chromium] › twin-studio-ban-phim-cay.spec.ts:61:3 › Đợt 8 Lô B — #11 bàn phím cây trên trình duyệt THẬT › ★★★ ARIA khai gì thì làm được đúng thế: có tabindex, và ĐÚNG MỘT hàng = 0
+  [chromium] › twin-studio-ban-phim-cay.spec.ts:87:3 › Đợt 8 Lô B — #11 bàn phím cây trên trình duyệt THẬT › ★★★ ↓ ↑ DI CHUYỂN FOCUS THẬT giữa các hàng
+  [chromium] › twin-studio-ban-phim-cay.spec.ts:114:3 › Đợt 8 Lô B — #11 bàn phím cây trên trình duyệt THẬT › ★★★ → MỞ nhánh (DOM mọc thêm hàng), ← ĐÓNG lại
+  [chromium] › twin-studio-ban-phim-cay.spec.ts:134:3 › Đợt 8 Lô B — #11 bàn phím cây trên trình duyệt THẬT › ★★★ → trên node ĐÃ MỞ đi VÀO CON ĐẦU (hành vi APG)
+  [chromium] › twin-studio-ban-phim-cay.spec.ts:150:3 › Đợt 8 Lô B — #11 bàn phím cây trên trình duyệt THẬT › ★★★ Home / End nhảy tới hàng ĐẦU và hàng CUỐI đang nhìn thấy
+  [chromium] › twin-studio-ban-phim-cay.spec.ts:181:3 › Đợt 8 Lô B — #11 bàn phím cây trên trình duyệt THẬT › ★★★ G18 — hàng nhận focus phải NẰM TRONG KHUNG NHÌN
+  [chromium] › twin-studio-ban-phim-cay.spec.ts:223:3 › Đợt 8 Lô B — #11 bàn phím cây trên trình duyệt THẬT › ★★★ Enter CHỌN node — và lựa chọn nhìn thấy được (aria-selected)
+  [chromium] › twin-studio-ban-phim-cay.spec.ts:242:3 › Đợt 8 Lô B — #11 bàn phím cây trên trình duyệt THẬT › ★ PHÍM LẠ không bị nuốt — Tab vẫn ra khỏi cây được
+  [chromium] › twin-studio-thiet-ke.spec.ts:69:3 › Twin Studio — màn Thiết kế Đợt 4 › ★★★ RB-4: đúng MỘT canvas sống
+  [chromium] › twin-studio-thiet-ke.spec.ts:78:3 › Twin Studio — màn Thiết kế Đợt 4 › ★★★ RB-1: gizmo dùng getHelper() và HIỆN trên màn hình
+  [chromium] › twin-studio-thiet-ke.spec.ts:154:3 › Twin Studio — màn Thiết kế Đợt 4 › ★ §4: ngân sách vẽ ≤ 150 draw calls / ≤ 500.000 tam giác
+  [chromium] › twin-studio-thiet-ke.spec.ts:167:3 › Twin Studio — màn Thiết kế Đợt 4 › ★ Dải sức khoẻ dữ liệu và Khu chờ xếp chỗ đều hiện (§7.1)
+  [chromium] › twin-studio-thiet-ke.spec.ts:179:3 › Twin Studio — màn Thiết kế Đợt 4 › ★ Ba vùng + thư viện asset dựng đủ (§7.1)
+  [chromium] › twin-tai-lo-e-fe.spec.ts:32:3 › Lo E4 — phan frontend o quy mo lon › E4-1 danh sach may KHONG ao hoa — DanhSachMay.tsx:109
+  [chromium] › twin-tai-lo-e-fe.spec.ts:62:3 › Lo E4 — phan frontend o quy mo lon › E4-2 KHONG co o chon nha may/toa — TwinVanHanh.tsx:225-228
+  [chromium] › twin-tai-lo-e-fe.spec.ts:85:3 › Lo E4 — phan frontend o quy mo lon › E4-3 chi nap tang[0] cua toaNha[0] — TwinVanHanh.tsx:270,278
+  [chromium] › twin-tai-lo-e-fe.spec.ts:103:3 › Lo E4 — phan frontend o quy mo lon › E4-4 pham vi TAP DOAN khong gop 4 nha may — TwinVanHanh.tsx:226
+  [chromium] › twin-tai-lo-e.spec.ts:191:3 › Lo E — do tai /twin › do tai nha may dau tien (factories[0])
+  [chromium] › twin-tai-lo-e.spec.ts:213:3 › Lo E — do tai /twin › duong cong tai: pham vi tap doan (4 nha may)
+Total: 151 tests in 30 files

@@ -26,7 +26,13 @@
     // Sổ biên dịch RIÊNG — không đụng vào sổ của `npm run check`.
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo.tests"
   },
-  "include": ["client/src/**/*", "shared/**/*", "server/**/*"],
+  // ★ Đợt 56 (mục B) — `e2e/` VÀO CỔNG KIỂU. Trước đợt này `e2e/` không nằm trong
+  //   `tsconfig.json` LẪN file này ⇒ 30 spec Playwright chưa từng được `tsc` nhìn một dòng:
+  //   cùng đúng cơ chế "lưới xanh vì lý do sai" mà docblock trên vừa mô tả, chỉ khác là ở
+  //   tầng e2e thì một bộ chọn sai kiểu còn có thể ĐỎ OAN/XANH OAN trên trình duyệt thật.
+  //   Đặt ở ĐÂY chứ không ở `tsconfig.json` vì e2e là test: `npm run check` (cổng sản
+  //   phẩm) phải giữ nguyên phạm vi cũ, không nhận thêm nợ của spec.
+  "include": ["client/src/**/*", "shared/**/*", "server/**/*", "e2e/**/*"],
   "exclude": [
     "node_modules",
     "build",

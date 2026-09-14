@@ -1,0 +1,98 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot49/chan/K-1600x900",
+  "luc": "2026-09-12T01:22:16.166Z",
+  "ds": {
+    "/twin": {
+      "coMan": true,
+      "url": "/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "vo": {
+        "coSidebar": true,
+        "tieuDeApp": "Production (MES)",
+        "soMucMenu": 10,
+        "mucActive": [],
+        "muc3D": {
+          "text": "3D Factory",
+          "ariaCurrent": null,
+          "dataActive": null,
+          "dataState": null,
+          "className": "flex min-h-10 w-full items-center text-sm transition-colors gap-3 rounded-full px-3 py-2.5 hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-sidebar-accent tex"
+        },
+        "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+        "activeApp": "production"
+      },
+      "mucKhongActive": {
+        "ariaCurrent": null,
+        "dataActive": null,
+        "dataState": null,
+        "className": "flex min-h-10 w-full items-center text-sm transition-colors gap-3 rounded-full px-3 py-2.5 hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring text-popover-foregrou"
+      },
+      "doiChungKhacChuan": true,
+      "dat": true
+    },
+    "/twin/line/2": {
+      "coMan": true,
+      "url": "/twin/line/2",
+      "vo": {
+        "coSidebar": true,
+        "tieuDeApp": "Production (MES)",
+        "soMucMenu": 10,
+        "mucActive": [],
+        "muc3D": {
+          "text": "3D Factory",
+          "ariaCurrent": null,
+          "dataActive": null,
+          "dataState": null,
+          "className": "flex min-h-10 w-full items-center text-sm transition-colors gap-3 rounded-full px-3 py-2.5 hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-sidebar-accent tex"
+        },
+        "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+        "activeApp": "production"
+      },
+      "mucKhongActive": {
+        "ariaCurrent": null,
+        "dataActive": null,
+        "dataState": null,
+        "className": "flex min-h-10 w-full items-center text-sm transition-colors gap-3 rounded-full px-3 py-2.5 hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring text-popover-foregrou"
+      },
+      "doiChungKhacChuan": true,
+      "dat": true
+    },
+    "/twin/may/14": {
+      "coMan": true,
+      "url": "/twin/may/14",
+      "vo": {
+        "coSidebar": true,
+        "tieuDeApp": "Production (MES)",
+        "soMucMenu": 10,
+        "mucActive": [],
+        "muc3D": {
+          "text": "3D Factory",
+          "ariaCurrent": null,
+          "dataActive": null,
+          "dataState": null,
+          "className": "flex min-h-10 w-full items-center text-sm transition-colors gap-3 rounded-full px-3 py-2.5 hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-sidebar-accent tex"
+        },
+        "chu": "Production | MES | War-room | Product changeover | MES Control | WIP & Line Balance | Traceability | Digital Twin | 3D Factory | 3D Factory Design | Line Materials",
+        "activeApp": "production"
+      },
+      "mucKhongActive": {
+        "ariaCurrent": null,
+        "dataActive": null,
+        "dataState": null,
+        "className": "flex min-h-10 w-full items-center text-sm transition-colors gap-3 rounded-full px-3 py-2.5 hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring text-popover-foregrou"
+      },
+      "doiChungKhacChuan": true,
+      "dat": true
+    }
+  },
+  "chuan": {
+    "text": "3D Factory",
+    "ariaCurrent": null,
+    "dataActive": null,
+    "dataState": null,
+    "className": "flex min-h-10 w-full items-center text-sm transition-colors gap-3 rounded-full px-3 py-2.5 hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-sidebar-accent tex"
+  },
+  "dat": true
+}

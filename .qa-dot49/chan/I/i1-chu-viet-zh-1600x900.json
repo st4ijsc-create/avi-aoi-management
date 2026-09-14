@@ -1,0 +1,108 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "lang": "zh",
+  "vp": "1600x900",
+  "tag": "../.qa-dot49/chan/I",
+  "luc": "2026-09-12T01:39:52.582Z",
+  "twin": {
+    "coMan": true,
+    "coCanvas": true,
+    "url": "/twin?pv=factory%3A1&cam=51.38%2C19.68%2C45.11%2C19.13%2C12.85",
+    "htmlLang": "zh",
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 207,
+        "w": 1288,
+        "h": 669,
+        "chaTestId": "khoi-canh-3d"
+      }
+    ],
+    "drawCalls": 5,
+    "chuViet": {
+      "htmlLang": "zh",
+      "tongDong": 243,
+      "soCoDau": 5,
+      "soUi": 0,
+      "soDuLieu": 5,
+      "dongUi": [],
+      "dongDuLieu": [
+        "Nhà máy ảo (SIM)",
+        "Đổi model / setup",
+        "Cảnh báo chất lượng",
+        "集团 · Nhà máy ảo (SIM)"
+      ]
+    }
+  },
+  "line": {
+    "coMan": true,
+    "coCanvas": true,
+    "url": "/twin/line/2",
+    "htmlLang": "zh",
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 1288,
+        "h": 659,
+        "chaTestId": "khoi-canh-3d"
+      }
+    ],
+    "drawCalls": 6,
+    "chuViet": {
+      "htmlLang": "zh",
+      "tongDong": 119,
+      "soCoDau": 2,
+      "soUi": 0,
+      "soDuLieu": 2,
+      "dongUi": [],
+      "dongDuLieu": [
+        "Dây chuyền ảo 2"
+      ]
+    }
+  },
+  "may": {
+    "coMan": true,
+    "coCanvas": true,
+    "url": "/twin/may/14",
+    "htmlLang": "zh",
+    "__soCanvas": 1,
+    "canvasDom": 1,
+    "canvasDs": [
+      {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "chaTestId": "khoi-canh-3d"
+      }
+    ],
+    "drawCalls": 5,
+    "chuViet": {
+      "htmlLang": "zh",
+      "tongDong": 121,
+      "soCoDau": 4,
+      "soUi": 0,
+      "soDuLieu": 4,
+      "dongUi": [],
+      "dongDuLieu": [
+        "Dây chuyền ảo 2",
+        "SIM-L2-AOI · AOI · Nhà máy ảo (SIM) · Dây chuyền ảo 2",
+        "Nhà máy ảo (SIM)"
+      ]
+    }
+  },
+  "i1": {
+    "soUi": {
+      "twin": 0,
+      "line": 0,
+      "may": 0
+    },
+    "dat": true
+  }
+}

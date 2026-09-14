@@ -11,6 +11,7 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import { initRum } from "./lib/rum";
 import { donKhoNguoiDungLucKhoiDong } from "./lib/donKhoaNguoiDung";
+import "./fonts.css"; // Đợt 43 (G117): Geist / Geist Mono tự phục vụ — TRƯỚC index.css để @font-face có mặt khi --font-sans được dùng
 import "./index.css";
 import { i18nReady } from "./i18n"; // Initialize i18n (vi fetch song song — doc64 S5-OPT V4)
 

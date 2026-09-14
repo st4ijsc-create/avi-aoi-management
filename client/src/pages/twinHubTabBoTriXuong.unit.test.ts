@@ -1,5 +1,6 @@
 /**
- * ★★★ Khối D Task 1 — tab "Bố trí xưởng" (`layout`) trong `TwinHub`.
+ * ★★★ Khối D Task 1 — `LayoutContent` render KHÔNG có `params.id`.
+ * (Tên tệp giữ nguyên vì lịch sử; §2 về `TwinHub.TABS` đã bỏ ở Đợt 61 — xem cuối tệp.)
  *
  * Hai bẫy đã đo trong brief, lưới này khoá cả hai:
  *
@@ -14,16 +15,15 @@
  *    "/layout" (không `:id`). Lưới giả lập ĐÚNG giá trị đo được (`{}`), không phải `undefined`
  *    tuỳ tiện, rồi khẳng định `LayoutContent` render ra HTML thật, không crash.
  *
- * 2) `TABS` của `TwinHub` phải có đúng một mục `value: "layout"`, `mode: "edit"`, và
- *    `Content` phải LÀ `LayoutContent` (không phải bản sao/clone).
+ * 2) [ĐÃ BỎ Ở ĐỢT 61] `TABS` của `TwinHub` — `TwinHub.tsx` đã bị xoá (0 route, 0 import sống).
  *
  * Mock `@/lib/trpc`, `sonner`, `@/hooks/useTwinStream`, `@/components/PermissionGate` — cùng
  * khuôn `client/src/components/ai/quanLyDuAnRepo.unit.test.ts` (mock THẲNG dependency của đơn
  * vị đang kiểm, không mock sâu xuống `usePermissions`/`useAuth`/socket — những thứ đó không
  * thuộc phạm vi Task 1).
  *
- * ĐỘT BIẾN PHẢI BẮT ĐƯỢC (đã tự tay đo — xem báo cáo Task 1): bỏ mục `layout` khỏi `TABS` ⇒
- * §2 ĐỎ đúng dòng `expect(muc).toBeDefined()`.
+ * ĐỘT BIẾN PHẢI BẮT ĐƯỢC (§1): đổi `useParams()` giả về `undefined` thay vì `{}` ⇒ `LayoutContent`
+ * ném lỗi và §1 ĐỎ.
  */
 import { describe, it, expect, vi } from "vitest";
 import { createElement } from "react";
@@ -77,7 +77,6 @@ vi.mock("@/components/PermissionGate", () => ({
 }));
 
 const { LayoutContent } = await import("./Layout");
-const { TABS } = await import("./TwinHub");
 
 describe("§1 LayoutContent — render như tab TwinHub, KHÔNG có params.id", () => {
   it("★★★ useParams() trả {} (giá trị mặc định wouter đo được) ⇒ render ra HTML thật, không crash", () => {
@@ -90,12 +89,13 @@ describe("§1 LayoutContent — render như tab TwinHub, KHÔNG có params.id", 
   });
 });
 
-describe("§2 TwinHub TABS — mục 'layout'", () => {
-  it("★★★ có đúng một mục value:'layout', mode:'edit', Content là LayoutContent", () => {
-    const cacMucLayout = TABS.filter((tab) => tab.value === "layout");
-    expect(cacMucLayout).toHaveLength(1);
-    const [muc] = cacMucLayout;
-    expect(muc.mode).toBe("edit");
-    expect(muc.Content).toBe(LayoutContent);
-  });
-});
+/* ★★★ ĐỢT 61 (QĐ-31) — §2 ĐÃ BỎ CÙNG `TwinHub.tsx`.
+ * §2 cũ đọc `TABS` của `TwinHub` để khoá mục `layout`. `TwinHub` là vỏ Tabs 140
+ * dòng đã mất route từ Đợt 21 (`/digital-twin` nay là `<Redirect>`), đo được
+ * **0 tệp sản phẩm import** ⇒ Đợt 61 xoá nó. Không còn `TABS` để kiểm, và cái
+ * mà §2 bảo vệ (`/layout` không `:id` phải tới được màn soạn bố trí) nay do
+ * `<Route path="/layout"><Redirect to="/twin-studio" /></Route>` (App.tsx) và
+ * lưới redirect `dinhTuyenTwinCu` giữ.
+ * §1 GIỮ NGUYÊN: `LayoutContent` vẫn sống (route `/layout/:id`) và cái bẫy nó
+ * khoá — `useParams()` trả `{}` ngoài route có `:id` — vẫn còn nguyên.
+ */

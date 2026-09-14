@@ -1,0 +1,9 @@
+=== DOT 56 muc A — THU TUC getFactoryCommandOverview({factoryId:1}) ===
+luc           : 2026-09-12T15:07:53.177Z
+lan 1 (NGUOI) : 171.5 ms
+5 lan AM      : 82.5 · 57.3 · 30.3 · 30.9 · 67.5 ms
+AM trung vi   : 57.3 ms
+may=41 issue=67 factory=2   (KEU KHAC 0 ⇒ thiet bi do SONG)
+
+>>> tong 4 cau DISTINCT ON (am trung vi) = 4.302 ms
+>>> ⇒ 4 cau DISTINCT ON = 7.5 % thoi gian thu tuc ⇒ phan con lai 53.0 ms o CHO KHAC.

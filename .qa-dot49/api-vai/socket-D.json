@@ -1,0 +1,33 @@
+{
+  "vai": "D",
+  "user": "e2e_dot36_oee",
+  "login": 200,
+  "coCookie": true,
+  "luc": "2026-09-11T22:22:46.996Z",
+  "goi": [
+    {
+      "t": 35,
+      "factoryId": 1,
+      "tong": 42,
+      "may": [
+        246,
+        247,
+        245
+      ]
+    },
+    {
+      "t": 9628,
+      "factoryId": 1,
+      "tong": 42,
+      "may": [
+        246,
+        247,
+        245
+      ]
+    }
+  ],
+  "loi": null,
+  "ketNoi": 16,
+  "f1": 2,
+  "f18": 0
+}

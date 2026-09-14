@@ -206,6 +206,45 @@ export async function getAllUsers() {
   return db.select().from(users).orderBy(desc(users.createdAt));
 }
 
+/**
+ * ★★★ §9.2 — DANH SÁCH HẸP CHO DROPDOWN "GÁN KỸ THUẬT VIÊN".
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO KHÔNG DÙNG `getAllUsers()` — HAI LÝ DO, CẢ HAI ĐỀU ĐO ĐƯỢC
+ * ════════════════════════════════════════════════════════════════════════════
+ * 1. **LỘ DỮ LIỆU NHÂN SỰ.** `getAllUsers` trả HÀNG THÔ của mọi người dùng, và
+ *    ngay cả sau `toPublicUsers()` thì email/vai/phòng ban/chức danh vẫn ra.
+ *    Một cái dropdown chỉ cần vẽ được một cái tên; nó KHÔNG cần biết ai làm ở
+ *    phòng nào. Hàm này `select` ĐÚNG HAI CỘT — không phải lọc bớt sau khi đọc,
+ *    mà là **không bao giờ đọc**. Cột nhạy cảm mới thêm vào `users` sau này
+ *    cũng không có đường nào ra qua đây (mặc định ĐÓNG, cùng khuôn `publicUser`).
+ *
+ * 2. **`isActive = false` PHẢI BỊ LOẠI TỪ SQL.** T-4: gán một phiếu bảo trì cho
+ *    tài khoản đã vô hiệu hoá là một phiếu KHÔNG AI NHẬN, và nó im lặng —
+ *    phiếu vẫn "đã gán", vẫn có tên người, vẫn trôi qua mọi báo cáo. Client đã
+ *    có `nguoiGanDuoc()` lọc `isActive !== false`, nhưng đó là **lưới thứ hai**,
+ *    không phải lưới đầu: một bộ lọc chỉ ở client là một bộ lọc mà đường API
+ *    không có. Lọc ở ĐÂY nghĩa là hàng vô hiệu hoá không rời khỏi máy chủ.
+ *
+ * ★ Sắp theo `name` để dropdown có thứ tự TẤT ĐỊNH — `getAllUsers` sắp theo
+ *   `createdAt DESC`, tức thứ tự người trong danh sách gán đổi theo ngày tạo
+ *   tài khoản, một thứ tự vô nghĩa với người đang đi tìm một cái tên.
+ *
+ * ⚠ `name` khai `string | null` chứ KHÔNG ép về `string`: cột `users.name`
+ *   NULLABLE trong lược đồ (tsc bác bỏ bản viết đầu ép kiểu). Một `?? ""` ở đây
+ *   sẽ đẻ ra mục dropdown KHÔNG CHỮ mà không ai giải thích được; để `null` đi
+ *   thẳng ra thì bề mặt phải tự quyết hiện gì — và nó thấy được là có ca ấy.
+ */
+export async function traKyThuatVienGanDuoc(): Promise<Array<{ id: number; name: string | null }>> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(eq(users.isActive, true))
+    .orderBy(users.name);
+}
+
 export async function updateUserRole(userId: number, role: UserRole) {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();

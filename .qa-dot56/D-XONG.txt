@@ -1,0 +1,24 @@
+=== DOT 56 · MUC D — so no ===
+Da ghi `.qa-dot56/NO.md` tu `.qa-dot55/NO.md`.
+
+GIU NGUYEN (khong mon nao bi xoa oan):
+  1 kb:operational-cards:test 194≠164   · 2 ext:check thieu @types/vscode
+  3 npm test 97 tep/205 ca (loi khai Dot 54) · 4 test:e2e chua ai chay
+  5 bo chon tang 1 toa/1 tang           · 6 41 cap G128
+  7 DISTINCT ON ngoai Twin (31 cho)     · 8 production chua ap index QD-27
+
+DONG trong Dot 56:
+  · e2e/ khong nam trong cong kieu nao (30 spec chua tung duoc tsc nhin)  ⇒ DONG
+  · 5 loi TS co san trong e2e/                                            ⇒ DONG
+  · dist/ cu hon HEAD 6 dot (0/3 dau Dot 49+)                             ⇒ DONG (3/3)
+
+MON MOI Dot 56 (4 mon):
+  9  pngjs la PHU THUOC MA — khong khai trong package.json, 17 cho goi dua vao
+  10 nut that that cua overview la OEE (34%), khong phai DISTINCT ON (25% ca 4)
+  11 buoc 4 cua overview luon tra RONG — machine_positions = 0 hang
+  12 spec e2e khai kieu TAY cho window.__* thay vi dung nguon su that
+
+SUA SAI so no Dot 55 (mon 7): "8 cho / 136,7 ms / CHUA VA" la LOI KHAI CU —
+  8 = dem DONG grep (5 dong la binh luan), SQL that = 4; con so 136,7 ms mo ta
+  ban ma da chet (truoc va Dot 53); duong dan cho goi ghi sai thu muc.
+  Chi tiet: phan "DA SUA SAI" cuoi .qa-dot56/NO.md.

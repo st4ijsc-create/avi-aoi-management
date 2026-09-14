@@ -1,0 +1,41 @@
+════════ DOT 56 — HOI QUY + CONG DONG PHIEN ════════
+Do tren server 3056 (PID 42872, dist MOI dung tu HEAD). 3001/3008 KHONG bi dung toi.
+
+| luoi                                   | Dot 56                   | nen Dot 55        | phan dinh |
+|----------------------------------------|--------------------------|-------------------|-----------|
+| vitest client/src/components/twin3d    | **105 tep / 2 483 XANH** | >= 105 / 2 483    | DAT       |
+| npm run check                          | **exit 0 · 0 loi**       | 0                 | DAT       |
+| npm run check:tests                    | **27 loi · 0 twin3d · 0 e2e/** | <= 27 · 0 twin3d | DAT (+ e2e nay DUOC CANH) |
+| npm run i18n:check                     | **exit 0**               | 0                 | DAT       |
+| npm run lint:tokens                    | **exit 0**               | 0                 | DAT       |
+| kiem-vo-app-https                      | **DAT ca 2 tep**         | DAT               | DAT       |
+| e2e bam canh (twin-dot47)              | **16/16 PASS**           | 12/16 (4 T1g DO)  | **+4** — nguyen nhan la nhi phan cu |
+| 24 ca thi giac x vi                    | **24 / 0 vi pham**       | khong chay duoc   | moi chay duoc |
+| 24 ca thi giac x en                    | **24 / 0 vi pham**       | khong chay duoc   | moi chay duoc |
+| bbox                                   | **34/34 DAT · 0 TRUOT**  | khong chay duoc   | moi chay duoc |
+| 4 luoi pham vi                         | **180/180 XANH**         | 180/180           | =         |
+| (bo rong) vitest run phamVi            | 17 tep / **437 XANH**    | —                 | moi ghi   |
+| playwright --list                      | **151 test / 30 tep**    | 151 / 30          | =         |
+
+── DB (11 khoa on dinh) ──────────────────────────────────────────────────────
+truoc 15:05Z : factories 2 · twin_dat_cho 82 · stations 37 · machines_active 42 · users 10
+               andon 7 · andon_raised 0 · hb 108 · msl 7814 · permissions 104 · ufa 3
+sau   15:44Z : GIONG HET ca 11 o.
+o thu 12 `mhh` (machine_health_history): 217 683 → 217 893 (**+210**). KHONG phai do toi:
+  toi chi chay SELECT/EXPLAIN. Bang nay duoc bo lap lich PdM cua chinh ung dung ghi lien tuc
+  (~3 383 hang/ngay, do o `.qa-dot56/_grow.mjs`) va no da lon san truoc khi toi bat dau.
+  0 hang tam nao duoc tao trong dot nay ⇒ khong can `trap` don dep.
+
+── Bang chung phai GIU NGUYEN ────────────────────────────────────────────────
+test-results/ : `git status --porcelain test-results/` **RONG**; 5 anh da commit giu nguyen md5
+  6d2bc011… C1-C4-toan-man.png · e589cb7b… C1-fit-all-sau.png · 279b8d09… C2-anh-xuat-that.png
+  698c5fae… C3-minimap-sau-click.png · 7207a5f9… C5-hop-thoai-luu-vung.png
+playwright.config.ts : `outputDir: ".qa-pw-output"` (dong 24) CON NGUYEN, `git status` sach.
+  ⇒ moi luot e2e cua dot nay ghi vao `.qa-dot56/pw-output`, KHONG vao `test-results/`.
+.qa-dot47/ : 616 tep, trong do **103 tep 0 byte** — khong dap, khong xoa, khong dung toi.
+
+── Cong ──────────────────────────────────────────────────────────────────────
+cong RIENG cua toi : 3056 (PID 42872) — se DONG o cuoi dot.
+cong CAM da tranh  : 3000 · 3001 · 3008 · 5173 · 8080 · 3047…3055  (0 lan cham vao)
+tien trinh phien khac: PID 37128 (3001) va PID 38472 (3008) — **KHONG taskkill, KHONG restart**,
+  ca truoc lan sau build deu tra HTTP 200.

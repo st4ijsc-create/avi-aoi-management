@@ -1,0 +1,30 @@
+[Đợt 52 · mục 2] "NHANH" — 2026-09-12T14:09:08+07:00
+F1 mang=chan 1600x900, 7 lượt × 4 màn, cổng 3052 (.qa-dot52/run-F1.log, thô .qa-dot52/f1-52-*/):
+  n=28 · p50 1169 · p90 1284 · max 1300 ms · đột biến >2500 ms: 0/28 · ĐẠT 4/4 mỗi lượt (28/28)
+  request ra ngoài (CDN): 0 ở cả 7 lượt · fonts loaded, check Geist/Mono true ở cả 7 lượt (G117 đã đóng)
+  Nền: Đợt 51 có index 1183/1545/1889, 0/28 · Đợt 50 nền 1231/2443/6217, 2/28
+  Tải khi đo: chrome=10 node=27 KHÔNG ĐỔI suốt 7 lượt (ghi ở đầu mỗi lượt trong run-F1.log)
+  ⇒ p90 −17 % và max −31 % so với Đợt 51; 0 đột biến ở cả hai đợt.
+
+[SLOW QUERY] đọc từ **stderr** (.qa-dot52/server-52a.err.log) — stdout có 0 dòng (đúng cảnh báo Đợt 51):
+  · trong cửa sổ F1 (dòng 1522→3483): **2 câu**, cả hai là DISTINCT ON machine_health_history của factoryCommandService
+  · cả phiên (khởi động + K8 24 lần mở màn Máy + F1 28 lần): **13 câu**
+      4 × SELECT DISTINCT ON ("machineId") … "timestamp" … FROM machine_health_history  (208,8 / 219,2 / 250,3 / 242,8 ms)
+      5 × SELECT ts FROM ot_telemetry WHERE "machineId"=$1 ORDER BY ts DESC LIMIT 1     (307,8–309,2 ms)
+      1 × select "timestamp","healthScore" from machine_health_history …                 (248,4 ms)
+      1 × select COUNT(*) from product_inspections …                                      (250,4 ms)
+      1 × select … from wip_tracking …                                                    (258,0 ms)
+      1 × insert into vram_leases …                                                       (255,9 ms)
+  · câu `traSucKhoeMay` (twinCanh.ts:2196, ORDER BY "createdAt") — **0 câu chậm** ⇒ index QĐ-27 giữ được kết quả.
+
+★★★ PARETO #1 — BẢN SAO THỨ HAI CỦA ĐÚNG LỚP LỖI MÀ QĐ-27 VỪA VÁ, CHƯA AI QUÉT (G110/G106):
+  server/services/factoryCommandService.ts:289-294
+    SELECT DISTINCT ON ("machineId") … FROM machine_health_history ORDER BY "machineId","timestamp" DESC
+    — KHÔNG có WHERE, sắp theo "timestamp" (không phải "createdAt").
+  EXPLAIN (ANALYZE,BUFFERS) hôm nay (.qa-dot52/explain-factorycommand.txt):
+    Seq Scan 214 197 hàng → Sort **external merge Disk 8 824 kB** → Unique 43 hàng · Execution 136,7 ms (ấm)
+    — Y HỆT bệnh lý mà QĐ-27 chữa cho traSucKhoeMay (Seq Scan 212 194 → Disk 7 848 kB → 288 ms).
+  Index có sẵn ("machineId","timestamp") là **ASC**, câu cần machineId ASC + timestamp DESC ⇒ planner KHÔNG dùng được.
+  ★ Nó NẰM TRÊN ĐƯỜNG NGƯỜI DÙNG CỦA 3 MÀN TWIN: client/src/components/twin3d/van-hanh/useTrangThaiSong.ts:87
+    gọi trpc.factoryCommand.overview.useQuery (refetch nền) ⇒ 2/2 câu chậm trong cửa sổ F1 đến từ đây.
+  ⇒ Không chặn nghiệm thu "nhanh" (0/28 đột biến), nhưng là món tiếp theo rẻ nhất.

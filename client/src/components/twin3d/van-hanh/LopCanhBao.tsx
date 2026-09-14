@@ -32,12 +32,21 @@
  *   không có gì phải `dispose()`.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
 
 import { giaiMauCanh } from "../mauTrangThai";
+import { mauChuTrenNen } from "./mauChuTrenNen";
+import { mauCss } from "./mauThree";
+import { TAM_CANVAS, layVungCam } from "../loi/LopNhan";
+import { LOP_BADGE, ghiHopDaVe, ghiSoAn, xoaHopDaVe, xoaSoAn } from "../loi/hopDaVe";
+import {
+  demCapChongLapBadge,
+  locBadge,
+  type BadgeUngVien,
+} from "./locBadge";
 
 /** Mức độ cảnh báo — khớp `andon_events.state`. */
 export type MucCanhBao = "call" | "yellow" | "red";
@@ -71,14 +80,14 @@ export const TRAN_BADGE = 12;
  *   `--info`) — KHÔNG thêm mã thứ tám ở đây.
  */
 const KIEU_MUC: Readonly<
-  Record<MucCanhBao, { hinh: string; token: string; uuTien: number }>
+  Record<MucCanhBao, { hinh: string; token: string; tokenChu: string; uuTien: number }>
 > = {
   // Đỏ = critical. Tam giác — hình dạng "nguy hiểm" quy ước quốc tế.
-  red: { hinh: "▲", token: "--destructive", uuTien: 3 },
+  red: { hinh: "▲", token: "--destructive", tokenChu: "--destructive-foreground", uuTien: 3 },
   // Vàng = warning. Thoi.
-  yellow: { hinh: "◆", token: "--warning", uuTien: 2 },
+  yellow: { hinh: "◆", token: "--warning", tokenChu: "--warning-foreground", uuTien: 2 },
   // Xanh dương = information / gọi hỗ trợ. Tròn.
-  call: { hinh: "●", token: "--info", uuTien: 1 },
+  call: { hinh: "●", token: "--info", tokenChu: "--info-foreground", uuTien: 1 },
 };
 
 interface BadgeDaChieu {
@@ -90,23 +99,53 @@ interface BadgeDaChieu {
   daAck: boolean;
   /** true ⇒ alarm nằm ngoài khung, badge đã bị kẹp về rìa (luật 3). */
   ngoaiKhung: boolean;
-  /** Góc mũi tên chỉ về vị trí thật, radian. Chỉ có nghĩa khi `ngoaiKhung`. */
+  /** Góc mũi tên chỉ về vị trí thật, radian. Có nghĩa khi `ngoaiKhung` hoặc `doiCho`. */
   gocMuiTen: number;
+  /**
+   * ★ Đợt 47 (N1) — badge đã DỜI khỏi neo (tránh lớp phủ DOM / badge khác); vẽ mũi tên về
+   * neo thật như badge ngoài khung — cùng một ngôn ngữ: "alarm ở đằng kia".
+   */
+  doiCho?: boolean;
 }
 
 /** Lề tối thiểu khi kẹp badge vào rìa, px. */
 const LE_RIA_PX = 28;
 
+/** z-index lớp badge drei — TRÊN nhãn (20) và ngang dải hợp nhất (30). ★ Đợt 47 — hằng module (G114: prop mới mỗi render = đổi props mọi commit). */
+const Z_INDEX_BADGE: [number, number] = [30, 10];
+/** Lớp badge là chỉ báo, không nhận chuột — kéo xoay camera xuyên qua. */
+const KIEU_LOP_BADGE = { pointerEvents: "none", userSelect: "none" } as const;
+
 export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
+  const gl = useThree((s) => s.gl);
+  const invalidate = useThree((s) => s.invalidate);
   const [hienThi, setHienThi] = useState<BadgeDaChieu[]>([]);
+
+  // ★ Đợt 47 (N5) — rời cảnh thì rút hộp khỏi sổ chung, nhãn không phải né bóng ma.
+  useEffect(
+    () => () => {
+      xoaHopDaVe(gl.domElement, LOP_BADGE);
+      xoaSoAn(gl.domElement, LOP_BADGE);
+    },
+    [gl],
+  );
   const [soAn, setSoAn] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
+  /**
+   * Kích thước THẬT của từng badge (đo bằng `getBoundingClientRect` sau khi div
+   * đã render), nhớ theo `id`. Cùng lý do như `coNhanRef` của `LopNhan`: bề rộng
+   * badge phụ thuộc nhãn đã qua `t()` và font đang tải, nên ƯỚC LƯỢNG theo ký tự
+   * là cách sinh con số CÓ VẺ đúng mà không ai đo. Khung đầu của một badge mới
+   * dùng trị suy đoán của `locBadge`; từ khung sau đã có số đo thật.
+   */
+  const coBadgeRef = useRef(new Map<number, { rongPx: number; caoPx: number }>());
 
   const tinhLai = useCallback(() => {
     if (canhBao.length === 0) {
+      ghiHopDaVe(gl.domElement, LOP_BADGE, []);
       if (hienThi.length !== 0) {
         setHienThi([]);
         setSoAn(0);
@@ -167,27 +206,122 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
     }
 
     /**
-     * Sắp theo ĐỘ NGHIÊM TRỌNG trước, rồi mới tới thứ tự id — KHÔNG theo khoảng
-     * cách camera. Nếu cắt theo khoảng cách, một alarm P1 ở cuối xưởng sẽ bị 12
-     * alarm P3 ở gần đẩy ra khỏi trần. Alarm chưa ack xếp trước alarm đã ack.
+     * ★★★ T-1 — KHỬ CHỒNG LẤN, KHÔNG CHỈ SẮP + CẮT.
+     *
+     * Trước bản vá đây là `ra.sort(...).slice(0, tran)` trần: một phép chọn theo
+     * ƯU TIÊN, KHÔNG phải phép khử chồng lấn theo KHÔNG GIAN. Hậu quả đo được:
+     * 52 cặp badge chồng nhau trên 12 badge (4 alarm cùng máy `SIM-L1-AOI` đè
+     * hoàn toàn lên nhau, không đọc nổi) trong khi `data-so-an` khai `0`.
+     *
+     * `locBadge` (thuần, có test) làm cả ba việc theo đúng thứ tự: sắp ưu tiên →
+     * khử chồng lấn bbox (chỉ badge TRONG khung; badge ngoài khung được MIỄN vì
+     * §10.3 luật 3 cấm để một alarm biến mất) → cắt trần. Thứ tự ưu tiên (mức độ,
+     * rồi chưa-ack trước) là CHÍNH SÁCH của lớp này, nên ta tính `diemUuTien` ở
+     * đây rồi truyền vào — `locBadge` không cần biết về `MucCanhBao`.
      */
-    ra.sort((a, b) => {
-      if (a.daAck !== b.daAck) return a.daAck ? 1 : -1;
-      const ua = KIEU_MUC[a.muc].uuTien;
-      const ub = KIEU_MUC[b.muc].uuTien;
-      if (ua !== ub) return ub - ua;
-      return a.id - b.id;
+    const ungVien: BadgeUngVien[] = ra.map((b) => {
+      const co = coBadgeRef.current.get(b.id);
+      // Chưa-ack (daAck=false) phải xếp TRƯỚC đã-ack ⇒ +1000 khi chưa ack, để nó
+      // trội hơn mọi chênh lệch mức độ (uuTien ∈ {1,2,3}). Giống nhánh `daAck`
+      // trong sort cũ (đã-ack đẩy xuống cuối).
+      // ★ Đợt 47 (N1) — ĐỎ = SỰ CỐ, ưu tiên TUYỆT ĐỐI: +10.000 ⇒ mọi badge đỏ (kể cả đã ack)
+      //   đứng trước mọi badge vàng/xanh; trong đỏ, chưa-ack vẫn trước. §10.3 luật 3 viết cho nó.
+      const doTuyetDoi = b.muc === "red";
+      const diemUuTien = KIEU_MUC[b.muc].uuTien + (b.daAck ? 0 : 1000) + (doTuyetDoi ? 10_000 : 0);
+      return {
+        id: b.id,
+        x: b.x,
+        y: b.y,
+        diemUuTien,
+        ngoaiKhung: b.ngoaiKhung,
+        uuTienTuyetDoi: doTuyetDoi,
+        // Số đo THẬT khi đã có; thiếu thì `locBadge` dùng trị suy đoán của nó.
+        rongPx: co?.rongPx,
+        caoPx: co?.caoPx,
+      };
     });
 
-    const ve = ra.slice(0, tran);
-    const an = ra.length - ve.length;
+    // ★ Đợt 47 (N1) — vùng cấm = bbox THẬT của lớp phủ DOM (`[data-che-nhan]`, CÙNG nguồn với `LopNhan`
+    //   từ Đợt 35 — lớp badge là lớp duy nhất chưa đọc nó; QA Đợt 46: badge đỏ SPI bị thẻ "Chỉ số" che
+    //   toàn bộ). Badge bị che/chồng thì DỜI, không giấu; badge đỏ không bao giờ giấu khi còn chỗ.
+    const vungCam = layVungCam(gl.domElement);
+    const kq = locBadge(ungVien, {
+      tran,
+      khungCanvas: { rong: size.width, cao: size.height },
+      vungCam,
+      doiCho: true,
+    });
+    /*
+     * ★ Đợt 47 (N5) — ghi hộp đã vẽ vào sổ chung: `LopNhan` (chạy SAU trong cùng khung) nhường chỗ này.
+     * ★★★ Đợt 53 (QA lần 8, SAI #1) — ghi `hopManHinh`, KHÔNG phải `hop`. `hop` là `null` cho badge bị
+     *   KẸP RÌA (miễn khử chồng badge×badge theo §10.3 luật 3) và bản cũ `filter(h !== null)` đã ném
+     *   đúng những badge ấy ra khỏi sổ — trong khi chúng vẫn vẽ, vẫn z 30, vẫn đè nhãn. Đo được trên
+     *   `/twin/may/18`: `__demBadge.ve = 1` mà `__demNhan.soHopBadge = 0` ⇒ nhãn tên máy bị đè 17–35 %.
+     *   `hopManHinh` LUÔN có ⇒ không còn `filter` nào có thể làm rỗng sổ một cách câm lặng.
+     */
+    ghiHopDaVe(
+      gl.domElement,
+      LOP_BADGE,
+      kq.ve.map((u) => u.hopManHinh),
+    );
 
-    const chuKy = `${an}|${ve.map((v) => `${v.id}:${Math.round(v.x)}:${Math.round(v.y)}:${v.ngoaiKhung ? 1 : 0}`).join("|")}`;
+    // Dựng lại danh sách BadgeDaChieu theo thứ tự `locBadge` đã chọn; badge bị DỜI mang toạ độ mới
+    // + mũi tên về neo thật.
+    const theoId = new Map(ra.map((b) => [b.id, b]));
+    const ve: BadgeDaChieu[] = kq.ve.map((u) => {
+      const b = theoId.get(u.id)!;
+      if (!u.doiCho) return b;
+      return { ...b, x: u.x, y: u.y, doiCho: true, gocMuiTen: Math.atan2(u.yGoc - u.y, u.xGoc - u.x) };
+    });
+    // ★★★ G7 — `data-so-an` phải là con số người đọc TƯỞNG nó là: số alarm đang
+    //   bị GIẤU khỏi màn (vì chồng lấn HOẶC vì chạm trần). Đó là `kq.soAn`, đại
+    //   lượng ĐẦU VÀO-bị-loại. NHƯNG chỉ số này KHÔNG đủ để nghiệm thu (nó do
+    //   chính thuật toán tính ra); phép nghiệm thu dùng `capConChong` bên dưới —
+    //   số cặp CÒN chồng ở ĐẦU RA, đo bằng hàm độc lập `demCapChongLapBadge`.
+    const an = kq.soAn;
+    /*
+     * ★★★ ĐỢT 49 (mục D) — GHI SỐ CẢNH BÁO BỊ GIẤU VÀO SỔ CHUNG.
+     * `/twin`@1280 đo được `soAn 2 · biChe 2` mà màn không nói gì: `data-so-an` chỉ DOM đọc
+     * được, còn chip đáy canvas (`LopNhan`) đếm TÊN MÁY ẩn chứ không đếm cảnh báo. Ghi ở đây,
+     * `LopNhan` đọc ở CÙNG khung (nó chạy sau trong cây — hợp đồng thứ tự của `hopDaVe`) và vẽ
+     * chung một cụm chip; hai cụm chip riêng là hai cụm chồng nhau.
+     * ⚠ Ghi CẢ khi 0: "chưa ai ghi" và "ghi 0" phải cùng nghĩa, nếu không chip sẽ in số cũ khi
+     *   cảnh báo cuối cùng hiện ra được.
+     */
+    ghiSoAn(gl.domElement, LOP_BADGE, an);
+
+    // Cửa sổ đo cho e2e (luật G11). Ghi CẢ khi 0 badge — "không đo được" phải
+    // khác "đo được 0". `capConChong` là đại lượng ĐỘC LẬP với `locBadge`: nó
+    // quét mọi cặp trong tập ĐƯỢC VẼ bằng bbox (dùng số đo thật khi có), nên nó
+    // có thể BÁC BỎ `locBadge`. Phải luôn = 0; e2e đối chiếu với getBoundingClientRect.
+    if (typeof window !== "undefined") {
+      (window as WindowCoDoBadge).__demBadge = {
+        ve: ve.length,
+        tong: ra.length,
+        soAn: an,
+        soBiChongLap: kq.soBiChongLap,
+        soVuotTran: kq.soVuotTran,
+        biChe: kq.soBiChe,
+        doiCho: kq.soDoiCho,
+        soVungCam: vungCam.length,
+        tran,
+        capConChong: demCapChongLapBadge(
+          ve.map((b) => ({
+            x: b.x,
+            y: b.y,
+            ngoaiKhung: b.ngoaiKhung,
+            ...(coBadgeRef.current.get(b.id) ?? {}),
+          })),
+        ),
+      };
+    }
+
+    const chuKy = `${an}|${ve.map((v) => `${v.id}:${Math.round(v.x)}:${Math.round(v.y)}:${v.ngoaiKhung ? 1 : 0}${v.doiCho ? "d" : ""}`).join("|")}`;
     if (chuKy === chuKyRef.current) return;
     chuKyRef.current = chuKy;
     setHienThi(ve);
     setSoAn(an);
-  }, [canhBao, camera, size.width, size.height, tran, hienThi.length]);
+  }, [canhBao, camera, gl, size.width, size.height, tran, hienThi.length]);
 
   // Chiếu lại mỗi khung ĐƯỢC VẼ. Với `frameloop="demand"` đây không phải 60 fps.
   useFrame(tinhLai);
@@ -195,17 +329,67 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
   if (hienThi.length === 0) return null;
 
   return (
-    <Html fullscreen zIndexRange={[30, 10]} style={{ pointerEvents: "none", userSelect: "none" }}>
-      <div data-testid="lop-canh-bao" data-so-badge={hienThi.length} data-so-an={soAn}>
+    /*
+     * ★★★ Đợt 47 (N1 gốc rễ) — LỚP `fullscreen` NEO VÀO TÂM CANVAS, như `LopNhan` từ Đợt 31.
+     * drei `Html fullscreen` đặt lớp QUANH `calculatePosition(el, camera, size)` — mặc định là hình
+     * chiếu của chính `<Html>` = gốc (0,0,0) của cảnh, đổi theo camera. Đo được (`.qa-dot47/
+     * run-probe-lop47.log`): lớp badge lệch canvas (−57,−96) ở `/twin` 1600 và (−443,−142) ở
+     * Line 1600 ⇒ mọi badge vẽ lệch khỏi máy của nó, và "badge bị thẻ Chỉ số che" (QA Đợt 46
+     * N1) là HỆ QUẢ của lệch lớp, không phải của thuật toán. `LopNhan` đã vá Đợt 31; lớp này bị
+     * bỏ quên (G110).
+     */
+    <Html fullscreen calculatePosition={TAM_CANVAS} zIndexRange={Z_INDEX_BADGE} style={KIEU_LOP_BADGE}>
+      <div
+        data-testid="lop-canh-bao"
+        data-so-badge={hienThi.length}
+        data-so-an={soAn}
+        style={{ position: "relative", width: "100%", height: "100%" }}
+      >
         {hienThi.map((b) => {
           const kieu = KIEU_MUC[b.muc];
-          const mau = giaiMauCanh(kieu.token) ?? "#ef4444";
+          /* ★ Đợt 57 (mục 11) — nền badge qua `mauCss` (canvas 2D quy `oklch()` ra sRGB thật):
+               để chọn màu chữ ta cần BYTE, mà `giaiMauCanh` trả nguyên văn `oklch(...)` (G29). */
+          const mau = mauCss(kieu.token, "#ef4444");
+          /*
+           * ★★★ ĐỢT 57 (mục thiết kế 11) — MÀU CHỮ **TÍNH TỪ ĐỘ CHÓI CỦA NỀN**, ba lần đo mới ra.
+           *
+           * Bản gốc ghim `color: "#fff"` cho cả ba mức + `opacity: 0.6` cho badge đã ack. Đo pixel
+           * thật (WCAG 2.1, nền sau khi vẽ) qua ba vòng:
+           *   ① gốc (mờ 0,6 + trắng)             ⇒ **1,68–2,83**  — 106 chuỗi dưới ngưỡng
+           *   ② bỏ `opacity`, giữ trắng           ⇒ **1,96–2,60**  — độ mờ KHÔNG phải nguyên nhân duy nhất
+           *   ③ dùng `--<mức>-foreground`         ⇒ warning/info ĐẠT, **destructive vẫn 3,11–3,29**
+           * Lý do ③ hụt: `--destructive-foreground` là màu SÁNG (oklch 0.98) — đúng cho nút
+           * `bg-destructive` cỡ chữ thường, SAI cho chữ 11 px trên nền đỏ đặc. Chữ SẪM trên chính
+           * nền đỏ ấy đo được **≈ 5,0**.
+           * ⇒ Không ghim mức nào cả: `mauChuTrenNen` CHỌN giữa `--foreground` và `--background`
+           *   bằng đúng công thức WCAG. Chỉ dùng token có sẵn (§10.2 trần 7 mã nguyên vẹn), và tự
+           *   lật đúng khi đổi theme sáng/tối — thứ mà mọi bảng ghim tay đều hỏng.
+           */
+          const mauChu = mauChuTrenNen(mau, giaiMauCanh(kieu.tokenChu) ?? "#fff");
           return (
             <div
               key={b.id}
               data-testid={`badge-canh-bao-${b.id}`}
               data-ngoai-khung={b.ngoaiKhung ? "1" : "0"}
+              data-doi-cho={b.doiCho ? "1" : "0"}
               data-muc={b.muc}
+              /* ★ Đợt 57 (mục 11) — trạng thái ack nay đọc được từ DOM (viền thay cho `opacity`). */
+              data-da-ack={b.daAck ? "1" : "0"}
+              /* ★ Đo kích thước THẬT ngay khi div gắn vào DOM và nhớ theo `id`.
+                 Khung sau, `locBadge` khử chồng lấn bằng bbox thật thay vì trị
+                 suy đoán. Ghi vào ref (không setState) nên KHÔNG gây re-render. */
+              ref={(el) => {
+                if (!el) return;
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                  const cu = coBadgeRef.current.get(b.id);
+                  coBadgeRef.current.set(b.id, { rongPx: r.width, caoPx: r.height });
+                  // ★ Đợt 47 — số đo THẬT khác trị đã dùng (khung đầu ước lượng; badge DỜI thêm mũi tên "➤" nên
+                  //   rộng ra) ⇒ xin MỘT khung để hộp trong sổ `hopDaVe` và khử chồng dùng số thật. Hội tụ sau một
+                  //   khung; `frameloop="demand"` không tự xin.
+                  if (!cu || Math.abs(cu.rongPx - r.width) > 0.5 || Math.abs(cu.caoPx - r.height) > 0.5) invalidate();
+                }
+              }}
               style={{
                 position: "absolute",
                 left: b.x,
@@ -221,18 +405,34 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
                 padding: "3px 6px",
                 borderRadius: 4,
                 whiteSpace: "nowrap",
-                color: "#fff",
+                color: mauChu,
                 background: mau,
-                // Alarm đã ack vẫn HIỆN (nó chưa được giải quyết) nhưng lùi lại.
-                opacity: b.daAck ? 0.6 : 1,
+                /*
+                 * ★★★ ĐỢT 57 (mục thiết kế 11) — "ĐÃ XÁC NHẬN" = **VIỀN**, KHÔNG PHẢI MỜ ĐI.
+                 * Bản cũ: `opacity: b.daAck ? 0.6 : 1`. `opacity` composite CẢ khối (nền + chữ) xuống
+                 * nền phía sau, nên nó KHÔNG "lùi badge lại" mà **kéo tương phản chữ/nền xuống cùng
+                 * lúc**. Đo pixel THẬT trên cảnh 3D (`.qa-dot57/01-do-truoc.txt`, WCAG 2.1 trên nền
+                 * sau khi vẽ): chữ 11 px trắng trong badge đã ack đạt tỉ số **1,68–2,83** — dưới cả
+                 * ngưỡng 3,0 của chữ lớn, chứ chưa nói 4,5 của chữ thường. 106 chuỗi dính lỗi này.
+                 * ★ Thay bằng `outline` nét ĐỨT: nó là kênh HÌNH DẠNG (§10.3 luật 2 — mã hoá dư thừa),
+                 *   giữ nguyên độ tương phản của chữ, và `outline` KHÔNG chiếm chỗ trong hộp nên
+                 *   `coBadgeRef`/`locBadge` đo ra đúng kích thước cũ — khử chồng lấn không đổi hành vi.
+                 * ★ `opacity` giữ 1 ở CẢ HAI nhánh: khác biệt ack/chưa-ack nay đọc được bằng viền,
+                 *   và một cảnh báo chưa được giải quyết không có lý do gì mờ hơn cảnh báo khác.
+                 */
+                opacity: 1,
+                /* ★ Viền ack lấy CÙNG màu chữ của mức ⇒ luôn tương phản với nền badge của mức ấy
+                     (trắng trên đỏ, sẫm trên vàng/xanh) — không còn trắng-trên-vàng. */
+                outline: b.daAck ? `2px dashed ${mauChu}` : "none",
+                outlineOffset: "-3px",
                 boxShadow: "0 1px 3px rgba(0,0,0,.4)",
               }}
             >
               {/* Luật 2 — hình dạng, rồi chữ. Màu là chiều thứ ba, không phải duy nhất. */}
               <span aria-hidden="true">{kieu.hinh}</span>
               <span>{b.nhan}</span>
-              {b.ngoaiKhung ? (
-                /* Luật 3 — mũi tên chỉ về vị trí THẬT của alarm ngoài khung. */
+              {b.ngoaiKhung || b.doiCho ? (
+                /* Luật 3 — mũi tên chỉ về vị trí THẬT của alarm ngoài khung (Đợt 47: cả badge bị dời chỗ). */
                 <span
                   aria-hidden="true"
                   data-testid={`mui-ten-${b.id}`}
@@ -247,6 +447,33 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
       </div>
     </Html>
   );
+}
+
+/**
+ * Hình dạng cửa sổ đo `window.__demBadge` — e2e đọc đúng các khoá này.
+ *
+ * ⚠ `soAn`/`soBiChongLap`/`soVuotTran` là ĐẦU VÀO bị loại (do `locBadge` tính).
+ *   `capConChong` là ĐẦU RA còn chồng (do `demCapChongLapBadge` đo độc lập) —
+ *   phải luôn 0. Chính chỗ lẫn hai đại lượng này là gốc của `chongLap = 0` sai.
+ */
+export interface WindowCoDoBadge extends Window {
+  __demBadge?: {
+    ve: number;
+    tong: number;
+    /** Số badge BỊ GIẤU (chồng lấn HOẶC chạm trần) — đại lượng của `data-so-an`. */
+    soAn: number;
+    soBiChongLap: number;
+    soVuotTran: number;
+    /** ★ Đợt 47 (N1) — bị loại vì lớp phủ DOM che / thò mép mà không dời được (badge thường). Đỏ ⇒ luôn 0 khi còn chỗ. */
+    biChe: number;
+    /** ★ Đợt 47 (N1) — số badge đã DỜI khỏi neo (có mũi tên về neo thật). */
+    doiCho: number;
+    /** ★ Đợt 47 (N1) — số vùng cấm đọc được từ DOM ở khung này (cùng `layVungCam` với nhãn). */
+    soVungCam: number;
+    tran: number;
+    /** Số CẶP badge CÒN chồng nhau trong tập ĐƯỢC VẼ — phải luôn 0. */
+    capConChong: number;
+  };
 }
 
 export default LopCanhBao;

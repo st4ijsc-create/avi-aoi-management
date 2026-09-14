@@ -1,0 +1,40 @@
+{
+  "luc": "2026-09-11T22:25:41.805Z",
+  "base": "http://localhost:3048",
+  "vp": "1280x720",
+  "coNut3d": true,
+  "coCanvas": true,
+  "coMay": true,
+  "coChe": {
+    "soObject": 1,
+    "coHandler": 1,
+    "trongScene": 1,
+    "ten": [
+      "twin3d-lo-may-su-kien"
+    ]
+  },
+  "may": {
+    "id": 246,
+    "X": 562.6189142336282,
+    "Y": 346.6057166499395,
+    "cv": [
+      289,
+      194.5,
+      634,
+      529.5
+    ],
+    "soTrongKhung": 41,
+    "loai": [],
+    "hit": {
+      "ten": "twin3d-lo-may",
+      "batchId": 19,
+      "khoangCach": 211.35774442361782
+    }
+  },
+  "cursor": "pointer",
+  "urlTruoc": "http://localhost:3048/factory-command?do=1",
+  "dialogTruoc": 0,
+  "urlSau": "http://localhost:3048/factory-command?do=1",
+  "dialogSau": 1,
+  "dialogChu": "MáyChi tiết máy: hiện trạng, telemetry, vấn đề và hành động.Close"
+}

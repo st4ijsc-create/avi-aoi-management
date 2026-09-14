@@ -1,0 +1,13 @@
+=== DOT 56 muc A — PARETO duong nguoi dung (2026-09-12T15:08:21.295Z) ===
+(6 lan: lan 1 nguoi + 5 lan am, lay TRUNG VI cua 5 lan am)
+
+TONG thu tuc overview({factoryId:1})                 nguoi=  90.1 ms  AM=  22.4 ms  (100.0 % tong)  ra=41
+  buoc 6: getAllMachinesOEELive({windowHours:24})    nguoi=   5.2 ms  AM=   7.7 ms  (34.4 % tong)  ra=42
+  buoc 3: DISTINCT ON machine_status_logs            nguoi=     3 ms  AM=   3.3 ms  (14.7 % tong)  ra=43
+  buoc 3b: DISTINCT ON machine_heartbeats            nguoi=     1 ms  AM=   0.8 ms  (3.6 % tong)  ra=36
+  buoc 4: DISTINCT ON machine_positions              nguoi=   0.6 ms  AM=   0.7 ms  (3.1 % tong)  ra=0
+  buoc 5: DISTINCT ON machine_health_history (da va d53) nguoi=   0.9 ms  AM=   0.8 ms  (3.6 % tong)  ra=43
+
+>>> 4 cau DISTINCT ON cong lai = 5.6 ms = 25.0 % tong
+>>> buoc 6 OEE mot minh     = 7.7 ms = 34.4 % tong
+>>> KET LUAN: nut that cua duong nguoi dung KHONG phai DISTINCT ON.

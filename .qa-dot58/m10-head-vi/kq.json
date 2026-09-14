@@ -1,0 +1,254 @@
+{
+  "1280x720": {
+    "truoc": {
+      "soNhan": 3,
+      "che": [],
+      "tongGiao": 0,
+      "nut": {
+        "nut-thu-trai": {
+          "rect": {
+            "x": 512,
+            "y": 431,
+            "w": 21,
+            "h": 42
+          },
+          "cheNhan": "1",
+          "neo": "mep-panel"
+        },
+        "nut-thu-phai": null
+      }
+    },
+    "rongTruoc": {
+      "trai": {
+        "w": 224,
+        "x": 288
+      },
+      "phai": {
+        "w": 0,
+        "x": 0
+      },
+      "nutTrai": {
+        "w": 21,
+        "x": 512
+      },
+      "nutPhai": null
+    },
+    "rongSauThu": {
+      "trai": {
+        "w": 0,
+        "x": 0
+      },
+      "phai": {
+        "w": 0,
+        "x": 0
+      },
+      "nutTrai": {
+        "w": 21,
+        "x": 288
+      },
+      "nutPhai": null
+    },
+    "rongSauMo": {
+      "trai": {
+        "w": 224,
+        "x": 288
+      },
+      "phai": {
+        "w": 0,
+        "x": 0
+      },
+      "nutTrai": {
+        "w": 21,
+        "x": 512
+      },
+      "nutPhai": null
+    },
+    "bamCoTacDung": true,
+    "nhanTruocGo": {
+      "soNhan": 3,
+      "che": [],
+      "tongGiao": 0,
+      "nut": {
+        "nut-thu-trai": {
+          "rect": {
+            "x": 512,
+            "y": 431,
+            "w": 21,
+            "h": 42
+          },
+          "cheNhan": "1",
+          "neo": "mep-panel"
+        },
+        "nut-thu-phai": null
+      }
+    },
+    "daGo": [
+      "nut-thu-trai"
+    ],
+    "nhanSauGo": {
+      "soNhan": 3,
+      "che": [],
+      "tongGiao": 0,
+      "nut": {
+        "nut-thu-trai": {
+          "rect": {
+            "x": 512,
+            "y": 431,
+            "w": 21,
+            "h": 42
+          },
+          "cheNhan": null,
+          "neo": "mep-panel"
+        },
+        "nut-thu-phai": null
+      }
+    },
+    "daGan": [
+      "nut-thu-trai"
+    ],
+    "nhanSauGan": {
+      "soNhan": 3,
+      "che": [],
+      "tongGiao": 0,
+      "nut": {
+        "nut-thu-trai": {
+          "rect": {
+            "x": 512,
+            "y": 431,
+            "w": 21,
+            "h": 42
+          },
+          "cheNhan": "1",
+          "neo": "mep-panel"
+        },
+        "nut-thu-phai": null
+      }
+    }
+  },
+  "1600x900": {
+    "truoc": {
+      "soNhan": 4,
+      "che": [],
+      "tongGiao": 0,
+      "nut": {
+        "nut-thu-trai": {
+          "rect": {
+            "x": 576,
+            "y": 521,
+            "w": 21,
+            "h": 42
+          },
+          "cheNhan": "1",
+          "neo": "mep-panel"
+        },
+        "nut-thu-phai": null
+      }
+    },
+    "rongTruoc": {
+      "trai": {
+        "w": 288,
+        "x": 288
+      },
+      "phai": {
+        "w": 0,
+        "x": 0
+      },
+      "nutTrai": {
+        "w": 21,
+        "x": 576
+      },
+      "nutPhai": null
+    },
+    "rongSauThu": {
+      "trai": {
+        "w": 0,
+        "x": 0
+      },
+      "phai": {
+        "w": 0,
+        "x": 0
+      },
+      "nutTrai": {
+        "w": 21,
+        "x": 288
+      },
+      "nutPhai": null
+    },
+    "rongSauMo": {
+      "trai": {
+        "w": 288,
+        "x": 288
+      },
+      "phai": {
+        "w": 0,
+        "x": 0
+      },
+      "nutTrai": {
+        "w": 21,
+        "x": 576
+      },
+      "nutPhai": null
+    },
+    "bamCoTacDung": true,
+    "nhanTruocGo": {
+      "soNhan": 4,
+      "che": [],
+      "tongGiao": 0,
+      "nut": {
+        "nut-thu-trai": {
+          "rect": {
+            "x": 576,
+            "y": 521,
+            "w": 21,
+            "h": 42
+          },
+          "cheNhan": "1",
+          "neo": "mep-panel"
+        },
+        "nut-thu-phai": null
+      }
+    },
+    "daGo": [
+      "nut-thu-trai"
+    ],
+    "nhanSauGo": {
+      "soNhan": 4,
+      "che": [],
+      "tongGiao": 0,
+      "nut": {
+        "nut-thu-trai": {
+          "rect": {
+            "x": 576,
+            "y": 521,
+            "w": 21,
+            "h": 42
+          },
+          "cheNhan": null,
+          "neo": "mep-panel"
+        },
+        "nut-thu-phai": null
+      }
+    },
+    "daGan": [
+      "nut-thu-trai"
+    ],
+    "nhanSauGan": {
+      "soNhan": 4,
+      "che": [],
+      "tongGiao": 0,
+      "nut": {
+        "nut-thu-trai": {
+          "rect": {
+            "x": 576,
+            "y": 521,
+            "w": 21,
+            "h": 42
+          },
+          "cheNhan": "1",
+          "neo": "mep-panel"
+        },
+        "nut-thu-phai": null
+      }
+    }
+  }
+}

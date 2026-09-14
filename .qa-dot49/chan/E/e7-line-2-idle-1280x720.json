@@ -1,0 +1,40 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1280x720",
+  "tag": "../.qa-dot49/chan/E",
+  "luc": "2026-09-12T01:34:35.905Z",
+  "url": "/twin/line/2",
+  "idle1": {
+    "ms": 4000,
+    "khung": 0
+  },
+  "idle2": {
+    "ms": 4000,
+    "khung": 0
+  },
+  "keo": {
+    "khungKhiKeo": 45,
+    "camSau": {
+      "x": 13.253921654151723,
+      "y": 26.99887424440954,
+      "z": 13.63778843760631,
+      "mucX": 19.199999999999996,
+      "mucZ": 12.708306073405515
+    }
+  },
+  "idleSauKeo": {
+    "ms": 4000,
+    "khung": 35
+  },
+  "idleSauKeo2": {
+    "ms": 4000,
+    "khung": 0
+  },
+  "camDoiKhiKeo": true,
+  "e7": {
+    "idleDat": true,
+    "keoVe": true,
+    "duoiTat": true
+  }
+}

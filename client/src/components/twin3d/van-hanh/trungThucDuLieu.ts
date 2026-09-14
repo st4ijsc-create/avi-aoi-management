@@ -29,11 +29,25 @@
  *   `bayGio` luôn là THAM SỐ, nên test tất định và không phụ thuộc đồng hồ máy.
  */
 
-import { mucTuoi, type MucTuoi } from "../mauTrangThai";
+import { mucTuoi, NGUONG_CU_MS, NGUONG_TUOI_MS, type MucTuoi } from "../mauTrangThai";
+/**
+ * ★ G12 — DÙNG LẠI phép rút đơn vị của `moPhongLogic.ts`, không viết bản thứ hai.
+ *   `moPhongLogic` KHÔNG import ngược tệp này (nó chỉ import `./wipTram`), nên
+ *   cạnh nhập này không tạo chu trình. Kiểm bằng `npm run build` (esbuild sẽ
+ *   báo chu trình ESM), không bằng lời hứa.
+ */
+import { nhanTuoi, type TuoiDaRut } from "./moPhongLogic";
 
-/** Ngưỡng ba mức tươi (NT-3.3), ms. Khai lại ở đây để test đối chiếu được. */
-export const NGUONG_TUOI_MS = 60_000;
-export const NGUONG_CU_MS = 300_000;
+/**
+ * ★ T-3 — ngưỡng ba mức tươi (NT-3.3), ms. **RE-EXPORT**, không khai lại.
+ *
+ * Trước đây hai con số này được viết lần thứ hai ở đây, song song với số ma
+ * thuật trong `mauTrangThai.mucTuoi()`. Hai bản sao chỉ đồng ý tới lần sửa đầu
+ * tiên, và khi lệch thì KHÔNG nổ — chỉ âm thầm cho cảnh 3D và ô đếm nói khác
+ * nhau về cùng một máy. Giờ chỉ còn MỘT nơi khai (`../mauTrangThai`), tệp này
+ * chuyền tiếp để các call site cũ không phải đổi đường import.
+ */
+export { NGUONG_CU_MS, NGUONG_TUOI_MS };
 
 /**
  * Một máy như màn Vận hành cần biết. Cố ý KHÔNG dùng `MachineNode` của
@@ -50,8 +64,12 @@ export interface MayVanHanh {
   /** `machines.operationStatus` — giá trị ĐƯỢC BÁO CÁO, chưa xét tuổi. */
   trangThaiBaoCao: string | null;
   /**
-   * `machines.lastHeartbeat` (ms epoch) — thời điểm DỮ LIỆU, không phải thời
-   * điểm render. `null` = CHƯA TỪNG báo cáo (2/42 máy của DB này).
+   * Mốc NHỊP TIM mới nhất (ms epoch) = `max(machines.lastHeartbeat, machine_heartbeats)` — thời
+   * điểm DỮ LIỆU, không phải thời điểm render. `null` = CHƯA TỪNG báo cáo (2/42 máy của DB này).
+   *
+   * ★ Đợt 34: nền lấy từ `factoryCommand.overview.machines[].tsTrangThai` (CÙNG mốc, cùng hai hàm
+   *   `chonNguonMocTuoi`/`quyTuoiMay` phía server với kho `twin:trangThai.capNhatLuc`) qua
+   *   {@link tsTrangThaiTheoMay}; kho realtime phủ lên bằng chính mốc ấy ⇒ không lật 3 ngày ↔ 54 ngày.
    */
   thoiDiemDuLieu: number | null;
   isActive: boolean;
@@ -132,6 +150,65 @@ export function tsTrangThaiTuIssues(
     const ts = bayGio - iss.ageMinutes * 60_000;
     const cu = m.get(iss.machineId);
     if (cu === undefined || ts > cu) m.set(iss.machineId, ts);
+  }
+  return m;
+}
+
+/** Một nút của `factoryCommand.overview.machines[]` — CHỈ hai trường hàm dưới đọc. */
+export interface NutFleetCoMoc {
+  id: number;
+  /**
+   * ISO của mốc nhịp tim đã chọn phía server (Đợt 34). `null` = CHƯA TỪNG báo cáo.
+   * `undefined` (trường VẮNG) = server cũ chưa có hợp đồng này ⇒ rơi về issue `offline`.
+   */
+  tsTrangThai?: string | null;
+}
+
+/**
+ * ★★★ ĐỢT 34 (Pareto #1) — MỘT hàm cho BA màn: `machineId` → mốc dữ liệu trạng thái (ms) hoặc `null`.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO `tsTrangThaiTuIssues` KHÔNG ĐỦ — đo trên DB này 2026-09-10
+ * ════════════════════════════════════════════════════════════════════════════
+ * `tsTrangThaiTuIssues` chỉ có mốc cho máy **đang `offline`** (issue `offline` là loại duy nhất mang
+ * thời điểm đo). Đo được: 43/43 máy có log mới nhất `online` ⇒ **0 issue `offline`** ⇒ bản đồ RỖNG ⇒
+ * mọi máy `thoiDiemDuLieu = null` ⇒ "Never reported" cho **cả 42 máy đã từng báo cáo** — bịa theo chiều
+ * ngược với lỗi giả-tươi (§9.5 NT-3), và ba trang (`TwinVanHanh`/`TwinLine`/`TwinMay`) chép cùng một
+ * vòng lặp ấy ba lần (G12).
+ *
+ * Nay server trả `tsTrangThai` cho MỌI máy — mốc nhịp tim `max(machines.lastHeartbeat,
+ * machine_heartbeats)` qua `chonNguonMocTuoi` (`server/db/twinCanh.ts`), **cùng hai hàm** mà kho realtime
+ * `twin:trangThai.capNhatLuc` dùng ⇒ nền và kho không thể lệch mốc.
+ *
+ * LUẬT ƯU TIÊN (thứ tự là hợp đồng):
+ *   1. nút CÓ trường `tsTrangThai` (kể cả `null`) ⇒ **tin server**: `null` là "chưa từng báo cáo" THẬT,
+ *      KHÔNG rơi về issue — issue `offline` của máy chưa từng báo cáo mang `ageMinutes = 0`, và
+ *      `bayGio − 0` sẽ biến "chưa từng" thành "vừa xong" (đúng lời nói dối NT-3.5 cấm);
+ *   2. trường VẮNG (server cũ) ⇒ mốc từ issue `offline` như trước (`tsTrangThaiTuIssues`);
+ *   3. chuỗi ISO không đọc được ⇒ `null` (không đoán).
+ *
+ * ★ "Never reported" ở UI (`NganXuLy` `chuaTungBaoCao`, `nhanDoTuoi(null)`) từ đây CHỈ xuất hiện khi
+ *   `tsTrangThai` là `null` thật — hoặc khi server cũ và máy không có issue `offline`.
+ */
+export function tsTrangThaiTheoMay(
+  machines: readonly NutFleetCoMoc[],
+  issues: readonly { kind?: string; machineId?: number | null; ageMinutes?: number }[],
+  bayGio: number,
+): Map<number, number | null> {
+  const m = new Map<number, number | null>();
+  let duPhong: Map<number, number> | null = null;
+  for (const n of machines) {
+    if (n.tsTrangThai !== undefined) {
+      if (n.tsTrangThai === null) {
+        m.set(n.id, null);
+        continue;
+      }
+      const ms = Date.parse(n.tsTrangThai);
+      m.set(n.id, Number.isFinite(ms) ? ms : null);
+      continue;
+    }
+    duPhong ??= tsTrangThaiTuIssues(issues, bayGio);
+    m.set(n.id, duPhong.get(n.id) ?? null);
   }
   return m;
 }
@@ -263,6 +340,89 @@ export function hienSo(giaTri: number | null | undefined, dangTai = false): stri
   return String(giaTri);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ CHẶN-2 (Đợt 5) — TRUY VẤN BỊ TỪ CHỐI KHÔNG ĐƯỢC HIỆN THÀNH `0`         */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Một truy vấn của màn Vận hành, rút về ĐÚNG hai bit mà tầng trình bày cần.
+ *
+ * ⚠ Cố ý KHÔNG nhận cả object query của react-query: module này thuần (RB-8.1)
+ * và phải test được ở `environment: "node"`. Tầng trang bóc `isLoading`/`isError`
+ * ra rồi truyền vào — đó cũng là chỗ ĐÃ thiếu và sinh ra chính lỗi này.
+ */
+export interface TinhTrangTruyVan {
+  /** Tên đường dẫn tRPC, ví dụ `"andon.active"`. Hiện NGUYÊN VĂN trong banner. */
+  ten: string;
+  dangTai: boolean;
+  loi: boolean;
+  /** Mã lỗi tRPC (`error.data.code`), dùng để tách 403 khỏi lỗi mạng. */
+  ma?: string | null;
+  /**
+   * ★★★ `enabled: false` — truy vấn CHƯA TỪNG CHẠY.
+   *
+   * Ca này ĐO ĐƯỢC và câm hơn cả 403: với `maint1`, `factory.list` trả `[]` kèm
+   * **HTTP 200** (không phải 403), nên `factoryId` ở lại `null` và `canhQ`/
+   * `overviewQ` bị `enabled: false` — không bao giờ chạy. react-query để
+   * `isLoading=false`, `isError=false`, dữ liệu `undefined` ⇒ mọi ô đếm rơi về
+   * `0` và trông y hệt một nhà máy đã đo xong và rỗng thật.
+   *
+   * "Chưa hỏi" KHÔNG phải "đã hỏi và được trả lời 0". Cờ này giữ hai câu đó tách
+   * nhau, y như `chuaDo` giữ 403 tách khỏi 0.
+   */
+  chuaChay?: boolean;
+}
+
+/** Mã tRPC nghĩa là "đã tới server, server TỪ CHỐI vì quyền". */
+export const MA_TU_CHOI = "FORBIDDEN";
+
+export interface KetQuaChuaDo {
+  /** `true` khi có BẤT KỲ truy vấn nào chưa cho ra số dùng được. */
+  chuaDo: boolean;
+  /** Tên các truy vấn bị server TỪ CHỐI (403). Rỗng khi không có. */
+  biTuChoi: string[];
+  /** Tên các truy vấn lỗi vì lý do KHÁC 403 (mạng, 500…). */
+  loiKhac: string[];
+}
+
+/**
+ * ★★★ VÌ SAO HÀM NÀY TỒN TẠI — lỗi ĐO ĐƯỢC, không phải phòng xa.
+ *
+ * `hienSo(giaTri, dangTai)` ĐÃ đúng từ đầu: nó trả `—` khi `dangTai`. Nhưng tầng
+ * trang chỉ truyền `isLoading` vào, KHÔNG truyền `isError`. Hậu quả đo được bằng
+ * tài khoản `maint1` (không có quyền `andon.active`): truy vấn trả 403,
+ * `andonRows` rơi về `[]`, `andonRows.length` là `0`, `isLoading` đã `false`
+ * ⇒ màn hình in **"Cảnh báo (0)"**.
+ *
+ * `0` ở đó là một LỜI KHAI SAI VỀ THẾ GIỚI, không phải một ô trống: nó nói
+ * *"đã kiểm tra, nhà máy KHÔNG có cảnh báo nào"* với một người thực ra **không
+ * được phép nhìn thấy cảnh báo nào cả**. Người trực ca đọc `0` rồi đi về. Đây
+ * đúng lớp lỗi mà cả module NT-3 này sinh ra để chặn — chỉ khác là lần này
+ * nguồn im lặng không phải cái máy, mà là CỔNG QUYỀN.
+ *
+ * ⇒ Lỗi và đang-tải PHẢI gộp chung về một bit `chuaDo`, vì với tầng hiển thị
+ *   chúng nói CÙNG một câu: "con số này chưa có nghĩa". Nhưng banner thì phải
+ *   tách 403 khỏi lỗi mạng, vì hai cái dẫn tới hai hành động khác nhau của
+ *   người dùng (xin quyền vs. thử lại).
+ */
+export function gopTinhTrang(ds: readonly TinhTrangTruyVan[]): KetQuaChuaDo {
+  const biTuChoi: string[] = [];
+  const loiKhac: string[] = [];
+  let chuaDo = false;
+  for (const q of ds) {
+    if (q.dangTai) chuaDo = true;
+    // Chưa chạy ⇒ chưa đo. Không nêu tên: không ai bị TỪ CHỐI, nên đổ lỗi cho
+    // truy vấn này sẽ gửi người dùng đi xin một quyền mà họ không thiếu.
+    if (q.chuaChay) chuaDo = true;
+    if (q.loi) {
+      chuaDo = true;
+      if (q.ma === MA_TU_CHOI) biTuChoi.push(q.ten);
+      else loiKhac.push(q.ten);
+    }
+  }
+  return { chuaDo, biTuChoi, loiKhac };
+}
+
 /**
  * Nhãn "cập nhật N trước" + cờ có nên tô đỏ không (NT-3.2: đỏ khi > 60 giây).
  *
@@ -274,15 +434,99 @@ export interface NhanDoTuoi {
   /** `null` khi chưa từng có dữ liệu ⇒ UI hiện `—`. */
   giay: number | null;
   do: boolean;
+  /**
+   * Tuổi ĐÃ RÚT về `{so, donVi}` — `null` khi chưa từng có dữ liệu.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ VÌ SAO THÊM Ô NÀY — MỘT SỐ ĐO, KHÔNG PHẢI MỘT Ý THÍCH
+   * ════════════════════════════════════════════════════════════════════════
+   * Ảnh tự chụp Đợt 23 (`.qa-dot23/M1-nhan-thu-ca-hai.png`) in nguyên văn
+   * **"Updated 1572061s ago"** trên thanh công cụ. 1.572.061 giây = **18,2
+   * ngày**, và không người vận hành nào đọc được điều đó từ bảy chữ số. Đây
+   * là **GIÂY SỐNG** — đơn vị đúng cho `< 60 s` (nhịp làm mới của màn) nhưng
+   * vô nghĩa từ vài giờ trở lên.
+   *
+   * ★ G72 — module thuần trả **dữ liệu có cấu trúc**, KHÔNG phát văn xuôi.
+   *   `nhanTuoi` (`moPhongLogic.ts:387`) đã đúng khuôn ấy và đã trả giá cho
+   *   bài học *"(17 ngày ago)"*; ô này **uỷ thác thẳng cho nó** (G12) thay vì
+   *   viết phép rút đơn vị thứ hai. Hai bản rút đơn vị trong một màn là đúng
+   *   cách để chúng lệch nhau mà không ai biết.
+   *
+   * ⚠ `giay` GIỮ NGUYÊN, không bỏ: `data-giay` là thứ e2e/nghiệm thu đọc để
+   *   lấy SỐ THÔ, và đổi nó là làm mù thiết bị đo của chính mình.
+   */
+  rut: TuoiDaRut | null;
+  /**
+   * Dữ liệu CŨ tới mức không còn đáng tin (> {@link NGUONG_CU_MS}).
+   *
+   * ★★★ G30 — HẠN HIỆU LỰC CHƯA PHỦ HẾT CHỖ. `do` (đỏ khi > 60 s) chỉ nói
+   * *"hơi cũ"*; nó KHÔNG phân biệt 61 giây với 18 ngày, nên một giá trị 18
+   * ngày tuổi hiện ra **trông y như bình thường, chỉ đỏ hơn chút**. `NganXuLy`
+   * đã có badge `duLieuQuaCu` cho đúng ca này (`NganXuLy.tsx:300`) nhưng
+   * thanh công cụ nền thì KHÔNG — cùng một sự thật, hai câu trả lời khác nhau
+   * trên cùng một màn. Ô này là thứ để thanh công cụ nói cùng câu.
+   */
+  quaCu: boolean;
 }
 
 export function nhanDoTuoi(
   thoiDiemDuLieu: number | null,
   bayGio: number,
 ): NhanDoTuoi {
-  if (thoiDiemDuLieu == null) return { giay: null, do: true };
+  if (thoiDiemDuLieu == null) return { giay: null, do: true, rut: null, quaCu: true };
   // `Math.max(0, …)` vì đồng hồ client có thể chạy TRƯỚC đồng hồ server vài
   // giây; một nhãn "cập nhật -3 giây trước" làm người đọc nghi ngờ cả màn hình.
-  const giay = Math.max(0, Math.round((bayGio - thoiDiemDuLieu) / 1000));
-  return { giay, do: bayGio - thoiDiemDuLieu > NGUONG_TUOI_MS };
+  const tuoiMs = Math.max(0, bayGio - thoiDiemDuLieu);
+  const giay = Math.round(tuoiMs / 1000);
+  return {
+    giay,
+    do: bayGio - thoiDiemDuLieu > NGUONG_TUOI_MS,
+    // ★ `nhanTuoi` trả `null` cho tuổi < 1 phút ⇒ KHÔNG, nó trả `{so:0,donVi:"phut"}`.
+    //   Tầng vẽ tự chọn: dưới 60 s thì in GIÂY (còn đọc được), từ đó dùng `rut`.
+    rut: nhanTuoi(tuoiMs),
+    quaCu: tuoiMs > NGUONG_CU_MS,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 23 M4 — ĐỘ TUỔI ĐỌC ĐƯỢC (một chỗ, hai người gọi)                  */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Đổi {@link NhanDoTuoi} thành đoạn chữ ĐỘ DÀI THỜI GIAN đã dịch — `"45s"`,
+ * `"12 phút"`, `"18 ngày"`. KHÔNG kèm chữ "trước"/"ago": khuôn câu là việc của
+ * người gọi (`capNhatTruoc`), nếu không ta lặp đúng lỗi *"(17 ngày ago)"*.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO HÀM NÀY NHẬN `t` TRONG KHI `nhanTuoi` TỪ CHỐI NHẬN `t`
+ * ════════════════════════════════════════════════════════════════════════════
+ * `nhanTuoi` là phép RÚT ĐƠN VỊ — logic thuần, phải test được ở
+ * `environment: "node"` mà không có i18next. Hàm này là phép GHÉP CHỮ — nó
+ * KHÔNG quyết định gì, chỉ chọn khoá dịch theo `donVi` đã rút sẵn. Nhận `t`
+ * làm tham số (chứ không gọi `useTranslation` bên trong) giữ nó vẫn thuần và
+ * vẫn test được: test truyền vào một `t` giả và đọc thẳng khoá được chọn.
+ *
+ * ⚠ Dưới 60 giây in GIÂY, không rút về "0 phút". `nhanTuoi(30_000)` trả
+ *   `{so: 0, donVi: "phut"}` — đúng theo hợp đồng của nó, nhưng in ra
+ *   *"0 phút trước"* thì SAI NGHĨA với một màn làm mới mỗi 30 giây: người đọc
+ *   sẽ tưởng dữ liệu đứng im. Ngưỡng này là {@link NGUONG_TUOI_MS}, cùng hằng
+ *   số quyết định `do` — hai câu trả lời của một dòng không được dùng hai mốc.
+ *
+ * ★ Người gọi: `TwinVanHanh.tsx` (thanh công cụ nền) và `NganXuLy.tsx` (ngăn
+ *   chi tiết máy). Trước Đợt 23 hai chỗ tự ghép chữ riêng và **cùng in giây
+ *   sống**; gộp về một hàm để chúng không thể lệch nhau lần nữa (G12).
+ */
+export function nhanTuoiDocDuoc(
+  n: NhanDoTuoi,
+  t: (khoa: string, macDinh: string, tuyChon?: Record<string, unknown>) => string,
+): string {
+  if (n.giay == null) return "—";
+  // Dưới ngưỡng "hơi cũ" ⇒ giây vẫn là đơn vị đúng và đọc được.
+  if (n.giay * 1000 <= NGUONG_TUOI_MS || n.rut == null) {
+    return t("twin3d.vanHanh.donViGiay", "{{n}}s", { n: n.giay });
+  }
+  // ★ DÙNG LẠI đúng ba khoá `twin3d.moPhong.donVi.*` mà `NganMoPhong` đã dùng
+  //   cho `nhanTuoi` — có sẵn ở CẢ BA locale (en/vi/zh). Đẻ bộ khoá thứ hai cho
+  //   cùng ba đơn vị là cách chắc chắn để chúng dịch lệch nhau.
+  return t(`twin3d.moPhong.donVi.${n.rut.donVi}`, "{{n}}", { n: n.rut.so });
 }

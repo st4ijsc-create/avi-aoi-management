@@ -234,7 +234,7 @@ export default function DungNhaXuong({ factoryId, onXongTao }: DungNhaXuongProps
             <O nhan={t("twin3d.dungXuong.viTriY")} giaTri={viTriYM} datGiaTri={setViTriYM} so testid="o-vi-tri-y" />
           </div>
           {/* ★ Nói thẳng đơn vị lưu: người dùng gõ mét, hệ lưu mm — không giấu. */}
-          <p className="text-xs text-muted-foreground">{t("twin3d.dungXuong.ghiChuDonVi")}</p>
+          <p className="text-xs text-text-2">{t("twin3d.dungXuong.ghiChuDonVi")}</p>
         </section>
       )}
 
@@ -278,7 +278,7 @@ export default function DungNhaXuong({ factoryId, onXongTao }: DungNhaXuongProps
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[46rem] text-sm" data-testid="bang-tang">
-              <thead className="text-xs text-muted-foreground">
+              <thead className="text-xs text-text-2">
                 <tr className="border-b border-border">
                   <th className="p-2 text-left">{t("twin3d.tang.capSo")}</th>
                   <th className="p-2 text-left">{t("twin3d.tang.ten")}</th>
@@ -559,7 +559,7 @@ function OThuaKe({ giaTriM, testid }: { giaTriM: number | null; testid: string }
 function Dong({ nhan, children }: { nhan: string; children: React.ReactNode }) {
   return (
     <div className="grid gap-0.5">
-      <dt className="text-xs text-muted-foreground">{nhan}</dt>
+      <dt className="text-xs text-text-2">{nhan}</dt>
       <dd className="font-medium">{children}</dd>
     </div>
   );

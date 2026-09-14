@@ -1,0 +1,23 @@
+{
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot52/hd-sau-hb",
+  "may": 14,
+  "luc": "2026-09-12T08:26:59.047Z",
+  "url": "/twin/line/2",
+  "oTram": {
+    "co": true,
+    "trangThai": "idle",
+    "chu": "AOI-ST\n1 machine\n116\nWIP\n#2"
+  },
+  "nhanMay": [],
+  "kpiAndon": "2",
+  "kpiMatKetNoi": "11",
+  "kpiDangChay": "0",
+  "nganMoPhong": {
+    "co": 1,
+    "mo": "0",
+    "lyDo": "nhip_het_han",
+    "chayDuoc": "0"
+  }
+}

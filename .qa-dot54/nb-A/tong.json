@@ -1,0 +1,2643 @@
+{
+  "luc": "2026-09-12T11:42:08.371Z",
+  "base": "http://localhost:3054",
+  "ca": [
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "man": "/twin",
+      "url": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 1288,
+        "h": 669,
+        "phai": 1576,
+        "day": 876
+      },
+      "soNhan": 4,
+      "soBadge": 7,
+      "nhan": [
+        {
+          "id": 23,
+          "chu": "SIM-L2-ROBOT · Không rõ",
+          "rect": {
+            "x": 1197,
+            "y": 551,
+            "w": 163,
+            "h": 24,
+            "phai": 1360,
+            "day": 575
+          },
+          "z": 19
+        },
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Không rõ",
+          "rect": {
+            "x": 794,
+            "y": 525,
+            "w": 188,
+            "h": 24,
+            "phai": 982,
+            "day": 549
+          },
+          "z": 19
+        },
+        {
+          "id": 4,
+          "chu": "SIM-L1-ICT · Không rõ",
+          "rect": {
+            "x": 837,
+            "y": 401,
+            "w": 139,
+            "h": 24,
+            "phai": 976,
+            "day": 425
+          },
+          "z": 19
+        },
+        {
+          "id": 3,
+          "chu": "SIM-L1-AVI · Không rõ",
+          "rect": {
+            "x": 657,
+            "y": 475,
+            "w": 139,
+            "h": 24,
+            "phai": 796,
+            "day": 499
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-21",
+          "doiCho": "0",
+          "chu": "▲SIM-L1-SPI",
+          "rect": {
+            "x": 750,
+            "y": 450,
+            "w": 84,
+            "h": 17,
+            "phai": 834,
+            "day": 467
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-25",
+          "doiCho": "1",
+          "chu": "▲SIM-L1-AOI➤",
+          "rect": {
+            "x": 802,
+            "y": 430,
+            "w": 100,
+            "h": 17,
+            "phai": 902,
+            "day": 447
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR",
+          "rect": {
+            "x": 823,
+            "y": 505,
+            "w": 129,
+            "h": 17,
+            "phai": 952,
+            "day": 522
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT",
+          "rect": {
+            "x": 1046,
+            "y": 581,
+            "w": 106,
+            "h": 17,
+            "phai": 1152,
+            "day": 598
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-22",
+          "doiCho": "1",
+          "chu": "◆SIM-L1-AOI➤",
+          "rect": {
+            "x": 904,
+            "y": 449,
+            "w": 100,
+            "h": 17,
+            "phai": 1004,
+            "day": 466
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-23",
+          "doiCho": "1",
+          "chu": "●SIM-L1-AVI➤",
+          "rect": {
+            "x": 831,
+            "y": 476,
+            "w": 96,
+            "h": 17,
+            "phai": 926,
+            "day": 493
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-24",
+          "doiCho": "1",
+          "chu": "●SIM-L1-ICT➤",
+          "rect": {
+            "x": 956,
+            "y": 480,
+            "w": 96,
+            "h": 17,
+            "phai": 1052,
+            "day": 497
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 7,
+        "tong": 7,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 4,
+        "soVungCam": 5,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 4,
+        "tong": 45,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 41,
+        "vuotMep": 0,
+        "biChe": 2,
+        "deKhoiKhac": 2,
+        "deKhoiKhacDoLai": 2,
+        "soHopKhoi": 42,
+        "soVungCam": 12,
+        "soLopPhuDom": 5,
+        "soHopBadge": 7,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "man": "/twin/line/2",
+      "url": "http://localhost:3054/twin/line/2?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1288,
+        "h": 659,
+        "phai": 1576,
+        "day": 784
+      },
+      "soNhan": 12,
+      "soBadge": 2,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "CONVEYOR · Không rõ",
+          "rect": {
+            "x": 818,
+            "y": 519,
+            "w": 142,
+            "h": 24,
+            "phai": 960,
+            "day": 543
+          },
+          "z": 20
+        },
+        {
+          "id": 23,
+          "chu": "ROBOT · Không rõ",
+          "rect": {
+            "x": 1264,
+            "y": 519,
+            "w": 117,
+            "h": 24,
+            "phai": 1381,
+            "day": 543
+          },
+          "z": 20
+        },
+        {
+          "id": 17,
+          "chu": "FCT · Không rõ",
+          "rect": {
+            "x": 753,
+            "y": 493,
+            "w": 98,
+            "h": 24,
+            "phai": 851,
+            "day": 517
+          },
+          "z": 20
+        },
+        {
+          "id": 19,
+          "chu": "PWR · Không rõ",
+          "rect": {
+            "x": 923,
+            "y": 582,
+            "w": 103,
+            "h": 24,
+            "phai": 1026,
+            "day": 606
+          },
+          "z": 20
+        },
+        {
+          "id": 20,
+          "chu": "ASSY · Không rõ",
+          "rect": {
+            "x": 1006,
+            "y": 556,
+            "w": 106,
+            "h": 24,
+            "phai": 1113,
+            "day": 580
+          },
+          "z": 20
+        },
+        {
+          "id": 16,
+          "chu": "ICT · Không rõ",
+          "rect": {
+            "x": 668,
+            "y": 519,
+            "w": 94,
+            "h": 24,
+            "phai": 762,
+            "day": 543
+          },
+          "z": 20
+        },
+        {
+          "id": 21,
+          "chu": "SCREW · Không rõ",
+          "rect": {
+            "x": 1086,
+            "y": 527,
+            "w": 120,
+            "h": 24,
+            "phai": 1206,
+            "day": 551
+          },
+          "z": 20
+        },
+        {
+          "id": 22,
+          "chu": "PACK · Không rõ",
+          "rect": {
+            "x": 1182,
+            "y": 493,
+            "w": 107,
+            "h": 24,
+            "phai": 1289,
+            "day": 517
+          },
+          "z": 20
+        },
+        {
+          "id": 15,
+          "chu": "AVI · Không rõ",
+          "rect": {
+            "x": 532,
+            "y": 525,
+            "w": 94,
+            "h": 24,
+            "phai": 626,
+            "day": 549
+          },
+          "z": 20
+        },
+        {
+          "id": 14,
+          "chu": "AOI · Không rõ",
+          "rect": {
+            "x": 497,
+            "y": 499,
+            "w": 96,
+            "h": 24,
+            "phai": 593,
+            "day": 523
+          },
+          "z": 20
+        },
+        {
+          "id": 24,
+          "chu": "AGV · Không rõ",
+          "rect": {
+            "x": 1359,
+            "y": 493,
+            "w": 100,
+            "h": 24,
+            "phai": 1459,
+            "day": 517
+          },
+          "z": 20
+        },
+        {
+          "id": 13,
+          "chu": "SPI · Không rõ",
+          "rect": {
+            "x": 412,
+            "y": 551,
+            "w": 95,
+            "h": 24,
+            "phai": 507,
+            "day": 575
+          },
+          "z": 20
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR",
+          "rect": {
+            "x": 824,
+            "y": 550,
+            "w": 129,
+            "h": 17,
+            "phai": 953,
+            "day": 567
+          },
+          "z": 30
+        },
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT",
+          "rect": {
+            "x": 1276,
+            "y": 551,
+            "w": 106,
+            "h": 17,
+            "phai": 1382,
+            "day": 568
+          },
+          "z": 30
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 2,
+        "tong": 2,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 2,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 12,
+        "tong": 12,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 4,
+        "soLopPhuDom": 2,
+        "soHopBadge": 2,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "man": "/twin/may/18",
+      "url": "http://localhost:3054/twin/may/18?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Không rõ",
+          "rect": {
+            "x": 798,
+            "y": 184,
+            "w": 188,
+            "h": 24,
+            "phai": 986,
+            "day": 208
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 716,
+            "y": 145,
+            "w": 144,
+            "h": 17,
+            "phai": 860,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 1,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 8,
+        "soVungCam": 2,
+        "soLopPhuDom": 1,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "man": "/twin/may/23",
+      "url": "http://localhost:3054/twin/may/23?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 23,
+          "chu": "SIM-L2-ROBOT · Không rõ",
+          "rect": {
+            "x": 796,
+            "y": 166,
+            "w": 163,
+            "h": 24,
+            "phai": 960,
+            "day": 190
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT➤",
+          "rect": {
+            "x": 728,
+            "y": 145,
+            "w": 121,
+            "h": 17,
+            "phai": 849,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 1,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 2,
+        "soLopPhuDom": 1,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1600x900",
+      "man": "/twin/may/14",
+      "url": "http://localhost:3054/twin/may/14?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 14,
+          "chu": "SIM-L2-AOI · Không rõ",
+          "rect": {
+            "x": 716,
+            "y": 155,
+            "w": 143,
+            "h": 24,
+            "phai": 859,
+            "day": 179
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null,
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 3,
+        "soVungCam": 1,
+        "soLopPhuDom": 1,
+        "soHopBadge": 0,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "man": "/twin",
+      "url": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 968,
+        "h": 489,
+        "phai": 1256,
+        "day": 696
+      },
+      "soNhan": 3,
+      "soBadge": 7,
+      "nhan": [
+        {
+          "id": 23,
+          "chu": "SIM-L2-ROBOT · Không rõ",
+          "rect": {
+            "x": 992,
+            "y": 445,
+            "w": 163,
+            "h": 24,
+            "phai": 1155,
+            "day": 469
+          },
+          "z": 19
+        },
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Không rõ",
+          "rect": {
+            "x": 646,
+            "y": 440,
+            "w": 188,
+            "h": 24,
+            "phai": 834,
+            "day": 464
+          },
+          "z": 19
+        },
+        {
+          "id": 3,
+          "chu": "SIM-L1-AVI · Không rõ",
+          "rect": {
+            "x": 740,
+            "y": 326,
+            "w": 139,
+            "h": 24,
+            "phai": 878,
+            "day": 350
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-21",
+          "doiCho": "1",
+          "chu": "▲SIM-L1-SPI➤",
+          "rect": {
+            "x": 822,
+            "y": 382,
+            "w": 99,
+            "h": 17,
+            "phai": 921,
+            "day": 399
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-25",
+          "doiCho": "1",
+          "chu": "▲SIM-L1-AOI➤",
+          "rect": {
+            "x": 766,
+            "y": 363,
+            "w": 100,
+            "h": 17,
+            "phai": 866,
+            "day": 380
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "1",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 814,
+            "y": 423,
+            "w": 144,
+            "h": 17,
+            "phai": 958,
+            "day": 440
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT",
+          "rect": {
+            "x": 841,
+            "y": 478,
+            "w": 106,
+            "h": 17,
+            "phai": 947,
+            "day": 495
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-22",
+          "doiCho": "1",
+          "chu": "◆SIM-L1-AOI➤",
+          "rect": {
+            "x": 766,
+            "y": 401,
+            "w": 100,
+            "h": 17,
+            "phai": 866,
+            "day": 418
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-23",
+          "doiCho": "1",
+          "chu": "●SIM-L1-AVI➤",
+          "rect": {
+            "x": 880,
+            "y": 350,
+            "w": 96,
+            "h": 17,
+            "phai": 976,
+            "day": 367
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-24",
+          "doiCho": "1",
+          "chu": "●SIM-L1-ICT➤",
+          "rect": {
+            "x": 998,
+            "y": 390,
+            "w": 96,
+            "h": 17,
+            "phai": 1094,
+            "day": 407
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 7,
+        "tong": 7,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 6,
+        "soVungCam": 5,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 3,
+        "tong": 45,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 42,
+        "vuotMep": 0,
+        "biChe": 3,
+        "deKhoiKhac": 1,
+        "deKhoiKhacDoLai": 1,
+        "soHopKhoi": 42,
+        "soVungCam": 12,
+        "soLopPhuDom": 5,
+        "soHopBadge": 7,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "man": "/twin/line/2",
+      "url": "http://localhost:3054/twin/line/2?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 968,
+        "h": 479,
+        "phai": 1256,
+        "day": 604
+      },
+      "soNhan": 12,
+      "soBadge": 2,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "CONVEYOR · Không rõ",
+          "rect": {
+            "x": 670,
+            "y": 397,
+            "w": 142,
+            "h": 24,
+            "phai": 812,
+            "day": 421
+          },
+          "z": 20
+        },
+        {
+          "id": 23,
+          "chu": "ROBOT · Không rõ",
+          "rect": {
+            "x": 990,
+            "y": 397,
+            "w": 117,
+            "h": 24,
+            "phai": 1107,
+            "day": 421
+          },
+          "z": 20
+        },
+        {
+          "id": 17,
+          "chu": "FCT · Không rõ",
+          "rect": {
+            "x": 631,
+            "y": 371,
+            "w": 98,
+            "h": 24,
+            "phai": 729,
+            "day": 395
+          },
+          "z": 20
+        },
+        {
+          "id": 19,
+          "chu": "PWR · Không rõ",
+          "rect": {
+            "x": 865,
+            "y": 405,
+            "w": 103,
+            "h": 24,
+            "phai": 968,
+            "day": 429
+          },
+          "z": 20
+        },
+        {
+          "id": 20,
+          "chu": "ASSY · Không rõ",
+          "rect": {
+            "x": 868,
+            "y": 379,
+            "w": 106,
+            "h": 24,
+            "phai": 975,
+            "day": 403
+          },
+          "z": 20
+        },
+        {
+          "id": 16,
+          "chu": "ICT · Không rõ",
+          "rect": {
+            "x": 571,
+            "y": 397,
+            "w": 94,
+            "h": 24,
+            "phai": 665,
+            "day": 421
+          },
+          "z": 20
+        },
+        {
+          "id": 21,
+          "chu": "SCREW · Không rõ",
+          "rect": {
+            "x": 864,
+            "y": 454,
+            "w": 120,
+            "h": 24,
+            "phai": 984,
+            "day": 478
+          },
+          "z": 20
+        },
+        {
+          "id": 22,
+          "chu": "PACK · Không rõ",
+          "rect": {
+            "x": 993,
+            "y": 371,
+            "w": 107,
+            "h": 24,
+            "phai": 1100,
+            "day": 395
+          },
+          "z": 20
+        },
+        {
+          "id": 15,
+          "chu": "AVI · Không rõ",
+          "rect": {
+            "x": 460,
+            "y": 401,
+            "w": 94,
+            "h": 24,
+            "phai": 554,
+            "day": 425
+          },
+          "z": 20
+        },
+        {
+          "id": 14,
+          "chu": "AOI · Không rõ",
+          "rect": {
+            "x": 450,
+            "y": 375,
+            "w": 96,
+            "h": 24,
+            "phai": 546,
+            "day": 399
+          },
+          "z": 20
+        },
+        {
+          "id": 24,
+          "chu": "AGV · Không rõ",
+          "rect": {
+            "x": 1115,
+            "y": 423,
+            "w": 100,
+            "h": 24,
+            "phai": 1215,
+            "day": 447
+          },
+          "z": 20
+        },
+        {
+          "id": 13,
+          "chu": "SPI · Không rõ",
+          "rect": {
+            "x": 338,
+            "y": 427,
+            "w": 95,
+            "h": 24,
+            "phai": 433,
+            "day": 451
+          },
+          "z": 20
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR",
+          "rect": {
+            "x": 676,
+            "y": 431,
+            "w": 129,
+            "h": 17,
+            "phai": 805,
+            "day": 448
+          },
+          "z": 30
+        },
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT",
+          "rect": {
+            "x": 1000,
+            "y": 432,
+            "w": 106,
+            "h": 17,
+            "phai": 1106,
+            "day": 449
+          },
+          "z": 30
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 2,
+        "tong": 2,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 2,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 12,
+        "tong": 12,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 1,
+        "deKhoiKhacDoLai": 1,
+        "soHopKhoi": 12,
+        "soVungCam": 4,
+        "soLopPhuDom": 2,
+        "soHopBadge": 2,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "man": "/twin/may/18",
+      "url": "http://localhost:3054/twin/may/18?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Không rõ",
+          "rect": {
+            "x": 638,
+            "y": 176,
+            "w": 188,
+            "h": 24,
+            "phai": 826,
+            "day": 200
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 556,
+            "y": 145,
+            "w": 144,
+            "h": 17,
+            "phai": 700,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 1,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 8,
+        "soVungCam": 2,
+        "soLopPhuDom": 1,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "man": "/twin/may/23",
+      "url": "http://localhost:3054/twin/may/23?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 23,
+          "chu": "SIM-L2-ROBOT · Không rõ",
+          "rect": {
+            "x": 636,
+            "y": 186,
+            "w": 163,
+            "h": 24,
+            "phai": 800,
+            "day": 210
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT➤",
+          "rect": {
+            "x": 568,
+            "y": 145,
+            "w": 121,
+            "h": 17,
+            "phai": 689,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 1,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 2,
+        "soLopPhuDom": 1,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "vi",
+      "vp": "1280x720",
+      "man": "/twin/may/14",
+      "url": "http://localhost:3054/twin/may/14?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 14,
+          "chu": "SIM-L2-AOI · Không rõ",
+          "rect": {
+            "x": 557,
+            "y": 147,
+            "w": 143,
+            "h": 24,
+            "phai": 699,
+            "day": 171
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null,
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 3,
+        "soVungCam": 1,
+        "soLopPhuDom": 1,
+        "soHopBadge": 0,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "man": "/twin",
+      "url": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 1288,
+        "h": 669,
+        "phai": 1576,
+        "day": 876
+      },
+      "soNhan": 4,
+      "soBadge": 7,
+      "nhan": [
+        {
+          "id": 23,
+          "chu": "SIM-L2-ROBOT · Unknown",
+          "rect": {
+            "x": 1197,
+            "y": 551,
+            "w": 166,
+            "h": 24,
+            "phai": 1363,
+            "day": 575
+          },
+          "z": 19
+        },
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Unknown",
+          "rect": {
+            "x": 793,
+            "y": 525,
+            "w": 191,
+            "h": 24,
+            "phai": 984,
+            "day": 549
+          },
+          "z": 19
+        },
+        {
+          "id": 4,
+          "chu": "SIM-L1-ICT · Unknown",
+          "rect": {
+            "x": 992,
+            "y": 401,
+            "w": 141,
+            "h": 24,
+            "phai": 1133,
+            "day": 425
+          },
+          "z": 19
+        },
+        {
+          "id": 3,
+          "chu": "SIM-L1-AVI · Unknown",
+          "rect": {
+            "x": 652,
+            "y": 475,
+            "w": 141,
+            "h": 24,
+            "phai": 793,
+            "day": 499
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-21",
+          "doiCho": "0",
+          "chu": "▲SIM-L1-SPI",
+          "rect": {
+            "x": 750,
+            "y": 450,
+            "w": 84,
+            "h": 17,
+            "phai": 834,
+            "day": 467
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-25",
+          "doiCho": "1",
+          "chu": "▲SIM-L1-AOI➤",
+          "rect": {
+            "x": 904,
+            "y": 449,
+            "w": 100,
+            "h": 17,
+            "phai": 1004,
+            "day": 466
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR",
+          "rect": {
+            "x": 823,
+            "y": 505,
+            "w": 129,
+            "h": 17,
+            "phai": 952,
+            "day": 522
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT",
+          "rect": {
+            "x": 1046,
+            "y": 581,
+            "w": 106,
+            "h": 17,
+            "phai": 1152,
+            "day": 598
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-22",
+          "doiCho": "1",
+          "chu": "◆SIM-L1-AOI➤",
+          "rect": {
+            "x": 802,
+            "y": 468,
+            "w": 100,
+            "h": 17,
+            "phai": 902,
+            "day": 485
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-23",
+          "doiCho": "1",
+          "chu": "●SIM-L1-AVI➤",
+          "rect": {
+            "x": 928,
+            "y": 476,
+            "w": 96,
+            "h": 17,
+            "phai": 1024,
+            "day": 493
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-24",
+          "doiCho": "1",
+          "chu": "●SIM-L1-ICT➤",
+          "rect": {
+            "x": 859,
+            "y": 423,
+            "w": 96,
+            "h": 17,
+            "phai": 954,
+            "day": 440
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 7,
+        "tong": 7,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 4,
+        "soVungCam": 5,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 4,
+        "tong": 45,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 41,
+        "vuotMep": 0,
+        "biChe": 2,
+        "deKhoiKhac": 2,
+        "deKhoiKhacDoLai": 2,
+        "soHopKhoi": 42,
+        "soVungCam": 12,
+        "soLopPhuDom": 5,
+        "soHopBadge": 7,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "man": "/twin/line/2",
+      "url": "http://localhost:3054/twin/line/2?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1288,
+        "h": 659,
+        "phai": 1576,
+        "day": 784
+      },
+      "soNhan": 12,
+      "soBadge": 2,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "CONVEYOR · Unknown",
+          "rect": {
+            "x": 816,
+            "y": 519,
+            "w": 144,
+            "h": 24,
+            "phai": 961,
+            "day": 543
+          },
+          "z": 20
+        },
+        {
+          "id": 23,
+          "chu": "ROBOT · Unknown",
+          "rect": {
+            "x": 1263,
+            "y": 519,
+            "w": 119,
+            "h": 24,
+            "phai": 1382,
+            "day": 543
+          },
+          "z": 20
+        },
+        {
+          "id": 17,
+          "chu": "FCT · Unknown",
+          "rect": {
+            "x": 751,
+            "y": 493,
+            "w": 101,
+            "h": 24,
+            "phai": 852,
+            "day": 517
+          },
+          "z": 20
+        },
+        {
+          "id": 19,
+          "chu": "PWR · Unknown",
+          "rect": {
+            "x": 922,
+            "y": 582,
+            "w": 105,
+            "h": 24,
+            "phai": 1027,
+            "day": 606
+          },
+          "z": 20
+        },
+        {
+          "id": 20,
+          "chu": "ASSY · Unknown",
+          "rect": {
+            "x": 1005,
+            "y": 556,
+            "w": 109,
+            "h": 24,
+            "phai": 1114,
+            "day": 580
+          },
+          "z": 20
+        },
+        {
+          "id": 16,
+          "chu": "ICT · Unknown",
+          "rect": {
+            "x": 667,
+            "y": 519,
+            "w": 97,
+            "h": 24,
+            "phai": 764,
+            "day": 543
+          },
+          "z": 20
+        },
+        {
+          "id": 21,
+          "chu": "SCREW · Unknown",
+          "rect": {
+            "x": 1085,
+            "y": 527,
+            "w": 122,
+            "h": 24,
+            "phai": 1207,
+            "day": 551
+          },
+          "z": 20
+        },
+        {
+          "id": 22,
+          "chu": "PACK · Unknown",
+          "rect": {
+            "x": 1181,
+            "y": 493,
+            "w": 110,
+            "h": 24,
+            "phai": 1291,
+            "day": 517
+          },
+          "z": 20
+        },
+        {
+          "id": 15,
+          "chu": "AVI · Unknown",
+          "rect": {
+            "x": 530,
+            "y": 525,
+            "w": 97,
+            "h": 24,
+            "phai": 627,
+            "day": 549
+          },
+          "z": 20
+        },
+        {
+          "id": 14,
+          "chu": "AOI · Unknown",
+          "rect": {
+            "x": 496,
+            "y": 499,
+            "w": 99,
+            "h": 24,
+            "phai": 595,
+            "day": 523
+          },
+          "z": 20
+        },
+        {
+          "id": 24,
+          "chu": "AGV · Unknown",
+          "rect": {
+            "x": 1358,
+            "y": 493,
+            "w": 103,
+            "h": 24,
+            "phai": 1461,
+            "day": 517
+          },
+          "z": 20
+        },
+        {
+          "id": 13,
+          "chu": "SPI · Unknown",
+          "rect": {
+            "x": 411,
+            "y": 551,
+            "w": 97,
+            "h": 24,
+            "phai": 508,
+            "day": 575
+          },
+          "z": 20
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR",
+          "rect": {
+            "x": 824,
+            "y": 550,
+            "w": 129,
+            "h": 17,
+            "phai": 953,
+            "day": 567
+          },
+          "z": 30
+        },
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT",
+          "rect": {
+            "x": 1276,
+            "y": 551,
+            "w": 106,
+            "h": 17,
+            "phai": 1382,
+            "day": 568
+          },
+          "z": 30
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 2,
+        "tong": 2,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 2,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 12,
+        "tong": 12,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 4,
+        "soLopPhuDom": 2,
+        "soHopBadge": 2,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "man": "/twin/may/18",
+      "url": "http://localhost:3054/twin/may/18?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Unknown",
+          "rect": {
+            "x": 797,
+            "y": 184,
+            "w": 191,
+            "h": 24,
+            "phai": 989,
+            "day": 208
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 716,
+            "y": 145,
+            "w": 144,
+            "h": 17,
+            "phai": 861,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 1,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 8,
+        "soVungCam": 2,
+        "soLopPhuDom": 1,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "man": "/twin/may/23",
+      "url": "http://localhost:3054/twin/may/23?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 23,
+          "chu": "SIM-L2-ROBOT · Unknown",
+          "rect": {
+            "x": 796,
+            "y": 166,
+            "w": 166,
+            "h": 24,
+            "phai": 962,
+            "day": 190
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT➤",
+          "rect": {
+            "x": 728,
+            "y": 145,
+            "w": 121,
+            "h": 17,
+            "phai": 849,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 1,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 2,
+        "soLopPhuDom": 1,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1600x900",
+      "man": "/twin/may/14",
+      "url": "http://localhost:3054/twin/may/14?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 14,
+          "chu": "SIM-L2-AOI · Unknown",
+          "rect": {
+            "x": 715,
+            "y": 155,
+            "w": 146,
+            "h": 24,
+            "phai": 861,
+            "day": 179
+          },
+          "z": 19
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null,
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 3,
+        "soVungCam": 1,
+        "soLopPhuDom": 1,
+        "soHopBadge": 0,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "man": "/twin",
+      "url": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 968,
+        "h": 489,
+        "phai": 1256,
+        "day": 696
+      },
+      "soNhan": 2,
+      "soBadge": 7,
+      "nhan": [
+        {
+          "id": 23,
+          "chu": "SIM-L2-ROBOT · Unknown",
+          "rect": {
+            "x": 993,
+            "y": 445,
+            "w": 166,
+            "h": 24,
+            "phai": 1159,
+            "day": 469
+          },
+          "z": 19
+        },
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Unknown",
+          "rect": {
+            "x": 645,
+            "y": 466,
+            "w": 191,
+            "h": 24,
+            "phai": 836,
+            "day": 490
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-21",
+          "doiCho": "1",
+          "chu": "▲SIM-L1-SPI➤",
+          "rect": {
+            "x": 822,
+            "y": 382,
+            "w": 99,
+            "h": 17,
+            "phai": 921,
+            "day": 399
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-25",
+          "doiCho": "1",
+          "chu": "▲SIM-L1-AOI➤",
+          "rect": {
+            "x": 868,
+            "y": 344,
+            "w": 100,
+            "h": 17,
+            "phai": 968,
+            "day": 361
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "1",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 814,
+            "y": 423,
+            "w": 144,
+            "h": 17,
+            "phai": 958,
+            "day": 440
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT",
+          "rect": {
+            "x": 841,
+            "y": 478,
+            "w": 106,
+            "h": 17,
+            "phai": 947,
+            "day": 495
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-22",
+          "doiCho": "1",
+          "chu": "◆SIM-L1-AOI➤",
+          "rect": {
+            "x": 970,
+            "y": 382,
+            "w": 100,
+            "h": 17,
+            "phai": 1070,
+            "day": 399
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-23",
+          "doiCho": "1",
+          "chu": "●SIM-L1-AVI➤",
+          "rect": {
+            "x": 685,
+            "y": 445,
+            "w": 96,
+            "h": 17,
+            "phai": 781,
+            "day": 462
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-24",
+          "doiCho": "1",
+          "chu": "●SIM-L1-ICT➤",
+          "rect": {
+            "x": 998,
+            "y": 333,
+            "w": 96,
+            "h": 17,
+            "phai": 1094,
+            "day": 350
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 7,
+        "tong": 7,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 6,
+        "soVungCam": 5,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 2,
+        "tong": 45,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 43,
+        "vuotMep": 0,
+        "biChe": 4,
+        "deKhoiKhac": 1,
+        "deKhoiKhacDoLai": 1,
+        "soHopKhoi": 42,
+        "soVungCam": 12,
+        "soLopPhuDom": 5,
+        "soHopBadge": 7,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "man": "/twin/line/2",
+      "url": "http://localhost:3054/twin/line/2?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 968,
+        "h": 479,
+        "phai": 1256,
+        "day": 604
+      },
+      "soNhan": 12,
+      "soBadge": 2,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "CONVEYOR · Unknown",
+          "rect": {
+            "x": 669,
+            "y": 397,
+            "w": 144,
+            "h": 24,
+            "phai": 813,
+            "day": 421
+          },
+          "z": 19
+        },
+        {
+          "id": 23,
+          "chu": "ROBOT · Unknown",
+          "rect": {
+            "x": 989,
+            "y": 397,
+            "w": 119,
+            "h": 24,
+            "phai": 1108,
+            "day": 421
+          },
+          "z": 19
+        },
+        {
+          "id": 17,
+          "chu": "FCT · Unknown",
+          "rect": {
+            "x": 629,
+            "y": 371,
+            "w": 101,
+            "h": 24,
+            "phai": 730,
+            "day": 395
+          },
+          "z": 19
+        },
+        {
+          "id": 19,
+          "chu": "PWR · Unknown",
+          "rect": {
+            "x": 865,
+            "y": 405,
+            "w": 105,
+            "h": 24,
+            "phai": 971,
+            "day": 429
+          },
+          "z": 19
+        },
+        {
+          "id": 20,
+          "chu": "ASSY · Unknown",
+          "rect": {
+            "x": 868,
+            "y": 379,
+            "w": 109,
+            "h": 24,
+            "phai": 977,
+            "day": 403
+          },
+          "z": 19
+        },
+        {
+          "id": 16,
+          "chu": "ICT · Unknown",
+          "rect": {
+            "x": 570,
+            "y": 397,
+            "w": 97,
+            "h": 24,
+            "phai": 667,
+            "day": 421
+          },
+          "z": 19
+        },
+        {
+          "id": 21,
+          "chu": "SCREW · Unknown",
+          "rect": {
+            "x": 863,
+            "y": 454,
+            "w": 122,
+            "h": 24,
+            "phai": 985,
+            "day": 478
+          },
+          "z": 19
+        },
+        {
+          "id": 22,
+          "chu": "PACK · Unknown",
+          "rect": {
+            "x": 992,
+            "y": 371,
+            "w": 110,
+            "h": 24,
+            "phai": 1102,
+            "day": 395
+          },
+          "z": 19
+        },
+        {
+          "id": 15,
+          "chu": "AVI · Unknown",
+          "rect": {
+            "x": 457,
+            "y": 401,
+            "w": 97,
+            "h": 24,
+            "phai": 554,
+            "day": 425
+          },
+          "z": 19
+        },
+        {
+          "id": 14,
+          "chu": "AOI · Unknown",
+          "rect": {
+            "x": 449,
+            "y": 375,
+            "w": 99,
+            "h": 24,
+            "phai": 547,
+            "day": 399
+          },
+          "z": 19
+        },
+        {
+          "id": 24,
+          "chu": "AGV · Unknown",
+          "rect": {
+            "x": 1116,
+            "y": 423,
+            "w": 103,
+            "h": 24,
+            "phai": 1219,
+            "day": 447
+          },
+          "z": 19
+        },
+        {
+          "id": 13,
+          "chu": "SPI · Unknown",
+          "rect": {
+            "x": 334,
+            "y": 427,
+            "w": 97,
+            "h": 24,
+            "phai": 432,
+            "day": 451
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR",
+          "rect": {
+            "x": 676,
+            "y": 431,
+            "w": 129,
+            "h": 17,
+            "phai": 805,
+            "day": 448
+          },
+          "z": 29
+        },
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT",
+          "rect": {
+            "x": 1000,
+            "y": 432,
+            "w": 106,
+            "h": 17,
+            "phai": 1106,
+            "day": 449
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 2,
+        "tong": 2,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 2,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 12,
+        "tong": 12,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 1,
+        "deKhoiKhacDoLai": 1,
+        "soHopKhoi": 12,
+        "soVungCam": 4,
+        "soLopPhuDom": 2,
+        "soHopBadge": 2,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "man": "/twin/may/18",
+      "url": "http://localhost:3054/twin/may/18?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 18,
+          "chu": "SIM-L2-CONVEYOR · Unknown",
+          "rect": {
+            "x": 637,
+            "y": 176,
+            "w": 191,
+            "h": 24,
+            "phai": 829,
+            "day": 200
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-11",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-CONVEYOR➤",
+          "rect": {
+            "x": 556,
+            "y": 145,
+            "w": 144,
+            "h": 17,
+            "phai": 700,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 1,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 8,
+        "soVungCam": 2,
+        "soLopPhuDom": 1,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "man": "/twin/may/23",
+      "url": "http://localhost:3054/twin/may/23?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 1,
+      "nhan": [
+        {
+          "id": 23,
+          "chu": "SIM-L2-ROBOT · Unknown",
+          "rect": {
+            "x": 636,
+            "y": 186,
+            "w": 166,
+            "h": 24,
+            "phai": 802,
+            "day": 210
+          },
+          "z": 19
+        }
+      ],
+      "badge": [
+        {
+          "t": "badge-canh-bao-12",
+          "doiCho": "0",
+          "chu": "◆SIM-L2-ROBOT➤",
+          "rect": {
+            "x": 568,
+            "y": 145,
+            "w": 121,
+            "h": 17,
+            "phai": 689,
+            "day": 162
+          },
+          "z": 29
+        }
+      ],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 1,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 2,
+        "soLopPhuDom": 1,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    },
+    {
+      "lang": "en",
+      "vp": "1280x720",
+      "man": "/twin/may/14",
+      "url": "http://localhost:3054/twin/may/14?do=1",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "soNhan": 1,
+      "soBadge": 0,
+      "nhan": [
+        {
+          "id": 14,
+          "chu": "SIM-L2-AOI · Unknown",
+          "rect": {
+            "x": 555,
+            "y": 147,
+            "w": 146,
+            "h": 24,
+            "phai": 701,
+            "day": 171
+          },
+          "z": 20
+        }
+      ],
+      "badge": [],
+      "capNhanBadge": [],
+      "soCapNhanBadge": 0,
+      "tongPx2": 0,
+      "nhanNgoaiCanvas": 0,
+      "badgeNgoaiCanvas": 0,
+      "demBadge": null,
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 3,
+        "soVungCam": 1,
+        "soLopPhuDom": 1,
+        "soHopBadge": 0,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      }
+    }
+  ]
+}

@@ -249,7 +249,7 @@ async function fetchRecentCorrections(
     const machineFilter =
       machineId != null ? sql` AND pi."machineId" = ${machineId}` : sql``;
     const result = await (db as any).execute(sql`
-      SELECT mc."createdAt" AS at,
+      SELECT mc."createdAt" AT TIME ZONE 'UTC' AS at,
              mc."originalResult" AS original,
              mc."correctedResult" AS corrected,
              mc."reason" AS reason

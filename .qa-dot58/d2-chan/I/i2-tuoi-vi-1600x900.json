@@ -1,0 +1,65 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "lang": "vi",
+  "vp": "1600x900",
+  "tag": "../.qa-dot58/d2-chan/I",
+  "luc": "2026-09-13T07:54:18.665Z",
+  "coMan": true,
+  "coCanvas": true,
+  "url": "/twin?pv=factory%3A1&cam=51.38%2C19.68%2C45.11%2C19.13%2C12.85",
+  "htmlLang": "vi",
+  "tuoi14": {
+    "id": "tuoi-14",
+    "chu": "58 ngày",
+    "giay": "5034487"
+  },
+  "soO": 42,
+  "soXau": 0,
+  "mauXau": [],
+  "mau": [
+    {
+      "id": "tuoi-244",
+      "chu": "—",
+      "giay": null
+    },
+    {
+      "id": "tuoi-245",
+      "chu": "57 ngày",
+      "giay": "4953393"
+    },
+    {
+      "id": "tuoi-243",
+      "chu": "57 ngày",
+      "giay": "4929728"
+    },
+    {
+      "id": "tuoi-12",
+      "chu": "58 ngày",
+      "giay": "5034487"
+    },
+    {
+      "id": "tuoi-2",
+      "chu": "58 ngày",
+      "giay": "5034487"
+    },
+    {
+      "id": "tuoi-8",
+      "chu": "58 ngày",
+      "giay": "5034487"
+    },
+    {
+      "id": "tuoi-3",
+      "chu": "58 ngày",
+      "giay": "5034487"
+    },
+    {
+      "id": "tuoi-6",
+      "chu": "58 ngày",
+      "giay": "5034487"
+    }
+  ],
+  "i2": {
+    "dat": true
+  }
+}

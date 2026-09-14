@@ -1,0 +1,59 @@
+[
+ {
+  "id": 11,
+  "machineId": 18,
+  "state": "yellow",
+  "status": "acknowledged",
+  "title": "Cảnh báo chất lượng",
+  "lineId": 2
+ },
+ {
+  "id": 12,
+  "machineId": 23,
+  "state": "yellow",
+  "status": "acknowledged",
+  "title": "Đổi model / setup",
+  "lineId": 2
+ },
+ {
+  "id": 21,
+  "machineId": 1,
+  "state": "red",
+  "status": "acknowledged",
+  "title": "Andon SIM-L1-SPI",
+  "lineId": 1
+ },
+ {
+  "id": 22,
+  "machineId": 2,
+  "state": "yellow",
+  "status": "acknowledged",
+  "title": "Andon SIM-L1-AOI",
+  "lineId": 1
+ },
+ {
+  "id": 23,
+  "machineId": 3,
+  "state": "call",
+  "status": "acknowledged",
+  "title": "Andon SIM-L1-AVI",
+  "lineId": 1
+ },
+ {
+  "id": 24,
+  "machineId": 4,
+  "state": "call",
+  "status": "acknowledged",
+  "title": "Andon SIM-L1-ICT",
+  "lineId": 1
+ },
+ {
+  "id": 25,
+  "machineId": 2,
+  "state": "red",
+  "status": "acknowledged",
+  "title": "D5-CADUONG-ACK",
+  "lineId": 1
+ }
+]
+MAY: [{"id":6,"code":"SIM-L1-CONVEYOR","name":"SIM-L1 CONVEYOR","isActive":true},{"id":7,"code":"SIM-L1-PWR","name":"SIM-L1 PWR","isActive":true},{"id":13,"code":"SIM-L2-SPI","name":"SIM-L2 SPI","isActive":true},{"id":14,"code":"SIM-L2-AOI","name":"SIM-L2 AOI","isActive":true},{"id":17,"code":"SIM-L2-FCT","name":"SIM-L2 FCT","isActive":true},{"id":18,"code":"SIM-L2-CONVEYOR","name":"SIM-L2 CONVEYOR","isActive":true},{"id":20,"code":"SIM-L2-ASSY","name":"SIM-L2 ASSY","isActive":true},{"id":21,"code":"SIM-L2-SCREW","name":"SIM-L2 SCREW","isActive":true},{"id":22,"code":"SIM-L2-PACK","name":"SIM-L2 PACK","isActive":true},{"id":23,"code":"SIM-L2-ROBOT","name":"SIM-L2 ROBOT","isActive":true},{"id":246,"code":"SN-SIMVERIFY-01","name":"SIM Verify Screwdriver","isActive":true},{"id":247,"code":"SN-SIM-0001","name":"Trạm vít demo","isActive":true}]

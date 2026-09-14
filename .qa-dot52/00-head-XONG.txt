@@ -1,0 +1,10 @@
+[Đợt 52 · bước 0] cây + HEAD  —  2026-09-12T13:54:58+07:00
+worktree = /d/SOURCES/_twin_wt   nhánh = feat/twin-3d-trung-tam
+HEAD lúc bắt đầu (13:52) = 389fa9b3  (== kỳ vọng brief)
+HEAD lúc 13:54          = 33c68607b35b8e5fb3604b0dea375bc09509f5ac  ← phiên khác vừa commit
+diff 389fa9b3..HEAD:
+33c68607 docs(twin3d/dot51): §14q.30.1 do lai doc lap - index co that trong DB dev, check:tests 32 loi vao cong thuong truc, giao Dot 52 QA lan 8
+ docs/superpowers/specs/2026-09-06-nha-may-3d-digital-twin-design.md | 5 +++++
+ 1 file changed, 5 insertions(+)
+=> ĐÚNG điều kiện "+ N commit docs(...)" của brief (G121): chỉ 1 tệp docs, 0 mã sản phẩm.
+=> KHÔNG dừng; tiếp tục. Build 52a khởi động lúc 13:54:08 ở HEAD=33c68607 (docs-only ⇒ artifact không đổi).

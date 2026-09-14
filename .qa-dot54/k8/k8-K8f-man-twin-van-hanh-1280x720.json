@@ -1,0 +1,23 @@
+{
+  "luc": "2026-09-12T12:16:15.856Z",
+  "base": "http://localhost:3054",
+  "duong": "/twin",
+  "man": "man-twin-van-hanh",
+  "vp": "1280x720",
+  "mo": {
+    "msCanvas": 1091,
+    "msSanSang": 3673,
+    "coMayTrongKhung": true
+  },
+  "nhan": {
+    "id": 23,
+    "X": 1073.609375,
+    "Y": 456.96875,
+    "chu": "SIM-L2-ROBOT · Không rõ",
+    "soNhan": 3,
+    "loai": []
+  },
+  "toiNhan": true,
+  "urlSauNhan": "http://localhost:3054/twin/may/23",
+  "urlSauBack": "http://localhost:3054/twin?do=1&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85"
+}

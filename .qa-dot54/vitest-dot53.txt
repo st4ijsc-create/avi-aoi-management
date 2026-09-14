@@ -1,0 +1,13 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+ ✓ server/services/trangThaiMayTuoi.test.ts (28 tests) 6ms
+ ✓ client/src/components/twin3d/van-hanh/badgeKepRiaDeNhan.unit.test.ts (9 tests) 4ms
+ ✓ server/services/hopDongTrangThaiMotChu.test.ts (5 tests) 8ms
+ ✓ server/services/sucKhoeTheoIndexQd27.test.ts (3 tests) 8ms
+
+ Test Files  4 passed (4)
+      Tests  45 passed (45)
+   Start at  19:49:07
+   Duration  839ms (transform 127ms, setup 71ms, collect 534ms, tests 26ms, environment 1ms, prepare 621ms)
+

@@ -1,0 +1,6 @@
+
+> synapse-platform@1.0.0 i18n:check
+> node scripts/i18n-check.mjs
+
+
+0 key(s) with placeholder mismatch across en/vi/zh · 0 NEW key(s) missing in all 3 · 0 NEW key(s) missing in some · 0 stale baseline entr(y|ies) · 0 baseline-integrity violation(s) · [đã đóng băng: 339 missing-in-all + 20 missing-in-some, nợ CÓ TRƯỚC]

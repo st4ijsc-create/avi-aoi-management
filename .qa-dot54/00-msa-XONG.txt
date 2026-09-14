@@ -1,0 +1,10 @@
+MSA (buoc 0) — 2026-09-12T18:39:50+07:00
+HEAD=360c9218 (= ky vong, 0 commit docs them)
+build 54a: 914 tep, bundle assets/index-hIeKtQvc.js; build lap 54b md5 914/914 KHOP
+bundle 3054 = bundle tren dia: 3436fb9efe2aafad2abe6827aa37f9d7
+DB11 truoc: {"db":{"d":"aoi_management","n":"2026-09-12T11:37:16.450Z","tz":"Etc/UTC"},"factories":2,"twin_dat_cho":82,"stations":37,"machines_active":42,"users":10,"andon":7,"andon_raised":0,"hb":108,"msl":7814,"permissions":104,"ufa":3}
+DB6 truoc: {"hb":108,"msl":7814,"users":10,"andon":7,"factories":2,"datcho":82}
+5 anh test-results md5 ghi .qa-dot54/md5-testresults-truoc.txt
+.qa-dot47: 616 tep, 103 tep 0 byte
+cong truoc: 0.0.0.0:3000 28480 0.0.0.0:3001 37128 0.0.0.0:3008 38472 0.0.0.0:8080 5192 [::]:3000 28480 [::]:3001 37128 [::]:3008 38472 
+3054 pid=19448

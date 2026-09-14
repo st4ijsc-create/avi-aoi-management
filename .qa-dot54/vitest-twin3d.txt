@@ -1,0 +1,138 @@
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mD:/SOURCES/_twin_wt[39m
+
+ [32m✓[39m client/src/components/twin3d/van-hanh/nhungTaiCho.unit.test.ts [2m([22m[2m40 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/boCucTang.unit.test.ts [2m([22m[2m50 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/cuaVaoTwin.unit.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/locNhan.unit.test.ts [2m([22m[2m68 tests[22m[2m)[22m[90m 34[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/duongDanTwin.unit.test.ts [2m([22m[2m75 tests[22m[2m)[22m[90m 52[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/sinhBoCuc.unit.test.ts [2m([22m[2m38 tests[22m[2m)[22m[90m 56[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/moPhongLogic.unit.test.ts [2m([22m[2m37 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/sucKhoeMay.unit.test.ts [2m([22m[2m35 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/daiCanhBaoLogic.unit.test.ts [2m([22m[2m35 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/trangThaiThietKe.unit.test.ts [2m([22m[2m69 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/hinhHocCanChinh.unit.test.ts [2m([22m[2m69 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/trungThucDuLieu.unit.test.ts [2m([22m[2m56 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/cayPhanCapLogic.unit.test.ts [2m([22m[2m51 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/locBadge.unit.test.ts [2m([22m[2m28 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/docBanVe.unit.test.ts [2m([22m[2m46 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/hieuChinhNhapModel.unit.test.ts [2m([22m[2m45 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/vungAnToan.unit.test.ts [2m([22m[2m49 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/manLineNoiVaoTrang.unit.test.ts [2m([22m[2m43 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/hinhHocTuMoTa.unit.test.ts [2m([22m[2m30 tests[22m[2m)[22m[90m 46[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/phamViCanh.unit.test.ts [2m([22m[2m53 tests[22m[2m)[22m[90m 36[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/manMayNoiVaoTrang.unit.test.ts [2m([22m[2m41 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/manLine.unit.test.ts [2m([22m[2m36 tests[22m[2m)[22m[33m 447[2mms[22m[39m
+   [33m[2m✓[22m[39m ★★★ Đợt 36 — lyDoMoManLine với `thieuQuyen` (server FORBIDDEN)[2m > [22mcâu cho `thieuQuyen` đi qua `cauChoLyDoManMay` (một câu, hai màn — G12) [33m342[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/manMay.unit.test.ts [2m([22m[2m42 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/wipTram.unit.test.ts [2m([22m[2m40 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/nganXuLyLogic.unit.test.ts [2m([22m[2m29 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/tang1KhongTachDuoc.unit.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/noiChoGoi.unit.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/phamViLine.unit.test.ts [2m([22m[2m49 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/hopNhatCanh.unit.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/mauTrangThai.unit.test.ts [2m([22m[2m29 tests[22m[2m)[22m[90m 92[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/badgeKepRiaDeNhan.unit.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/cayVanHanh.unit.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/heToaDo.unit.test.ts [2m([22m[2m38 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/khungNhin.unit.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/kpiNoiLogic.unit.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/locNhanKhoiMay.unit.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/lichSuThaoTac.unit.test.ts [2m([22m[2m30 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/quyenThietKe.unit.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/boChonNap.unit.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/bo-cuc/dinhTuyenTwinCu.unit.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/mucChiTiet.unit.test.ts [2m([22m[2m38 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/xuatXuNhip.unit.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/tachTangTuHinhHoc.unit.test.ts [2m([22m[2m29 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/banDoNho.unit.test.ts [2m([22m[2m28 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/xemTruocSinh.unit.test.ts [2m([22m[2m24 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/useMoPhongTwin.unit.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/gizmoNoiLogic.unit.test.ts [2m([22m[2m32 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/matDoKhungHinh.unit.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/xuatUsd.unit.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/napModel.unit.test.ts [2m([22m[2m19 tests[22m[2m)[22m[90m 29[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/useTrangThaiSong.unit.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/xuatAnh.unit.test.ts [2m([22m[2m25 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/chipCanhBaoAn.unit.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 104[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/usePhanTichLine.unit.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/hinhKhoiMay.unit.test.ts [2m([22m[2m55 tests[22m[2m)[22m[90m 51[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/khoTrangThai.unit.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/i18nBaMan.unit.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/bo-cuc/vungQuyen.unit.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/bo-cuc/daiHopNhatLogic.unit.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/hopNhatCanhNoiVaoTrang.unit.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/hopNhatCanhKhongTachThem.unit.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/nguonDuLieu.unit.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/kiemTraAsset.unit.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/khuChoVaNhanLine.unit.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/tiLeAnhNen.unit.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/hoatAnhDongChay.unit.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/boCucViewport.unit.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/bo-cuc/duongDanBaMan.unit.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/canhLine.unit.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/phuUns.unit.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/dongThoiGian.unit.test.ts [2m([22m[2m25 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/chonVatThe.unit.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/dichKhungDoc.unit.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/nhipAnToan.unit.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/canhBaoAnToan.unit.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/lopCanhBaoNoiVaoCanvas.unit.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/useAnhLichSu.unit.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/giuDuLieuTruoc.unit.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/maNgan.unit.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/useTrangThaiTwin.unit.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/boCucThanhCongCu.unit.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/chinhSachNhan.unit.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/cheNhan.unit.test.ts [2m([22m[2m20 tests[22m[2m)[22m[90m 146[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/congQuyenTwin.unit.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/demDuoiChoChip.unit.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/hopDaVe.unit.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/cheDoDo.unit.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/phanBietBamKeo.unit.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/onDinhTheoGiaTri.unit.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/banDoNhoCanh.unit.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/vungVanHanh.dom.test.tsx [2m([22m[2m15 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+[90mstderr[2m | client/src/components/twin3d/loi/loBatchMay.dom.test.tsx
+[22m[39mTHREE.WARNING: Multiple instances of Three.js being imported.
+
+ [32m✓[39m client/src/components/twin3d/van-hanh/vienSucKhoe.dom.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+[90mstderr[2m | client/src/components/twin3d/van-hanh/mauThree.dom.test.tsx
+[22m[39mTHREE.WARNING: Multiple instances of Three.js being imported.
+
+[90mstderr[2m | client/src/components/twin3d/van-hanh/phaVeNen.dom.test.tsx[2m > [22m[2m★★★ D2 — tái hiện: `phaVeNen` với oklch THÔ trả NGUYÊN màu gốc[2m > [22m[2m★★★ đầu vào oklch ⇒ đầu ra === đầu vào (chênh = 0 bit thông tin)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m client/src/components/twin3d/van-hanh/phaVeNen.dom.test.tsx [2m([22m[2m18 tests[22m[2m)[22m[33m 354[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/loi/loBatchMay.dom.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[90m 212[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/noiLoD.dom.test.tsx [2m([22m[2m17 tests[22m[2m)[22m[90m 216[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/dongThoiGian.dom.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[90m 247[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/DaiCanhBao.dom.test.tsx [2m([22m[2m29 tests[22m[2m)[22m[33m 848[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/daiLineWip.dom.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[33m 839[2mms[22m[39m
+   [33m[2m✓[22m[39m ★★★ §11.5 — DẢI 2D vẽ SỐ WIP THẬT trong DOM[2m > [22m★★★ năm trạm ⇒ năm ô WIP có mặt, KHÔNG phải zero ô [33m391[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx [2m([22m[2m25 tests[22m[2m)[22m[33m 761[2mms[22m[39m
+[90mstderr[2m | client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx
+[22m[39mNot implemented: navigation to another Document
+
+ [32m✓[39m client/src/components/twin3d/loi/modelErrorBoundary.dom.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[90m 227[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/mauThree.dom.test.tsx [2m([22m[2m15 tests[22m[2m)[22m[33m 318[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/thiet-ke/CayPhanCap.dom.test.tsx [2m([22m[2m27 tests[22m[2m)[22m[33m 1765[2mms[22m[39m
+   [33m[2m✓[22m[39m #11 ARIA — cây tự khai gì thì phải làm được đúng thế[2m > [22m★★★ CÓ role=tree, role=treeitem, VÀ tabIndex — không còn 'khai mà không làm' [33m374[2mms[22m[39m
+[90mstderr[2m | client/src/components/twin3d/van-hanh/danhSachMayAoHoa.dom.test.tsx[2m > [22m[2mH1 — ảo hoá đo được[2m > [22m[2m549 máy ⇒ SỐ `<li>` trong DOM ÍT HƠN MỘT BẬC (549 → dưới 40)
+[22m[39mreact-i18next:: useTranslation: You will need to pass in an i18next instance by using initReactI18next { code: [32m'NO_I18NEXT_INSTANCE'[39m }
+
+ [32m✓[39m client/src/components/twin3d/van-hanh/danhSachMayAoHoa.dom.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 1749[2mms[22m[39m
+   [33m[2m✓[22m[39m H1 — ảo hoá đo được[2m > [22m549 máy ⇒ SỐ `<li>` trong DOM ÍT HƠN MỘT BẬC (549 → dưới 40) [33m461[2mms[22m[39m
+   [33m[2m✓[22m[39m H1 — thiết bị đo tự canh mình[2m > [22mKHÔNG bơm chiều cao (jsdom clientHeight=0) ⇒ KHÔNG ảo hoá, đủ 549 `<li>` [33m435[2mms[22m[39m
+ [32m✓[39m client/src/components/twin3d/van-hanh/nhungTaiCho.dom.test.tsx [2m([22m[2m30 tests[22m[2m)[22m[33m 2644[2mms[22m[39m
+   [33m[2m✓[22m[39m TẦNG 2 — bấm nút 'Mở chức năng'[2m > [22m★ tiền đề G5: tập nút KHÁC RỖNG, và có CẢ HAI loại đích [33m478[2mms[22m[39m
+   [33m[2m✓[22m[39m NganNhung — ngăn chi tiết tại chỗ[2m > [22m★★★ mở ngăn MÁY ⇒ render THÂN MÁY, đúng id — không phải thân khác [33m397[2mms[22m[39m
+   [33m[2m✓[22m[39m NganNhung — ngăn chi tiết tại chỗ[2m > [22m★★★ mở ngăn ROBOT ⇒ render THÂN ROBOT, đúng id [33m355[2mms[22m[39m
+   [33m[2m✓[22m[39m NganNhung — ngăn chi tiết tại chỗ[2m > [22m★★★ mở ngăn TRẠM ⇒ render THÂN TRẠM, đúng id [33m357[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m104 passed[39m[22m[90m (104)[39m
+[2m      Tests [22m [1m[32m2461 passed[39m[22m[90m (2461)[39m
+[2m   Start at [22m 19:47:33
+[2m   Duration [22m 14.33s[2m (transform 26.97s, setup 6.18s, collect 64.17s, tests 12.69s, environment 41.67s, prepare 32.09s)[22m
+

@@ -1,0 +1,24 @@
+{
+  "bang_ton_tai": [
+    "factory_zones",
+    "machines",
+    "safety_zones"
+  ],
+  "B_rows_factory_zones": 0,
+  "B_rows_safety_zones": 0,
+  "machines_cot_layout": [
+    "layout:jsonb",
+    "layoutPositionX:numeric",
+    "layoutPositionY:numeric"
+  ],
+  "machines_tong": 43,
+  "machines_phanbo": {
+    "x_null": 43,
+    "x_cogiatri": 0,
+    "y_null": 43,
+    "y_cogiatri": 0,
+    "l_null": 43,
+    "l_cogiatri": 0
+  },
+  "doi_chung_duong_id_cogiatri": 43
+}

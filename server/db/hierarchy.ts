@@ -21,6 +21,8 @@ import {
 } from "../../drizzle/schema";
 // Doc 56 Đ2a — DERIVED device class (aoi_avi | automation | iot), single source.
 import { deviceClassOf } from "../constants/machineTypes";
+// ★ Đợt 42 — trục ② (khoá API) của `PhamViDoc`; `import type` ⇒ không tạo vòng nạp `db → _core`.
+import type { TenantCodeScope } from "../_core/tenantCodeScope";
 
 export { MACHINE_LIFECYCLE_TRANSITIONS, MACHINE_LIFECYCLE_EXCLUDED, isLegalLifecycleTransition };
 export type { MachineLifecycleStatus };
@@ -145,6 +147,28 @@ export interface PhamViNguoiXem {
 }
 
 /**
+ * ★★★ ĐỢT 42 (QA Đợt 41 D-4 lỗ #2) — **TRỤC ②: PHẠM VI CỦA MỘT KHOÁ API**, đi qua CÙNG bộ phân giải.
+ *
+ * Một khoá API **không phải một người dùng** (`api_keys.createdBy` NULLable; xem docblock
+ * `server/api/v1/apiKeyScope.ts`) nên không diễn đạt được bằng `PhamViNguoiXem`. Trước Đợt 42, lối đi
+ * REST `/api/v1/machines/:id/detail` vì thế gọi `machineDetail(id)` KHÔNG scope — và một khoá khai
+ * `factoryCode = SIM-FAC` đọc được identity máy của nhà máy 18 (`.qa-dot41/api-vai/http-v1.json`: 200).
+ *
+ * Hình này là **bản sao NGUYÊN VĂN** nhánh ② của `TenantFactoryScopeArgs` (`db/reportAggregators.ts`):
+ * `idsTrongPhamVi`/`trongPhamVi` chuyển thẳng nó vào `resolveTenantFactoryScope`, nên KHÔNG có bộ luật
+ * thứ hai (G12). `tenantScope = {}` (khoá CHƯA KHAI) ⇒ `factoryIds: []` ⇒ mọi cổng `1 = 0` — fail-closed,
+ * cùng chiều `/ecosystem/kpi`. Khoá TOÀN CỤC tường minh ⇒ nơi gọi truyền `undefined` (không lọc).
+ */
+export interface PhamViMaTenant {
+  tenantScope: TenantCodeScope;
+  userId?: never;
+  userRole?: never;
+}
+
+/** Phạm vi ĐỌC: người xem (trục ①, `phamViCua(ctx)`) HOẶC khoá API (trục ②). */
+export type PhamViDoc = PhamViNguoiXem | PhamViMaTenant;
+
+/**
  * ★★★ **TẬP `machines.id` NẰM TRONG PHẠM VI NGƯỜI XEM** — nguyên thuỷ DÙNG CHUNG.
  *
  * `null` = vai toàn quyền / lối đi không mang danh tính ⇒ nơi gọi **không được** thêm cổng nào.
@@ -157,7 +181,7 @@ export interface PhamViNguoiXem {
  * **bản yếu hơn** quyết định ai thấy gì. Đây là phép TRA CỨU quan hệ, KHÔNG phải một bộ luật
  * phân quyền thứ hai — luật vẫn nằm ở `resolveTenantFactoryScope`.
  */
-export async function machineIdsTrongPhamVi(scope?: PhamViNguoiXem): Promise<number[] | null> {
+export async function machineIdsTrongPhamVi(scope?: PhamViDoc): Promise<number[] | null> {
   return idsTrongPhamVi("machine", scope);
 }
 
@@ -189,7 +213,7 @@ export type CapPhanCap = "factory" | "workshop" | "line" | "station" | "machine"
  * drizzle: drizzle kết xuất cột theo TÊN BẢNG (`"workshops"."factoryId"`) nên một bí danh sẽ vỡ
  * `42P01` (bẫy đã ghi ở `services/ecosystem/commandCenterScope.ts`).
  */
-export async function idsTrongPhamVi(cap: CapPhanCap, scope?: PhamViNguoiXem): Promise<number[] | null> {
+export async function idsTrongPhamVi(cap: CapPhanCap, scope?: PhamViDoc): Promise<number[] | null> {
   const { resolveTenantFactoryScope, factoryIdGate } = await import("./reportAggregators");
   const pv = await resolveTenantFactoryScope(scope);
   if (pv.factoryIds === null) return null;
@@ -242,7 +266,7 @@ export async function idsTrongPhamVi(cap: CapPhanCap, scope?: PhamViNguoiXem): P
  * đường tra cứu theo `id`, thì một `id` đoán được vẫn mở được cửa sang tenant khác. `true` khi
  * phạm vi là `null` (toàn quyền) — không thêm cổng nào.
  */
-export async function trongPhamVi(cap: CapPhanCap, id: number, scope?: PhamViNguoiXem): Promise<boolean> {
+export async function trongPhamVi(cap: CapPhanCap, id: number, scope?: PhamViDoc): Promise<boolean> {
   const ids = await idsTrongPhamVi(cap, scope);
   return ids === null || ids.includes(id);
 }

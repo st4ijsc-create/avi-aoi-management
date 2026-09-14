@@ -1,0 +1,561 @@
+{
+  "vp": "1600x900",
+  "census": {
+    "url": "http://localhost:3048/factory-command?do=1",
+    "cv": {
+      "x": 289,
+      "y": 194.5,
+      "w": 954,
+      "h": 709.5
+    },
+    "soTrongKhung": 41,
+    "soBamDuoc": 41,
+    "soNhan": 4,
+    "soBadge": 0,
+    "peNhan": [
+      "none"
+    ],
+    "peBadge": [],
+    "nhan": [
+      {
+        "id": 3,
+        "chu": "SIM-L1-AVI · Mất kết nối",
+        "rect": {
+          "x": 749,
+          "y": 272,
+          "w": 153,
+          "h": 24
+        }
+      },
+      {
+        "id": 1,
+        "chu": "SIM-L1-SPI · Mất kết nối",
+        "rect": {
+          "x": 737,
+          "y": 243,
+          "w": 153,
+          "h": 24
+        }
+      },
+      {
+        "id": 4,
+        "chu": "SIM-L1-ICT · Mất kết nối",
+        "rect": {
+          "x": 716,
+          "y": 213,
+          "w": 153,
+          "h": 24
+        }
+      },
+      {
+        "id": 2,
+        "chu": "SIM-L1-AOI · Mất kết nối",
+        "rect": {
+          "x": 694,
+          "y": 312,
+          "w": 155,
+          "h": 24
+        }
+      }
+    ],
+    "may": [
+      {
+        "id": 246,
+        "X": 708,
+        "Y": 398,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#19",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 247,
+        "X": 716,
+        "Y": 403,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#19",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 245,
+        "X": 725,
+        "Y": 404,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#19",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 244,
+        "X": 734,
+        "Y": 421,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 10,
+        "X": 743,
+        "Y": 424,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#19",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 243,
+        "X": 751,
+        "Y": 414,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 13,
+        "X": 694,
+        "Y": 404,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#16",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 35,
+        "X": 664,
+        "Y": 415,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#16",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 8,
+        "X": 761,
+        "Y": 431,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 2,
+        "X": 770,
+        "Y": 422,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 23,
+        "X": 687,
+        "Y": 413,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#19",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 33,
+        "X": 687,
+        "Y": 411,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#19",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 6,
+        "X": 779,
+        "Y": 438,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 18,
+        "X": 711,
+        "Y": 423,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#16",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 4,
+        "X": 790,
+        "Y": 426,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#40",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 16,
+        "X": 720,
+        "Y": 411,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#16",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 34,
+        "X": 696,
+        "Y": 428,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#32",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 7,
+        "X": 791,
+        "Y": 436,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#40",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 14,
+        "X": 728,
+        "Y": 417,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#16",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 31,
+        "X": 696,
+        "Y": 422,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#16",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 1,
+        "X": 809,
+        "Y": 436,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#40",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 3,
+        "X": 820,
+        "Y": 440,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#40",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 15,
+        "X": 737,
+        "Y": 420,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#19",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 20,
+        "X": 746,
+        "Y": 436,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#19",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 22,
+        "X": 756,
+        "Y": 440,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#32",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 11,
+        "X": 816,
+        "Y": 451,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#40",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 21,
+        "X": 765,
+        "Y": 429,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 17,
+        "X": 776,
+        "Y": 431,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 36,
+        "X": 714,
+        "Y": 434,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#32",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 24,
+        "X": 785,
+        "Y": 451,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#36",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 12,
+        "X": 840,
+        "Y": 461,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#40",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 5,
+        "X": 853,
+        "Y": 449,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#40",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 26,
+        "X": 722,
+        "Y": 425,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#32",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 32,
+        "X": 732,
+        "Y": 442,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#32",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 29,
+        "X": 742,
+        "Y": 430,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 9,
+        "X": 863,
+        "Y": 454,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#40",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 25,
+        "X": 751,
+        "Y": 436,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#28",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 28,
+        "X": 761,
+        "Y": 437,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 19,
+        "X": 786,
+        "Y": 445,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#40",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 27,
+        "X": 770,
+        "Y": 444,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#32",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      },
+      {
+        "id": 30,
+        "X": 780,
+        "Y": 461,
+        "duoiLaCanvas": true,
+        "duoi": "canvas",
+        "hit": "twin3d-lo-may#33",
+        "nhanPhu": [],
+        "nhanPhuKhac": [],
+        "badgePhu": [],
+        "badgePhuKhac": []
+      }
+    ],
+    "biNhanKhacPhu": [],
+    "biBadgeKhacPhu": [],
+    "biNhanMinhPhu": 0
+  },
+  "soTamKhacNhau": 41,
+  "cumLonNhat": 4
+}

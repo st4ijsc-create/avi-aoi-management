@@ -1,0 +1,48 @@
+{
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot52/hd-truoc",
+  "may": {
+    "id": 14,
+    "code": "SIM-L2-AOI",
+    "status": "offline",
+    "tsTrangThai": "2026-07-17T01:26:09.833Z",
+    "andonActive": false
+  },
+  "luc": "2026-09-12T08:26:02.585Z",
+  "overviewStatus": 200,
+  "soMay": 41,
+  "phanBoStatus": {
+    "offline": 41
+  },
+  "soMayCoTsTrangThai": 39,
+  "may18DoiChung": {
+    "id": 18,
+    "code": "SIM-L2-CONVEYOR",
+    "status": "offline",
+    "tsTrangThai": "2026-07-17T01:26:09.833Z"
+  },
+  "issuesCuaMay": [
+    {
+      "kind": "workorder",
+      "ageMinutes": 67047,
+      "label": "WO quá hạn: WO-PDM-14-1784901074670 — Predictive maintenance — máy SIM-L2-AOI"
+    },
+    {
+      "kind": "offline",
+      "ageMinutes": 82500,
+      "label": "Máy offline: SIM-L2-AOI"
+    }
+  ],
+  "cockpitLiveState": {
+    "available": true,
+    "status": "online",
+    "connected": false,
+    "lastStatusChange": "2026-09-06T18:51:22.637Z",
+    "lastHeartbeat": "2026-07-17T01:26:09.833Z"
+  },
+  "factoryCommandMachineDetail": {
+    "status": "offline",
+    "liveStatusRaw": "online"
+  }
+}

@@ -95,6 +95,7 @@ import {
   sinhTuongBao,
   type TangMm,
 } from "../client/src/components/twin3d/boCucTang.ts";
+import { lechTrongTram } from "../client/src/components/twin3d/sinhBoCuc.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -255,17 +256,64 @@ export function yChuyen(
   return mocY + hang * cauHinh.buocChuyenMm;
 }
 
-/**
- * Độ lệch trục Y của máy thứ `chiSo` trong một trạm có `soMay` máy.
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỘ LỆCH MÁY TRONG TRẠM — MỘT BẢN CÀI ĐẶT DUY NHẤT, Ở `sinhBoCuc.ts`
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ở ĐÂY TỪNG CÓ `lechYMay(chiSo, soMay, cauHinh)` = `(i − (n−1)/2) × bước` —
+ * đối xứng quanh tâm trạm. Nó ĐÃ BỊ XOÁ. Script nay IMPORT `lechTrongTram` từ
+ * `client/src/components/twin3d/sinhBoCuc.ts` (xem khối import đầu tệp).
  *
- * ★ L-1: lệch theo **Y**, không theo Z — xem docblock đầu file.
- * Đối xứng quanh tâm trạm: `(i − (n−1)/2) × bước`. Một máy ⇒ lệch 0 (đúng tâm
- * trạm), nên 36/37 trạm nằm chính xác trên đường tâm chuyền.
+ * VÌ SAO: spec §8 hứa "server gọi lại chính module này để không có hai bản cài
+ * đặt lệch nhau", nhưng thực tế có HAI bản KHÁC THUẬT TOÁN, không chỉ lệch số:
+ *   - bản seed  : đối xứng quanh tâm ⇒ n=2 cho −700 / +700
+ *   - sinhBoCuc : máy 0 neo TẠI tâm, máy sau toả hai phía ⇒ n=2 cho 0 / +1400
+ * Đo được triệu chứng: seed rồi chạy `sinhTuDong` trên đúng dữ liệu vừa seed thì
+ * `sum(viTriXMm)` nhảy 1259233 → 1252950 — tức bố cục ĐỔI dù không ai sửa gì.
+ *
+ * CHỦ SỞ HỮU ĐÃ QUYẾT: `sinhBoCuc.ts` LÀ NGUỒN SỰ THẬT. Ba lý do:
+ *   1. Máy đầu đứng ĐÚNG TÂM trạm ⇒ 36/37 trạm chỉ có 1 máy nên nằm chính xác
+ *      trên đường tâm chuyền.
+ *   2. Thêm/bớt máy vào trạm thì máy CŨ KHÔNG DỊCH CHỖ. Với công thức đối xứng,
+ *      thêm một máy làm MỌI máy cũ trong trạm trượt đi nửa bước — xoá công sức
+ *      của người đã kéo tay chỉnh vị trí.
+ *   3. Đó là bản có 38 test T1–T9 và là bản server gọi THẬT khi người dùng bấm
+ *      "Sinh tự động" (`server/routers/twinCanhRouter.ts` → `chuanBiSinh` →
+ *      `sinhBoCuc`).
+ *
+ * ⚠ ĐỪNG CHÉP LẠI CÔNG THỨC VÀO ĐÂY. Chép lại chính là tái tạo cái lỗi vừa vá.
+ *   Import chạy được dưới `tsx` — đã đo, và tệp này vốn đã import `heToaDo.ts`
+ *   lẫn `boCucTang.ts` từ cùng thư mục ấy.
+ *
+ * ★ L-1 vẫn giữ nguyên: lệch theo trục **Y** mặt bằng, không theo Z — xem
+ *   docblock đầu tệp. `lechTrongTram` trả một SỐ VÔ HƯỚNG (không mang trục),
+ *   nơi gọi mới là chỗ quyết định cộng nó vào Y.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ HAI CHỖ LỆCH NỮA, CÙNG LỚP LỖI, TÌM ĐƯỢC KHI ĐO CHỨ KHÔNG KHI ĐỌC
+ * ════════════════════════════════════════════════════════════════════════════
+ * Gộp riêng công thức lệch KHÔNG làm hai bên khớp — đo lại vẫn còn 6 hàng lệch
+ * và số hàng còn vênh 82/81. Trừ đi hằng số tịnh tiến gốc toạ độ thì 72/78 hàng
+ * khớp TUYỆT ĐỐI, và 6 hàng còn lại đều nằm trong ĐÚNG trạm 7 máy với phần dư là
+ * bội số của 1.400 — dấu hiệu của lệch THỨ TỰ, không phải lệch công thức. Hai
+ * nguyên nhân, cả hai đều ở truy vấn của script này:
+ *
+ *   (a) THỨ TỰ MÁY TRONG TRẠM. `sinhBoCuc` xếp máy bằng `sapTheoMa` = theo
+ *       `code` rồi `id`. Script này trước đây `ORDER BY m."stationId", m.id`,
+ *       tức theo **id**. Trạm `SIM-L1-SPI-ST` cho hai thứ tự khác hẳn nhau
+ *       (id: 1,243,244,245,246,247 · code: 244,245,243,1,247,246) ⇒ cùng công
+ *       thức vẫn ra vị trí khác. Đã sửa thành `ORDER BY m."stationId", m.code,
+ *       m.id` — KHỚP `sapTheoMa`, kể cả khoá phá hoà `id`.
+ *
+ *   (b) MÁY NGỪNG HOẠT ĐỘNG. `sinhBoCuc` lọc `.filter((m) => m.isActive)`;
+ *       script này KHÔNG lọc, nên nó xếp chỗ cho `SN-ST4I-TRIAL-WELD-20260818`
+ *       (`isActive=false`) còn `sinhTuDong` thì không ⇒ 82 hàng vs 81. Đã thêm
+ *       `AND m."isActive"`.
+ *
+ * ⚠ Bài học đo: sửa xong (a)+(b) mà chỉ nhìn `count(*)` thì vẫn tưởng đã xong —
+ *   phải đối chiếu TỪNG HÀNG theo khoá thực thể. Xem cổng ra "bằng chứng đồng
+ *   nhất": chạy seed rồi chạy đúng đường `sinhTuDong` phải cho 0 hàng lệch.
  */
-export function lechYMay(chiSo: number, soMay: number, cauHinh: CauHinhSinh): number {
-  if (soMay <= 1) return 0;
-  return (chiSo - (soMay - 1) / 2) * cauHinh.buocMayTrongTramMm;
-}
 
 /**
  * Hướng máy (§8 bước 7): quay quanh trục ĐỨNG sao cho mặt trước hướng ra lối đi.
@@ -356,7 +404,8 @@ async function main(): Promise<void> {
         SELECT m.id, m.code AS ma, m."machineType"::text AS "loaiMay", m."stationId"
           FROM machines m
          WHERE m."stationId" IN ${sql(trams.map((t) => t.id))}
-         ORDER BY m."stationId", m.id
+           AND m."isActive"
+         ORDER BY m."stationId", m.code, m.id
       `
     : [];
 
@@ -406,7 +455,7 @@ async function main(): Promise<void> {
   for (const ds of mayTheoTram.values()) {
     for (let i = 0; i < ds.length; i++) {
       const kt = kichThuocMay(ds[i].loaiMay, bangKt);
-      const bien = Math.abs(lechYMay(i, ds.length, CAU_HINH)) + kt.sauMm / 2;
+      const bien = Math.abs(lechTrongTram(i, CAU_HINH.buocMayTrongTramMm)) + kt.sauMm / 2;
       if (bien > nuaBeSauLonNhat) nuaBeSauLonNhat = bien;
     }
   }
@@ -497,7 +546,7 @@ async function main(): Promise<void> {
           loaiThucThe: "machine",
           thucTheId: m.id,
           viTriXMm: x,
-          viTriYMm: yTam + lechYMay(i, dsMay.length, CAU_HINH),
+          viTriYMm: yTam + lechTrongTram(i, CAU_HINH.buocMayTrongTramMm),
           viTriZMm: 0,
           rongMm: kt.rongMm,
           caoMm: kt.caoMm,

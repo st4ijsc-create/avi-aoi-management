@@ -1,0 +1,21 @@
+SỐ ĐO ĐỢT 49 (gỡ vá ⇄ có vá, cùng harness, hai dist outDir riêng ngoài client/):
+A. Census 8 khung (/twin + /twin/line/2 × 1600/1280 × {mặc định, sau kéo 60px}):
+   cặp (nhãn máy A ∩ hình chiếu khối máy B, A≠B): GỠ VÁ 59 → CÓ VÁ 41 (−31%)
+   diện tích giao:                                24.291 px² → 14.073 px² (−42%)
+   nhãn được vẽ:                                  52 → 59 (+13%, mục C)
+   máy có TÂM bị nhãn máy khác đè:                16 → 16 (hình học KHÔNG xoá hết — đúng hợp đồng
+                                                  "hết chỗ thì GIỮ nhãn"; cửa hit-test lo phần này)
+   BẤM THẬT tâm bị phủ:                           GỠ VÁ 1 đúng / 2 SAI · CÓ VÁ 5 đúng / 0 SAI
+   e2e T1g (4 khung):                             GỠ VÁ 2/4 ĐỎ (23→21 Line@1280, 22→23 /twin@1280)
+                                                  CÓ VÁ 4/4 XANH
+B. soLanDungLo 60 s live /twin + Line: CÓ VÁ 0/0 · GỠ VÁ (deps [may]) 0/0 — ĐIỀU KIỆN KHÔNG XẢY RA
+   trên DB dev (117/114 gói ws mà GIÁ TRỊ `may` không đổi; phát lại x20 ⇒ 0 khung/40 s).
+   Nhân quả chứng minh ở tầng reconciler R3F thật: 5 gói đổi màu ⇒ 0 lần dựng + giữ nguyên object lô;
+   đổi kích thước/vị trí/tập máy ⇒ +1 mỗi lần.
+C. thigiac49 vi, /twin: nhãn 3→4 (@1600) · 1→3 (@1280); "nhãn tất cả" 13→21 (@1600) · 6→12 (@1280);
+   chip ẩn 42→41 / 44→42 / 32→24 / 39→33. 17/23 trạng thái KHÔNG đổi; 0 hồi quy
+   (ngoàiCanvas/bịChe/cặpChồng/nhãn×badge = 0 ở cả 22 trạng thái, vi và en).
+D. /twin@1280 badge ve/tổng/soAn/biChe: GỠ VÁ (SO_BUOC_DOI_CHO=3, 0 chéo) 5/7/2/2 (= số QA lần 7)
+   → CÓ VÁ 7/7/0/0, doiCho 4→6. Chip "còn 2 cảnh báo ẩn" HIỆN ĐƯỢC ở bản gỡ vá, bbox trong canvas
+   (715,601,115×23), tự đọc ảnh xác nhận.
+G. /twin/may/14 `nhom-tao-viec`: vai CÓ machine_status.canCreate = 1 · vai KHÔNG = 0 ⇒ 2/2 hai chiều.

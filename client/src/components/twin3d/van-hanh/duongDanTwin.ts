@@ -71,6 +71,33 @@ export interface TuTheCamera {
   mucZ: number;
 }
 
+/**
+ * LỰA CHỌN NẠP — nhà máy / toà / tầng đang được HỎI DỮ LIỆU (Đợt 10 lô F).
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO KHÔNG DÙNG `pv` CHO VIỆC NÀY
+ * ════════════════════════════════════════════════════════════════════════════
+ * `pv` (§10C.2) là "đang NHÌN cấp nào" — nó điều khiển camera và độ mờ. Ba ô ở
+ * đây là "đang HỎI dữ liệu của cái nào" — chúng điều khiển `tangIds` gửi lên
+ * `twinCanh.canhThietKe`. Hai trục ĐỘC LẬP: `pv=line:1` vẫn phải nạp cả tầng
+ * chứa line đó (người vận hành cần thấy hàng xóm để định vị), và `pv=machine:42`
+ * không được làm mất phần còn lại của tầng.
+ *
+ * Nhét cả hai vào `pv` thì mỗi lần người dùng bấm một máy là đổi luôn tập dữ
+ * liệu được nạp — một truy vấn mạng cho mỗi cú click, và cảnh chớp về rỗng.
+ *
+ * ★ Không có ô nào cho `line`: line KHÔNG phải một đơn vị nạp. Nó là bộ lọc
+ *   phạm vi (QĐ-12 §10C.1) và dữ liệu của nó đã nằm trong tầng chứa nó.
+ */
+export interface LuaChonNapUrl {
+  /** `factories.id`. `null` = tham số vắng/hỏng ⇒ tầng gọi tự chọn. */
+  nm: number | null;
+  /** `twin_toa_nha.id`. */
+  toa: number | null;
+  /** `twin_tang.id`. */
+  tang: number | null;
+}
+
 /** Toàn bộ trạng thái mã hoá được vào URL. */
 export interface TrangThaiTwinUrl {
   /** `null` = tham số vắng hoặc hỏng; tầng gọi dùng mặc định của nó. */
@@ -81,7 +108,115 @@ export interface TrangThaiTwinUrl {
   lop: string[] | null;
   /** Mốc thời gian chế độ tua, ms epoch. `null` = chế độ live. */
   tg: number | null;
+  /** Ba ô "nạp cái gì" (§11e.6 F1) — xem {@link LuaChonNapUrl}. */
+  nap: LuaChonNapUrl;
+  /**
+   * ★★★ F4 — HAI PANEL BÊN ĐANG THU (`?thu=trai,phai`).
+   *
+   * Đo được trên trình duyệt thật (Playwright, 1280×720, 2026-09-07): khung
+   * `man-twin-van-hanh` rộng **968 px** (viewport 1280 − sidebar vỏ 264 − đệm
+   * `p-6` 2×24). Panel trái `w-72` = 288 và panel phải `w-80` = 320 ⇒ **608 px,
+   * tức 63 %** bề ngang, để canvas đúng **360 px**. Trên toàn viewport, 3D
+   * chiếm 360×416 / 1280×720 = **16,9 %**.
+   *
+   * ⇒ Thu panel là cách DUY NHẤT trả lại phần lớn diện tích cho 3D mà KHÔNG
+   *   phá §9.9 (mọi hành động phải làm được từ DOM thật): panel không bị XOÁ,
+   *   nó thu lại và mở ra được bằng một nút có `aria-expanded`.
+   * ★ Vào URL vì đây là một lựa chọn xem, cùng hạng với camera — nhưng ghi
+   *   `replace` chứ không `push`: thu/mở một panel không phải "đi tới chỗ khác".
+   */
+  thu: string[];
 }
+
+/**
+ * Tên panel thu được. Danh sách ĐÓNG — cùng lý do với `LOP_HOP_LE`.
+ *
+ * ★★★ `"kpi"` (Đợt 11 lô J, §11 #16) DÙNG LẠI ĐÚNG KHOÁ `thu=` NÀY, KHÔNG THÊM
+ *   KHOÁ QUERY MỚI — và đó là một luật (G40), không phải tiết kiệm ký tự. Màn
+ *   `/twin` đã có bốn người ghi vào query string (`pv`, `chon`/`xem`, `cam`,
+ *   `nm/toa/tang`). Một khoá thứ năm kiểu `?kpi=0` sẽ có bộ đọc riêng, bộ ghi
+ *   riêng, và luật hợp nhất riêng — tức là chỗ thứ năm để hai lượt ghi đè nhau.
+ *   Ở đây `docThu`/`ghiThu` đã là MỘT bộ đọc-ghi tất định cho cả danh sách.
+ *
+ * ★ Hệ quả ngữ nghĩa CÓ CHỦ Ý: vắng mặt = **đang mở**. Bảng KPI vì vậy mặc định
+ *   HIỆN (yêu cầu #6: số liệu phải đọc được trên cảnh 3D), và `?thu=kpi` là
+ *   đường tắt cho "cảnh 3D sạch không chữ".
+ *
+ * ★★★ `"moPhong"` (Đợt 19 lô X, §11 #30/#35) DÙNG LẠI ĐÚNG KHOÁ NÀY — G40 lần
+ *   thứ hai, cùng lý do đã ghi ở trên cho `"kpi"`. Danh sách là ĐÓNG ở CẢ hai
+ *   chiều (`docThu` lọc theo nó, `ghiThu` sắp thứ tự theo nó), nên **quên thêm
+ *   tên vào đây thì `?thu=moPhong` bị NUỐT trong im lặng**: URL ghi ra đúng, đọc
+ *   lại ra rỗng, ngăn tự mở lại sau F5 và không lỗi nào nổ. Đúng lớp G67 "tính
+ *   năng chết ở tầng ĐẦU TIÊN là KIỂU/DANH SÁCH", nên tên phải vào đây TRƯỚC.
+ */
+/**
+ * ★★★ ĐỢT 23 M2 — `"moPhongMo"` LÀ TÊN **CHIỀU NGƯỢC**, và nó phải nằm ở đây.
+ *
+ * `NganMoPhong` đổi sang **mặc định THU** (đo được: nó che 42.437 px² =
+ * 9,0 % canvas để hiện đúng một câu *"chọn một line"* — xem docblock
+ * `thuMoPhong` ở `TwinVanHanh.tsx`). Nhưng ngữ nghĩa của khoá `thu=` là
+ * **"liệt kê panel ĐANG THU"**, và Đợt 21 đã bắt một redirect hiểu ngược
+ * chiều này — nên KHÔNG được đổi nghĩa khoá cũ.
+ *
+ * ⇒ Cách giữ cả hai: panel mặc-định-thu mang một tên **riêng cho trạng thái
+ *   MỞ** (`moPhongMo`). Khoá vẫn liệt kê "trạng thái khác mặc định", `docThu`/
+ *   `ghiThu` không đổi một dòng, và vòng đọc-ghi vẫn tất định.
+ *
+ * ⚠ `"moPhong"` GIỮ LẠI trong danh sách: link cũ mang `?thu=moPhong` vẫn phải
+ *   đọc được mà không làm hỏng cả ô (nó nay là no-op — ngăn vốn đã thu). Bỏ
+ *   tên khỏi danh sách sẽ khiến `docThu` NUỐT nó im lặng, đúng bẫy G67 mà
+ *   docblock trên vừa cảnh báo.
+ */
+/**
+ * ★★★ ĐỢT 24 VIỆC 2 — `"nhanBatThuong"` LÀ **CHÍNH SÁCH NHÃN**, KHÔNG PHẢI PANEL.
+ *
+ * Khoá `thu=` mang tên "panel đang thu", nhưng thứ nó thật sự mã hoá là *"lựa
+ * chọn xem nào đang KHÁC MẶC ĐỊNH"* — `"kpi"` (Đợt 11) và `"moPhongMo"` (Đợt 23)
+ * đã mở rộng nó theo đúng nghĩa ấy. G40 nói thẳng vì sao không đẻ khoá thứ tám:
+ * mỗi khoá mới là một bộ đọc riêng, một bộ ghi riêng, và một chỗ nữa để hai
+ * lượt ghi đè nhau. Nên bậc "chỉ nhãn bất thường" DÙNG LẠI khoá này.
+ *
+ * ★ Chiều của tên theo đúng ngữ nghĩa khoá (**có mặt = khác mặc định**): mặc
+ *   định là hiện nhãn cho MỌI máy, nên `?thu=nhanBatThuong` = "chỉ còn nhãn của
+ *   máy bất thường". Không có tên nào phải đọc ngược.
+ *
+ * ⚠ G67 — quên dòng này thì `?thu=nhanBatThuong` **bị NUỐT trong im lặng**:
+ *   `docThu` lọc theo chính danh sách này, nên URL ghi ra đúng mà đọc lại ra
+ *   rỗng, F5 mất bậc, và KHÔNG lỗi nào nổ. Tên phải vào đây TRƯỚC khi có nút.
+ */
+/**
+ * ★★★ ĐỢT 45 (mục 4) — MẶC ĐỊNH ĐỔI: `/twin` chỉ vẽ nhãn máy BẤT THƯỜNG.
+ *
+ * QA Đợt 44 (D-7 mục 5) đo `/twin` mặc định: 15–16 nhãn "· Không rõ" chồng ở tâm cảnh,
+ * chip "còn 29/37 tên bị ẩn" — 41/42 máy cùng một trạng thái, nên "tên mọi máy" là 16
+ * cái nhãn nói cùng một câu. Chính sách "chỉ nhãn bất thường" (Đợt 24) đã có nút mà mặc
+ * định tắt ⇒ đảo mặc định. Hệ quả cho khoá `thu=`: `"nhanBatThuong"` GIỮ (link cũ vẫn
+ * đọc được, nay trùng mặc định — như `"moPhong"`), thêm `"nhanTatCa"` = bậc KHÁC mặc định
+ * mới ("hiện tên mọi máy"). Cả hai là lựa chọn TƯỜNG MINH của người dùng; vắng cả hai ⇒
+ * theo lựa chọn đã nhớ (`chinhSachNhan.ts`, localStorage) rồi mới tới mặc định.
+ * ⚠ G67 — tên phải vào đây TRƯỚC khi có nút, nếu không `docThu` nuốt im lặng.
+ */
+export const PANEL_THU_DUOC: readonly string[] = [
+  "trai",
+  "phai",
+  "kpi",
+  "moPhong",
+  "moPhongMo",
+  "nhanBatThuong",
+  "nhanTatCa",
+];
+
+/**
+ * Một THAY ĐỔI trạng thái URL — khác `Partial<TrangThaiTwinUrl>` ở ô `nap`.
+ *
+ * ★ `nap` ở đây là **Partial**, vì "đổi nhà máy" là một thao tác hợp lệ mà
+ *   không nói gì về toà/tầng (và chính sự VẮNG MẶT của hai khoá kia là tín hiệu
+ *   để `tronTrangThaiUrl` xoá chúng — xem chú thích trong hàm đó). Ở
+ *   `TrangThaiTwinUrl` thì ba ô luôn có mặt, vì đó là trạng thái ĐÃ ĐỌC.
+ */
+export type ThayDoiTwinUrl = Omit<Partial<TrangThaiTwinUrl>, "nap"> & {
+  nap?: Partial<LuaChonNapUrl>;
+};
 
 /** Ánh xạ cấp phạm vi → tiền tố dùng trong URL. Một chỗ, không chép tay. */
 const TIEN_TO_CAP: Readonly<Record<CapPhamVi, string>> = {
@@ -276,7 +411,46 @@ export function docTrangThaiUrl(queryString: string): TrangThaiTwinUrl {
     cam: docCamera(sp.get("cam")),
     lop: docLop(sp.get("lop")),
     tg: docThoiGian(sp.get("tg")),
+    nap: docLuaChonNap(sp),
+    thu: docThu(sp.get("thu")),
   };
+}
+
+/**
+ * Đọc `thu=` → danh sách panel đang thu. Tên lạ bị BỎ, không làm hỏng cả ô —
+ * cùng luật với `docLop`. Vắng ⇒ `[]` (mở cả hai), KHÔNG phải `null`: ở đây
+ * không có "bộ mặc định" nào khác ngoài "mở cả hai", nên hai ca trùng nhau và
+ * tách chúng ra chỉ thêm một trạng thái không ai dùng.
+ */
+export function docThu(raw: string | null | undefined): string[] {
+  if (raw == null || raw.trim() === "") return [];
+  const ra: string[] = [];
+  for (const phan of raw.split(",")) {
+    const t = phan.trim();
+    if (PANEL_THU_DUOC.includes(t) && !ra.includes(t)) ra.push(t);
+  }
+  return ra;
+}
+
+/** Ghi danh sách panel thu → chuỗi, thứ tự theo `PANEL_THU_DUOC` (TẤT ĐỊNH). */
+export function ghiThu(thu: readonly string[]): string {
+  return PANEL_THU_DUOC.filter((p) => thu.includes(p)).join(",");
+}
+
+/**
+ * Đọc ba ô nạp. Mỗi ô ĐỘC LẬP: một `?toa=abc` hỏng không được làm mất `?nm=3`
+ * hợp lệ đi cùng — người mở link vẫn tới đúng nhà máy, chỉ mất lựa chọn toà.
+ *
+ * ⚠ KHÔNG có ca "id âm rơi về 1": `soNguyenDuong` trả `null` và tầng gọi rơi về
+ *   phần tử đầu của danh sách THẬT. Sửa `-1` thành `1` là bịa ra một id có thể
+ *   tồn tại và trỏ vào một nhà máy khác hẳn.
+ */
+export function docLuaChonNap(sp: URLSearchParams): LuaChonNapUrl {
+  const oSo = (k: string): number | null => {
+    const v = sp.get(k);
+    return v === null ? null : soNguyenDuong(v.trim());
+  };
+  return { nm: oSo("nm"), toa: oSo("toa"), tang: oSo("tang") };
 }
 
 /**
@@ -298,6 +472,14 @@ export function ghiTrangThaiUrl(tt: Partial<TrangThaiTwinUrl>): string {
   if (tt.cam) sp.set("cam", ghiCamera(tt.cam));
   if (tt.lop != null) sp.set("lop", ghiLop(tt.lop));
   if (tt.tg != null) sp.set("tg", ghiThoiGian(tt.tg));
+  if (tt.nap) {
+    if (tt.nap.nm != null) sp.set("nm", String(tt.nap.nm));
+    if (tt.nap.toa != null) sp.set("toa", String(tt.nap.toa));
+    if (tt.nap.tang != null) sp.set("tang", String(tt.nap.tang));
+  }
+  // `thu: []` KHÔNG ghi ra: "mở cả hai" là mặc định, và một `?thu=` rỗng trong
+  // mọi URL chia sẻ chỉ làm nhiễu mà không mang thông tin nào.
+  if (tt.thu != null && tt.thu.length > 0) sp.set("thu", ghiThu(tt.thu));
   return sp.toString();
 }
 
@@ -312,7 +494,7 @@ export function ghiTrangThaiUrl(tt: Partial<TrangThaiTwinUrl>): string {
  */
 export function tronTrangThaiUrl(
   queryStringHienTai: string,
-  thayDoi: Partial<TrangThaiTwinUrl>,
+  thayDoi: ThayDoiTwinUrl,
 ): string {
   const sp = new URLSearchParams(
     queryStringHienTai.startsWith("?") ? queryStringHienTai.slice(1) : queryStringHienTai,
@@ -326,6 +508,30 @@ export function tronTrangThaiUrl(
   if ("cam" in thayDoi) dat("cam", thayDoi.cam ? ghiCamera(thayDoi.cam) : null);
   if ("lop" in thayDoi) dat("lop", thayDoi.lop != null ? ghiLop(thayDoi.lop) : null);
   if ("tg" in thayDoi) dat("tg", thayDoi.tg != null ? ghiThoiGian(thayDoi.tg) : null);
+  /*
+   * ★★★ ĐỔI MỘT CẤP NẠP PHẢI XOÁ CÁC CẤP DƯỚI — nếu không, URL tự mâu thuẫn.
+   *
+   * Chọn nhà máy khác mà giữ nguyên `?toa=7&tang=9` thì hai id đó trỏ vào toà/
+   * tầng của nhà máy CŨ. `phanGiaiNap` sẽ không tìm thấy chúng và rơi về phần
+   * tử đầu — tức hành vi vẫn đúng, NHƯNG URL trên thanh địa chỉ khai một thứ
+   * mà màn hình hiện một thứ khác, và người dùng copy đúng cái URL sai đó đi
+   * gửi. Nên xoá tại nguồn thay vì trông cậy vào phép rơi-về ở tầng dưới.
+   *
+   * ⚠ Chỉ xoá khi khoá CẤP TRÊN có mặt trong `thayDoi` mà cấp dưới KHÔNG có:
+   *   một lượt đặt cả ba ô cùng lúc (khôi phục từ link) phải giữ nguyên cả ba.
+   */
+  if (thayDoi.nap) {
+    const n = thayDoi.nap;
+    if ("nm" in n) dat("nm", n.nm != null ? String(n.nm) : null);
+    if ("toa" in n) dat("toa", n.toa != null ? String(n.toa) : null);
+    if ("tang" in n) dat("tang", n.tang != null ? String(n.tang) : null);
+    if ("nm" in n && !("toa" in n)) sp.delete("toa");
+    if (("nm" in n || "toa" in n) && !("tang" in n)) sp.delete("tang");
+  }
+  if ("thu" in thayDoi) {
+    const t = thayDoi.thu;
+    dat("thu", t != null && t.length > 0 ? ghiThu(t) : null);
+  }
   return sp.toString();
 }
 
@@ -343,8 +549,11 @@ export type KieuGhiLichSu = "push" | "replace";
  * ⇒ `replace`. Camera một mình sinh hàng trăm sự kiện mỗi giây; đẩy vào history
  * làm nút Back mất tác dụng hoàn toàn.
  */
-export function kieuGhiLichSu(thayDoi: Partial<TrangThaiTwinUrl>): KieuGhiLichSu {
-  return "phamVi" in thayDoi || "chon" in thayDoi ? "push" : "replace";
+export function kieuGhiLichSu(thayDoi: ThayDoiTwinUrl): KieuGhiLichSu {
+  // ★ `nap` cũng là "đi tới chỗ khác": đổi tầng/toà/nhà máy thay TOÀN BỘ dữ
+  //   liệu trên màn. Nút Back phải quay lại được tầng vừa xem — và khác camera
+  //   ở chỗ nó sinh MỘT sự kiện mỗi lần bấm, không phải hàng trăm mỗi giây.
+  return "phamVi" in thayDoi || "chon" in thayDoi || "nap" in thayDoi ? "push" : "replace";
 }
 
 /**
@@ -370,4 +579,62 @@ export function phamViChoVatThe(v: VatTheChon): PhamVi {
     case "workshop":
       return { cap: "tang", id: null };
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ ĐỢT 33 — QĐ-23: `/twin` LÀ CỬA VÀO; Line và Máy là HAI MÀN RIÊNG       */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*
+ * Đợt 32 đo được: `/twin` có **0 href** tới `/twin/line/*`·`/twin/may/*`, bấm
+ * máy **ở lại `/twin`** (`?chon=machine:14`), `?pv=line:2` dựng màn Line **tại
+ * chỗ** song song với màn riêng. Chủ dự án chốt QĐ-23: bấm Line → `/twin/line/:id`,
+ * bấm máy → `/twin/may/:id`. Hai hàm dưới là **nguồn duy nhất** của hai hình
+ * dạng URL ấy — `TwinVanHanh`/`TwinLine`/`TwinMay` KHÔNG tự ghép chuỗi (G12).
+ */
+export function duongDanManLine(lineId: number): string {
+  return `/twin/line/${lineId}`;
+}
+
+export function duongDanManMay(machineId: number): string {
+  return `/twin/may/${machineId}`;
+}
+
+/**
+ * ★★★ QĐ-23 #5 — BACK VỀ `/twin` PHẢI VỀ **ĐÚNG `?pv=` TRƯỚC ĐÓ**.
+ *
+ * Nút Back của trình duyệt tự làm được (mọi lượt rời `/twin` đều `pushState`).
+ * Nhưng link "‹ Nhà máy" trên màn Line/Máy thì KHÔNG: nó là `href="/twin"` trơn,
+ * tức về **phạm vi mặc định** chứ không về tầng/nhà máy người dùng vừa xem.
+ *
+ * ★ G37 — màn con KHÔNG được tự đọc route cha (nó không biết cha là ai). Nên đường
+ *   về đi qua **`history.state`** do CHÍNH `/twin` đặt lúc rời đi
+ *   (`navigate(to, { state })` của wouter). `history.state` sống qua F5 và qua
+ *   Back/Forward — đó là lý do chọn nó thay vì `useState` (mất khi F5) hay một
+ *   khoá query mới (G40: không đẻ khoá URL thứ tám).
+ *
+ * ★ `docDuongVeTwin` là ĐẦU VÀO KHÔNG TIN ĐƯỢC: state có thể do trang khác đặt.
+ *   Chỉ nhận chuỗi bắt đầu đúng `/twin` + (hết hoặc `?`) — không bao giờ điều
+ *   hướng tới một chuỗi lạ lấy từ state.
+ */
+export const KHOA_DUONG_VE_TWIN = "twinVe";
+
+export interface TrangThaiDuongVe {
+  [KHOA_DUONG_VE_TWIN]: string;
+}
+
+/** Đường về `/twin` có hợp lệ không — chỉ `/twin` hoặc `/twin?…`. */
+export function laDuongVeTwinHopLe(duong: unknown): duong is string {
+  return typeof duong === "string" && (duong === "/twin" || duong.startsWith("/twin?"));
+}
+
+/** Dựng state mang đường về. `null` khi đường hiện tại không phải `/twin…`. */
+export function trangThaiVe(duongVeTwin: string | null | undefined): TrangThaiDuongVe | null {
+  return laDuongVeTwinHopLe(duongVeTwin) ? { [KHOA_DUONG_VE_TWIN]: duongVeTwin } : null;
+}
+
+/** Đọc đường về từ `history.state` — rác/thiếu ⇒ `null`, người gọi rơi về `/twin`. */
+export function docDuongVeTwin(state: unknown): string | null {
+  if (state === null || typeof state !== "object") return null;
+  const duong = (state as Record<string, unknown>)[KHOA_DUONG_VE_TWIN];
+  return laDuongVeTwinHopLe(duong) ? duong : null;
 }

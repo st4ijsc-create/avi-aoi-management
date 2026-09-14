@@ -1,0 +1,59 @@
+{
+  "goc": {
+    "soNhan": 21,
+    "che": [],
+    "tong": 0,
+    "cheNhan": "1",
+    "thongKe": {
+      "calls": 5,
+      "triangles": 8282,
+      "matContext": 0,
+      "khoiPhuc": 0
+    }
+  },
+  "A_conThuocTinh": {
+    "soNhan": 21,
+    "che": [],
+    "tong": 0,
+    "cheNhan": "1",
+    "thongKe": {
+      "calls": 5,
+      "triangles": 8282,
+      "matContext": 0,
+      "khoiPhuc": 0
+    }
+  },
+  "B_daGo": {
+    "soNhan": 21,
+    "che": [
+      {
+        "chu": "SIM-L3-CONVEYOR · Khôn",
+        "giao": 152
+      },
+      {
+        "chu": "SIM-L3-ICT · Không rõ",
+        "giao": 129
+      }
+    ],
+    "tong": 281,
+    "cheNhan": null,
+    "thongKe": {
+      "calls": 5,
+      "triangles": 8282,
+      "matContext": 0,
+      "khoiPhuc": 0
+    }
+  },
+  "C_hoanNguyen": {
+    "soNhan": 21,
+    "che": [],
+    "tong": 0,
+    "cheNhan": "1",
+    "thongKe": {
+      "calls": 5,
+      "triangles": 8282,
+      "matContext": 0,
+      "khoiPhuc": 0
+    }
+  }
+}

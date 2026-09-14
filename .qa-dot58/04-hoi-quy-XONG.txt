@@ -1,0 +1,4 @@
+HOI QUY XONG 2026-09-13T15:01:50+07:00
+twin3d 106/2498 · phamVi 17/437 · check exit0 · check:tests 27 (0 twin3d, 0 e2e) · i18n 0 · lint:tokens 1111 (delta 0) · kiem-vo 2/2
+e2e bam canh 16/16 (workers=1; voi 12 worker: 9/16 - do OAN) · dot31-may 4+A5do+2 khong chay · B1/B2 rieng 2/2
+thi giac vi 0 vi pham · en 0 vi pham · bbox 34/34 · lech lop 0 · idle 40s x3 = 0 khung · F1 4/4 · D-2 39 cau ✓ 0 ✗ + P3-P7 DAT

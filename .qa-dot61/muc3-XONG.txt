@@ -1,0 +1,7 @@
+MỤC 3 — CẢNH 3D CỦA /command-center ⇒ ĐÃ BỎ (commit 5b009b77)
+CommandCenter.tsx 1.596 → 1.315 dòng (−281).
+`<Canvas>` 0 · three/drei/fiber import 0 · viewMode/webglOk/canRender3D 0.
+Giữ: trang · 4 thủ tục commandCenter.* · twin.sceneGraph (đo được phục vụ 4 thứ
+của đường 2D) · 10/10 link sống tại 8 tệp.
+BRIEF SAI 3 chỗ ở mục này (không có Tabs · không có tab mặc định · sceneGraph
+KHÔNG chỉ phục vụ cảnh 3D) — xem thân commit.

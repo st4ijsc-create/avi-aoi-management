@@ -1,0 +1,10 @@
+=== A0: nguyen ban ===
+tong=27  trong e2e=0
+=== A1: cai MOT loi kieu co y vao e2e/twin-lo-f.spec.ts ===
+tong=28  trong e2e=1
+=== A2: go loi ra (tra nguyen ban) ===
+tong=27  trong e2e=0
+
+=== KET LUAN ABLATION ===
+DAT: cong kieu e2e SONG — cai loi thi KEU (27->28, e2e 0->1), go ra thi IM lai (27, e2e 0).
+[trap] da tra e2e/twin-lo-f.spec.ts ve nguyen ban

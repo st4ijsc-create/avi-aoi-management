@@ -1,0 +1,4 @@
+MUC B - CHUNG MINH FAIL-CLOSED (nap DUNG du kien ma do32 doc duoc = null) 2026-09-13T17:53:13+07:00
+.qa-dot59/fmu = ban sao fhead, lam MU 5 du kien (trangThaiTuNhan3D, nganPhaiKhongRo, tuoiToanMan x1+x5, tu the camera)
+do59 tra: #12 #15 #16 #20 = HONG (keu ten du kien thieu). N=48, 0 o khong co phan quyet, 0 o XANH tren tap rong.
+do32 tren CUNG du kieu ay: #15 SAI, #16 SAI, #20 DAT (xanh gia), #12 DAT (xanh tren tap co the rong).

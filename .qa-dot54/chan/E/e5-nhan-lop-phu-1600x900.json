@@ -1,0 +1,173 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot54/chan/E",
+  "luc": "2026-09-12T13:18:48.886Z",
+  "ds": {
+    "/twin": {
+      "url": "/twin?cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "so": 4,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "soKhongTronVen": 0,
+      "soBiChe": 0,
+      "phu": [
+        "panel-trai*:288,207,288x669",
+        "bang-kpi-noi*:584,215,246x220",
+        "cum-trang-thai-du-lieu*:1236,215,332x29",
+        "goi-y-chon-may*:1184,255,384x27",
+        "lop-phu-dong-thoi-gian*:288,838,1288x38",
+        "dai-hop-nhat:288,181,1288x26"
+      ],
+      "chipNhanAn": {
+        "chu": "abnormal names only · 41 other names hidden",
+        "soAn": "41"
+      },
+      "chipSuCo": null,
+      "__demNhan": {
+        "ve": 4,
+        "tong": 45,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 41,
+        "vuotMep": 0,
+        "biChe": 2,
+        "deKhoiKhac": 2,
+        "deKhoiKhacDoLai": 2,
+        "soHopKhoi": 42,
+        "soVungCam": 12,
+        "soLopPhuDom": 5,
+        "soHopBadge": 7,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "lopTrungCanvas": true,
+      "ds": [
+        "SIM-L2-ROBOT · Unknown@1197,551 166x24",
+        "SIM-L2-CONVEYOR · Unknown@793,525 191x24",
+        "SIM-L1-ICT · Unknown@992,401 141x24",
+        "SIM-L1-AVI · Unknown@652,475 141x24"
+      ]
+    },
+    "/twin?pv=tang:28": {
+      "url": "/twin?pv=tang%3A28&cam=46.29%2C16.28%2C40.01%2C19.13%2C12.85",
+      "so": 4,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "soKhongTronVen": 0,
+      "soBiChe": 0,
+      "phu": [
+        "panel-trai*:288,207,288x669",
+        "bang-kpi-noi*:584,215,246x220",
+        "cum-trang-thai-du-lieu*:1236,215,332x29",
+        "goi-y-chon-may*:1184,255,384x27",
+        "lop-phu-dong-thoi-gian*:288,838,1288x38",
+        "dai-hop-nhat:288,181,1288x26"
+      ],
+      "chipNhanAn": {
+        "chu": "abnormal names only · 41 other names hidden",
+        "soAn": "41"
+      },
+      "chipSuCo": null,
+      "__demNhan": {
+        "ve": 4,
+        "tong": 45,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 41,
+        "vuotMep": 0,
+        "biChe": 2,
+        "deKhoiKhac": 2,
+        "deKhoiKhacDoLai": 2,
+        "soHopKhoi": 42,
+        "soVungCam": 12,
+        "soLopPhuDom": 5,
+        "soHopBadge": 7,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "lopTrungCanvas": true,
+      "ds": [
+        "SIM-L2-ROBOT · Unknown@1197,551 166x24",
+        "SIM-L2-CONVEYOR · Unknown@793,525 191x24",
+        "SIM-L1-ICT · Unknown@992,401 141x24",
+        "SIM-L1-AVI · Unknown@652,475 141x24"
+      ]
+    },
+    "/twin/line/2": {
+      "url": "/twin/line/2",
+      "so": 12,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "soKhongTronVen": 0,
+      "soBiChe": 0,
+      "phu": [
+        "bang-kpi-noi*:296,133,246x220",
+        "ngan-mo-phong*:1328,133,240x28",
+        "khoi-dai-line:288,784,1288x93",
+        "thanh-tren-line:288,80,1288x45"
+      ],
+      "chipNhanAn": null,
+      "chipSuCo": null,
+      "__demNhan": {
+        "ve": 12,
+        "tong": 12,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 4,
+        "soLopPhuDom": 2,
+        "soHopBadge": 2,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "lopTrungCanvas": true,
+      "ds": [
+        "CONVEYOR · Unknown@816,519 144x24",
+        "ROBOT · Unknown@1263,519 119x24",
+        "FCT · Unknown@751,493 101x24",
+        "PWR · Unknown@922,582 105x24",
+        "ASSY · Unknown@1005,556 109x24",
+        "ICT · Unknown@667,519 97x24",
+        "SCREW · Unknown@1085,527 122x24",
+        "PACK · Unknown@1181,493 110x24",
+        "AVI · Unknown@530,525 97x24",
+        "AOI · Unknown@496,499 99x24",
+        "AGV · Unknown@1358,493 103x24",
+        "SPI · Unknown@411,551 97x24"
+      ]
+    }
+  },
+  "e5": {
+    "/twin": {
+      "dat": true,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "so": 4
+    },
+    "/twin?pv=tang:28": {
+      "dat": true,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "so": 4
+    },
+    "/twin/line/2": {
+      "dat": true,
+      "soTamDuoiPhu": 0,
+      "soTamNgoaiCanvas": 0,
+      "so": 12
+    }
+  }
+}

@@ -1,0 +1,82 @@
+════════ DOT 56 · MUC A — 4 (KHONG PHAI 8) cau DISTINCT ON trong factoryCommandService.ts ════════
+HEAD f4e74493 · DB aoi_management · do 2026-09-12T15:05-15:08Z
+
+── BRIEF SAI #1: "8 cho DISTINCT ON" ─────────────────────────────────────────
+grep -n "DISTINCT ON" server/services/factoryCommandService.ts  ⇒ 9 DONG.
+  · 5 dong la BINH LUAN/docblock : 16, 244, 260, 274, 288
+  · 4 dong la SQL THAT           : 252, 264, 277, 317
+Brief dem 8 = 9 dong tru dong 16 (header). Day dung la G106: dem CAU (dong grep)
+khong phai dem KET CUC (truy van). SO THAT = 4.
+
+── BRIEF SAI #2: "cung lop loi da va o Dot 53 (:290)" — cau thu 4 DA DUOC VA ROI ──
+Dong 317 (machine_health_history) HIEN DANG la `ORDER BY "machineId","createdAt" DESC`
+— chinh la ban va QD-27/Dot 53, kem docblock 30 dong giai thich tai cho (dong 288-315).
+Vay so cau CHUA VA = 3, khong phai 8.
+
+── AI GOI (G131 — liet ke truoc khi xep uu tien) ─────────────────────────────
+getFactoryCommandOverview  (factoryCommandService.ts:169)
+  └─ server/routers/factoryCommandRouter.ts:50  `overview` protectedProcedure
+       + requirePermission("machine_status","canView")
+     └─ client/.../useTrangThaiSong.ts:87  trpc.factoryCommand.overview.useQuery
+          refetchInterval = nhipTongQuanMs (5 s khi socket yeu ↔ 30 s khi khoe)
+        ├─ client/src/pages/TwinVanHanh.tsx:675
+        ├─ client/src/pages/TwinLine.tsx:416
+        └─ client/src/pages/TwinMay.tsx:333
+  ⇒ DUNG: nam tren duong nguoi dung ca 3 man Twin, tan suat 5-30 s. Brief dung cho nay.
+
+── BANG 4 CHO (EXPLAIN (ANALYZE,BUFFERS), 1 lan nguoi + 5 lan AM, lay TRUNG VI) ──
+TIEU CHI BENH THAT (brief muc A.2): quet > 50 000 hang  HOAC  external merge  HOAC  AM > 20 ms
+
+# | dong | bang                   | ORDER BY           | ke hoach AM                          | hang QUET / RA | AM      | benh? | VA?
+--+------+------------------------+--------------------+--------------------------------------+----------------+---------+-------+-----
+1 | 252  | machine_status_logs    | "timestamp" DESC   | Seq Scan → quicksort RAM 498 kB      | 7 814 / 43     | 3,3 ms  | KHONG | KHONG
+2 | 264  | machine_heartbeats     | "timestamp" DESC   | SkipScan+ColumnarScan (hypertable)   |    36 / 36     | 0,8 ms  | KHONG | KHONG
+3 | 277  | machine_positions      | "updatedAt" DESC   | Seq Scan bang RONG                   |     0 / 0      | 0,7 ms  | KHONG | KHONG
+4 | 317  | machine_health_history | "createdAt" DESC   | SkipScan → Index Scan                |    43 / 43     | 0,8 ms  | KHONG | DA VA d53
+                                                       | idx_health_machine_created_desc |
+
+LY DO KHONG VA TUNG CHO:
+ #1 machine_status_logs — 7 814 hang (< 50 000), sort QUICKSORT TRONG RAM 498 kB
+    (KHONG external merge), Buffers toan `shared hit` (0 doc dia), AM 3,3 ms (< 20 ms).
+    Khong dat 0/3 tieu chi ⇒ DE NGUYEN (dung dieu brief muc A.2 da du lieu san: "bang nho,
+    sort trong RAM ⇒ de nguyen").
+ #2 machine_heartbeats — la HYPERTABLE TimescaleDB nen ke hoach: Merge Append + Custom Scan
+    (SkipScan) + ColumnarScan + Index Scan tren chunk nen. `rows=210000` trong plan la UOC
+    LUONG cua planner tren chunk nen, hang THAT = 36. Bang 108 hang. AM 0,8 ms ⇒ DE NGUYEN.
+ #3 machine_positions — bang 0 HANG (khop tri nho: machine_positions = 0 hang).
+    Khong co gi de toi uu. AM 0,7 ms ⇒ DE NGUYEN. (Ghi vao so no: buoc nay luon tra rong.)
+ #4 machine_health_history — DA la Index Scan nho idx_health_machine_created_desc (QD-27).
+    Bang 217 683 hang nhung QUET THAT 43 hang. AM 0,8 ms ⇒ KHONG DONG VAO.
+    ⚠ Toi da tu mac loi o buoc nay: bo loc dau tien cua toi gan co "BENH=CO" cho #4 vi toi
+      lay KICH THUOC BANG (217k) lam "so hang quet". Doc plan that ⇒ actual rows=43. Da sua.
+
+── DOI CHIEU VOI NGUONG [SLOW QUERY] ─────────────────────────────────────────
+server/queryMonitor.ts:40  SLOW_QUERY_MS mac dinh = 200 ms; :143 isSlow = durationMs >= 200.
+Cau cham nhat trong 4 = 3,3 ms = 1,7 % nguong. ⇒ KHONG cau nao tung sinh mot dong
+[SLOW QUERY]. G137 dung theo chieu nguoc: o day khong co ca log cham LAN benh.
+
+── PARETO DUONG NGUOI DUNG (.qa-dot56/A-pareto.txt) ──────────────────────────
+TONG thu tuc overview({factoryId:1})            AM = 22,4 ms   (41 may · 67 issue · 2 factory)
+  buoc 6 getAllMachinesOEELive                  AM =  7,7 ms   34,4 %
+  buoc 3 DISTINCT ON machine_status_logs        AM =  3,3 ms   14,7 %
+  buoc 3b DISTINCT ON machine_heartbeats        AM =  0,8 ms    3,6 %
+  buoc 4 DISTINCT ON machine_positions          AM =  0,7 ms    3,1 %
+  buoc 5 DISTINCT ON machine_health_history     AM =  0,8 ms    3,6 %
+  ⇒ CA 4 cau DISTINCT ON cong lai = 5,6 ms = 25 % thu tuc; OEE mot minh lon hon ca 4.
+  ⇒ Nut that cua duong nguoi dung KHONG phai DISTINCT ON.
+
+── md5 DOI CHUNG + ABLATION ──────────────────────────────────────────────────
+KHONG AP DUNG: 0 ban va ⇒ khong co gi de doi chung dau ra, khong co gi de go ra.
+(Brief muc A.4/A.5 gia dinh se co ban va. Vi phep do bac bo tien de, hai buoc ay
+ khong con doi tuong. Doi chung md5 2 vai VAN duoc chay — o muc C, de chung minh
+ dung lai `dist/` khong doi hop dong dau ra.)
+
+── THIET BI DO: da chung minh KEU KHAC 0 truoc khi tin (G139) ────────────────
+Lan do dau cua toi tra "0 may / 0,0 ms" ⇒ toi da DUNG lai thay vi ket luan "thu tuc
+nhanh". Goc: harness tsx khong nap .env ⇒ process.env.DATABASE_URL rong ⇒
+db/connection.ts:28 tra null ⇒ getFactoryCommandOverview tra RONG ngay. Sau khi
+dotenv.config(): 41 may / 67 issue / 2 factory ⇒ thiet bi do song, so moi dang tin.
+
+── KET LUAN MUC A ────────────────────────────────────────────────────────────
+VA 0 / 4 cho. Khong tao index, khong migration, khong sua mot dong nao cua
+factoryCommandService.ts. Khong co cho nao can xin index moi.

@@ -1,0 +1,50 @@
+{
+  "luc": "2026-09-12T11:49:16.660Z",
+  "base": "http://localhost:3054",
+  "may": 14,
+  "beMat": {
+    "1-factoryCommand.overview": {
+      "httpStatus": 200,
+      "soMay": 41,
+      "status": "idle",
+      "code": "SIM-L2-AOI"
+    },
+    "2-factoryCommand.machineDetail": {
+      "httpStatus": 200,
+      "status": "idle",
+      "liveStatusRaw": "online"
+    },
+    "3-assetCockpit.liveState": {
+      "httpStatus": 200,
+      "available": true,
+      "status": "online",
+      "connected": true,
+      "operationStatus": "stopped",
+      "statusMapped": "idle",
+      "lastHeartbeat": "2026-09-12T11:49:16.130Z"
+    },
+    "4-socket twin:trangThai": {
+      "goi": 2,
+      "trangThai": "idle",
+      "loi": null
+    },
+    "5-/twin danh sach (DOM)": {
+      "coPhanTu": true,
+      "trangThai": "idle",
+      "chu": "SIM-L2-AOIIdle20s"
+    },
+    "6-/twin/may chip (DOM)": {
+      "chip": "SIM-L2-AOIAOIIdleHealth 61 % · warning",
+      "chipTrangThai": null,
+      "trangThaiMay": {
+        "chu": "Idle",
+        "tt": "idle"
+      },
+      "cockpitChu": "SIM-L2 AOISIM-L2-AOI · AOI · Nhà máy ảo (SIM) · Dây chuyền ảo 2 ONLINE RefreshOverviewHealth / PdMTelemetryProcess resultsOEEAlarmsRecipesIR programsGenealogy3D"
+    }
+  },
+  "phanBoOverview": {
+    "offline": 40,
+    "idle": 1
+  }
+}

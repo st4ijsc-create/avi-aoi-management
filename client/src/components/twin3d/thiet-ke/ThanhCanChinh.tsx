@@ -168,7 +168,7 @@ export function ThanhCanChinh({
         </PopoverTrigger>
         <PopoverContent className="w-56 space-y-2">
           <div className="grid gap-1">
-            <label className="text-[11px] text-muted-foreground">
+            <label className="text-[11px] text-text-2">
               {t("twin3d.canChinh.buoc")}
             </label>
             <Input
@@ -179,7 +179,7 @@ export function ThanhCanChinh({
             />
           </div>
           <div className="grid gap-1">
-            <label className="text-[11px] text-muted-foreground">
+            <label className="text-[11px] text-text-2">
               {t("twin3d.canChinh.soLuong")}
             </label>
             <Input
@@ -238,7 +238,7 @@ export function ThanhCanChinh({
         </PopoverTrigger>
         <PopoverContent className="w-56 space-y-2">
           <div className="grid gap-1">
-            <label className="text-[11px] text-muted-foreground">
+            <label className="text-[11px] text-text-2">
               {t("twin3d.canChinh.goc")}
             </label>
             <Input
@@ -249,7 +249,7 @@ export function ThanhCanChinh({
             />
           </div>
           <div className="grid gap-1">
-            <label className="text-[11px] text-muted-foreground">
+            <label className="text-[11px] text-text-2">
               {t("twin3d.canChinh.soLuong")}
             </label>
             <Input
@@ -288,7 +288,7 @@ export function ThanhCanChinh({
         {t("twin3d.canChinh.doKhoangCach")}
       </Button>
       {ketQuaDoMm !== null ? (
-        <span className="text-[11px] tabular-nums text-muted-foreground" data-testid="ket-qua-do">
+        <span className="text-[11px] tabular-nums text-text-2" data-testid="ket-qua-do">
           {t("twin3d.canChinh.ketQuaDo", {
             n: (Math.round(ketQuaDoMm) / 1000).toFixed(3),
           })}

@@ -54,9 +54,9 @@
  * nào. Đó là điều kiện để người dùng bàn phím/trình đọc màn hình xử lý được việc.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, ClipboardPlus, Clock, ExternalLink } from "lucide-react";
+import { AlertTriangle, Check, ClipboardPlus, Clock, ExternalLink, Maximize2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -74,16 +74,20 @@ import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
 
 import { mauChoTrangThai } from "../mauTrangThai";
+import { NganNhung } from "./NganNhung";
 import {
   MOC_AN_TAM_GIO,
   hanAnTam,
   hanhDongChoVatThe,
+  nguoiGanDuoc,
   nutDieuHuongCho,
   type CanhBaoDangMo,
   type LoaiDich,
   type QuyenXuLy,
+  docStatsAoi,
 } from "./nganXuLyLogic";
-import { hienSo, nhanDoTuoi, type TrangThaiHienThi } from "./trungThucDuLieu";
+import { nhungChoHref, type LyDoNgan, type NganNhungMo } from "./nhungTaiCho";
+import { hienSo, nhanDoTuoi, nhanTuoiDocDuoc, type TrangThaiHienThi } from "./trungThucDuLieu";
 
 export interface NganXuLyProps {
   /** Máy đang chọn; `null` ⇒ ngăn hiện lời mời chọn. */
@@ -95,14 +99,51 @@ export interface NganXuLyProps {
   /** `max(timestamp)` của dữ liệu máy này. */
   thoiDiemDuLieu: number | null;
   bayGio: number;
+  /**
+   * ★★★ ĐỢT 57 (mục thiết kế 12) — CÓ IN DÒNG TUỔI DỮ LIỆU Ở ĐÂY KHÔNG.
+   *
+   * Mặc định `true` = hành vi cũ, và `/twin` giữ nguyên: ở đó ngăn này là ngăn của **một máy đang
+   * chọn**, còn viên tin cậy trên cảnh (`cum-trang-thai-du-lieu`) nói về **cả cảnh** — hai đại lượng
+   * khác nhau, cùng hiện là đúng.
+   *
+   * Màn Máy truyền `false`: ở đó ngăn này và cảnh nói về **CÙNG một máy**, nên dòng tuổi lên
+   * `vien-tin-cay-may` (góc trên-phải cảnh, đồng bộ ba màn kia) và KHÔNG nhân bản ở ngăn phải.
+   * Đây là DI CHUYỂN, không phải xoá: `TwinMay.tsx` in đúng chuỗi ấy từ đúng `nhanDoTuoi`.
+   */
+  hienDoTuoi?: boolean;
   canhBao: readonly CanhBaoDangMo[];
   quyen: QuyenXuLy;
   /** Người dùng có `canView` module này không — để ẩn nút điều hướng vô ích. */
   coQuyenXem: (module: string) => boolean;
   /** Gọi sau khi ack/tạo phiếu thành công để tầng trên nạp lại dữ liệu. */
   onDaXuLy: () => void;
-  /** Điều hướng nội bộ (wouter `setLocation`). */
+  /**
+   * Điều hướng nội bộ (wouter `setLocation`) — **CHỈ CÒN cho đích chưa nhúng
+   * được**. Xem `onMoTaiCho` và docblock "XEM CHI TIẾT TẠI CHỖ" bên dưới.
+   */
   onDieuHuong: (href: string) => void;
+  /**
+   * ★★★ Đợt 10 mục 5 — MỞ CHI TIẾT **TẠI CHỖ**, không rời `/twin`.
+   *
+   * Ngăn mở là trạng thái của TẦNG TRÊN (nó ghi vào URL `?xem=` để F5 không mất
+   * ngữ cảnh), nên `NganXuLy` chỉ *yêu cầu* mở, không tự giữ state. `undefined`
+   * ⇒ tầng trên chưa nối, và mọi nút rơi về `onDieuHuong` như trước — không có
+   * nút nào chết, chỉ mất tính năng mới.
+   */
+  onMoTaiCho?: (ngan: NganNhungMo) => void;
+  /**
+   * Ngăn nhúng đang mở (đọc từ URL ở tầng trên). `undefined`/`null` ⇒ đóng.
+   * `NganXuLy` render ngăn vì đây là nơi các nút mở nó sống — người dùng bấm ở
+   * đâu thì nội dung mở ra ngay từ đó.
+   */
+  nganNhung?: NganNhungMo | null;
+  /** Đóng ngăn nhúng — tầng trên xoá `?xem=`. */
+  onDongNhung?: () => void;
+  /**
+   * ★ ĐỢT 24 VIỆC 3 (L-5) — vì sao ngăn mở được. Chuyển thẳng xuống
+   * `NganNhung`; bỏ trống ⇒ `"mo"` (hành vi cũ).
+   */
+  lyDoNgan?: LyDoNgan;
   /** Loại vật thể đang chọn — quyết định bộ nút §9.3. */
   loaiDich?: LoaiDich;
 }
@@ -116,11 +157,16 @@ export function NganXuLy(props: NganXuLyProps) {
     trangThai,
     thoiDiemDuLieu,
     bayGio,
+    hienDoTuoi = true,
     canhBao,
     quyen,
     coQuyenXem,
     onDaXuLy,
     onDieuHuong,
+    onMoTaiCho,
+    nganNhung = null,
+    onDongNhung,
+    lyDoNgan,
     loaiDich = "machine",
   } = props;
 
@@ -156,20 +202,100 @@ export function NganXuLy(props: NganXuLyProps) {
   const [ganCho, setGanCho] = useState<string>("");
 
   /**
-   * Danh sách người để gán. `users.list` là thủ tục đọc đã có; nếu tài khoản
-   * không có quyền xem người dùng thì nó lỗi và ta ĐỂ Ô TRỐNG thay vì chặn cả
-   * form — gán KTV là tuỳ chọn, không phải điều kiện để tạo phiếu.
+   * Danh sách người để gán. Nếu tài khoản không có quyền thì truy vấn lỗi và ta
+   * ĐỂ Ô TRỐNG thay vì chặn cả form — gán KTV là tuỳ chọn, không phải điều kiện
+   * để tạo phiếu.
+   *
+   * ★★★ NỢ ĐÃ ĐÓNG (2026-09-07). Trước đây ô này gọi `user.list`, là thủ tục
+   * **ADMIN-ONLY** (`userRouters.ts` ném FORBIDDEN khi `ctx.user.role !==
+   * 'admin'`), nên dropdown **RỖNG với MỌI tài khoản không phải admin** — tức
+   * với đúng những vai (bảo trì, kỹ thuật, giám sát) mà tính năng này sinh ra
+   * để phục vụ. QA trước tái hiện bằng admin nên không thấy: admin bypass, và ô
+   * rỗng trông y hệt "chưa có ai để gán".
+   *
+   * Nay dùng `user.assignableTechnicians` — thủ tục HẸP, gate bằng ĐÚNG quyền
+   * mà `maintenance.createWorkOrder` đòi (`machine_monitoring/canCreate`), chỉ
+   * trả `{id, name}` của người `isActive = true`. `user.list` KHÔNG bị đổi: nó
+   * là hợp đồng dùng chung, nhiều màn khác gọi.
+   *
+   * ★ Cổng `quyen.taoPhieu` (không phải `suaPhieu`): danh sách này phục vụ việc
+   *   TẠO phiếu, và nó cùng một quyền với thủ tục server — hai bên khai cùng một
+   *   câu thì không thể lệch (luật Khối D "một lối vào rồi TỪ CHỐI").
    */
-  const nguoiQ = trpc.user.list.useQuery(undefined, {
-    enabled: moTaoPhieu && quyen.suaPhieu,
+  const nguoiQ = trpc.user.assignableTechnicians.useQuery(undefined, {
+    enabled: moTaoPhieu && quyen.taoPhieu,
     retry: false,
   });
+
+  /**
+   * ★ T-4 — LỌC tài khoản đã vô hiệu hoá khỏi danh sách gán (§9.2).
+   * Gán phiếu cho người đã nghỉ việc là phiếu KHÔNG AI NHẬN, và nó im lặng.
+   */
+  const nguoiGan = useMemo(() => nguoiGanDuoc(nguoiQ.data), [nguoiQ.data]);
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ §11 #60 — STATS AOI OK/NG/NTF/YIELD (Đợt 8 lô D)                     */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ★★★ SPEC/BRIEF SAI — nguồn ĐÚNG là `getMachineStats`, KHÔNG `getAllMachinesStats`.
+   *
+   * Brief lô D chỉ `dashboard.getAllMachinesStats`. Đo hợp đồng
+   * (`dashboardStatsRouters.ts:95-153`): thủ tục đó gọi `getMachinesWithHierarchy()`
+   * rồi `Promise.all` **một `getMachineStats` cho MỖI máy** — 42 máy trên SIM-FAC —
+   * để ngăn này dùng đúng **một** hàng. Đó là 42 lần truy vấn để hiển thị 1/42
+   * kết quả, đúng lớp lỗi N+1 mà Đ6 sinh ra để diệt ("Không còn N+1 trong vòng
+   * render").
+   *
+   * `dashboard.getMachineStats` (`:75-93`) là **cùng một** `protectedProcedure`,
+   * **cùng một** `db.getMachineStats` với cùng `StatsScopeArgs`, và **cùng một**
+   * khoá cache (`scopedStatsCacheKey(CACHE_KEYS.MACHINE_STATS, …)`) — nên số ra
+   * bằng nhau từng chữ số, chỉ khác là không kéo theo 41 máy không ai xem.
+   * ⇒ Dùng thủ tục hẹp. Đã báo cáo là bác brief, không im lặng đổi.
+   *
+   * ★ G15 — BA trạng thái: `dangTai` · `isError` · có dữ liệu. Truy vấn 403
+   *   (thiếu quyền đọc thống kê) trả rỗng, và một ngăn in "Yield 0 %" cho người
+   *   không được phép thấy số là lời nói dối tệ nhất của một màn giám sát.
+   */
+  const statsQ = trpc.dashboard.getMachineStats.useQuery(
+    { machineId: machineId ?? 0 },
+    { enabled: machineId !== null, retry: false, staleTime: 30_000 },
+  );
+
+  const statsAoi = useMemo(
+    () => docStatsAoi(statsQ.data, statsQ.isSuccess),
+    [statsQ.data, statsQ.isSuccess],
+  );
 
   const canhBaoChuaAck = canhBao.filter((c) => c.trangThai === "raised");
   const tuoi = nhanDoTuoi(thoiDiemDuLieu, bayGio);
   const kieuMau = mauChoTrangThai(trangThai.trangThai);
 
   /* ── Chưa chọn gì ─────────────────────────────────────────────────────── */
+  /*
+   * ★★★ ĐỢT 24 VIỆC 3 (L-5) — **GỐC RỄ THẬT CỦA SỰ IM LẶNG NẰM Ở ĐÂY.**
+   *
+   * ══════════════════════════════════════════════════════════════════════
+   * ĐO ĐƯỢC 2026-09-08 trên `dist`, vai `e2e_tai_loE` (`.qa-dot24/probe.mjs`)
+   * ══════════════════════════════════════════════════════════════════════
+   *   `/twin?xem=machine:1`               → `ngan-chua-chon` 1 · `ngan-nhung` **0**
+   *   `/twin?chon=machine:1&xem=machine:1`→ `ngan-chua-chon` 0 · `ngan-nhung` **1**
+   *
+   * ⇒ Nhánh sớm này trả về TRƯỚC `<NganNhung>` (ở cuối hàm), nên một URL chỉ
+   *   mang `?xem=` **không mở được ngăn nào — kể cả khi id HOÀN TOÀN HỢP LỆ**.
+   *   Đây mới là "không mở panel và không câu nào nói vì sao" mà Đợt 22 đo
+   *   được; nó KHÔNG phải chuyện phạm vi, và một bản vá chỉ thêm câu báo lý do
+   *   sẽ không bao giờ chạy tới.
+   *
+   * ★ `?xem=` và `?chon=` là HAI khoá ĐỘC LẬP có chủ ý (`nhungTaiCho.ts` dùng
+   *   khoá riêng để mở ngăn không làm mất phạm vi/camera). Nên "chưa chọn máy"
+   *   KHÔNG kéo theo "không có ngăn nào để mở" — ràng hai thứ ấy vào nhau là
+   *   giả định của bản cũ, và nó im lặng nuốt một trạng thái URL hợp lệ.
+   *
+   * ⇒ Giữ nguyên câu "chọn một máy…" (cột phải vẫn chưa có gì để xử lý), nhưng
+   *   `NganNhung` phải được render ở CẢ HAI nhánh. Nó tự `portal` ra
+   *   `document.body`, nên chỗ đứng trong cây JSX không đổi chỗ vẽ.
+   */
   if (machineId === null) {
     return (
       <aside
@@ -180,6 +306,13 @@ export function NganXuLy(props: NganXuLyProps) {
         <p className="text-sm text-muted-foreground" data-testid="ngan-chua-chon">
           {t("twin3d.vanHanh.chuaChon", "Chọn một máy trên cảnh hoặc trong danh sách để xử lý.")}
         </p>
+        {/* ★ L-5 — ngăn `?xem=` mở được cả khi CHƯA chọn máy nào. */}
+        <NganNhung
+          ngan={nganNhung}
+          lyDo={lyDoNgan}
+          nhanPhu={ma ? `${ma}${ten ? ` · ${ten}` : ""}` : undefined}
+          onDong={() => onDongNhung?.()}
+        />
       </aside>
     );
   }
@@ -196,7 +329,7 @@ export function NganXuLy(props: NganXuLyProps) {
         <h2 className="text-sm font-semibold text-foreground" data-testid="ngan-ma-may">
           {ma}
         </h2>
-        <p className="truncate text-xs text-muted-foreground">{ten}</p>
+        <p className="truncate text-xs text-text-2">{ten}</p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" data-testid="ngan-trang-thai" data-gia-tri={trangThai.trangThai}>
             {t(kieuMau.khoaNhan)}
@@ -221,26 +354,89 @@ export function NganXuLy(props: NganXuLyProps) {
           ★ NT-3.2 — "cập nhật N giây trước" tính từ `max(timestamp)` của DỮ LIỆU,
           không phải thời điểm render. `—` khi chưa từng có dữ liệu (NT-3.5).
         */}
+        {hienDoTuoi ? (
         <p
-          className={`mt-1 text-[11px] ${tuoi.do ? "text-destructive" : "text-muted-foreground"}`}
+          className={`mt-1 text-[11px] ${tuoi.do ? "text-destructive" : "text-text-2"}`}
           data-testid="ngan-do-tuoi"
           data-giay={tuoi.giay ?? ""}
         >
           <Clock className="mr-1 inline h-3 w-3" />
+          {/* ★ ĐỢT 23 M4 — CÙNG hàm ghép chữ với thanh công cụ nền
+              (`nhanTuoiDocDuoc`). Trước đợt này hai chỗ tự ghép riêng và cùng
+              in GIÂY SỐNG: ngăn chi tiết in "Cập nhật 1572061 giây trước" y
+              như thanh nền. Một hàm ⇒ không thể lệch nhau (G12). */}
           {tuoi.giay === null
             ? t("twin3d.vanHanh.chuaTungBaoCao", "Chưa từng nhận dữ liệu")
-            : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{giay}} giây trước", { giay: hienSo(tuoi.giay) })}
+            : t("twin3d.vanHanh.capNhatTruoc", "Cập nhật {{tuoi}} trước", {
+                tuoi: nhanTuoiDocDuoc(tuoi, t),
+              })}
         </p>
+        ) : null}
       </header>
+
+      {/* ── §11 #60 — STATS AOI OK/NG/NTF/YIELD ────────────────────────── */}
+      {/*
+        ★★★ `—` CHỨ KHÔNG `0` khi chưa đo được (NT-3 / G15). Ba ca:
+          · chưa đo được (đang tải / 403 / lỗi)  ⇒ mọi ô `—`
+          · đo được, mẫu rỗng (0 chiếc)          ⇒ đếm `0`, tỉ lệ `—`
+          · đo được, có mẫu                      ⇒ số thật
+        `data-*` mang giá trị THÔ để nghiệm thu đọc được số, không phải đọc chữ.
+      */}
+      <section className="border-t pt-2" data-testid="nhom-stats-aoi">
+        <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
+          {t("twin3d.vanHanh.statsAoi", "Kết quả AOI")}
+          {statsAoi.mauRong ? (
+            <span className="font-normal normal-case" data-testid="stats-mau-rong">
+              {t("twin3d.vanHanh.chuaKiemChiecNao", "chưa kiểm chiếc nào")}
+            </span>
+          ) : null}
+        </h3>
+        <dl className="grid grid-cols-4 gap-1 text-center" data-testid="stats-aoi">
+          {(
+            [
+              ["ok", "twin3d.vanHanh.aoiOk", "OK", statsAoi.ok, "text-success"],
+              ["ng", "twin3d.vanHanh.aoiNg", "NG", statsAoi.ng, "text-destructive"],
+              ["ntf", "twin3d.vanHanh.aoiNtf", "NTF", statsAoi.ntf, "text-muted-foreground"],
+            ] as const
+          ).map(([ma_, khoa, macDinh, gt, lop]) => (
+            <div key={ma_} className="rounded border px-1 py-1">
+              <dt className="text-[10px] uppercase text-text-2">{t(khoa, macDinh)}</dt>
+              <dd
+                className={`text-sm font-semibold tabular-nums ${lop}`}
+                data-testid={`stats-${ma_}`}
+                data-gia-tri={gt ?? ""}
+              >
+                {hienSo(gt)}
+              </dd>
+            </div>
+          ))}
+          <div className="rounded border px-1 py-1">
+            <dt className="text-[10px] uppercase text-text-2">
+              {t("twin3d.vanHanh.aoiYield", "Yield")}
+            </dt>
+            <dd
+              className="text-sm font-semibold tabular-nums"
+              data-testid="stats-yield"
+              data-gia-tri={statsAoi.yieldRate ?? ""}
+            >
+              {statsAoi.yieldRate === null ? hienSo(null) : `${statsAoi.yieldRate}%`}
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-1 text-[10px] text-text-2" data-testid="stats-tong">
+          {t("twin3d.vanHanh.aoiTong", "Tổng kiểm")}: {hienSo(statsAoi.total)}
+          {statsAoi.fpy === null ? "" : ` · FPY ${statsAoi.fpy}%`}
+        </p>
+      </section>
 
       {/* ── NHÓM 1: XỬ LÝ CẢNH BÁO ─────────────────────────────────────── */}
       <section className="border-t pt-2" data-testid="nhom-canh-bao">
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
           {t("twin3d.vanHanh.canhBao", "Cảnh báo")} ({hienSo(canhBao.length)})
         </h3>
 
         {canhBao.length === 0 ? (
-          <p className="text-xs text-muted-foreground" data-testid="ngan-khong-canh-bao">
+          <p className="text-xs text-text-2" data-testid="ngan-khong-canh-bao">
             {t("twin3d.vanHanh.khongCoCanhBao", "Không có cảnh báo đang mở.")}
           </p>
         ) : (
@@ -288,13 +484,19 @@ export function NganXuLy(props: NganXuLyProps) {
       </section>
 
       {/* ── NHÓM 2: TẠO VIỆC ───────────────────────────────────────────── */}
+      {/*
+        ★ Đợt 47 (D-7 (8) nửa sau) — vai KHÔNG có `taoPhieu` ⇒ ẩn CẢ nhóm. QA Đợt 46: tiêu đề
+          "TẠO VIỆC" đứng trơ với 0 nút cho vai chỉ-xem (h3 vô điều kiện, thân có điều kiện).
+          Một nhóm hành động rỗng là lời hứa không giao. Không vi phạm NT-3 "khai báo sự thiếu":
+          người không có quyền không THIẾU gì để báo — họ không có việc để tạo ở đây.
+      */}
+      {tra("taoPhieu").duocPhep ? (
       <section className="border-t pt-2" data-testid="nhom-tao-viec">
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
           {t("twin3d.vanHanh.taoViec", "Tạo việc")}
         </h3>
 
-        {tra("taoPhieu").duocPhep ? (
-          moTaoPhieu ? (
+        {moTaoPhieu ? (
             <div className="space-y-2" data-testid="form-tao-phieu">
               <div className="grid gap-1">
                 <Label className="text-xs" htmlFor="twin-tieu-de-phieu">
@@ -336,7 +538,7 @@ export function NganXuLy(props: NganXuLyProps) {
                       <SelectValue placeholder={t("twin3d.vanHanh.chuaGan", "Chưa gán")} />
                     </SelectTrigger>
                     <SelectContent>
-                      {(nguoiQ.data ?? []).map((u) => (
+                      {nguoiGan.map((u) => (
                         <SelectItem key={u.id} value={String(u.id)}>
                           {u.name ?? u.username ?? `#${u.id}`}
                         </SelectItem>
@@ -391,35 +593,94 @@ export function NganXuLy(props: NganXuLyProps) {
               <ClipboardPlus className="mr-1.5 h-3.5 w-3.5" />
               {t("twin3d.vanHanh.taoPhieu", "Tạo phiếu công việc")}
             </Button>
-          )
-        ) : null}
+          )}
       </section>
+      ) : null}
 
       {/* ── NHÓM 3: MỞ CHỨC NĂNG (§9.3) ────────────────────────────────── */}
       <section className="border-t pt-2" data-testid="nhom-mo-chuc-nang">
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
           {t("twin3d.vanHanh.moChucNang", "Mở chức năng")}
         </h3>
+        {/*
+          ════════════════════════════════════════════════════════════════════
+          ★★★ ĐỢT 10 MỤC 5 — XEM CHI TIẾT **TẠI CHỖ**, KHÔNG REDIRECT
+          ════════════════════════════════════════════════════════════════════
+          Yêu cầu chủ sở hữu: *"xem chi tiết của máy/Line không sử dụng redirect
+          chuyển trang để xem rất bất tiện … cần dialog hoặc modal … và có phím
+          back … để ng dùng không cần rời màn hình 3D digital Twin"*.
+
+          Trước đợt này MỌI nút dưới đây gọi `onDieuHuong(n.href)` = `setLocation`
+          (`TwinVanHanh.tsx:1721`) ⇒ **rời hẳn `/twin`**: cảnh 3D bị huỷ, camera
+          và phạm vi mất, đường về duy nhất là nút Back của trình duyệt.
+
+          Bây giờ mỗi nút chia **hai đường, quyết định bởi CHÍNH `href`** (không
+          có cờ thứ hai để lệch — G12):
+
+            nhúng được  → `onMoTaiCho` mở ngăn ngay trên `/twin`, icon `Maximize2`
+                          ("phóng to tại chỗ"). Đây là **MẶC ĐỊNH**.
+            chưa nhúng  → `onDieuHuong` như cũ, giữ icon `ExternalLink`.
+
+          ★★★ VÌ SAO ICON PHẢI KHÁC NHAU. `ExternalLink` là lời hứa "bấm cái này
+            là rời trang". Để nguyên nó trên một nút mở tại chỗ là nói dối người
+            dùng theo chiều ngược lại — họ do dự bấm vì sợ mất cảnh, đúng nỗi bất
+            tiện mà mục này sinh ra để bỏ. Hai hành vi khác nhau PHẢI nhìn ra
+            được, nếu không thì tính năng có mà không ai dám dùng.
+
+          ★ Lối thoát phụ ("mở màn đầy đủ" ở tab mới) KHÔNG mất — nó nằm trong
+            chính ngăn nhúng (`NganNhung.tsx`), nơi người dùng đã thấy nội dung
+            và mới biết mình có muốn cả trang hay không.
+
+          ⚠ `onMoTaiCho` `undefined` (tầng trên chưa nối) ⇒ **rơi về `onDieuHuong`**,
+            không phải nút chết. Một nút không làm gì là chế độ hỏng câm.
+        */}
         <div className="space-y-1">
           {nutDieuHuongCho(loaiDich, machineId)
             // ★ Ẩn nút dẫn tới màn người dùng không vào được — nếu không thì họ
             //   bấm rồi bị RouteGuard chặn: đúng lớp lỗi "một lối vào rồi TỪ CHỐI".
             .filter((n) => coQuyenXem(n.quyen))
-            .map((n) => (
-              <Button
-                key={n.href}
-                size="sm"
-                variant="ghost"
-                className="w-full justify-start"
-                data-testid={`nut-dieu-huong-${n.khoaNhan.split(".").pop()}`}
-                onClick={() => onDieuHuong(n.href)}
-              >
-                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                {t(n.khoaNhan)}
-              </Button>
-            ))}
+            .map((n) => {
+              const ngan = nhungChoHref(n.href);
+              const taiCho = ngan !== null && onMoTaiCho !== undefined;
+              return (
+                <Button
+                  key={n.href}
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  data-testid={`nut-dieu-huong-${n.khoaNhan.split(".").pop()}`}
+                  data-tai-cho={taiCho ? "1" : "0"}
+                  onClick={() => (taiCho ? onMoTaiCho(ngan) : onDieuHuong(n.href))}
+                >
+                  {taiCho ? (
+                    <Maximize2 className="mr-1.5 h-3.5 w-3.5" />
+                  ) : (
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {t(n.khoaNhan)}
+                </Button>
+              );
+            })}
         </div>
       </section>
+
+      {/*
+        ── NGĂN CHI TIẾT TẠI CHỖ ─────────────────────────────────────────
+
+        Đặt ở ĐÂY, trong chính `NganXuLy`, vì đây là nơi các nút mở nó sống —
+        người dùng bấm ở đâu thì nội dung mở ra ngay từ đó. `NganNhung` tự
+        portal ra `document.body` (Radix `Sheet`) nên nó KHÔNG bị kẹt trong cột
+        `w-80` này; vị trí trong cây JSX chỉ quyết định quyền sở hữu logic, không
+        quyết định chỗ vẽ.
+
+        `nganNhung === null` ⇒ `NganNhung` trả `null`, 0 nút DOM.
+      */}
+      <NganNhung
+        ngan={nganNhung}
+        lyDo={lyDoNgan}
+        nhanPhu={ma ? `${ma}${ten ? ` · ${ten}` : ""}` : undefined}
+        onDong={() => onDongNhung?.()}
+      />
     </aside>
   );
 }

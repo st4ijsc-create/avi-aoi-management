@@ -1,0 +1,29 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "vp": "1600x900",
+  "tag": "../.qa-dot54/chan/K-1600x900",
+  "luc": "2026-09-12T13:12:28.121Z",
+  "line": {
+    "url": "/twin/line/11",
+    "lineRong": 1,
+    "oTram": 0,
+    "soNhan": 0,
+    "__soCanvas": 0,
+    "canvasDom": 0,
+    "canvasDs": [],
+    "drawCalls": null,
+    "tuTheCamera": null,
+    "chu": "Factory\n›\nLine 11\nMachines 0\nStations 0\nWIP 0\nThis line has no machines on the layout yet\nThe line may not have been placed in Twin Studio yet, or it belongs to another factory."
+  },
+  "may": {
+    "url": "/twin/may/257",
+    "lyDo": "ngoaiPhamVi",
+    "__soCanvas": null,
+    "canvasDom": 0,
+    "canvasDs": [],
+    "drawCalls": null,
+    "tuTheCamera": null
+  },
+  "dat": true
+}

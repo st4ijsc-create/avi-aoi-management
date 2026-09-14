@@ -1,0 +1,44 @@
+{
+  "luc": "2026-09-12T00:34:55.875Z",
+  "duong": "/twin",
+  "vp": {
+    "width": 1280,
+    "height": 720
+  },
+  "dinh": {
+    "soNhan": 1,
+    "soKhoi": 42,
+    "soCap": 3,
+    "dienTich": 2054,
+    "biPhu": [
+      {
+        "machineId": 22,
+        "boiNhanCua": 23,
+        "X": 903.4723249177216,
+        "Y": 465.62156800224415
+      },
+      {
+        "machineId": 21,
+        "boiNhanCua": 23,
+        "X": 865.9311913954475,
+        "Y": 466.8324203455768
+      },
+      {
+        "machineId": 24,
+        "boiNhanCua": 23,
+        "X": 978.5934202958282,
+        "Y": 466.0836557087164
+      }
+    ]
+  },
+  "ketCuc": [
+    {
+      "machineId": 22,
+      "boiNhanCua": 23,
+      "X": 903.4723249177216,
+      "Y": 465.62156800224415,
+      "duongSau": "/twin/may/23",
+      "dung": false
+    }
+  ]
+}

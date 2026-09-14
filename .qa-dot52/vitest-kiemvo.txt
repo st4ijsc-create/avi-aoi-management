@@ -1,0 +1,10 @@
+
+ RUN  v2.1.9 D:/SOURCES/_twin_wt
+
+ ✓ scripts/kiem-vo-app-https.test.ts (30 tests) 8ms
+
+ Test Files  1 passed (1)
+      Tests  30 passed (30)
+   Start at  15:02:05
+   Duration  500ms (transform 29ms, setup 14ms, collect 21ms, tests 8ms, environment 0ms, prepare 86ms)
+

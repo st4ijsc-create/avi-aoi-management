@@ -1,0 +1,82 @@
+{
+  "role": "A",
+  "user": "e2e_tai_loE",
+  "lang": "en",
+  "vp": "1600x900",
+  "tag": "../.qa-dot49/chan/I",
+  "luc": "2026-09-12T01:38:10.544Z",
+  "coMan": true,
+  "coCanvas": true,
+  "url": "/twin/line/2",
+  "htmlLang": "en",
+  "soO": 12,
+  "demMay": "Machines 12",
+  "kpi": "Metrics\n12 machines\nDây chuyền ảo 2\nRunning\n0\nDown\n0\nMaintenance\n0\nOffline\n12\nRunning rate\n0%\nAverage OEE\n—\nMachines w/ andon\n2\nPdM risk\n0\nOEE measured on 0/12 machines",
+  "o": [
+    {
+      "id": "o-tram-13",
+      "chu": "SPI-ST 1 machine 121 WIP #1"
+    },
+    {
+      "id": "o-tram-14",
+      "chu": "AOI-ST 1 machine 116 WIP #2"
+    },
+    {
+      "id": "o-tram-15",
+      "chu": "AVI-ST 1 machine 113 WIP #3"
+    },
+    {
+      "id": "o-tram-16",
+      "chu": "ICT-ST 1 machine 112 WIP #4"
+    },
+    {
+      "id": "o-tram-17",
+      "chu": "FCT-ST 1 machine 111 WIP #5"
+    },
+    {
+      "id": "o-tram-18",
+      "chu": "CONVEYOR-ST 1 machine 107 WIP #7"
+    },
+    {
+      "id": "o-tram-19",
+      "chu": "PWR-ST 1 machine 109 WIP #6"
+    },
+    {
+      "id": "o-tram-20",
+      "chu": "ASSY-ST 1 machine 105 WIP #8"
+    },
+    {
+      "id": "o-tram-21",
+      "chu": "SCREW-ST 1 machine 105 WIP #8"
+    },
+    {
+      "id": "o-tram-22",
+      "chu": "PACK-ST 1 machine 102 WIP #11"
+    },
+    {
+      "id": "o-tram-23",
+      "chu": "ROBOT-ST 1 machine 103 WIP #10"
+    },
+    {
+      "id": "o-tram-24",
+      "chu": "AGV-ST 1 machine 100 WIP #12"
+    }
+  ],
+  "en": {
+    "motMachines_SAI": 0,
+    "motMachine_DUNG": 12,
+    "nhieuMachines_DUNG": 0,
+    "nhieuMachine_SAI": 0
+  },
+  "vi": {
+    "mays_SAI": 0,
+    "may_DUNG": 0
+  },
+  "zh": {
+    "taiSheBeiS_SAI": 0,
+    "taiSheBei_DUNG": 0
+  },
+  "i4": {
+    "dat": true
+  }
+}

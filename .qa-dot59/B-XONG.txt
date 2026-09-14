@@ -1,0 +1,6 @@
+MUC B XONG 2026-09-13T17:15:32+07:00
+do59 tren HEAD (dist-AC): N=48 · DAT 42 · N/A 1 · CHAN-DUNG 5 · HONG 0 · 0 o khong co phan quyet
+do59 tren NEN (dist-nen 2f835df1): N=48 · DAT 42 · N/A 1 · CHAN-DUNG 5 · HONG 0 · 0 o khong co phan quyet
+0/48 o khac nhau giua hai ban dung
+do32 (dong bang) tren HEAD: DAT 39 · SAI 2 (#15,#16) · CHAN-DUNG 5 · N/A 1 · 'xem #7' 1 -> KHOP tuyet doi cot 57/58
+Ba o do32 sai: #15 SAI oan, #16 SAI oan, #20 XANH GIA (doTuoi null x5). Them #12 do bang tap co the RONG, #3 khong co phan quyet.

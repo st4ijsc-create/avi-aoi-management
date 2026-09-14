@@ -1,0 +1,24 @@
+[
+  {
+    "vai": "e2e_dot49_co",
+    "login": 200,
+    "danhTinh": "e2e_dot49_co",
+    "mongCo": true,
+    "nhomTaoViec": 1,
+    "nganXuLy": 1,
+    "nutTaoPhieu": 1,
+    "coCanvas": 1,
+    "dat": true
+  },
+  {
+    "vai": "e2e_dot49_khong",
+    "login": 200,
+    "danhTinh": "e2e_dot49_khong",
+    "mongCo": false,
+    "nhomTaoViec": 0,
+    "nganXuLy": 1,
+    "nutTaoPhieu": 0,
+    "coCanvas": 1,
+    "dat": true
+  }
+]

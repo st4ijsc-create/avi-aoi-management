@@ -1,0 +1,49 @@
+{
+  "vai": "ADM",
+  "user": "e2e_dot41_adm",
+  "login": 200,
+  "coCookie": true,
+  "luc": "2026-09-11T22:23:11.793Z",
+  "goi": [
+    {
+      "t": 25,
+      "factoryId": 18,
+      "tong": 1,
+      "may": [
+        257
+      ]
+    },
+    {
+      "t": 28,
+      "factoryId": 1,
+      "tong": 42,
+      "may": [
+        246,
+        247,
+        245
+      ]
+    },
+    {
+      "t": 4846,
+      "factoryId": 1,
+      "tong": 42,
+      "may": [
+        246,
+        247,
+        245
+      ]
+    },
+    {
+      "t": 4856,
+      "factoryId": 18,
+      "tong": 1,
+      "may": [
+        257
+      ]
+    }
+  ],
+  "loi": null,
+  "ketNoi": 12,
+  "f1": 2,
+  "f18": 2
+}

@@ -1,0 +1,461 @@
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * `manMay.ts` — LÁT THUẦN của **màn MÁY riêng** (`/twin/may/:id`, QĐ-19/QĐ-21)
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * Đợt 31 dựng màn Máy thành **màn riêng, canvas riêng** (QĐ-19), theo đúng khuôn
+ * `manLine.ts` của Đợt 30. Tệp này giữ đúng phần **KHÔNG có sẵn ở đâu** — phần
+ * lắp ráp riêng của cấp Máy — và **không** viết lại thứ đã nghiệm thu:
+ *
+ *   ĐÃ CÓ, DÙNG LẠI (G12 — không có phép tính thứ hai):
+ *     · `manLine.idLineTuDuongDan` — đọc `:id` (CÙNG luật, xem ①)
+ *     · `manLine.mayCuaLine`       — tập máy của một chuyền (TRẠM thắng `lineId`)
+ *     · `cayVanHanh.lineCuaMay`    — máy → trạm → chuyền
+ *     · `hopNhatCanh.dungMayVe` / `dungNhanMay` / `dungCanhBao3D`
+ *     · `phamViCanh.khungNhinCho`  — camera cấp `may` (≤ 8 m, §10C.2)
+ *     · `sucKhoeMay.hangSucKhoe` / `vienSucKhoe` — vòng viền đế (A-4)
+ *     · `nhungTaiCho.lyDoNganNhung` — BA lý do L-5, không đẻ nhánh thứ tư
+ *
+ *   TỆP NÀY LÀM, và chỉ làm bấy nhiêu:
+ *     · `idMayTuDuongDan`   — đọc `:id` đã bắt được thành số, an toàn
+ *     · `phamViCuaManMay`   — khớp nối sang `trongPhamVi` (G93, đo bằng GIÁ TRỊ)
+ *     · `lineCuaMayTheoTram`— chuyền của máy, cho breadcrumb `‹ Line N`
+ *     · `mayHangXom`        — máy ĐÍCH + hàng xóm cùng chuyền (định vị, §15.3.3)
+ *     · `mucTieuTrongCanh`  — khối ĐÃ DỰNG của máy đích (neo nhãn/viền/camera)
+ *     · `khungNhinMay`      — camera orbit gần quanh MỘT máy
+ *     · `tomTatMay`         — chip (B): mã · loại · sức khoẻ % + hạng
+ *     · `lyDoMoManMay`      — vì sao màn mở được / không (L-5, ba câu)
+ *
+ *   ⛔ **KHÔNG** có WIP, KHÔNG đếm chạy/dừng, KHÔNG đường tâm chuyền: cấp Máy
+ *      trả lời *"máy này thế nào"*, không phải *"chuyền chảy ra sao"*. Lưới ⑦
+ *      ở `manMay.unit.test.ts` ghim danh sách khoá ĐÓNG của `TomTatMay`.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO LÀ HÀM THUẦN, NHẬN QUA THAM SỐ — **G37**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Không hàm nào ở đây gọi `useRoute()`/`useSearch()`. Một màn tự đọc route
+ * **hỏng CÂM** khi đặt ngoài route của nó: `id` ra `NaN`, không exception nào
+ * nổ, người xem thấy một máy RỖNG thay vì một lỗi. `RobotCockpit`/
+ * `StationAnalysis` đã dính đúng lớp ấy — và chính `MachineCockpit.tsx:1216`
+ * vẫn còn `Number(params?.id)` (nó được cứu vì `MachineCockpitBody` tự kiểm
+ * `validId`). Trang cha bắt `:id`, gọi `idMayTuDuongDan` một lần, truyền số xuống.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ G93 — TÁCH RA LÀ **MUA THÊM MỘT BỀ MẶT LỖI Ở KHỚP NỐI**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đợt 29 đo được ba đột biến ở **chỗ gọi** sống sót cả 1.998 test. Nên tệp này
+ * đi kèm **hai** lưới:
+ *   · `manMay.unit.test.ts`          — hàm đúng không
+ *   · `manMayNoiVaoTrang.unit.test.ts` — **trang gọi bằng đối số nào**
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ⛔ KHÔNG TRÙNG VIỆC VỚI `/machine/:id` — §11b, ĐỌC TRƯỚC KHI XOÁ
+ * ════════════════════════════════════════════════════════════════════════════
+ * `/machine/:id` (`App.tsx`, `MachineCockpit.tsx` 1.220 dòng) là **cockpit 2D
+ * toàn trang** (`DashboardLayout`), và với `isWorkspaceShellEnabled()` nó
+ * **redirect** sang `/device-monitor?machine=` (Machine Workspace). Màn
+ * `/twin/may/:id` là **3D định vị + cockpit NHÚNG + `NganXuLy`** — nó **dùng**
+ * `MachineCockpitBody` chứ không thay thế nó. Hai thứ KHÁC NHAU; tên gần nhau
+ * là lý do đúng để ghi dòng này, không phải lý do để xoá một trong hai.
+ */
+
+import { idLineTuDuongDan, mayCuaLine, type MayThuocLine, type TramCuaLine } from "./manLine";
+import { lineCuaMay } from "./cayVanHanh";
+import type { PhamVi } from "./duongDanTwin";
+import {
+  bboxCuaTap,
+  khungNhinCho,
+  KHOANG_CACH_TOI_DA_CAP_MAY,
+  type KhungNhin,
+} from "./phamViCanh";
+import { hangSucKhoe, type HangSucKhoe, type KhaiSucKhoe, type MucKhanBaoTri } from "./sucKhoeMay";
+import { cauChoLyDoNgan, lyDoNganNhung, type CanhXetNgan, type LyDoNgan } from "./nhungTaiCho";
+import { mmSangMet } from "../heToaDo";
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ① ĐỌC `:id` — CÙNG LUẬT VỚI CHUYỀN, MỘT CÀI ĐẶT (G12)                        */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * `:id` của `/twin/may/:id` → số, hoặc `null`.
+ *
+ * ★★★ UỶ THÁC THẲNG cho `idLineTuDuongDan` — KHÔNG chép lại. `machines.id` và
+ *   `production_lines.id` cùng là `serial` nguyên dương; luật đọc (chỉ chữ số,
+ *   an toàn, > 0, từ chối `"0x2"`/`"2e3"`/`"2.5"`/`"+2"`) là **một luật**. Hai
+ *   bản cài đặt hiếm khi chỉ lệch một chỗ (G12), và lưới ① của tệp test đối
+ *   chiếu hai hàm trên CÙNG bảng mẫu để ai tách chúng ra phải làm lưới ĐỎ.
+ *
+ * ★ Vì sao vẫn có TÊN riêng: trang Máy đọc `idMayTuDuongDan`, không đọc một
+ *   hàm mang chữ "Line" — tên sai làm người sau tưởng trang này đọc id chuyền.
+ */
+export function idMayTuDuongDan(tho: string | undefined | null): number | null {
+  return idLineTuDuongDan(tho);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ② KHỚP NỐI SANG `dungMayVe` — **G93**, ĐO ĐƯỢC BẰNG GIÁ TRỊ                   */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Phạm vi mà màn Máy truyền cho `trongPhamVi` khi dựng cảnh.
+ *
+ * `trongPhamVi` ở cấp `may` so `v.machineId === pv.id` (`phamViCanh.ts:70`):
+ * máy ĐÍCH giữ màu thật, **hàng xóm pha về nền 72 %** (`dungMayVe` +
+ * `TI_LE_PHA_NGOAI_PHAM_VI`) — đúng Hình C §15.3.3: *"hàng xóm của máy VẪN
+ * THẤY (định vị)"*, và đúng cách `/twin?pv=may:…` đang làm.
+ *
+ * ★★★ HAI ĐỘT BIẾN MÀ HÀM NÀY BẮT, VÀ MỘT LƯỚI VĂN BẢN THÌ KHÔNG:
+ *   ① `cap: "may"` → `cap: "line"`: mọi hàng xóm cùng chuyền thành "trong
+ *      phạm vi" ⇒ máy đích **không còn nổi bật** giữa 12 khối cùng màu — cảnh
+ *      vẫn "hợp lý", không ảnh nào kêu.
+ *   ② `id: machineId` → `id: null`: `trongPhamVi` trả `true` vô điều kiện
+ *      (`phamViCanh.ts:59`) — cùng hậu quả, câm hơn.
+ */
+export function phamViCuaManMay(machineId: number): PhamVi {
+  return { cap: "may", id: machineId };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ③ CHUYỀN CỦA MÁY — cho breadcrumb `‹ Nhà máy › Line N › Máy`                 */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Chuyền của một máy. **TRẠM THẮNG `lineId` KHAI** — cùng luật với
+ * `manLine.mayCuaLine`, vì `machines` **không có cột `lineId`** (đo 2026-09-09):
+ * trường ấy trên client là giá trị đã suy, còn `stations.lineId` có khoá ngoại.
+ *
+ * ★ Đường trạm đi qua `cayVanHanh.lineCuaMay` (G12); chỉ khi trạm KHÔNG tra ra
+ *   chuyền mới rơi về `m.lineId` — máy chưa gán trạm nhưng đã gán chuyền vẫn
+ *   phải có nút `‹ Line N` (bỏ nó là khai thiếu đường ra, NT-3).
+ *
+ * @returns `null` khi không tìm thấy máy, hoặc máy không thuộc chuyền nào.
+ */
+export function lineCuaMayTheoTram(
+  machineId: number,
+  may: readonly MayThuocLine[],
+  tram: readonly TramCuaLine[],
+): number | null {
+  const m = may.find((x) => x.id === machineId);
+  if (!m) return null;
+  const stationCuaMay = new Map<number, number | null>([[m.id, m.stationId ?? null]]);
+  const lineCuaTram = new Map<number, number>();
+  for (const s of tram) if (s.lineId != null) lineCuaTram.set(s.id, s.lineId);
+  return lineCuaMay(machineId, stationCuaMay, lineCuaTram) ?? m.lineId ?? null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ④ TẬP MÁY VẼ — máy đích + HÀNG XÓM cùng chuyền                              */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Máy để dựng trên cảnh của màn Máy: **máy đích + mọi máy cùng chuyền**.
+ *
+ * ★★★ VÌ SAO KHÔNG CHỈ MỘT MÁY, VÀ VÌ SAO KHÔNG CẢ NHÀ MÁY.
+ *   · Chỉ một máy ⇒ mất **định vị** — §14.8: *"3D được biện minh cho ĐỊNH VỊ"*;
+ *     một khối đứng giữa sàn trống không nói máy này ở ĐÂU. Hình C §15.3.3
+ *     vẽ rõ *"hàng xóm của máy VẪN THẤY"*.
+ *   · Cả nhà máy ⇒ đúng lỗi **F2** ở dạng khác: 31 máy chuyền khác dựng thành
+ *     khối lạ quanh máy đang xem (đo 2026-09-09: 43 máy, chuyền 2 có 12).
+ *
+ * ★ Máy đích **LUÔN có mặt** kể cả khi không thuộc chuyền nào (chưa gán trạm):
+ *   `mayCuaLine(null, …)` trả `[]`, và nếu tin nó thì máy đích biến mất khỏi
+ *   chính màn của nó — một màn Máy không có máy, không lỗi nào nổ.
+ *
+ * @returns `[]` khi máy đích KHÔNG có trong `may` — trang rẽ nhánh L-5.
+ */
+export function mayHangXom<T extends MayThuocLine>(
+  machineId: number,
+  may: readonly T[],
+  tram: readonly TramCuaLine[],
+): T[] {
+  const dich = may.find((m) => m.id === machineId);
+  if (!dich) return [];
+  const lineId = lineCuaMayTheoTram(machineId, may, tram);
+  const cungChuyen = mayCuaLine(lineId, may, tram);
+  return cungChuyen.some((m) => m.id === machineId) ? cungChuyen : [dich, ...cungChuyen];
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ⑤ MÁY ĐÍCH ĐÃ DỰNG — neo cho nhãn, viền, cảnh báo, camera                  */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/** Khối đã dựng, đúng phần cấp Máy đọc — khớp `MayDaDung`/`MayTrongLo` mà không nhập. */
+export interface KhoiMayDaDung {
+  machineId: number;
+  /** Hệ CẢNH (mét), đã hoán vị trục — **`y` là ĐỘ CAO** (`heToaDo.ts`). */
+  viTri: { x: number; y: number; z: number };
+  kichThuocMm: { rongMm: number; caoMm: number; sauMm: number };
+}
+
+/**
+ * Khối ĐÃ DỰNG của máy đích trong tập `mayVe`, hoặc `null` khi máy chưa có chỗ
+ * trên bố cục (`dungMayVe` bỏ máy không có hàng đặt chỗ / `hienThi=false`).
+ *
+ * ★ Nhãn, badge, viền và camera của màn Máy đều neo vào **`[mucTieu]`**, không
+ *   vào `mayVe`: §15.6.2 cấp Máy có trần **≤ 3** thứ neo — tên + cảnh báo +
+ *   viền — và *"thừa ngân sách KHÔNG phải lý do để tiêu"*. Hàng xóm đọc bằng
+ *   màu pha, không bằng nhãn.
+ */
+export function mucTieuTrongCanh<T extends { machineId: number }>(
+  mayVe: readonly T[],
+  machineId: number,
+): T | null {
+  return mayVe.find((m) => m.machineId === machineId) ?? null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ⑥ CAMERA — orbit GẦN quanh một máy (§10C.2 cấp `may`, ≤ 8 m)                 */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ★★★ HỆ SỐ LÙI THÊM cho camera màn Máy — ĐO ĐƯỢC, không phải thẩm mỹ.
+ *
+ * Nghiệm thu ảnh lần đầu (2026-09-09, `dist`, 1600×900, máy 14): với
+ * `khungNhinCho(bbox, "may")` nguyên bản (`HE_SO_LUI.may = 1.1`) camera cách
+ * tâm máy ~2 m; khối 1,8 m **bị cắt nóc** và nhãn tên trên nóc (`neoTrenNoc`
+ * + `HO_NHAN_MAY`) nằm NGOÀI khung ⇒ `LopNhan` declutter ẩn nó, chip
+ * *"1 more names hidden"* hiện ra — màn Máy **mất 1/3 thứ neo** của §15.6.1
+ * (tên · badge · viền). Hình học: FOV dọc của `KhungCanh` là **45°**
+ * (`KhungCanh.tsx:207`), nửa góc 22,5°; ở 2 m nhãn lệch trục nhìn ~40°.
+ *
+ * ⇒ Lùi camera thêm theo hệ số này (giữ NGUYÊN mục nhìn và hướng nhìn, chỉ
+ *   nhân véc-tơ lùi), rồi vẫn kẹp từng trục ≤ `KHOANG_CACH_TOI_DA_CAP_MAY`.
+ *   Không sửa `HE_SO_LUI.may`: hằng ấy dùng chung với `/twin?pv=may` (canvas
+ *   lớn, tỉ lệ khác) — đổi là đổi cả hai màn. Lưới ⑥ tính GÓC của 8 đỉnh khối
+ *   + điểm nhãn nóc so với trục nhìn và đòi < 22,5° — tức là cả máy lẫn nhãn
+ *   nằm trong nón FOV với MỌI tỉ lệ canvas ≥ 1:1.
+ */
+export const HE_SO_NOI_KHUNG_MAY = 2.2;
+
+/**
+ * Khung nhìn cho MỘT máy.
+ *
+ * ★ Uỷ thác cho `khungNhinCho(bbox, "may")` — nơi `HE_SO_LUI.may`/`HE_SO_CAO.may`
+ *   và trần `KHOANG_CACH_TOI_DA_CAP_MAY = 8` sống (G12). Bbox dựng bằng
+ *   `bboxCuaTap` từ tâm đáy + kích thước **quy về mét**; sau đó lùi thêm theo
+ *   {@link HE_SO_NOI_KHUNG_MAY} và kẹp lại trần 8 m.
+ *
+ * ⚠⚠ BẪY HOÁN VỊ TRỤC: `viTri` của khối đã ở hệ cảnh (**`y` = độ cao**), nên
+ *   truyền thẳng làm `tam`. Ai "sửa" thành `{x, y: viTri.z, z: viTri.y}` sẽ
+ *   đặt camera nhìn vào một điểm dưới sàn — cảnh vẫn vẽ, không gì nổ. Lưới
+ *   ghim `muc[1]` = độ cao tâm khối.
+ *
+ * @returns `null` khi chưa có khối (máy chưa đặt chỗ) — trang GIỮ camera, không
+ *   bay tới `Infinity` (G8).
+ */
+export function khungNhinMay(
+  mucTieu: KhoiMayDaDung | null,
+  heSoNoi: number = HE_SO_NOI_KHUNG_MAY,
+): KhungNhin | null {
+  if (!mucTieu) return null;
+  const bbox = bboxCuaTap([
+    {
+      tam: mucTieu.viTri,
+      co: {
+        rong: mmSangMet(mucTieu.kichThuocMm.rongMm),
+        cao: mmSangMet(mucTieu.kichThuocMm.caoMm),
+        sau: mmSangMet(mucTieu.kichThuocMm.sauMm),
+      },
+    },
+  ]);
+  const k = khungNhinCho(bbox, "may");
+  if (!k) return null;
+  const kep = (d: number) =>
+    Math.sign(d) * Math.min(Math.abs(d) * heSoNoi, KHOANG_CACH_TOI_DA_CAP_MAY);
+  return {
+    muc: k.muc,
+    viTri: [
+      k.muc[0] + kep(k.viTri[0] - k.muc[0]),
+      k.muc[1] + kep(k.viTri[1] - k.muc[1]),
+      k.muc[2] + kep(k.viTri[2] - k.muc[2]),
+    ],
+    banKinh: k.banKinh * heSoNoi,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ⑦ TÓM TẮT — chip (B) của §15.6.1 cấp Máy                                     */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/** Danh tính máy, đúng phần chip cần. */
+export interface DanhTinhMay {
+  id: number;
+  ma: string;
+  ten: string;
+  loaiMay: string;
+}
+
+export interface TomTatMay {
+  ma: string;
+  ten: string;
+  loaiMay: string;
+  /** Hạng qua `hangSucKhoe` — `chua_do` khi KHÔNG có lời khai nào cho máy này. */
+  hangSucKhoe: HangSucKhoe;
+  /** `healthScore` nguyên văn, `null` = chưa đo — **KHÔNG** `0`. */
+  diem: number | null;
+  nguyCo: number | null;
+  mucKhan: MucKhanBaoTri | null;
+  /** Mốc lời khai (ms) để chip nói được *"đo lúc …"*; `null` = không rõ. */
+  mocMs: number | null;
+}
+
+/**
+ * Chip trái nhóm (B): `mã · loại · sức khoẻ % + hạng`.
+ *
+ * ★★★ KHÔNG có `NG 24h` — §15.6.1 ⁽²⁾ đo được `product_inspections` **2.880/2.880
+ *   `factoryCode` NULL** ⇒ rỗng với mọi vai không-admin; và `NganXuLy` đã hiện
+ *   `dashboard.getMachineStats` (`NganXuLy.tsx:247`) — một chip thứ hai cho cùng
+ *   con số là **D-5** (hai bản đếm, hai cơ hội lệch). KHÔNG có *xu hướng 24h* —
+ *   C-9 **CHƯA có** nguồn.
+ *
+ * ★ Hạng đi qua `hangSucKhoe` — CÙNG hàm với vòng viền đế, để chip nói
+ *   `nguy_kích` đúng khi viền đỏ (G12). `diem` giữ nguyên văn kể cả khi
+ *   `het_han`: chip in *"31 % · quá hạn"* thay vì giấu con số — người vận hành
+ *   cần thấy cả số lẫn lý do không tin nó.
+ *
+ * @returns `null` khi chưa có danh tính máy (đang tải / không tìm thấy).
+ */
+export function tomTatMay(
+  may: DanhTinhMay | null,
+  khai: readonly KhaiSucKhoe[],
+  bayGio: number,
+): TomTatMay | null {
+  if (!may) return null;
+  const k = khai.find((x) => x.machineId === may.id) ?? null;
+  return {
+    ma: may.ma,
+    ten: may.ten,
+    loaiMay: may.loaiMay,
+    hangSucKhoe: k ? hangSucKhoe(k, bayGio) : "chua_do",
+    diem: k?.diem ?? null,
+    nguyCo: k?.nguyCo ?? null,
+    mucKhan: k?.mucKhan ?? null,
+    mocMs: k?.mocMs ?? null,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ⑧ VÌ SAO MÀN MỞ ĐƯỢC / KHÔNG — L-5, BA CÂU, KHÔNG NHÁNH IM LẶNG THỨ TƯ        */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Lý do màn Máy mở được (`mo`) hay không (`ngoaiPhamVi` / `thieuQuyen`).
+ *
+ * ★★★ §15.3.3 L-5 bắt buộc: *"Cấp Máy mới phải dùng lại ĐÚNG ba lý do đó,
+ *   không đẻ nhánh im lặng thứ tư."* Nên hàm này **uỷ thác** cho
+ *   `lyDoNganNhung` với `{ loai: "machine" }` — cùng thứ tự kiểm (đang tải ⇒
+ *   `mo` · có trong tập ⇒ `mo` · phạm vi rỗng ⇒ `thieuQuyen` · còn lại ⇒
+ *   `ngoaiPhamVi`), cùng câu (`cauChoLyDoNgan`). Một `machineId` không có trong
+ *   nhà máy đang xem KHÔNG được thành một màn trống câm.
+ */
+/**
+ * ★★★ ĐỢT 34 (D) — `chuaGanNhaMay` ≠ `thieuQuyen`: HAI CÂU, HAI HÀNH ĐỘNG, TÁCH Ở MÀN MÁY.
+ *
+ * ĐO ĐƯỢC (chủ dự án, DB thật, 2026-09-10): `operator1` id 48 có quyền `machine_status` (qua cổng
+ * route) nhưng **0 hàng `user_factory_assignments`**; `/twin/may/1` với vai ấy hiện câu của
+ * `thieuQuyen`: *"You do not have permission to view this item"*. Câu ấy SAI BẢN CHẤT: người dùng
+ * KHÔNG thiếu quyền — họ chưa được gán nhà máy. Hai tình trạng dẫn tới hai việc khác nhau
+ * (xin quyền ↔ xin gán nhà máy), và một câu đúng ngữ pháp dẫn tới hành động sai chính là lớp lỗi
+ * mà L-5 sinh ra để chặn.
+ *
+ * `lyDoNganNhung` (`nhungTaiCho.ts`) dùng tên `thieuQuyen` cho ca "phạm vi rỗng" — đường `NganNhung`
+ * (đã mất lối vào sau QĐ-23, giữ nguyên, ngoài phạm vi (D)). Màn Máy **ánh xạ lại** đúng ca ấy:
+ *   · `phamViRong` (0 nhà máy, HTTP 200 + mảng rỗng)                       → `chuaGanNhaMay`
+ *   · `thieuQuyen` THẬT = server TỪ CHỐI một truy vấn nền (`FORBIDDEN`)       → `thieuQuyen`
+ *   · còn lại giữ nguyên (`mo` / `ngoaiPhamVi`), CÙNG thứ tự kiểm của `lyDoNganNhung`.
+ * Thứ tự: `thieuQuyen` THẬT xét TRƯỚC `chuaGanNhaMay` — bị từ chối thì tập máy cũng rỗng, và bảo
+ * người bị từ chối đi "xin gán nhà máy" là gửi họ sai cửa. Người 0 quyền hoàn toàn (Đợt 31 B2) không
+ * tới được đây: `RouteGuard` chặn ở cổng, tRPC 403 `PERMISSION_DENIED`.
+ *
+ * ★ Đây KHÔNG phải "nhánh im lặng thứ tư" (§15.3.3 L-5 cấm): nó là một CÂU NÓI RA, tách từ một câu
+ *   đang nói sai; `data-ly-do` mang tên mới để e2e đo được.
+ */
+export type LyDoManMay = LyDoNgan | "chuaGanNhaMay";
+
+export interface CanhXetManMay extends CanhXetNgan {
+  /** `true` khi một truy vấn nền của màn bị server TỪ CHỐI (`FORBIDDEN`) — thiếu quyền THẬT. */
+  thieuQuyen?: boolean;
+}
+
+export function lyDoMoManMay(machineId: number, canh: CanhXetManMay): LyDoManMay {
+  /*
+   * ★★★ ĐỢT 40 (QA Đợt 39 Pareto #1) — `thieuQuyen` THẬT xét TRƯỚC `mo`, cùng thứ tự với `lyDoMoManLine`
+   *   (`manLine.ts`: `if (c.thieuQuyen) return "thieuQuyen"` đứng đầu). Đo trước vá (`.qa-dot39/qd18/D-*.json`,
+   *   vai CHỈ `analytics_oee` + gán SIM-FAC): `overview` 403 nhưng `canhThietKe` (cổng hình học) 200 ⇒ máy 14 CÓ
+   *   trong `idTrongTam` ⇒ nhánh `ly === "mo"` trả `mo` trước khi nhìn tới `thieuQuyen` ⇒ màn VẼ canvas, cockpit
+   *   hỏi `machineDetail` rồi in "Machine not found" cho một lỗi 403. Ba màn nói ba kiểu cho cùng một vai.
+   *   Một phản hồi `FORBIDDEN` là kết cục CUỐI (`retry: false`), không phải "chưa biết" — nó phải thắng cả
+   *   `dangTai` lẫn "có trong tập": hình học mở được không có nghĩa là trạng thái xem được.
+   */
+  if (canh.thieuQuyen) return "thieuQuyen";
+  const ly = lyDoNganNhung({ loai: "machine", id: machineId }, canh) ?? "mo";
+  if (ly === "mo") return "mo";
+  if (ly === "thieuQuyen") return "chuaGanNhaMay";
+  return ly;
+}
+
+/** Khoá i18n + câu dự phòng cho lý do KHÔNG mở được ở màn Máy — `chuaGanNhaMay` thêm, ba câu cũ uỷ thác. */
+export function cauChoLyDoManMay(lyDo: Exclude<LyDoManMay, "mo">): { khoa: string; duPhong: string } {
+  if (lyDo === "chuaGanNhaMay") {
+    return {
+      khoa: "twin3d.may.chuaGanNhaMay",
+      duPhong: "Tài khoản của bạn chưa được gán nhà máy nào — liên hệ quản trị để được gán, rồi mở lại máy này.",
+    };
+  }
+  return cauChoLyDoNgan(lyDo);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ⑩ ĐỢT 35 (Pareto #4) — CHIỀU CAO KHỐI CẢNH 3D THEO PHẦN CÒN LẠI               */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * SÀN chiều cao khối cảnh 3D ở màn Máy (px). **240**, thấp hơn sàn 320 của kit.
+ *
+ * ★★★ VÌ SAO 240 CHỨ KHÔNG 320 — ĐO ĐƯỢC (QA Đợt 32, 1280×720):
+ *   phần còn lại cho cột trái = 720 − 125 = **595 px**; sàn 320 của `KhungCanh`
+ *   ⇒ cảnh 320, cockpit **275 < 320** — vi phạm bất biến `cockpit.h > khoiCanh.h`
+ *   mà e2e Đợt 31 ghim ở 1600×900 (canvas 324 / cockpit 451). §15.3.3: cấp Máy
+ *   chỉ ~20–36 % viewport; cockpit 2D là phần chính. Với sàn 240 bất biến giữ
+ *   được tới viewport cao **≥ 606 px** (240·2 + 125); dưới nữa sàn thắng — cảnh
+ *   3D không đọc được dưới 240 px, và đó là một giới hạn nói ra chứ không giấu.
+ * ⚠ KHÔNG hạ sàn của kit (`SAN_CAO_KHUNG_CANH_PX = 320`): `/twin` và studio
+ *   dựa vào nó. Sàn này truyền qua `CanhVanHanh.sanCaoPx` chỉ ở màn Máy.
+ */
+export const SAN_KHOI_CANH_MAY_PX = 240;
+/** TRẦN chiều cao khối cảnh 3D ở màn Máy (px) — giữ nguyên số của Đợt 31. */
+export const TRAN_KHOI_CANH_MAY_PX = 360;
+/**
+ * ★ Đợt 45 (mục 6) — SÀN MỀM (px): cảnh không thấp hơn 280 khi bố cục cho phép (cockpit vẫn > cảnh).
+ * Khác SÀN cứng 240 (luôn thắng) — sàn mềm chỉ áp khi ĐÃ ĐO phần còn lại; xem `chieuCaoKhoiCanhMay`.
+ */
+export const SAN_MEM_KHOI_CANH_MAY_PX = 280;
+/** Tỉ lệ viewport dành cho cảnh 3D (36 vh — §15.7.1, giữ nguyên số của Đợt 31). */
+export const TI_LE_KHOI_CANH_MAY = 0.36;
+
+/**
+ * Chiều cao khối cảnh 3D (px) cho màn Máy — CLAMP THEO PHẦN CÒN LẠI, không theo `vh` mù.
+ *
+ *   canvas = clamp(SÀN, min(TỈ LỆ·vh, ⌊(cònLại − 1)/2⌋), TRẦN)
+ *
+ * Vế `⌊(cònLại − 1)/2⌋` là bất biến `cockpit.h > khoiCanh.h` viết thành số:
+ * cockpit = cònLại − canvas > canvas ⇔ canvas < cònLại/2. Khi chưa đo được
+ * `caoConLai` (khung hình đầu, trước `ResizeObserver`) rơi về `TỈ LỆ·vh` kẹp
+ * [SÀN, TRẦN] — cùng hình dạng `clamp(…, 36vh, 360px)` cũ, chỉ khác sàn.
+ *
+ * Ghim bằng số Đợt 31 (1600×900: cònLại 775 ⇒ **324**, cockpit 451) và số QA
+ * Đợt 32 (1280×720: cònLại 595 ⇒ **259**, cockpit 336 > 259).
+ */
+export function chieuCaoKhoiCanhMay(caoConLaiPx: number | null, caoViewportPx: number): number {
+  const theoVh = TI_LE_KHOI_CANH_MAY * Math.max(0, caoViewportPx);
+  const daDo = caoConLaiPx != null && Number.isFinite(caoConLaiPx);
+  const tranConLai = daDo ? Math.floor((caoConLaiPx - 1) / 2) : Infinity;
+  const muon = Math.min(TRAN_KHOI_CANH_MAY_PX, theoVh, tranConLai);
+  /*
+   * ★ Đợt 45 (mục 6) — SÀN MỀM 280: QA Đợt 44 đo cảnh 259 @1280 (36 vh thắng) "thấp"; nâng lên
+   *   280 CHỈ KHI đã đo được phần còn lại và bất biến `cockpit > cảnh` vẫn giữ (280 ≤ ⌊(cònLại−1)/2⌋).
+   *   Chưa đo (khung đầu) ⇒ như cũ (không hứa thứ chưa kiểm). 1600×900 vẫn 324 (36 vh > 280).
+   */
+  const sanMem = daDo ? Math.min(SAN_MEM_KHOI_CANH_MAY_PX, tranConLai) : 0;
+  return Math.round(Math.max(SAN_KHOI_CANH_MAY_PX, sanMem, muon));
+}

@@ -36,8 +36,38 @@ import type { DiemScene } from "../heToaDo";
 // Chế độ gizmo
 // ---------------------------------------------------------------------------
 
-/** Ba chế độ của `TransformControls`. Tên trùng NGUYÊN VĂN API của three. */
-export type CheDoGizmo = "translate" | "rotate" | "scale";
+/**
+ * Chế độ gizmo. Tên trùng NGUYÊN VĂN API của three.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ G67 — VÌ SAO KHÔNG CÓ "scale"
+ * ════════════════════════════════════════════════════════════════════════════
+ * `TransformControls` của three có ba chế độ, và bản đầu khai đủ cả ba. Nhưng
+ * chế độ "scale" ở màn Thiết kế là một LỜI KHAI SAI VỀ THẾ GIỚI, theo hai lớp
+ * độc lập — và ĐO ĐƯỢC:
+ *
+ *  1. NÓ KHÔNG GHI GÌ. `GizmoBienDoi` có trả `tiLe`, nhưng giá trị đó bị BỎ ở
+ *     ĐÚNG BỐN tầng nối tiếp nhau, không tầng nào báo lỗi:
+ *       · `CanhThietKe.tsx:119` — kiểu `onBienDoiXong` chỉ khai {viTri, gocYDo}
+ *       · `XuongThietKe.tsx`    — chỗ gọi huỷ cấu trúc thiếu `tiLe`
+ *       · `trangThaiThietKe.ts` — `DatChoDauVao` KHÔNG có trường tiLe nào
+ *       · `twinCanhRouter.ts`   — input zod của `luuHangLoat` KHÔNG nhận tiLe
+ *     Cột `tiLeX/Y/Z` CÓ trong DB (mặc định 1) — và cả 82 hàng đều đúng 1.000000,
+ *     tức chưa từng có một byte nào được ghi qua đường này.
+ *
+ *  2. NỐI NÓ VÀO CŨNG SAI VỀ NGHIỆP VỤ. Máy có KÍCH THƯỚC THẬT, đo bằng mm:
+ *     `rongMm/caoMm/sauMm`, kèm cờ trung thực `kichThuocDaDo` và badge vàng
+ *     "chưa đo" (NT-4). Kéo chuột cho máy "to ra" ×1,37 không phải một phép đo —
+ *     nó tạo ra một kích thước KHÔNG AI ĐO mà trông y hệt đã đo, và làm hỏng
+ *     đúng thứ mà `kichThuocDaDo` sinh ra để bảo vệ. Đường ĐÚNG để sửa kích
+ *     thước đã có sẵn và trung thực: ô nhập mm ở Inspector
+ *     (`BangThuocTinh.tsx:281-298`) + nút "đánh dấu đã đo" (dòng 308).
+ *
+ * ⇒ Gỡ khỏi CHÍNH KIỂU (không chỉ ẩn nút): làm vậy thì `tsc` chỉ ra mọi chỗ còn
+ *   sót, gồm cả phím tắt R — vốn là ĐƯỜNG VÀO THỨ HAI mà việc chỉ gỡ nút sẽ bỏ
+ *   quên, để lại đúng lời nói dối cũ sau một phím bấm.
+ */
+export type CheDoGizmo = "translate" | "rotate";
 
 /** Chế độ mở màn — di chuyển, việc chiếm 90 % thời gian dựng bố cục. */
 export const CHE_DO_MAC_DINH: CheDoGizmo = "translate";
@@ -59,8 +89,10 @@ export function cheDoTuPhim(phim: string): CheDoGizmo | null {
       return "translate";
     case "e":
       return "rotate";
-    case "r":
-      return "scale";
+    // ★ G67 — KHÔNG có nhánh "r": chế độ scale đã bị gỡ (xem `CheDoGizmo`).
+    //   Trả `null` để phím R rơi về trình duyệt như mọi phím lạ khác, thay vì
+    //   nuốt phím rồi không làm gì — "nút bấm không phản hồi" chính là triệu
+    //   chứng mà chủ sở hữu báo.
     default:
       return null;
   }

@@ -30,6 +30,8 @@ import { sendOk, wrap, ApiHttpError } from "./envelope";
 import type { DeviceTypeNode } from "../../services/standards/deviceTypeRegistry";
 import type { AlarmMapping } from "../../services/standards/alarmTaxonomy";
 import type { TenantCodeScope } from "../../_core/tenantCodeScope";
+import type { PhamViMaTenant } from "../../db/hierarchy";
+import type { ApiKeyTenantScope } from "./apiKeyScope";
 
 /** Parse a positive-integer path/query param or throw a 400. */
 function posInt(raw: unknown, label: string): number {
@@ -49,6 +51,31 @@ function limitParam(raw: unknown, def: number, max: number): number {
   const n = Number(raw);
   if (!Number.isFinite(n)) return def;
   return Math.min(Math.max(1, Math.trunc(n)), max);
+}
+
+/**
+ * ★★★ ĐỢT 42 (QA Đợt 41 D-4 lỗ #2, G116) — PHẠM VI CỦA KHOÁ API cho các bộ tổng hợp cockpit.
+ *
+ * Đo trước vá (`.qa-dot41/api-vai/http-v1.json`): khoá tạm `dataScopeMode=factory, factoryCode=SIM-FAC,
+ * [equipment:read]` gọi `/machines/257/detail` (máy của nhà máy 18) ⇒ **200** + `identity.code T12-SHOT-…`.
+ * Hai handler dưới gọi `machineDetail(machineId)` / `robotDetail(robotId)` **bỏ trống `scope`** dù
+ * `req.apiPrincipal.tenantScope` đã có sẵn (mig 0325) và `/ecosystem/kpi` ngay trên đã dùng nó.
+ *
+ *   • khoá TOÀN CỤC tường minh (`mode: "global"`, cả master key) ⇒ `undefined` ⇒ KHÔNG lọc (giữ nguyên);
+ *   • khoá MỘT NHÀ MÁY ⇒ `{ tenantScope }` = trục ② của `resolveTenantFactoryScope` — cùng bộ phân giải
+ *     mà `assetCockpitRouter` (trục ①, `phamViCua(ctx)`) đi qua, KHÔNG dựng bộ luật thứ hai (G12);
+ *   • khoá CHƯA KHAI ⇒ `{ tenantScope: {} }` ⇒ `factoryIds: []` ⇒ mọi máy/robot 404 — fail-closed, cùng
+ *     chiều `tenantCodeScopeOf` đã ghi (*"quên gọi `requireDeclaredTenantScope` vẫn ra 0 hàng"*).
+ *
+ * ⚠ `import()` ĐỘNG cùng lý do đã ghi ở `/ecosystem/kpi` (các lưới `server/api/v1/**` mock `drizzle-orm`).
+ * ⚠ Nhận **`req.apiPrincipal?.tenantScope`** chứ không nhận cả `req`: bộ suy tuyến (`phamViDocScan` §D-C,
+ *   `phamViTuyenCensus`) chỉ thấy danh tính RỜI TAY khi gốc `req.apiPrincipal…` đứng TRONG đối số của lời
+ *   gọi đọc — cùng hình `/ecosystem/kpi`. Bản đầu nhận `req` trần: vá đúng mà lưới đếm vẫn xếp nhóm A (mù).
+ */
+async function phamViCuaKhoa(tenantScope: ApiKeyTenantScope | null | undefined): Promise<PhamViMaTenant | undefined> {
+  const { tenantCodeScopeOf } = await import("./apiKeyScope");
+  const codes = tenantCodeScopeOf(tenantScope);
+  return codes ? { tenantScope: codes } : undefined;
 }
 
 /**
@@ -411,14 +438,16 @@ export function registerModuleReadRoutes(r: Router): void {
 
   // ── COCKPIT (U3) — full per-machine / per-robot detail. Reuses machineDetail /
   //    robotDetail (the SAME aggregators assetCockpitRouter calls). gatedActions in
-  //    the payload are METADATA ONLY (which commands MAY be proposed) — no exec here. ──
+  //    the payload are METADATA ONLY (which commands MAY be proposed) — no exec here.
+  //    ★ Đợt 42 — phạm vi của KHOÁ đi xuống bộ tổng hợp (`phamViCuaKhoa`): máy/robot ngoài nhà máy
+  //    của khoá ⇒ `null` ⇒ 404, CÙNG hình dạng với không tồn tại (G82). ──
   r.get(
     "/machines/:id/detail",
     requireScope(API_SCOPES.EQUIPMENT_READ),
     wrap(async (req, res) => {
       const machineId = posInt(req.params.id, "machine id");
       const { machineDetail } = await import("../../services/ecosystem/assetCockpitService");
-      const detail = await machineDetail(machineId);
+      const detail = await machineDetail(machineId, await phamViCuaKhoa(req.apiPrincipal?.tenantScope));
       if (!detail) throw new ApiHttpError(404, "not_found", `Machine ${machineId} not found.`);
       sendOk(res, detail);
     }),
@@ -430,7 +459,7 @@ export function registerModuleReadRoutes(r: Router): void {
     wrap(async (req, res) => {
       const robotId = posInt(req.params.id, "robot id");
       const { robotDetail } = await import("../../services/ecosystem/assetCockpitService");
-      const detail = await robotDetail(robotId);
+      const detail = await robotDetail(robotId, await phamViCuaKhoa(req.apiPrincipal?.tenantScope));
       if (!detail) throw new ApiHttpError(404, "not_found", `Robot ${robotId} not found.`);
       sendOk(res, detail);
     }),

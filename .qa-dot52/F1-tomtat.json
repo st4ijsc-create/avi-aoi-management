@@ -1,0 +1,125 @@
+{
+ "khi": "2026-09-12T07:07:04.211Z",
+ "nguong": 2500,
+ "dong": [
+  {
+   "dieuKien": "Đợt 50 TRƯỚC (4215c526)",
+   "n": 28,
+   "p50": 1233,
+   "p90": 3908,
+   "max": 6856,
+   "min": 1078,
+   "dotBien": "3/28",
+   "chiTietDotBien": [
+    "/twin/may/14:3908",
+    "/twin-studio:5393",
+    "/twin/may/14:6856"
+   ],
+   "soDAT": 25
+  },
+  {
+   "dieuKien": "Đợt 50 SAU A+B+C",
+   "n": 26,
+   "p50": 1353,
+   "p90": 4936,
+   "max": 5887,
+   "min": 1179,
+   "dotBien": "6/26",
+   "chiTietDotBien": [
+    "/twin/may/14:3824",
+    "/twin-studio:4936",
+    "/twin/line/2:4339",
+    "/twin/may/14:4736",
+    "/twin/may/14:5186",
+    "/twin-studio:5887"
+   ],
+   "soDAT": 20
+  },
+  {
+   "dieuKien": "Đợt 50 SAU A+B+C+E (nền)",
+   "n": 28,
+   "p50": 1231,
+   "p90": 2443,
+   "max": 6217,
+   "min": 1074,
+   "dotBien": "2/28",
+   "chiTietDotBien": [
+    "/twin/may/14:6217",
+    "/twin/line/2:3726"
+   ],
+   "soDAT": 26
+  },
+  {
+   "dieuKien": "Đợt 50 SAU A+B+C+E (11 lượt)",
+   "n": 44,
+   "p50": 1234,
+   "p90": 2194,
+   "max": 6217,
+   "min": 1074,
+   "dotBien": "3/44",
+   "chiTietDotBien": [
+    "/twin/may/14:6217",
+    "/twin-studio:3463",
+    "/twin/line/2:3726"
+   ],
+   "soDAT": 41
+  },
+  {
+   "dieuKien": "Đợt 51 CÓ INDEX",
+   "n": 28,
+   "p50": 1183,
+   "p90": 1545,
+   "max": 1889,
+   "min": 1061,
+   "dotBien": "0/28",
+   "chiTietDotBien": [],
+   "soDAT": 28
+  },
+  {
+   "dieuKien": "Đợt 51 ABLATION (gỡ index)",
+   "n": 28,
+   "p50": 1167,
+   "p90": 1453,
+   "max": 2186,
+   "min": 1061,
+   "dotBien": "0/28",
+   "chiTietDotBien": [],
+   "soDAT": 28
+  },
+  {
+   "dieuKien": "Đợt 51 CÓ INDEX (14 lượt)",
+   "n": 56,
+   "p50": 1185,
+   "p90": 1486,
+   "max": 1889,
+   "min": 1061,
+   "dotBien": "0/56",
+   "chiTietDotBien": [],
+   "soDAT": 56
+  },
+  {
+   "dieuKien": "Đợt 51 GỠ INDEX (14 lượt)",
+   "n": 56,
+   "p50": 1224,
+   "p90": 1867,
+   "max": 2777,
+   "min": 1056,
+   "dotBien": "1/56",
+   "chiTietDotBien": [
+    "/twin/may/14:2777"
+   ],
+   "soDAT": 55
+  },
+  {
+   "dieuKien": "★ Đợt 52 QA lần 8 (7 lượt)",
+   "n": 28,
+   "p50": 1169,
+   "p90": 1284,
+   "max": 1300,
+   "min": 1054,
+   "dotBien": "0/28",
+   "chiTietDotBien": [],
+   "soDAT": 28
+  }
+ ]
+}

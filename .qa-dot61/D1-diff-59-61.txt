@@ -1,0 +1,8 @@
+26c26
+< | 24 | deep-link /twin/may/14 (context mới): vỏ app | "Production (MES)" · canvas 1357 ms | **ĐẠT** |  |
+---
+> | 24 | deep-link /twin/may/14 (context mới): vỏ app | "Production (MES)" · canvas 1087 ms | **ĐẠT** |  |
+32c32
+< | 30 | API máy 14: issue offline ageMinutes ≠ 0 | offline:83998′ | **ĐẠT** |  |
+---
+> | 30 | API máy 14: issue offline ageMinutes ≠ 0 | offline:84394′ | **ĐẠT** |  |

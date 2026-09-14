@@ -1,0 +1,13 @@
+.qa-dot48/api-vai/A.json
+.qa-dot48/api-vai/ADM.json
+.qa-dot48/api-vai/B.json
+.qa-dot48/api-vai/C.json
+.qa-dot48/api-vai/D.json
+.qa-dot48/api-vai/M.json
+.qa-dot48/api-vai/http-v1.json
+.qa-dot48/api-vai/socket-A.json
+.qa-dot48/api-vai/socket-ADM.json
+.qa-dot48/api-vai/socket-B.json
+.qa-dot48/api-vai/socket-C.json
+.qa-dot48/api-vai/socket-D.json
+.qa-dot48/api-vai/socket-M.json
