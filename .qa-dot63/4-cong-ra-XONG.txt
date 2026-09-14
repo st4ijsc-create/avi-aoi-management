@@ -44,3 +44,16 @@ KỶ LUẬT MÔI TRƯỜNG
 -------------------------------------
   Không chạy Playwright trong đợt này ⇒ không ghi vào `test-results/`.
   (Kiểm kê md5 5 ảnh: xem `.qa-dot63/md5-anh.txt`.)
+
+PHỤ LỤC — 3001 / 3008: PHẢI NÓI THẲNG (lỗi đo của tôi)
+-------------------------------------------------------
+Cuối đợt tôi kiểm: **cổng 3001 và 3008 KHÔNG còn LISTENING, và PID 14228 / 29676 KHÔNG
+còn tồn tại.**
+
+Tôi KHÔNG kill chúng: suốt đợt này tôi không chạy một lệnh kill / taskkill / Stop-Process
+nào, không mở cổng nào, không chạm `dist/`. Toàn bộ việc là git + vitest + tsc.
+
+NHƯNG tôi **không đo trạng thái hai cổng ấy lúc BẮT ĐẦU** ⇒ tôi không chứng minh được
+chúng đã chết từ trước hay chết trong lúc tôi làm. Đó là lỗi của tôi: brief đặt chúng vào
+diện "cấm chạm" mà tôi không chốt một số nền. Lần sau: đo cổng + PID + md5 TRƯỚC khi làm
+việc gì khác, đúng khuôn G139.
