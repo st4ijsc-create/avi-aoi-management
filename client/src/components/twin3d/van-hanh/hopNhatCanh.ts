@@ -140,12 +140,117 @@ export interface CongCuMau {
   hinhKhoiCho: (loaiMay: string) => KhoiKey;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ Task 17c LỖI HAI — GỐC CỦA TOÀ NHÀ, số hạng chưa bao giờ được cộng      */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Chỗ dời của một toà nhà so với GỐC CẢNH, tính bằng **mm của hệ DB**
+ * (X = Đông, Y = mặt bằng, Z = độ cao — chưa hoán vị).
+ */
+export interface GocToaMm {
+  xMm: number;
+  yMm: number;
+  zMm: number;
+}
+
+/** Không dời — dùng cho tầng mà người gọi không biết toà nhà của nó. */
+export const GOC_TOA_KHONG: GocToaMm = { xMm: 0, yMm: 0, zMm: 0 };
+
+/** `numeric(14,3)` về từ drizzle là **string**. `Number()` tường minh, không `+`. */
+function soMm(gt: number | string | null | undefined): number {
+  const n = Number(gt);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Bản đồ `tangId → chỗ dời của toà chứa tầng ấy`, ĐÃ QUY VỀ GỐC CẢNH.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO HÀM NÀY TỒN TẠI — nợ hình học đã đến hạn, KHÔNG phải chi phí của
+ *     việc gộp nhiều nhà máy
+ * ════════════════════════════════════════════════════════════════════════════
+ * `twin_dat_cho.viTriXMm/YMm` là toạ độ **TRONG TẦNG**: đo được trên dữ liệu
+ * thật, cả 13 toà đều bắt đầu từ 0 (`X[0…55.000]`, `Y[0…58.000]`). Vị trí của
+ * toà nằm ở **`twin_toa_nha.viTriXMm/YMm`** — cột CÓ THẬT và ĐÃ ĐIỀN (QATD-A:
+ * hai toà ở X = 0 và X = 130.000).
+ *
+ * `dungMayVe` trước đây đưa **thẳng** toạ độ đặt chỗ vào cảnh, không số hạng nào
+ * của toà ⇒ **hai toà của CÙNG MỘT nhà máy chồng khít lên nhau**. Chưa ai thấy
+ * vì cả ba màn vận hành chỉ nạp tầng của **một** toà (`chiTietToaNha`), nên phép
+ * dời là một hằng số chung và bức tranh y hệt. Nó sẽ lộ ra ngay lượt đầu tiên
+ * cảnh mang hai toà — và khi ấy dễ bị đổ nhầm cho việc gộp nhà máy.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO QUY VỀ **GỐC CẢNH** CHỨ KHÔNG DÙNG TOẠ ĐỘ TUYỆT ĐỐI
+ * ════════════════════════════════════════════════════════════════════════════
+ * Cảnh vận hành hôm nay vẽ mặt sàn tại **gốc toạ độ** (`CanhVanHanh.San`:
+ * `position=[rongM/2, -0.01, sauM/2]`, không nhận vị trí toà). Cộng toạ độ
+ * TUYỆT ĐỐI cho riêng máy sẽ đẩy máy ra khỏi mặt sàn 130 m — **một lỗi mới do
+ * chính bản vá đẻ ra**, đúng lớp "vá xong quên kiểm nhánh kia".
+ *
+ * Nên chỗ dời ở đây là **hiệu** so với toà NEO (`toaNhaNeoId`, thường là toà
+ * đang xem): toà neo ra `{0,0,0}` ⇒ cảnh một toà **không đổi một pixel nào**,
+ * còn toà thứ hai được dời đúng bằng khoảng cách thật giữa hai toà.
+ *
+ * ⚠⚠ **KHÔNG CỘNG HAI LẦN.** Số hạng duy nhất là `twin_toa_nha.viTri*Mm`. Bộ
+ *   sinh dữ liệu đo đã nướng sẵn 1 km mỗi nhà máy **vào chính cột ấy**
+ *   (`.qa-tapdoan/sinh-tap-doan.mjs:166`), nên một lưới dời cố định chồng lên
+ *   đây sẽ cộng hai lần. Dữ liệu cũ (SIM-FAC) thì toà ở (0,0) — tức khoảng cách
+ *   giữa các nhà máy là **quyết định của bộ sinh, không phải luật của hệ**. Hàm
+ *   này không bịa ra khoảng cách nào; nó chỉ đọc cái đã có.
+ *
+ * @param tangs      tầng kèm `toaNhaId` — lấy từ `chiTietToaNha().tangs`.
+ * @param toaNhas    toà nhà kèm toạ độ — lấy từ `danhSachToaNha()` (numeric là
+ *                   **string**, hàm tự quy đổi).
+ * @param toaNhaNeoId toà làm gốc cảnh. `null` ⇒ giữ toạ độ TUYỆT ĐỐI (cảnh nhiều
+ *                   nhà máy sau này, khi mặt sàn cũng biết vị trí của mình).
+ */
+export function gocToaTheoTang(
+  tangs: readonly { id: number; toaNhaId: number }[],
+  toaNhas: readonly {
+    id: number;
+    viTriXMm?: number | string | null;
+    viTriYMm?: number | string | null;
+    viTriZMm?: number | string | null;
+  }[],
+  toaNhaNeoId: number | null,
+): Map<number, GocToaMm> {
+  const theoToa = new Map<number, GocToaMm>();
+  for (const b of toaNhas) {
+    theoToa.set(b.id, { xMm: soMm(b.viTriXMm), yMm: soMm(b.viTriYMm), zMm: soMm(b.viTriZMm) });
+  }
+  // Toà neo không có trong danh sách (chưa tải xong / ngoài phạm vi) ⇒ neo về 0,
+  // tức giữ nguyên hành vi cũ. KHÔNG được đoán một gốc khác.
+  const neo = (toaNhaNeoId !== null ? theoToa.get(toaNhaNeoId) : null) ?? GOC_TOA_KHONG;
+
+  const ra = new Map<number, GocToaMm>();
+  for (const t of tangs) {
+    const g = theoToa.get(t.toaNhaId);
+    // ⚠ Tầng có toà KHÔNG biết toạ độ ⇒ **không ghi vào bản đồ**. `dungMayVe` khi
+    //   ấy không dời gì — đúng hành vi cũ. Ghi một số 0 bịa ra ở đây sẽ biến
+    //   "chưa biết" thành "biết rồi, bằng gốc", đúng lớp lỗi NT-3.
+    if (!g) continue;
+    ra.set(t.id, { xMm: g.xMm - neo.xMm, yMm: g.yMm - neo.yMm, zMm: g.zMm - neo.zMm });
+  }
+  return ra;
+}
+
 /** Tham số dựng tập máy vẽ trên mặt bằng. */
 export interface ThamSoMayVe {
   may: readonly MayVaoCanh[];
   datChoTheoMay: ReadonlyMap<number, DatChoVaoCanh>;
   kichThuocTheoLoai: ReadonlyMap<string, CoMacDinh>;
   trangThaiTheoMay: ReadonlyMap<number, string>;
+  /**
+   * `tangId → chỗ dời của toà chứa tầng ấy` ({@link gocToaTheoTang}).
+   *
+   * ⚠ Trường này **BẮT BUỘC**, và đó là chủ ý: để mặc định `{0,0,0}` là giữ
+   *   nguyên lỗi cũ ở mọi chỗ gọi quên truyền, mà không cổng nào đỏ. Bắt buộc
+   *   thì `npm run check` gọi tên từng chỗ gọi — bài học "mặc định mới là hàng
+   *   rào". Tầng vắng mặt trong bản đồ ⇒ không dời (hành vi cũ).
+   */
+  gocToaTheoTang: ReadonlyMap<number, GocToaMm>;
   /** `true` = máy nằm TRONG phạm vi đang xem (đã quyết ở trang cha). */
   trongPhamVi: (may: MayVaoCanh, tangId: number | null) => boolean;
   mauNenCanh: string;
@@ -187,8 +292,21 @@ export function dungMayVe(ts: ThamSoMayVe): MayDaDung[] {
        * ★★★ HOÁN VỊ TRỤC — qua `mmSangScene`, KHÔNG viết tay.
        * DB: X = Đông, Y = mặt bằng, Z = độ cao.
        * Scene: x = X, y = Z (độ cao), z = Y (mặt bằng).
+       *
+       * ★★★ Task 17c LỖI HAI — CỘNG GỐC CỦA TOÀ NHÀ. Toạ độ đặt chỗ là toạ độ
+       *   TRONG TẦNG (mọi toà đều bắt đầu từ 0), nên thiếu số hạng này thì hai
+       *   toà của CÙNG MỘT nhà máy chồng khít lên nhau. Số hạng lấy từ
+       *   `twin_toa_nha.viTri*Mm` — xem {@link gocToaTheoTang} về việc vì sao
+       *   đây là chỗ dời DUY NHẤT và vì sao không được cộng thêm một lưới nào.
        */
-      viTri: mmSangScene({ xMm: d.viTriXMm, yMm: d.viTriYMm, zMm: d.viTriZMm }),
+      viTri: (() => {
+        const g = (d.tangId !== null ? ts.gocToaTheoTang.get(d.tangId) : undefined) ?? GOC_TOA_KHONG;
+        return mmSangScene({
+          xMm: g.xMm + d.viTriXMm,
+          yMm: g.yMm + d.viTriYMm,
+          zMm: g.zMm + d.viTriZMm,
+        });
+      })(),
       gocXoayRad: gocTuQuatTrucDung({ x: d.quatX, y: d.quatY, z: d.quatZ, w: d.quatW }),
       /*
        * "Mờ đi" = PHA VỀ NỀN, không phải làm tối: kênh `doMo` của `LoBatchMay`

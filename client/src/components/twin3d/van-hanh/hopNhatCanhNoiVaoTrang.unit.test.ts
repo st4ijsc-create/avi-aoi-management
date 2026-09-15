@@ -116,3 +116,95 @@ describe("★ khớp nối còn lại — mỗi useMemo GỌI đúng hàm của 
     expect(MA).toContain("CO_DU_PHONG");
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ Task 17c — HAI KHỚP NỐI MỚI, TỨC HAI BỀ MẶT LỖI MỚI (G93)              */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ⚠⚠ Cùng lý do đã ghi ở đầu tệp: `hopNhatCanh.unit.test.ts` chứng minh
+ *    `dungMayVe`/`gocToaTheoTang`/`tangIdsDeHoi` ĐÚNG khi được gọi đúng — nó
+ *    **không biết trang gọi bằng đối số nào**. Task 17c thêm đúng hai chỗ nối
+ *    tay, nên hai chỗ ấy phải được ghim ngay tại đây.
+ *
+ *    W4  `gocToaTheoTang: gocToa` bị bỏ khỏi `dungMayVe` ⇒ cảnh trở lại trạng
+ *        thái không cộng gốc toà. Tệ hơn: truyền `new Map()` thì `tsc` XANH và
+ *        mọi lưới module vẫn XANH — đúng lớp "mặc định mới là hàng rào".
+ *
+ *    W5  `tangIdsDeHoi(...)` bị thay lại bằng `.slice(0, 50)` ⇒ cắt IM LẶNG trở
+ *        lại và banner không bao giờ hiện. Phần bị cắt biến mất không tiếng động.
+ */
+describe("★★★ W4 (Task 17c) — cảnh phải CỘNG GỐC TOÀ NHÀ", () => {
+  it("`mayVe` truyền `gocToaTheoTang: gocToa`, KHÔNG phải một Map rỗng", () => {
+    const t = than("mayVe");
+    expect(t).toContain("gocToaTheoTang: gocToa");
+    // Bản vá "cho qua kiểu" — `new Map()` tại chỗ gọi — là đột biến nguy hiểm
+    // nhất vì nó xanh ở MỌI cổng khác.
+    expect(t).not.toMatch(/gocToaTheoTang:\s*new Map\(\s*\)/);
+  });
+
+  it("★ `gocToa` dựng bằng `gocToaTheoTang(...)` và NEO vào toà đang chọn", () => {
+    const t = than("gocToa");
+    expect(t).toContain("gocToaTheoTang(");
+    // Neo phải là TOÀ ĐANG CHỌN. Neo `null` (toạ độ tuyệt đối) sẽ đẩy máy ra
+    // khỏi mặt sàn, vì `CanhVanHanh.San` vẽ ở gốc toạ độ và không nhận vị trí toà.
+    expect(t).toContain("toaNhaId");
+    expect(t).not.toMatch(/gocToaTheoTang\([^)]*,\s*null\s*\)/);
+  });
+
+  it("★★★ trang KHÔNG tự viết phép cộng gốc toà — một luật, một chỗ", () => {
+    // Một bản sao thứ hai của phép cộng ở trang sẽ lệch với `hopNhatCanh.ts` và
+    // không cổng nào đỏ (cùng lý lẽ với phép hoán vị trục ở ca trên).
+    expect(MA).not.toMatch(/viTriXMm\s*\+\s*/);
+    expect(MA).not.toMatch(/\+\s*toaNhaDangChon\?\.viTriXMm/);
+  });
+});
+
+describe("★★★ W5 (Task 17c) — trần tầng: KHÔNG được cắt im lặng", () => {
+  it("★★★ `.slice(0, 50)` đã BIẾN MẤT khỏi trang", () => {
+    // Đây là chính lỗi: `slice` vứt 34/84 tầng mà không một dòng nào kêu.
+    expect(MA).not.toMatch(/\.slice\(\s*0\s*,\s*50\s*\)/);
+  });
+
+  it("`tangIdsHoi` đi qua `tangIdsDeHoi`, và trang giữ lại phần BỊ CẮT", () => {
+    expect(MA).toContain("tangIdsDeHoi(");
+    // Giữ cả đối tượng (`tangDeHoi`) chứ không chỉ `.gui`: không giữ thì con số
+    // bị cắt không tồn tại để mà nói ra.
+    expect(MA).toMatch(/const tangDeHoi\s*=/);
+    expect(MA).toContain("tangDeHoi.gui");
+  });
+
+  it("★★★ có BANNER nói ra, và nó gắn vào con số bị cắt — không phải một cờ hằng", () => {
+    expect(MA).toContain('testId: "banner-tang-vuot-tran"');
+    expect(MA).toMatch(/hien:\s*tangDeHoi\.biCat\s*>\s*0/);
+    // Một banner `hien: true` luôn hiện, hoặc `hien: false` không bao giờ hiện,
+    // đều xanh ở ca "có banner". Ràng buộc vào `biCat` là thứ phân biệt chúng.
+    expect(MA).not.toMatch(/testId: "banner-tang-vuot-tran"[\s\S]{0,200}?hien:\s*(true|false)\b/);
+  });
+
+  it("★★★ banner nêu ĐỦ BA con số thật — cần / trần / thiếu", () => {
+    // "Dữ liệu có thể chưa đủ" là một câu không hành động được. Người dùng phải
+    // đọc được CẦN bao nhiêu, TRẦN bao nhiêu, THIẾU bao nhiêu.
+    const i = MA.indexOf('testId: "banner-tang-vuot-tran"');
+    expect(i).toBeGreaterThan(-1);
+    const khoi = MA.slice(i, i + 900);
+    expect(khoi).toContain("twin3d.vanHanh.tangVuotTran");
+    expect(khoi).toContain("tong: tangDeHoi.tong");
+    expect(khoi).toContain("tran: tangDeHoi.tran");
+    expect(khoi).toContain("thieu: tangDeHoi.biCat");
+  });
+
+  it("★★★ CHỮ người dùng đọc CÓ ĐỦ ba ô thay số, ở CẢ BA ngôn ngữ", () => {
+    // Đo bản dịch THẬT, không đo khoá: một bản dịch thiếu `{{thieu}}` cho ra một
+    // câu cảnh báo không nói được thiếu bao nhiêu — cổng i18n không bắt việc
+    // banner mất nghĩa, nó chỉ so khớp ô thay số giữa ba tệp.
+    for (const ngu of ["vi", "en", "zh"] as const) {
+      const json = JSON.parse(docMaNguon(resolve(GOC, `src/i18n/locales/${ngu}.json`)));
+      const cau = json.twin3d?.vanHanh?.tangVuotTran;
+      expect(cau, `thiếu khoá tangVuotTran ở ${ngu}.json`).toBeTruthy();
+      for (const o of ["{{tong}}", "{{tran}}", "{{thieu}}"]) {
+        expect(cau, `${ngu}.json thiếu ${o}`).toContain(o);
+      }
+    }
+  });
+});

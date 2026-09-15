@@ -243,3 +243,62 @@ export function phamViThuc(
   }
   return { pv: yeuCau, daHaCap: false, capYeuCau: yeuCau.cap };
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ Task 17c LỖI MỘT — TRẦN TẦNG: CẮT THÌ PHẢI NÓI RA                      */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Trần số tầng một lượt hỏi `twinCanh.canhThietKe`.
+ *
+ * ⚠⚠ **PHẢI KHỚP `tangIds: z.array(...).max(50)`** ở `server/routers/twinCanhRouter.ts`.
+ *   Hai con số ở hai nơi là hai nguồn sự thật: nới một bên thì Zod ném
+ *   `BAD_REQUEST` và cả cảnh trắng, hạ một bên thì client tự cắt sớm hơn cần.
+ *   Đây là hằng CÓ TÊN chính vì thế — để lưới đo được GIÁ TRỊ, không phải đếm
+ *   chính tả một dòng mã.
+ */
+export const TRAN_TANG_MOI_LUOT = 50;
+
+/** Kết quả áp trần: cái GỬI ĐI, và cái BỊ BỎ LẠI — vế thứ hai không được giấu. */
+export interface TangDeHoi {
+  /** Danh sách tầng thật sự gửi lên server (≤ `tran`). */
+  gui: number[];
+  /** Tổng số tầng CẦN hỏi, trước khi cắt. */
+  tong: number;
+  /** Số tầng bị bỏ lại. `0` = không cắt gì. */
+  biCat: number;
+  /** Trần đang áp — trả ra để giao diện nêu con số THẬT, không hằng hoá lần hai. */
+  tran: number;
+}
+
+/**
+ * Áp trần lên danh sách tầng sẽ hỏi, **và trả về số tầng bị bỏ lại**.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO HÀM NÀY TỒN TẠI THAY VÌ MỘT `.slice(0, 50)`
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản cũ ở `TwinVanHanh.tsx` (và cả `TwinLine`/`TwinMay`) viết thẳng
+ * `dsTang.map(s => s.id).slice(0, 50)`. `slice` **không kêu**: phần dư biến mất
+ * và màn hình hiện một tập đoàn thiếu một phần ba, **không lỗi, không banner**.
+ * Ba nhà máy QATD = 12 toà × 7 tầng = **84 tầng**, tức 34 tầng bị vứt im lặng
+ * ngay lượt đầu tiên ai đó gộp nhiều nhà máy vào một lượt hỏi.
+ *
+ * Đây đúng lớp lỗi mà chính module này cấm ở §F2: *"khai ĐẦU VÀO ≠ ĐẦU RA"*, và
+ * là anh em với "373 máy chưa xếp chỗ". Bản vá **không phải** nới trần lên cho
+ * to — nới một mình ở client thì Zod ở server vẫn ném `BAD_REQUEST` và cảnh
+ * trắng hoàn toàn. Bản vá là: **cắt thì phải trả về con số bị cắt**, và trang
+ * phải hiện nó bằng chữ người dùng đọc được.
+ *
+ * ⚠ Trần `<= 0` được coi là "không cắt": một trần 0 sẽ làm cảnh trắng trong im
+ *   lặng, tức đúng lỗi này ở dạng nặng hơn.
+ */
+export function tangIdsDeHoi(
+  tangIds: readonly number[],
+  tran: number = TRAN_TANG_MOI_LUOT,
+): TangDeHoi {
+  const tong = tangIds.length;
+  if (!Number.isFinite(tran) || tran <= 0 || tong <= tran) {
+    return { gui: [...tangIds], tong, biCat: 0, tran };
+  }
+  return { gui: tangIds.slice(0, tran), tong, biCat: tong - tran, tran };
+}

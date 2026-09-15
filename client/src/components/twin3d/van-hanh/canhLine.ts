@@ -93,6 +93,19 @@ export function dungHinhLine(
    * ★ Đổi mm → m NGAY tại đây, và hoán trục: `viTriZMm` của bản ghi là **chiều
    *   cao**, còn `y` của cảnh three là chiều cao. Nhầm hai trục này làm trạm
    *   nằm ngửa trên sàn mà KHÔNG lỗi nào nổ — giữ đúng thứ tự của bản gốc.
+   *
+   * ⚠⚠⚠ **MÓN NỢ CÒN MỞ (Task 17c) — CHỖ NÀY CHƯA CỘNG GỐC TOÀ NHÀ.**
+   *   `hopNhatCanh.dungMayVe` đã cộng `twin_toa_nha.viTri*Mm` cho MÁY
+   *   (xem `gocToaTheoTang`), nhưng đường tâm chuyền ở đây vẫn dựng tâm trạm
+   *   từ `twin_dat_cho` TRẦN. Hôm nay **không lệch**, và lý do phải nói rõ:
+   *   cả ba màn vận hành chỉ nạp tầng của MỘT toà và neo cảnh vào chính toà
+   *   ấy, nên mọi chỗ dời đều bằng 0.
+   *
+   *   ⇒ Ngay khi một cảnh mang HAI toà (gộp nhiều nhà máy — Task 18/19), máy
+   *     sẽ dời mà trạm thì không: đường tâm chuyền **đứt khỏi chính máy của
+   *     nó**, và không lỗi nào nổ. Ai làm Task 18/19 phải truyền cùng bản đồ
+   *     `gocToaTheoTang` xuống đây TRƯỚC khi bỏ neo một-toà. Đây là lời khai
+   *     có hạn sử dụng, không phải một chú thích vĩnh viễn.
    */
   const datChoTram = new Map<number, { x: number; y: number; z: number }>();
   for (const d of datCho) {

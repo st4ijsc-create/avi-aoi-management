@@ -79,6 +79,7 @@ import {
   dungNhanMay,
   gopNhan,
   dungCanhBao3D,
+  gocToaTheoTang,
   CO_DU_PHONG,
 } from "@/components/twin3d/van-hanh/hopNhatCanh";
 import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
@@ -138,6 +139,7 @@ import { useAnhLichSu } from "@/components/twin3d/van-hanh/useAnhLichSu";
 import {
   phamViThuc,
   phanGiaiNap,
+  tangIdsDeHoi,
   tapDoiSoatTheoNap,
   yeuCauBiBoQua,
   type MucChon,
@@ -585,6 +587,12 @@ export function ThanTwinVanHanh() {
         ten?: string;
         rongMm: string | number;
         sauMm: string | number;
+        // ★ Task 17c — vị trí của toà trong nhà máy. `numeric` về từ drizzle là
+        //   CHUỖI ở lối `danhSachToaNha` (không qua `chuoiRaSo`), nên kiểu phải
+        //   nói đúng điều đó; `gocToaTheoTang` tự quy đổi bằng `Number()`.
+        viTriXMm?: string | number;
+        viTriYMm?: string | number;
+        viTriZMm?: string | number;
       }>,
     [toaNhaQ.data],
   );
@@ -612,7 +620,15 @@ export function ThanTwinVanHanh() {
     { enabled: toaNhaId !== null, retry: false },
   );
   const dsTang = useMemo(
-    () => (chiTietQ.data?.tangs ?? []) as Array<{ id: number; capSo?: number; ten?: string }>,
+    // ★ `toaNhaId` có thật trên mọi hàng `twin_tang` (`chiTietToaNha` trả nguyên
+    //   hàng) — Task 17c cần nó để tra gốc toà của từng tầng.
+    () =>
+      (chiTietQ.data?.tangs ?? []) as Array<{
+        id: number;
+        toaNhaId: number;
+        capSo?: number;
+        ten?: string;
+      }>,
     [chiTietQ.data],
   );
   const mucTang = useMemo<MucChon[]>(
@@ -622,6 +638,20 @@ export function ThanTwinVanHanh() {
         nhan: s.ten || (s.capSo != null ? `Tầng ${s.capSo}` : `#${s.id}`),
       })),
     [dsTang],
+  );
+
+  /**
+   * ★★★ Task 17c LỖI HAI — chỗ dời của TOÀ NHÀ cho từng tầng.
+   *
+   * `twin_dat_cho.viTriXMm/YMm` là toạ độ TRONG TẦNG (mọi toà đều bắt đầu từ 0),
+   * nên thiếu số hạng này thì hai toà của **cùng một nhà máy** chồng khít lên
+   * nhau. Neo vào **toà đang chọn** ⇒ cảnh một toà (hình dạng duy nhất hôm nay)
+   * không đổi một pixel nào; xem docblock `gocToaTheoTang`.
+   */
+  const gocToa = useMemo(
+    () =>
+      gocToaTheoTang(dsTang, dsToaNha, toaNhaId),
+    [dsTang, dsToaNha, toaNhaId],
   );
 
   /** Tầng ĐANG HIỆN — từ URL, rơi về tầng đầu của toà đang chọn. */
@@ -694,7 +724,14 @@ export function ThanTwinVanHanh() {
    *   đổi rõ ràng có lợi. Máy ngoài tầng đang hiện KHÔNG được vẽ — bộ lọc vẽ là
    *   `d.tangId === tangId`, xem `mayVe` bên dưới.
    */
-  const tangIdsHoi = useMemo(() => dsTang.map((s) => s.id).slice(0, 50), [dsTang]);
+  /*
+   * ★★★ Task 17c LỖI MỘT — `.slice(0, 50)` cũ CẮT IM LẶNG.
+   *   `slice` không kêu: 84 tầng (ba nhà máy QATD) mất 34 tầng, không lỗi không
+   *   banner. Nay trần là hằng CÓ TÊN khớp `.max()` của Zod ở router, và phần bị
+   *   cắt đi ra `banner-tang-vuot-tran` bên dưới. Xem `tangIdsDeHoi`.
+   */
+  const tangDeHoi = useMemo(() => tangIdsDeHoi(dsTang.map((s) => s.id)), [dsTang]);
+  const tangIdsHoi = tangDeHoi.gui;
 
   // Hình học + cây phân cấp.
   // ★ Đợt 40 (QA Đợt 39 #5) — `placeholderData`: hai pha `tangIds` ([] → thật) đổi KHOÁ truy vấn ⇒ `data`
@@ -1224,6 +1261,7 @@ export function ThanTwinVanHanh() {
         datChoTheoMay,
         kichThuocTheoLoai,
         trangThaiTheoMay,
+        gocToaTheoTang: gocToa,
         trongPhamVi: (mv, tangIdCuaDatCho) =>
           trongPhamVi(
             {
@@ -1240,7 +1278,7 @@ export function ThanTwinVanHanh() {
         tiLePhaNgoaiPhamVi: TI_LE_PHA_NGOAI_PHAM_VI,
         congCu: { mauCss, phaVeNen, mauChoTrangThai, hinhKhoiCho },
       }),
-    [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, phamVi, factoryId, mauNenCanh],
+    [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, gocToa, phamVi, factoryId, mauNenCanh],
   );
 
   /*
@@ -2710,6 +2748,29 @@ export function ThanTwinVanHanh() {
       dataPhu: {
         "data-so": tapDs.soNgoaiLuotNap,
         "data-moi-toa-da-hoi": moiToaDaHoi ? "1" : "0",
+      },
+    });
+
+    /*
+     * ── Task 17c LỖI MỘT — TRẦN TẦNG: cắt thì phải NÓI RA.
+     *   `.slice(0, 50)` cũ vứt phần dư **không một dòng nào kêu**. Với 84 tầng
+     *   của ba nhà máy QATD, đó là 34 tầng biến mất và một cảnh thiếu một phần
+     *   ba mà người dùng tin là đủ. Banner nêu CẢ BA con số thật (cần / trần /
+     *   thiếu) chứ không nói chung chung "dữ liệu có thể chưa đủ".
+     */
+    ds.push({
+      testId: "banner-tang-vuot-tran",
+      nhom: "duLieu",
+      hien: tangDeHoi.biCat > 0,
+      noiDung: t(
+        "twin3d.vanHanh.tangVuotTran",
+        "Toà này có {{tong}} tầng, một lượt nạp chỉ hỏi được {{tran}} — {{thieu}} tầng CHƯA được nạp, máy ở đó không hiện trên cảnh.",
+        { tong: tangDeHoi.tong, tran: tangDeHoi.tran, thieu: tangDeHoi.biCat },
+      ),
+      dataPhu: {
+        "data-tong-tang": tangDeHoi.tong,
+        "data-tran-tang": tangDeHoi.tran,
+        "data-tang-bi-cat": tangDeHoi.biCat,
       },
     });
 

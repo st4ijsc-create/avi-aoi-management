@@ -8,12 +8,17 @@
  *   không chứng minh gì (G5/G32).
  */
 import { describe, it, expect } from "vitest";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 import {
   phanGiaiNap,
   phamViThuc,
   tapDoiSoatTheoNap,
+  tangIdsDeHoi,
   yeuCauBiBoQua,
+  TRAN_TANG_MOI_LUOT,
   type MucChon,
   type TapCoSan,
 } from "./boChonNap";
@@ -226,5 +231,96 @@ describe("★★★ phamViThuc — F3: `?pv=tapdoan` ĐANG NÓI DỐI", () => {
       expect(kq.pv).toEqual({ cap, id: 5 });
       expect(kq.daHaCap).toBe(false);
     }
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ Task 17c LỖI MỘT — TRẦN TẦNG: CẮT THÌ PHẢI NÓI RA                      */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ LỖI ĐANG CÓ: `.slice(0, 50)` KHÔNG KÊU
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ba màn vận hành đều viết `dsTang.map(s => s.id).slice(0, 50)`. Ba nhà máy
+ * QATD = 12 toà × 7 tầng = **84 tầng**; `slice` vứt **34 tầng** và màn hiện một
+ * tập đoàn thiếu một phần ba, **không lỗi, không banner**.
+ *
+ * Bản vá KHÔNG phải "nới trần cho to": trần thật nằm ở Zod `.max(50)` của
+ * `canhThietKe`, nới một mình ở client thì server ném `BAD_REQUEST` và cảnh
+ * TRẮNG HOÀN TOÀN — tệ hơn hẳn. Bản vá là **trả về con số bị cắt** để trang nói
+ * ra bằng chữ người dùng đọc được.
+ *
+ * ⚠ Ca "84 tầng" dùng đúng con số của dữ liệu đo, không phải một số tròn tiện tay.
+ */
+describe("Task 17c — tangIdsDeHoi: cắt thì phải NÓI RA", () => {
+  const day = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+
+  it("★★★ 84 tầng (3 nhà máy QATD) ⇒ gửi 50 và KHAI 34 tầng bị bỏ lại", () => {
+    const kq = tangIdsDeHoi(day(84));
+    expect(kq.gui).toHaveLength(50);
+    expect(kq.tong).toBe(84);
+    expect(kq.biCat).toBe(34);
+    expect(kq.tran).toBe(50);
+    // ★ Bất biến: gửi + bị cắt = tổng. Không tầng nào rơi vào khe giữa.
+    expect(kq.gui.length + kq.biCat).toBe(kq.tong);
+  });
+
+  it("★★★ ĐỐI CHỨNG — dưới trần thì KHÔNG khai cắt (banner không được kêu oan)", () => {
+    // Không có ca này, một bản vá `biCat = tong` luôn kêu vẫn xanh ở ca trên —
+    // và người dùng đọc một cảnh báo sai ở MỌI màn một toà (7 tầng).
+    const kq = tangIdsDeHoi(day(7));
+    expect(kq.gui).toHaveLength(7);
+    expect(kq.biCat).toBe(0);
+    expect(kq.tong).toBe(7);
+  });
+
+  it("★★★ ĐÚNG BẰNG trần ⇒ không cắt, không kêu (biên dưới)", () => {
+    const kq = tangIdsDeHoi(day(50));
+    expect(kq.gui).toHaveLength(50);
+    expect(kq.biCat).toBe(0);
+  });
+
+  it("★★★ VƯỢT trần ĐÚNG MỘT ⇒ kêu đúng một (biên trên)", () => {
+    const kq = tangIdsDeHoi(day(51));
+    expect(kq.gui).toHaveLength(50);
+    expect(kq.biCat).toBe(1);
+  });
+
+  it("★★★ GIỮ ĐÚNG THỨ TỰ và giữ chính những id đầu — không xáo, không bịa", () => {
+    const kq = tangIdsDeHoi([101, 102, 103], 2);
+    expect(kq.gui).toEqual([101, 102]);
+    expect(kq.biCat).toBe(1);
+  });
+
+  it("danh sách rỗng ⇒ rỗng, không kêu", () => {
+    const kq = tangIdsDeHoi([]);
+    expect(kq.gui).toEqual([]);
+    expect(kq.tong).toBe(0);
+    expect(kq.biCat).toBe(0);
+  });
+
+  it("★ trần ≤ 0 ⇒ KHÔNG cắt — một trần 0 sẽ làm cảnh trắng trong im lặng", () => {
+    expect(tangIdsDeHoi(day(3), 0).gui).toHaveLength(3);
+    expect(tangIdsDeHoi(day(3), 0).biCat).toBe(0);
+  });
+
+  it("★★★ TRẦN CLIENT PHẢI KHỚP `.max()` CỦA SERVER — hai nguồn sự thật là một lỗi", () => {
+    /*
+     * ⚠⚠ Đây là ô chặn DRIFT, không phải trang trí. Nới trần ở client mà quên
+     *   server ⇒ Zod ném `BAD_REQUEST` ⇒ **cảnh trắng hoàn toàn**; hạ ở server mà
+     *   quên client ⇒ cắt sớm hơn cần. Ô này đọc GIÁ TRỊ THẬT trong mã router,
+     *   không đếm chính tả: nó đỏ khi một trong hai bên đổi mà bên kia không.
+     *
+     * ★ `docMaNguon` chuẩn hoá xuống dòng (G150) — nếu không, cùng một tệp đọc
+     *   trên cây checkout CRLF cho kết quả khác.
+     */
+    const ma = docMaNguon(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../server/routers/twinCanhRouter.ts"),
+    );
+    const khop = ma.match(/tangIds:\s*z\s*\.array\(z\.number\(\)\.int\(\)\.positive\(\)\)\.max\((\d+)\)\.optional\(\)/);
+    // Không tìm thấy ⇒ HỎNG, không phải "đạt": hình dạng mã đã đổi và ô này mù.
+    expect(khop, "không đọc được `tangIds ... .max(n)` trong twinCanhRouter.ts").not.toBeNull();
+    expect(Number(khop![1])).toBe(TRAN_TANG_MOI_LUOT);
   });
 });

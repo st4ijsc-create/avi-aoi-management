@@ -19949,6 +19949,7 @@
       "chonTang": "Floor",
       "haCapPhamVi": "Showing data for ONE factory ({{soNhaMay}} factories in the system). The Corporate scope cannot load several factories at once yet — use the Factory box to switch.",
       "linkBiBoQua": "The link that opened this screen points to a factory/building/floor that no longer exists — showing the closest selection.",
+      "tangVuotTran": "This building has {{tong}} floors but one load can only request {{tran}} — {{thieu}} floors were NOT loaded, and machines on them are missing from the scene.",
       "mayTangKhac": "{{so}} more machines are placed on another floor of this building — change the Floor box to see them",
       "mayToaKhac": "{{so}} machines are outside this load (other buildings were not queried) — whether they are placed is not known yet",
       "moPanelPhai": "Open the action panel on the right",

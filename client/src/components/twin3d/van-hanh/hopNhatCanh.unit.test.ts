@@ -31,13 +31,16 @@ import {
   dungNhanMay,
   gopNhan,
   dungCanhBao3D,
+  gocToaTheoTang,
   CO_DU_PHONG,
+  GOC_TOA_KHONG,
   HO_NHAN_MAY,
   HO_CANH_BAO,
   type MayVaoCanh,
   type DatChoVaoCanh,
   type CongCuMau,
   type MayDaDung,
+  type GocToaMm,
 } from "./hopNhatCanh";
 
 /* ── Giáo cụ TẤT ĐỊNH: không đọc DOM, không đọc theme ─────────────────────── */
@@ -83,11 +86,13 @@ const tsCoBan = (
   mays: MayVaoCanh[],
   datChos: Array<[number, DatChoVaoCanh]>,
   trong: (m: MayVaoCanh) => boolean = () => true,
+  goc: ReadonlyMap<number, GocToaMm> = new Map(),
 ) => ({
   may: mays,
   datChoTheoMay: new Map(datChos),
   kichThuocTheoLoai: new Map<string, typeof CO_DU_PHONG>(),
   trangThaiTheoMay: new Map<number, string>(),
+  gocToaTheoTang: goc,
   trongPhamVi: trong,
   mauNenCanh: "NEN",
   tiLePhaNgoaiPhamVi: 0.72,
@@ -383,5 +388,200 @@ describe("★★★ Đợt 35 — dungNhanMay.andonTheoMay", () => {
   it("không truyền / tập rỗng ⇒ như cũ (chỉ theo trạng thái)", () => {
     expect(goi().every((n) => n.batThuong === false)).toBe(true);
     expect(goi(new Set()).every((n) => n.batThuong === false)).toBe(true);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ Task 17c LỖI HAI — GỐC CỦA TOÀ NHÀ                                     */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ CA TRUNG TÂM: **HAI TOÀ CỦA CÙNG MỘT NHÀ MÁY KHÔNG ĐƯỢC GIAO NHAU**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đo được trên CSDL thật (`twin_toa_nha`, 13 hàng, 2026-09-15):
+ *
+ *     QATD-A toà T1  X=0        Y=0        rộng 110.000  sâu 80.000
+ *     QATD-A toà T2  X=130.000  Y=0        rộng 110.000  sâu 80.000
+ *     … và `twin_dat_cho` của CẢ HAI toà bắt đầu từ X=0, Y=0.
+ *
+ * ⇒ Không cộng gốc toà thì hai toà **chồng khít**. Số của lưới lấy ĐÚNG từ bảng
+ *   trên, không phải số tròn bịa ra — để ca này nói về dữ liệu có thật.
+ *
+ * ⚠ Lưới đo bằng **giá trị trả về** (mét, hệ cảnh), KHÔNG bằng
+ *   `getBoundingClientRect`: môi trường `node`/jsdom không có bộ dựng bố cục và
+ *   mọi hình chữ nhật đều trả 0.
+ *
+ * ⚠⚠ **KHÔNG CỘNG HAI LẦN.** Ca "đúng bằng hiệu toạ độ hai toà" ghim rằng phép
+ *   dời bằng ĐÚNG số hạng của `twin_toa_nha`, không phải số hạng ấy cộng thêm
+ *   một bước lưới nào. Bộ sinh dữ liệu đã nướng 1 km mỗi nhà máy vào chính cột
+ *   đó, nên một lưới cố định chồng lên sẽ làm ca này đỏ.
+ */
+describe("Task 17c — cộng gốc toà nhà: hai toà không được chồng lên nhau", () => {
+  /** Hai toà của CÙNG nhà máy, đúng số đo được của QATD-A. */
+  const TOA = [
+    { id: 65, viTriXMm: "0.000", viTriYMm: "0.000", viTriZMm: "0.000" },
+    { id: 66, viTriXMm: "130000.000", viTriYMm: "0.000", viTriZMm: "0.000" },
+  ];
+  const TANG = [
+    { id: 165, toaNhaId: 65 },
+    { id: 265, toaNhaId: 66 },
+  ];
+  /** Bề rộng/sâu thật của toà QATD (mm) — dùng để dựng bao hình. */
+  const RONG_MM = 110_000;
+  const SAU_MM = 80_000;
+
+  /** Máy ở CÙNG toạ độ trong tầng của mình — điều kiện để chồng nhau lộ ra. */
+  const cungCho = (tangId: number) =>
+    datCho({ tangId, viTriXMm: 1000, viTriYMm: 2000, viTriZMm: 0 });
+
+  it("★★★ ĐỐI CHỨNG DƯƠNG — KHÔNG cộng gốc thì hai máy TRÙNG KHÍT (chính là lỗi)", () => {
+    // Ô này mô tả lỗi, và nó giữ cho ca dưới có sức bác bỏ: nếu hai giáo cụ vốn
+    // đã khác chỗ sẵn thì ca "không giao nhau" xanh mà chẳng chứng minh gì.
+    const ra = dungMayVe(
+      tsCoBan([may(1), may(2)], [[1, cungCho(165)], [2, cungCho(265)]], () => true, new Map()),
+    );
+    expect(ra).toHaveLength(2);
+    expect(ra[0].viTri).toEqual(ra[1].viTri);
+  });
+
+  it("★★★ CỘNG GỐC ⇒ hai máy cách nhau ĐÚNG 130 m, bằng hiệu toạ độ hai toà", () => {
+    const goc = gocToaTheoTang(TANG, TOA, 65);
+    const ra = dungMayVe(
+      tsCoBan([may(1), may(2)], [[1, cungCho(165)], [2, cungCho(265)]], () => true, goc),
+    );
+    expect(ra).toHaveLength(2);
+    // Toà neo (65) KHÔNG dời — cảnh một toà không đổi một pixel nào.
+    expect(ra[0].viTri).toEqual({ x: 1, y: 0, z: 2 });
+    // Toà 66 dời ĐÚNG 130.000 mm = 130 m trên trục Đông, KHÔNG hơn không kém.
+    expect(ra[1].viTri).toEqual({ x: 131, y: 0, z: 2 });
+    expect(ra[1].viTri.x - ra[0].viTri.x).toBe(130);
+  });
+
+  it("★★★ BAO HÌNH hai toà KHÔNG GIAO NHAU — dựng từ CHÍNH cảnh mà `dungMayVe` trả", () => {
+    /*
+     * ⚠⚠ Bao hình dựng từ **vị trí máy trong cảnh**, KHÔNG từ bản đồ `goc`. Bản
+     *   đầu của ca này đọc thẳng `goc.get(tangId)` và vì thế **vẫn xanh khi gỡ
+     *   phép cộng ra khỏi `dungMayVe`** — nó đo bộ dựng bản đồ, không đo cảnh.
+     *   Đo trên đầu ra thật là điều kiện để ca này biết kêu.
+     *
+     * ⚠ Máy đặt ở góc (1.000, 2.000) trong tầng của nó, nên mép toà = vị trí máy
+     *   trừ đúng chỗ đặt trong tầng. Không có hằng số nào bịa thêm.
+     */
+    const goc = gocToaTheoTang(TANG, TOA, 65);
+    const ra = dungMayVe(
+      tsCoBan([may(1), may(2)], [[1, cungCho(165)], [2, cungCho(265)]], () => true, goc),
+    );
+    const bao = (m: (typeof ra)[number]) => {
+      const mepX = m.viTri.x - 1000 / 1000; // trừ chỗ đặt TRONG tầng (1.000 mm)
+      const mepZ = m.viTri.z - 2000 / 1000; // trừ chỗ đặt TRONG tầng (2.000 mm)
+      return { x1: mepX, x2: mepX + RONG_MM / 1000, z1: mepZ, z2: mepZ + SAU_MM / 1000 };
+    };
+    const giaoNhau = (a: ReturnType<typeof bao>, b: ReturnType<typeof bao>) =>
+      a.x1 < b.x2 && b.x1 < a.x2 && a.z1 < b.z2 && b.z1 < a.z2;
+
+    const a = bao(ra[0]);
+    const b = bao(ra[1]);
+    expect(giaoNhau(a, b)).toBe(false);
+    // Khoảng hở đúng bằng 130 − 110 = 20 m, không phải một con số bịa.
+    expect(b.x1 - a.x2).toBe(20);
+    // Đối chứng: phép đo BIẾT KÊU — một bao hình tự giao với chính nó.
+    expect(giaoNhau(a, a)).toBe(true);
+  });
+
+  it("★★★ máy TRONG CÙNG một toà KHÔNG bị dời tương đối với nhau", () => {
+    // Bản vá không được làm méo bố cục bên trong một tầng: cùng gốc ⇒ hiệu giữ nguyên.
+    const goc = gocToaTheoTang(TANG, TOA, 65);
+    const ra = dungMayVe(
+      tsCoBan(
+        [may(1), may(2)],
+        [
+          [1, datCho({ tangId: 265, viTriXMm: 1000, viTriYMm: 2000, viTriZMm: 0 })],
+          [2, datCho({ tangId: 265, viTriXMm: 4000, viTriYMm: 9000, viTriZMm: 0 })],
+        ],
+        () => true,
+        goc,
+      ),
+    );
+    expect(ra[1].viTri.x - ra[0].viTri.x).toBe(3);
+    expect(ra[1].viTri.z - ra[0].viTri.z).toBe(7);
+  });
+
+  it("★★★ HOÁN VỊ TRỤC giữ nguyên khi cộng gốc — gốc Y của DB vào scene.z, Z vào scene.y", () => {
+    // Ba số khác hẳn nhau, nếu không mọi hoán vị đều cho cùng kết quả.
+    const goc = new Map<number, GocToaMm>([[1, { xMm: 100_000, yMm: 200_000, zMm: 300_000 }]]);
+    const [m] = dungMayVe(tsCoBan([may(1)], [[1, datCho()]], () => true, goc));
+    expect(m.viTri).toEqual({ x: 101, y: 303, z: 202 });
+  });
+
+  it("★★★ tầng KHÔNG có trong bản đồ ⇒ KHÔNG dời (hành vi cũ), không mượn gốc của tầng khác", () => {
+    const goc = new Map<number, GocToaMm>([[999, { xMm: 500_000, yMm: 0, zMm: 0 }]]);
+    const [m] = dungMayVe(tsCoBan([may(1)], [[1, datCho({ tangId: 1 })]], () => true, goc));
+    expect(m.viTri).toEqual({ x: 1, y: 3, z: 2 });
+  });
+
+  it("★★★ `tangId = null` ⇒ không dời, và KHÔNG nổ", () => {
+    const goc = gocToaTheoTang(TANG, TOA, 65);
+    const [m] = dungMayVe(tsCoBan([may(1)], [[1, datCho({ tangId: null })]], () => true, goc));
+    expect(m.viTri).toEqual({ x: 1, y: 3, z: 2 });
+  });
+});
+
+describe("gocToaTheoTang — bản đồ chỗ dời", () => {
+  const TOA = [
+    { id: 65, viTriXMm: "0.000", viTriYMm: "0.000", viTriZMm: "0.000" },
+    { id: 66, viTriXMm: "130000.000", viTriYMm: "100000.000", viTriZMm: "0.000" },
+  ];
+  const TANG = [
+    { id: 165, toaNhaId: 65 },
+    { id: 265, toaNhaId: 66 },
+    { id: 365, toaNhaId: 77 }, // toà KHÔNG có trong danh sách
+  ];
+
+  it("★★★ numeric về từ drizzle là CHUỖI — phải quy đổi, không được NỐI CHUỖI", () => {
+    // `"130000.000" + 1000` = `"130000.0001000"`. Không throw, và nhà máy bay ra
+    // ngoài vũ trụ — đúng cảnh báo ở đầu `hopNhatCanh.ts`.
+    const g = gocToaTheoTang(TANG, TOA, 65);
+    expect(g.get(265)).toEqual({ xMm: 130_000, yMm: 100_000, zMm: 0 });
+    expect(typeof g.get(265)!.xMm).toBe("number");
+  });
+
+  it("★★★ toà NEO luôn ra {0,0,0} — cảnh một toà KHÔNG đổi một pixel nào", () => {
+    // Đây là điều kiện để bản vá không đẻ ra lỗi mới: mặt sàn cảnh vận hành vẽ
+    // ở gốc toạ độ và KHÔNG nhận vị trí toà, nên neo lệch = máy rời khỏi sàn.
+    expect(gocToaTheoTang(TANG, TOA, 65).get(165)).toEqual(GOC_TOA_KHONG);
+    expect(gocToaTheoTang(TANG, TOA, 66).get(265)).toEqual(GOC_TOA_KHONG);
+  });
+
+  it("★★★ đổi toà NEO ⇒ mọi chỗ dời tịnh tiến, KHOẢNG CÁCH giữa hai toà không đổi", () => {
+    const a = gocToaTheoTang(TANG, TOA, 65);
+    const b = gocToaTheoTang(TANG, TOA, 66);
+    expect(b.get(165)).toEqual({ xMm: -130_000, yMm: -100_000, zMm: 0 });
+    expect(a.get(265)!.xMm - a.get(165)!.xMm).toBe(b.get(265)!.xMm - b.get(165)!.xMm);
+  });
+
+  it("★★★ neo = null ⇒ giữ toạ độ TUYỆT ĐỐI (đường cho cảnh nhiều nhà máy sau này)", () => {
+    const g = gocToaTheoTang(TANG, TOA, null);
+    expect(g.get(165)).toEqual({ xMm: 0, yMm: 0, zMm: 0 });
+    expect(g.get(265)).toEqual({ xMm: 130_000, yMm: 100_000, zMm: 0 });
+  });
+
+  it("★★★ tầng có toà KHÔNG BIẾT toạ độ ⇒ VẮNG MẶT khỏi bản đồ, không phải 0 bịa ra", () => {
+    // "Chưa biết" hoá thành "biết rồi, bằng gốc" là đúng lớp lỗi NT-3.
+    const g = gocToaTheoTang(TANG, TOA, 65);
+    expect(g.has(365)).toBe(false);
+    expect(g.size).toBe(2);
+  });
+
+  it("★★★ toà NEO không có trong danh sách ⇒ neo về 0, giữ nguyên hành vi cũ", () => {
+    // Ca có thật: `danhSachToaNha` chưa tải xong, hoặc toà ngoài phạm vi tenant.
+    const g = gocToaTheoTang(TANG, TOA, 9999);
+    expect(g.get(165)).toEqual({ xMm: 0, yMm: 0, zMm: 0 });
+    expect(g.get(265)).toEqual({ xMm: 130_000, yMm: 100_000, zMm: 0 });
+  });
+
+  it("danh sách rỗng ⇒ bản đồ rỗng, không nổ", () => {
+    expect(gocToaTheoTang([], [], null).size).toBe(0);
+    expect(gocToaTheoTang(TANG, [], 65).size).toBe(0);
   });
 });

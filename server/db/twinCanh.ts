@@ -49,7 +49,7 @@ import {
   robots,
   robotTelemetry,
 } from "../../drizzle/schema";
-import { trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
+import { idsTrongPhamVi, trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 /*
  * ★ PH-12 — phép chọn toà/tầng từ các hàng đặt chỗ là MODULE THUẦN nằm ở
  *   `client/src/components/twin3d/van-hanh/` và server import THẲNG nó, đúng
@@ -913,18 +913,18 @@ export async function goKhoiMatBang(
  *   string" được phép tồn tại. Để string lọt lên client thì mọi phép cộng toạ độ
  *   trên UI thành nối chuỗi (xem cảnh báo đầu file), và biểu hiện là máy nhảy ra
  *   ngoài vũ trụ chứ không phải một lỗi đọc được.
+ *
+ * ★★★ Task 17b — CỔNG PHẠM VI GỘP MỘT LẦN, KHÔNG PHÂN GIẢI LẠI TỪNG TẦNG.
+ *   Bản trước lặp `nhaMayCuaTang` + `trongPhamVi` cho mỗi tầng ⇒ **4N+1 câu** với
+ *   người có phạm vi (đo được: 84 tầng = 337 câu, khớp tuyệt đối công thức). Hàng
+ *   rào GIỮ NGUYÊN NGHĨA — chỉ đổi chỗ đặt cổng, xem {@link locTangTrongPhamVi}.
  */
 export async function traDatChoTheoTang(tangIds: readonly number[], scope?: PhamViNguoiXem) {
   const d = await getDb();
   if (!d) throw new DbUnavailableError();
   if (tangIds.length === 0) return [];
 
-  const hopLe: number[] = [];
-  for (const tangId of new Set(tangIds)) {
-    const factoryId = await nhaMayCuaTang(d, tangId);
-    if (factoryId === null) continue;
-    if (await trongPhamVi("factory", factoryId, scope)) hopLe.push(tangId);
-  }
+  const hopLe = await locTangTrongPhamVi(d, tangIds, scope);
   if (hopLe.length === 0) return [];
 
   const hang = await d.select().from(twinDatCho).where(inArray(twinDatCho.tangId, hopLe));
@@ -1811,28 +1811,70 @@ export async function traVungAnToan(
 }
 
 /**
- * Lọc danh sách tầng xuống những tầng NGƯỜI GỌI được thấy.
+ * Lọc danh sách tầng xuống những tầng NGƯỜI GỌI được thấy — **cổng chung** của
+ * `traDatChoTheoTang` và `traVungAnToan`.
  *
  * ★ Tra ngược `twin_tang → twin_toa_nha → factoryId` rồi mới kiểm phạm vi —
  *   KHÔNG tin `tangId` trong input. Đây là cùng khuôn mà `ghiDeTuongBaoSinh`
  *   dùng; bài học `pham-vi-tenant-dot-lon`: lọc theo cột client tự khai là
  *   không có hàng rào.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ Task 17b — PHÂN GIẢI PHẠM VI **MỘT LẦN** CHO CẢ DANH SÁCH
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản trước gọi `trongPhamVi` **trong một vòng lặp theo tầng**, và mỗi lời gọi
+ * ấy phân giải lại phạm vi từ đầu (`idsTrongPhamVi` → `resolveTenantFactoryScope`
+ * + một câu `factories`), không bộ nhớ đệm nào ở giữa. Chi phí đo được bằng bộ
+ * đếm của chính sản phẩm (`queryMonitor`), khớp TUYỆT ĐỐI với công thức:
+ *
+ *     traDatChoTheoTang(N)  admin 2N+1 · có phạm vi 4N+1   → 84 tầng = **337 câu**
+ *     traVungAnToan(N)      admin  N+2 · có phạm vi 3N+2   → 84 tầng = **254 câu**
+ *                                                            (**dù trả về 0 hàng**)
+ *
+ * Sau khi gộp: **một câu JOIN** cho cả danh sách tầng + **một** lần phân giải
+ * phạm vi ⇒ số câu KHÔNG còn tăng theo N (đo được: 84 tầng = 4 câu).
+ *
+ * ⚠⚠ BA ĐIỀU KHÔNG ĐƯỢC ĐỔI KHI TỐI ƯU CHỖ NÀY — đây là ranh giới an toàn:
+ *
+ *   1. **Nhà máy của tầng suy TỪ DB**, qua `INNER JOIN twin_toa_nha`, chứ không
+ *      từ một danh sách mã nhà máy do phía gọi truyền kèm. Nhận `factoryIds` từ
+ *      input rồi lọc theo nó là mở lại đúng lỗ `pham-vi-tenant-dot-lon`. `INNER`
+ *      (không phải `LEFT`) giữ nguyên hành vi cũ: tầng có toà nhà không tồn tại
+ *      bị loại — fail-closed, đúng như `nhaMayCuaTang` trả `null` thì `continue`.
+ *
+ *   2. **Chỉ MỘT bộ phân giải.** Tập nhà máy lấy từ `idsTrongPhamVi("factory")` —
+ *      CHÍNH hàm mà `trongPhamVi` gọi bên trong, nên `null` (toàn quyền) và `[]`
+ *      (phạm vi rỗng) vẫn mang đúng nghĩa cũ. Viết một mệnh đề `IN (...)` tay
+ *      trong SQL "cho nhanh" là đẻ ra bộ luật thứ hai — lớp lỗi
+ *      `mqttOeeRouters.getScopeLabels` (hai bộ suy độc lập canh hai nửa một câu).
+ *
+ *   3. **`[]` là RỖNG TƯỜNG MINH, không phải "không lọc".** `new Set([])` khiến
+ *      mọi tầng rớt; một lối tắt `if (!ids.length) return tang.map(...)` sẽ mở
+ *      toang cổng cho người chưa được gán nhà máy nào.
  */
 async function locTangTrongPhamVi(
   d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   tangIds: readonly number[],
-  scope: PhamViNguoiXem,
+  scope?: PhamViNguoiXem,
 ): Promise<number[]> {
+  const ids = [...new Set(tangIds)];
+  if (ids.length === 0) return [];
+
+  // MỘT câu cho CẢ danh sách: tầng → toà nhà → `factoryId` THẬT của nó.
   const tang = await d
-    .select({ id: twinTang.id, toaNhaId: twinTang.toaNhaId })
+    .select({ id: twinTang.id, factoryId: twinToaNha.factoryId })
     .from(twinTang)
-    .where(inArray(twinTang.id, [...tangIds]));
-  const ra: number[] = [];
-  for (const t of tang) {
-    const factoryId = await nhaMayCuaToaNha(d, t.toaNhaId);
-    if (factoryId !== null && (await trongPhamVi("factory", factoryId, scope))) ra.push(t.id);
-  }
-  return ra;
+    .innerJoin(twinToaNha, eq(twinToaNha.id, twinTang.toaNhaId))
+    .where(inArray(twinTang.id, ids));
+  if (tang.length === 0) return [];
+
+  // MỘT lần phân giải phạm vi cho cả danh sách — `null` = vai toàn quyền / lối
+  // không mang danh tính ⇒ KHÔNG thêm cổng nào (chiều dương chống vá quá tay).
+  const nhaMayChoPhep = await idsTrongPhamVi("factory", scope);
+  if (nhaMayChoPhep === null) return tang.map((t) => t.id);
+
+  const choPhep = new Set(nhaMayChoPhep);
+  return tang.filter((t) => choPhep.has(t.factoryId)).map((t) => t.id);
 }
 
 /** Payload ghi một vùng an toàn. */

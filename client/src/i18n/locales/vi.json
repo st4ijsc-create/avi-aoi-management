@@ -19929,6 +19929,7 @@
       "chonTang": "Tầng",
       "haCapPhamVi": "Đang hiện dữ liệu của MỘT nhà máy ({{soNhaMay}} nhà máy trong hệ). Phạm vi Tập đoàn chưa nạp được nhiều nhà máy cùng lúc — dùng ô Nhà máy để chuyển.",
       "linkBiBoQua": "Đường link mở màn này trỏ tới nhà máy/toà/tầng không còn tồn tại — đang hiện lựa chọn gần nhất.",
+      "tangVuotTran": "Toà này có {{tong}} tầng, một lượt nạp chỉ hỏi được {{tran}} — {{thieu}} tầng CHƯA được nạp, máy ở đó không hiện trên cảnh.",
       "mayTangKhac": "{{so}} máy nữa đã có chỗ ở tầng khác của toà này — đổi ô Tầng để xem",
       "mayToaKhac": "{{so}} máy không nằm trong lượt nạp này (toà khác chưa được hỏi) — chưa kết luận được chúng đã xếp chỗ hay chưa",
       "moPanelPhai": "Mở ngăn xử lý bên phải",

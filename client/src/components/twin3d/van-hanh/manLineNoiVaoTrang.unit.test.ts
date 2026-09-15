@@ -550,3 +550,35 @@ describe("Đợt 38 — TwinLine: nhãn 3D dùng mã NGẮN (tiền tố chung c
   });
 });
 
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ Task 17c — hai khớp nối mới ở màn này (G93)                            */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ⚠⚠ `npm run check` bắt được "quên truyền" (trường `gocToaTheoTang` là BẮT
+ *    BUỘC), nhưng **không** bắt được "truyền một `new Map()` cho qua kiểu" —
+ *    thứ vừa xanh `tsc`, vừa xanh mọi lưới module, vừa khôi phục nguyên lỗi.
+ *    Và `.slice(0, 50)` quay lại cũng xanh khắp nơi. Hai ô dưới ghim đúng hai
+ *    chỗ đó.
+ */
+describe("★★★ Task 17c — cộng gốc toà nhà và trần tầng ở màn này", () => {
+  it("`mayVe` truyền `gocToaTheoTang: gocToa`, KHÔNG phải Map rỗng tại chỗ gọi", () => {
+    const t = than("mayVe");
+    expect(t).toContain("gocToaTheoTang: gocToa");
+    expect(t).not.toMatch(/gocToaTheoTang:\s*new Map\(\s*\)/);
+  });
+
+  it("★ `gocToa` dựng bằng `gocToaTheoTang(...)`, NEO vào toà đang xem", () => {
+    const t = than("gocToa");
+    expect(t).toContain("gocToaTheoTang(");
+    // Neo `null` = toạ độ tuyệt đối ⇒ máy rời khỏi mặt sàn (sàn vẽ ở gốc).
+    expect(t).not.toMatch(/gocToaTheoTang\([^)]*,\s*null\s*\)/);
+    expect(t).toContain("toaNhaDau");
+  });
+
+  it("★★★ `.slice(0, 50)` đã BIẾN MẤT — cắt im lặng không còn đường về", () => {
+    expect(MA).not.toMatch(/\.slice\(\s*0\s*,\s*50\s*\)/);
+    expect(MA).toContain("tangIdsDeHoi(");
+  });
+});

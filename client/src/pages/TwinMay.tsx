@@ -117,7 +117,10 @@ import {
   dungCanhBao3D,
   dungMayVe,
   dungNhanMay,
+  gocToaTheoTang,
 } from "@/components/twin3d/van-hanh/hopNhatCanh";
+// ★ Task 17c — trần tầng là hằng CÓ TÊN, và phần bị cắt phải đọc được.
+import { tangIdsDeHoi } from "@/components/twin3d/van-hanh/boChonNap";
 import {
   khungNhinTuCamera,
   phaVeNen,
@@ -339,10 +342,27 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
     { id: toaNhaDau?.id ?? 0 },
     { enabled: toaNhaDau != null, retry: false },
   );
-  const tangIdsHoi = useMemo(
-    () =>
-      ((chiTietQ.data?.tangs ?? []) as Array<{ id: number }>).map((s) => s.id).slice(0, 50),
+  const dsTang = useMemo(
+    () => (chiTietQ.data?.tangs ?? []) as Array<{ id: number; toaNhaId: number }>,
     [chiTietQ.data],
+  );
+  // ★ Task 17c LỖI MỘT — `.slice(0, 50)` cũ cắt IM LẶNG; trần nay có tên và
+  //   phần bị cắt đếm được (`tangIdsDeHoi`).
+  const tangIdsHoi = useMemo(() => tangIdsDeHoi(dsTang.map((s) => s.id)).gui, [dsTang]);
+
+  /**
+   * ★★★ Task 17c LỖI HAI — chỗ dời của TOÀ NHÀ cho từng tầng, neo vào toà đang
+   * xem. Toạ độ đặt chỗ là toạ độ TRONG TẦNG; thiếu số hạng này thì hai toà của
+   * cùng một nhà máy chồng khít lên nhau. Xem docblock `gocToaTheoTang`.
+   */
+  const gocToa = useMemo(
+    () =>
+      gocToaTheoTang(
+        dsTang,
+        (toaNhaQ.data ?? []) as Array<{ id: number; viTriXMm?: string | number }>,
+        toaNhaDau?.id ?? null,
+      ),
+    [dsTang, toaNhaQ.data, toaNhaDau],
   );
   /* ★ Hỏi MỌI tầng của toà (F2) — máy là đơn vị, tầng chỉ là chỗ nó đứng. */
   // ★ Đợt 40 (QA Đợt 39 #5) — `placeholderData` cùng luật ba màn (`giuDuLieuTruoc.ts`); `chuaDatCho` đã hỏi
@@ -477,6 +497,7 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
         datChoTheoMay,
         kichThuocTheoLoai,
         trangThaiTheoMay,
+        gocToaTheoTang: gocToa,
         trongPhamVi: (mv, tangIdCuaDatCho) =>
           trongPhamVi(
             {
@@ -493,7 +514,7 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
         tiLePhaNgoaiPhamVi: TI_LE_PHA_NGOAI_PHAM_VI,
         congCu: { mauCss, phaVeNen, mauChoTrangThai, hinhKhoiCho },
       }),
-    [hangXom, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, machineId, factoryId, mauNenCanh],
+    [hangXom, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, gocToa, machineId, factoryId, mauNenCanh],
   );
 
   /**
