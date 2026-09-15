@@ -19965,7 +19965,16 @@
       "thuPanelTrai": "收起左侧面板",
       "moTwinStudio": "Twin Studio",
       "moTwinStudioMoTa": "前往 Twin Studio：设计厂房、拖放机台、保存布局",
-      "toanManMoTa": "近乎全屏的 3D（收起两侧面板）"
+      "toanManMoTa": "近乎全屏的 3D（收起两侧面板）",
+      "baoSuCo": "报告故障",
+      "moTaSuCo": "简短描述（选填）",
+      "viDuSuCo": "例如：输送带卡料",
+      "baoSuCoChoMay": "该告警将关联到设备 {{ma}}",
+      "guiBaoSuCo": "发送",
+      "daBaoSuCo": "已报告故障",
+      "daBaoSuCoTho": "已报告故障 — 无法自动分类，需人工复核",
+      "dongNgan": "关闭处理面板",
+      "demTheoNhaMay": "（按整座工厂统计）"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",
@@ -20316,7 +20325,10 @@
       "yellow": "警告",
       "green": "正常",
       "theoNhanh": "按所选分支",
-      "daAck": "已确认"
+      "daAck": "已确认",
+      "xuLyTaiCho": "处理",
+      "phamViTaiKhoan": "按账号全部范围统计",
+      "phamViNhanh": "按分支 {{nhanh}} 统计"
     },
     "canvasUi": {
       "fitTatCa": "适应视图",

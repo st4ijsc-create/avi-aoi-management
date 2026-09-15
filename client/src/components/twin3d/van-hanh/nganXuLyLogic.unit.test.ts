@@ -34,6 +34,8 @@ const QUYEN_DU: QuyenXuLy = {
   anTamAlarm: true,
   taoPhieu: true,
   suaPhieu: true,
+  // ★ Task 9 — `andon`/canCreate. Thêm vào CUỐI, mặc định (vắng) là `false`.
+  baoSuCo: true,
 };
 
 function canhBao(sua: Partial<CanhBaoDangMo> = {}): CanhBaoDangMo {
@@ -52,7 +54,7 @@ describe("hanhDongChoVatThe — ★ quyền quyết định ẨN, tình huống 
   it("đủ quyền + có cảnh báo chưa ack ⇒ mọi hành động bấm được", () => {
     const ds = hanhDongChoVatThe({ quyen: QUYEN_DU, machineId: 1, canhBao: [canhBao()] });
     expect(hanhDongBamDuoc(ds).sort()).toEqual(
-      ["ack", "anTam", "datUuTien", "ganKyThuat", "ghiChu", "taoPhieu"].sort(),
+      ["ack", "anTam", "baoSuCo", "datUuTien", "ganKyThuat", "ghiChu", "taoPhieu"].sort(),
     );
   });
 

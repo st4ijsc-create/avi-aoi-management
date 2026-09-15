@@ -99,6 +99,44 @@ export interface DaiCanhBaoProps {
    */
   khongDoDuoc?: boolean;
   onChonCanhBao?: (c: CanhBaoDai) => void;
+  /**
+   * ★★★ TASK 10 — XỬ LÝ **TẠI CHỖ**, đường THỨ HAI cạnh `onChonCanhBao`.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * VÌ SAO PHẢI LÀ MỘT ĐƯỜNG THỨ HAI, KHÔNG PHẢI ĐỔI ĐƯỜNG CŨ
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo được trên `/twin`: ngăn xử lý render **0 nút với mọi vai**, vì sau QĐ-23
+   * mọi cú bấm máy RỜI trang sang `/twin/may/:id` (`dichManRieng` redirect cả
+   * `?chon=machine:`), nên `machineIdChon` của thân `/twin` luôn `null`. Một
+   * tầng 21 cảnh báo là 21 lần đi-về, đúng ngược với mục tiêu tài liệu đặt ra
+   * (*"hành động ở ngăn bên phải, ngữ cảnh ở cảnh 3D bên trái"*).
+   *
+   * QĐ-23 là quyết định của chủ dự án và **không được đụng** (lưới
+   * `cuaVaoTwin.unit.test.ts` ghim nguyên văn `onChonCanhBao`). Nên bấm DÒNG
+   * vẫn mở màn Máy 3D như cũ; nút này mở ngăn xử lý NGAY TẠI `/twin`.
+   *
+   * ⚠ `undefined` ⇒ KHÔNG render nút nào. Một nút không làm gì là chế độ hỏng
+   *   câm, và một nút hứa "xử lý" trên dòng KHÔNG gắn máy cũng vậy — nên nút
+   *   chỉ hiện khi `c.machineId !== null`.
+   */
+  onXuLyTaiCho?: (c: CanhBaoDai) => void;
+  /**
+   * ★★★ NHÃN PHẠM VI — câu người dùng đọc được, nói con số `(N)` ở tiêu đề đang
+   * đếm trên mẫu số nào.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * VÌ SAO CẦN: `andon.active` **không nhận `factoryId`** (`andonRouter.ts`),
+   * nên dải này đếm cảnh báo của MỌI nhà máy trong phạm vi tài khoản, trong khi
+   * cảnh 3D bên trái vẽ đúng MỘT nhà máy. Vai giám đốc thấy "Cảnh báo (55)" của
+   * ba công ty cạnh một cảnh một nhà máy và không có câu nào nói ra điều đó.
+   *
+   * Chủ dự án chốt (2026-09-15): **KHÔNG đổi cách đếm, chỉ thêm nhãn.** Thu hẹp
+   * phép đếm theo cảnh sẽ giấu mất cảnh báo của nhà máy khác — tệ hơn hẳn một
+   * con số rộng đã được khai rõ.
+   *
+   * ⚠ `null`/`undefined` ⇒ KHÔNG in dòng trống (NT-3.5: rỗng khác 0).
+   */
+  nhanPhamVi?: string | null;
 }
 
 function DongCanhBao({
@@ -106,15 +144,19 @@ function DongCanhBao({
   tonDong,
   bayGio,
   onChon,
+  onXuLy,
   nhanTonDong,
   nhanAck,
+  nhanXuLy,
 }: {
   c: CanhBaoDai;
   tonDong: boolean;
   bayGio: number;
   onChon?: (c: CanhBaoDai) => void;
+  onXuLy?: (c: CanhBaoDai) => void;
   nhanTonDong: (n: number) => string;
   nhanAck: string;
+  nhanXuLy: string;
 }) {
   const kieu = KIEU_MUC[c.muc];
   /**
@@ -137,8 +179,20 @@ function DongCanhBao({
    *   phải ở phía lưới.
    */
   const coDanhTinh = c.maMay !== null || c.tenNhaMay !== null;
+  /*
+   * ★★★ TASK 10 — nút "xử lý tại chỗ" là ANH EM của nút dòng, KHÔNG lồng trong nó.
+   *
+   * Nút trong nút là HTML không hợp lệ (trình duyệt tự tách cây, và bấm con sẽ
+   * kích hoạt cả cha) — mà bấm cha ở đây nghĩa là RỜI TRANG, đúng thứ nút này
+   * sinh ra để tránh. Nên `<li>` thành một hàng flex: dòng `flex-1`, nút bên phải.
+   *
+   * ⚠⚠ `data-testid` KHÔNG được bắt đầu bằng `canh-bao-`: bộ đếm dòng của mọi
+   *   lưới cũ là `queryAllByTestId(/^canh-bao-/)`, một tiền tố trùng sẽ khai gấp
+   *   đôi số cảnh báo đang hiện (đúng cái bẫy mà PH-30 đã dính ở dòng phụ).
+   */
+  const coXuLy = onXuLy !== undefined && c.machineId !== null;
   return (
-    <li>
+    <li className="flex items-start">
       <button
         type="button"
         data-testid={`canh-bao-${c.nguon}-${c.idNguon}`}
@@ -147,7 +201,7 @@ function DongCanhBao({
         data-ton-dong={tonDong ? "1" : "0"}
         data-ma-may={c.maMay ?? undefined}
         data-nha-may={c.tenNhaMay ?? undefined}
-        className="flex w-full items-start gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-accent/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
+        className="flex min-w-0 flex-1 items-start gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-accent/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
         onClick={() => onChon?.(c)}
       >
         {/* Hình dạng + màu — mã hoá dư thừa (§10.3 luật 2). `aria-hidden` vì mức
@@ -185,6 +239,19 @@ function DongCanhBao({
           </span>
         </span>
       </button>
+      {coXuLy ? (
+        <button
+          type="button"
+          data-testid={`xu-ly-${c.nguon}-${c.idNguon}`}
+          data-machine-id={c.machineId ?? undefined}
+          className="mr-1 mt-1 shrink-0 rounded border border-border px-1 py-0.5 text-[10px] leading-4 text-text-2 hover:bg-accent hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
+          /* Mã hoá dư thừa: CHỮ đọc được, không chỉ một icon — §10.3 luật 2. */
+          title={nhanXuLy}
+          onClick={() => onXuLy?.(c)}
+        >
+          {nhanXuLy}
+        </button>
+      ) : null}
     </li>
   );
 }
@@ -199,6 +266,8 @@ export function DaiCanhBao({
   dangTai = false,
   khongDoDuoc = false,
   onChonCanhBao,
+  onXuLyTaiCho,
+  nhanPhamVi = null,
 }: DaiCanhBaoProps) {
   const { t } = useTranslation();
 
@@ -221,6 +290,13 @@ export function DaiCanhBao({
   const nhanTong = chuaDo ? "—" : String(theoPhamVi.length);
 
   const nhanTonDong = (n: number) => t("twin3d.daiCanhBao.tonDongNgay", { n });
+  /*
+   * ⚠ KHÔNG truyền `defaultValue` chuỗi làm đối số thứ hai trong TỆP NÀY: mọi
+   *   `t()` ở đây theo khuôn `t(khoa)` / `t(khoa, {n})`, và lưới DOM của nó mock
+   *   `t` bằng `o && "n" in o` — một chuỗi ở vị trí ấy làm `in` ném lỗi và 38 ca
+   *   đỏ cùng lúc. Khoá được thêm đủ ba locale nên không có ca "thiếu bản dịch".
+   */
+  const nhanXuLy = t("twin3d.daiCanhBao.xuLyTaiCho");
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="dai-canh-bao">
@@ -237,6 +313,23 @@ export function DaiCanhBao({
           </span>
         ) : null}
       </div>
+
+      {/*
+        ★★★ NHÃN PHẠM VI — con số `(N)` ở trên nói về TẬP NÀO.
+
+        Đây là dòng CHỮ, không phải một `data-*`: người vận hành đọc màn hình,
+        không đọc DOM. Nó đứng ngay dưới con số vì hai thứ chỉ có nghĩa cùng nhau
+        — một mẫu số đặt ở chỗ khác trên màn là một mẫu số không ai ghép lại.
+      */}
+      {nhanPhamVi ? (
+        <p
+          className="truncate border-b px-2 pb-1 text-[10px] text-text-2"
+          data-testid="dai-pham-vi"
+          title={nhanPhamVi}
+        >
+          {nhanPhamVi}
+        </p>
+      ) : null}
 
       {/* #14 — chip lọc mức độ. LUÔN HIỆN kể cả khi kết quả rỗng: ẩn chip đi thì
           người dùng lọc vào một mức không có gì rồi không còn nút nào để quay
@@ -302,8 +395,10 @@ export function DaiCanhBao({
                       tonDong={false}
                       bayGio={bayGio}
                       onChon={onChonCanhBao}
+                      onXuLy={onXuLyTaiCho}
                       nhanTonDong={nhanTonDong}
                       nhanAck={t("twin3d.daiCanhBao.daAck")}
+                      nhanXuLy={nhanXuLy}
                     />
                   ))}
                 </ul>
@@ -329,8 +424,10 @@ export function DaiCanhBao({
                       tonDong
                       bayGio={bayGio}
                       onChon={onChonCanhBao}
+                      onXuLy={onXuLyTaiCho}
                       nhanTonDong={nhanTonDong}
                       nhanAck={t("twin3d.daiCanhBao.daAck")}
+                      nhanXuLy={nhanXuLy}
                     />
                   ))}
                 </ul>

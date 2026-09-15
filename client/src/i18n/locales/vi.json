@@ -19937,7 +19937,16 @@
       "thuPanelTrai": "Thu bảng bên trái",
       "moTwinStudio": "Xưởng dựng",
       "moTwinStudioMoTa": "Sang trang Xưởng dựng: thiết kế nhà xưởng, kéo thả máy, lưu bố cục",
-      "toanManMoTa": "3D gần toàn màn (thu cả hai bảng bên)"
+      "toanManMoTa": "3D gần toàn màn (thu cả hai bảng bên)",
+      "baoSuCo": "Báo sự cố",
+      "moTaSuCo": "Mô tả ngắn (không bắt buộc)",
+      "viDuSuCo": "Ví dụ: kẹt phôi ở băng tải",
+      "baoSuCoChoMay": "Cảnh báo sẽ gắn vào máy {{ma}}",
+      "guiBaoSuCo": "Gửi",
+      "daBaoSuCo": "Đã báo sự cố",
+      "daBaoSuCoTho": "Đã báo sự cố — chưa phân loại được, cần người xem lại",
+      "dongNgan": "Đóng ngăn xử lý",
+      "demTheoNhaMay": "(đếm theo toàn nhà máy)"
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",
@@ -20288,7 +20297,10 @@
       "yellow": "Cảnh báo",
       "green": "Bình thường",
       "theoNhanh": "Theo nhánh đang chọn",
-      "daAck": "Đã xác nhận"
+      "daAck": "Đã xác nhận",
+      "xuLyTaiCho": "Xử lý",
+      "phamViTaiKhoan": "Đếm trên toàn phạm vi tài khoản",
+      "phamViNhanh": "Đếm trong nhánh {{nhanh}}"
     },
     "canvasUi": {
       "fitTatCa": "Vừa khung nhìn",

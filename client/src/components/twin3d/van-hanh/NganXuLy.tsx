@@ -56,7 +56,7 @@
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, ClipboardPlus, Clock, ExternalLink, Maximize2 } from "lucide-react";
+import { AlertTriangle, Check, ClipboardPlus, Clock, ExternalLink, Maximize2, Megaphone, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -83,6 +83,7 @@ import {
   nutDieuHuongCho,
   type CanhBaoDangMo,
   type LoaiDich,
+  type NutDieuHuong,
   type QuyenXuLy,
   docStatsAoi,
 } from "./nganXuLyLogic";
@@ -146,6 +147,26 @@ export interface NganXuLyProps {
   lyDoNgan?: LyDoNgan;
   /** Loại vật thể đang chọn — quyết định bộ nút §9.3. */
   loaiDich?: LoaiDich;
+  /**
+   * ★★★ TASK 11 — ID của vật thể `loaiDich`, khi nó KHÔNG phải một máy.
+   *
+   * Trước đợt này bảng §9.3 luôn được gọi bằng `machineId`, nên `loaiDich` khác
+   * `"machine"` không có id nào để mang theo — và đúng vì thế **0 chỗ gọi sản
+   * phẩm** truyền giá trị khác. Ô này tách hai đại lượng ra: `machineId` là
+   * *máy đang xử lý*, `dichId` là *vật thể đang chọn ở cấp đang xem*.
+   *
+   * ⚠ Thêm vào CUỐI, mặc định `undefined` ⇒ rơi về `machineId` ⇒ hành vi cũ
+   *   nguyên vẹn cho mọi chỗ gọi chưa nối.
+   */
+  dichId?: number | null;
+  /**
+   * Đóng ngăn xử lý. `undefined` ⇒ KHÔNG render nút đóng (hành vi cũ).
+   *
+   * ★ Cần cho màn nhà máy (Task 10): ở đó ngăn mở ra vì người dùng bấm "xử lý"
+   *   trên một dòng cảnh báo, không vì họ đổi URL — nên phải có đường đóng lại,
+   *   nếu không ngăn 256–320 px che cảnh 3D vĩnh viễn.
+   */
+  onDongNgan?: () => void;
 }
 
 export function NganXuLy(props: NganXuLyProps) {
@@ -168,10 +189,26 @@ export function NganXuLy(props: NganXuLyProps) {
     onDongNhung,
     lyDoNgan,
     loaiDich = "machine",
+    dichId,
+    onDongNgan,
   } = props;
 
   const hanhDong = hanhDongChoVatThe({ quyen, machineId, canhBao });
   const tra = (ma_: string) => hanhDong.find((h) => h.ma === ma_)!;
+
+  /**
+   * Id mang theo cho bảng §9.3. `dichId` thắng khi có; nếu không thì `machineId`
+   * — đúng hành vi trước Task 11, và KHÔNG có nhánh thứ hai để hai giá trị lệch.
+   */
+  const idDich = dichId ?? machineId;
+
+  /**
+   * Nút §9.3 đã lọc theo `canView` của màn đích. Tính MỘT LẦN ở đây vì nhánh
+   * "chưa chọn máy" (Task 11) và nhánh đầy đủ dùng CHUNG nó — chép sang hai chỗ
+   * là mời hai bộ lọc lệch nhau (G12).
+   */
+  const nutDich =
+    idDich === null ? [] : nutDieuHuongCho(loaiDich, idDich).filter((n) => coQuyenXem(n.quyen));
 
   /* ── Mutation: ACK ────────────────────────────────────────────────────── */
   const ackM = trpc.andon.acknowledge.useMutation({
@@ -299,13 +336,29 @@ export function NganXuLy(props: NganXuLyProps) {
   if (machineId === null) {
     return (
       <aside
-        className="flex h-full flex-col gap-2 border-l bg-card p-3"
+        className="flex h-full flex-col gap-2 overflow-y-auto border-l bg-card p-3"
         data-testid="ngan-xu-ly"
         aria-label={t("twin3d.vanHanh.nganXuLy", "Ngăn xử lý")}
       >
         <p className="text-sm text-muted-foreground" data-testid="ngan-chua-chon">
           {t("twin3d.vanHanh.chuaChon", "Chọn một máy trên cảnh hoặc trong danh sách để xử lý.")}
         </p>
+        {/*
+          ★★★ TASK 11 — CẤP KHÁC MÁY VẪN CÓ CHỖ ĐỂ ĐI.
+
+          Nhánh này vốn chỉ in một câu rồi thôi, nên quản đốc đứng ở cấp nhà máy
+          hay chuyền thấy **0 đích** — `loaiDich` có mặt trong hợp đồng mà không
+          bao giờ tới được nhóm §9.3 (nó nằm sau `return` này).
+
+          ⚠ Hai câu KHÁC NHAU và phải cùng tồn tại: *"chưa chọn máy nên chưa có
+            gì để XỬ LÝ"* (§9.2 — hành động cấp máy) và *"đây là các màn của cấp
+            bạn đang xem"* (§9.3 — điều hướng). Gộp chúng lại theo chiều nào cũng
+            mất một nửa sự thật.
+
+          ★ `nutDich` rỗng (cấp máy, hoặc không có quyền xem màn nào) ⇒
+            `NhomMoChucNang` trả `null`: một nhóm rỗng là lời hứa không giao.
+        */}
+        <NhomMoChucNang nut={nutDich} onMoTaiCho={onMoTaiCho} onDieuHuong={onDieuHuong} />
         {/* ★ L-5 — ngăn `?xem=` mở được cả khi CHƯA chọn máy nào. */}
         <NganNhung
           ngan={nganNhung}
@@ -326,9 +379,29 @@ export function NganXuLy(props: NganXuLyProps) {
     >
       {/* ── Đầu ngăn: danh tính + trạng thái + ĐỘ TƯƠI ─────────────────── */}
       <header>
-        <h2 className="text-sm font-semibold text-foreground" data-testid="ngan-ma-may">
-          {ma}
-        </h2>
+        <div className="flex items-start justify-between gap-1">
+          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground" data-testid="ngan-ma-may">
+            {ma}
+          </h2>
+          {/*
+            ★ TASK 10 — ĐƯỜNG ĐÓNG. Trên màn nhà máy ngăn mở ra vì người dùng bấm
+              "xử lý" trên một dòng cảnh báo; nếu không có nút này thì cột
+              256–320 px che cảnh 3D cho tới khi họ đổi URL. `undefined` ⇒ không
+              render (màn Máy có ngăn cố định, ở đó một nút đóng là vô nghĩa).
+          */}
+          {onDongNgan ? (
+            <button
+              type="button"
+              data-testid="nut-dong-ngan"
+              className="shrink-0 rounded p-0.5 text-text-2 hover:bg-accent hover:text-foreground focus-visible:outline focus-visible:outline-2"
+              aria-label={t("twin3d.vanHanh.dongNgan", "Đóng ngăn xử lý")}
+              title={t("twin3d.vanHanh.dongNgan", "Đóng ngăn xử lý")}
+              onClick={onDongNgan}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
         <p className="truncate text-xs text-text-2">{ten}</p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" data-testid="ngan-trang-thai" data-gia-tri={trangThai.trangThai}>
@@ -481,6 +554,23 @@ export function NganXuLy(props: NganXuLyProps) {
         ) : null}
 
         {tra("anTam").duocPhep ? <AnTamAlarm chan={tra("anTam").lyDoChan !== null} /> : null}
+
+        {/*
+          ★★★ TASK 9 — BÁO SỰ CỐ. Đặt CUỐI nhóm cảnh báo, không đầu: thứ tự đọc
+            của nhóm này là "xử lý cái đang có" rồi mới tới "báo cái mới". Nút
+            `destructive` vì nó là thao tác DỪNG CHUYỀN tiềm năng — mã hoá dư
+            thừa: màu + icon loa + chữ.
+          ★ ẨN khi thiếu `andon`/canCreate (không disable) — cùng luật với ba nút
+            trên. `lyDoChan` (chưa chọn máy) mới là ca disable.
+        */}
+        {tra("baoSuCo").duocPhep ? (
+          <BaoSuCo
+            machineId={machineId}
+            ma={ma}
+            chan={tra("baoSuCo").lyDoChan !== null}
+            onXong={onDaXuLy}
+          />
+        ) : null}
       </section>
 
       {/* ── NHÓM 2: TẠO VIỆC ───────────────────────────────────────────── */}
@@ -598,71 +688,7 @@ export function NganXuLy(props: NganXuLyProps) {
       ) : null}
 
       {/* ── NHÓM 3: MỞ CHỨC NĂNG (§9.3) ────────────────────────────────── */}
-      <section className="border-t pt-2" data-testid="nhom-mo-chuc-nang">
-        <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
-          {t("twin3d.vanHanh.moChucNang", "Mở chức năng")}
-        </h3>
-        {/*
-          ════════════════════════════════════════════════════════════════════
-          ★★★ ĐỢT 10 MỤC 5 — XEM CHI TIẾT **TẠI CHỖ**, KHÔNG REDIRECT
-          ════════════════════════════════════════════════════════════════════
-          Yêu cầu chủ sở hữu: *"xem chi tiết của máy/Line không sử dụng redirect
-          chuyển trang để xem rất bất tiện … cần dialog hoặc modal … và có phím
-          back … để ng dùng không cần rời màn hình 3D digital Twin"*.
-
-          Trước đợt này MỌI nút dưới đây gọi `onDieuHuong(n.href)` = `setLocation`
-          (`TwinVanHanh.tsx:1721`) ⇒ **rời hẳn `/twin`**: cảnh 3D bị huỷ, camera
-          và phạm vi mất, đường về duy nhất là nút Back của trình duyệt.
-
-          Bây giờ mỗi nút chia **hai đường, quyết định bởi CHÍNH `href`** (không
-          có cờ thứ hai để lệch — G12):
-
-            nhúng được  → `onMoTaiCho` mở ngăn ngay trên `/twin`, icon `Maximize2`
-                          ("phóng to tại chỗ"). Đây là **MẶC ĐỊNH**.
-            chưa nhúng  → `onDieuHuong` như cũ, giữ icon `ExternalLink`.
-
-          ★★★ VÌ SAO ICON PHẢI KHÁC NHAU. `ExternalLink` là lời hứa "bấm cái này
-            là rời trang". Để nguyên nó trên một nút mở tại chỗ là nói dối người
-            dùng theo chiều ngược lại — họ do dự bấm vì sợ mất cảnh, đúng nỗi bất
-            tiện mà mục này sinh ra để bỏ. Hai hành vi khác nhau PHẢI nhìn ra
-            được, nếu không thì tính năng có mà không ai dám dùng.
-
-          ★ Lối thoát phụ ("mở màn đầy đủ" ở tab mới) KHÔNG mất — nó nằm trong
-            chính ngăn nhúng (`NganNhung.tsx`), nơi người dùng đã thấy nội dung
-            và mới biết mình có muốn cả trang hay không.
-
-          ⚠ `onMoTaiCho` `undefined` (tầng trên chưa nối) ⇒ **rơi về `onDieuHuong`**,
-            không phải nút chết. Một nút không làm gì là chế độ hỏng câm.
-        */}
-        <div className="space-y-1">
-          {nutDieuHuongCho(loaiDich, machineId)
-            // ★ Ẩn nút dẫn tới màn người dùng không vào được — nếu không thì họ
-            //   bấm rồi bị RouteGuard chặn: đúng lớp lỗi "một lối vào rồi TỪ CHỐI".
-            .filter((n) => coQuyenXem(n.quyen))
-            .map((n) => {
-              const ngan = nhungChoHref(n.href);
-              const taiCho = ngan !== null && onMoTaiCho !== undefined;
-              return (
-                <Button
-                  key={n.href}
-                  size="sm"
-                  variant="ghost"
-                  className="w-full justify-start"
-                  data-testid={`nut-dieu-huong-${n.khoaNhan.split(".").pop()}`}
-                  data-tai-cho={taiCho ? "1" : "0"}
-                  onClick={() => (taiCho ? onMoTaiCho(ngan) : onDieuHuong(n.href))}
-                >
-                  {taiCho ? (
-                    <Maximize2 className="mr-1.5 h-3.5 w-3.5" />
-                  ) : (
-                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                  )}
-                  {t(n.khoaNhan)}
-                </Button>
-              );
-            })}
-        </div>
-      </section>
+      <NhomMoChucNang nut={nutDich} onMoTaiCho={onMoTaiCho} onDieuHuong={onDieuHuong} />
 
       {/*
         ── NGĂN CHI TIẾT TẠI CHỖ ─────────────────────────────────────────
@@ -682,6 +708,203 @@ export function NganXuLy(props: NganXuLyProps) {
         onDong={() => onDongNhung?.()}
       />
     </aside>
+  );
+}
+
+/**
+ * NHÓM 3 (§9.3) — MỞ CHỨC NĂNG.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 10 MỤC 5 — XEM CHI TIẾT **TẠI CHỖ**, KHÔNG REDIRECT
+ * ════════════════════════════════════════════════════════════════════════════
+ * Yêu cầu chủ sở hữu: *"xem chi tiết của máy/Line không sử dụng redirect chuyển
+ * trang để xem rất bất tiện … cần dialog hoặc modal … và có phím back … để ng
+ * dùng không cần rời màn hình 3D digital Twin"*.
+ *
+ * Trước đợt ấy MỌI nút dưới đây gọi `onDieuHuong(n.href)` = `setLocation` ⇒
+ * **rời hẳn `/twin`**: cảnh 3D bị huỷ, camera và phạm vi mất, đường về duy nhất
+ * là nút Back của trình duyệt.
+ *
+ * Nay mỗi nút chia **hai đường, quyết định bởi CHÍNH `href`** (không có cờ thứ
+ * hai để lệch — G12):
+ *   nhúng được  → `onMoTaiCho` mở ngăn ngay trên `/twin`, icon `Maximize2`.
+ *   chưa nhúng  → `onDieuHuong` như cũ, giữ icon `ExternalLink`.
+ *
+ * ★★★ VÌ SAO ICON PHẢI KHÁC NHAU. `ExternalLink` là lời hứa "bấm cái này là rời
+ *   trang". Để nguyên nó trên một nút mở tại chỗ là nói dối theo chiều ngược
+ *   lại — người dùng do dự bấm vì sợ mất cảnh, đúng nỗi bất tiện mục này sinh
+ *   ra để bỏ. Hai hành vi khác nhau PHẢI nhìn ra được.
+ *
+ * ⚠ `onMoTaiCho` `undefined` (tầng trên chưa nối) ⇒ **rơi về `onDieuHuong`**,
+ *   không phải nút chết. Một nút không làm gì là chế độ hỏng câm.
+ *
+ * ★★★ TASK 11 — TÁCH RA THÀNH COMPONENT VÌ **HAI NHÁNH** CẦN NÓ.
+ *   Nhánh "chưa chọn máy" (cấp nhà máy/chuyền) cũng phải mở được chức năng, và
+ *   nhánh ấy `return` TRƯỚC thân chính. Chép khối JSX sang đó là dựng bản thứ
+ *   hai của cùng một bộ lọc quyền — hai bản sẽ lệch ở lần sửa đầu tiên (G12).
+ *
+ * ⚠ `nut` đã được lọc theo `canView` Ở CHỖ GỌI: bộ lọc nằm cạnh nơi biết
+ *   `coQuyenXem`, và component này chỉ VẼ.
+ */
+function NhomMoChucNang({
+  nut,
+  onMoTaiCho,
+  onDieuHuong,
+}: {
+  nut: readonly NutDieuHuong[];
+  onMoTaiCho?: (ngan: NganNhungMo) => void;
+  onDieuHuong: (href: string) => void;
+}) {
+  const { t } = useTranslation();
+  if (nut.length === 0) return null;
+  return (
+    <section className="border-t pt-2" data-testid="nhom-mo-chuc-nang">
+      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-text-2">
+        {t("twin3d.vanHanh.moChucNang", "Mở chức năng")}
+      </h3>
+      <div className="space-y-1">
+        {nut.map((n) => {
+          const ngan = nhungChoHref(n.href);
+          const taiCho = ngan !== null && onMoTaiCho !== undefined;
+          return (
+            <Button
+              key={n.href}
+              size="sm"
+              variant="ghost"
+              className="w-full justify-start"
+              data-testid={`nut-dieu-huong-${n.khoaNhan.split(".").pop()}`}
+              data-tai-cho={taiCho ? "1" : "0"}
+              onClick={() => (taiCho ? onMoTaiCho(ngan) : onDieuHuong(n.href))}
+            >
+              {taiCho ? (
+                <Maximize2 className="mr-1.5 h-3.5 w-3.5" />
+              ) : (
+                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {t(n.khoaNhan)}
+            </Button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * ★★★ TASK 9 — BÁO SỰ CỐ (`andon.quickReport`), việc thường xuyên nhất của công nhân.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO `quickReport` CHỨ KHÔNG `raise`
+ * ════════════════════════════════════════════════════════════════════════════
+ * Hai thủ tục cùng cổng quyền (`andon`/canCreate) và cùng đi qua `raiseAndon`.
+ * Khác nhau ở thứ chúng BẮT người dùng phải biết:
+ *   `raise`       — bắt buộc `state` (mức đèn) + `reason` (phân loại) + `title`.
+ *   `quickReport` — chỉ một câu mô tả; model FAST tự chọn `reason`/`state`/tiêu
+ *                   đề (`classifyIssue`), và **không bao giờ ném**: phân loại
+ *                   hỏng vẫn raise với mặc định an toàn (`degraded: true`).
+ * Công nhân đứng cạnh máy đang kẹt phôi không phải là người nên chọn giữa bốn
+ * mức đèn và tám mã lý do. Một form ba ô là một form không ai điền lúc gấp.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO LÀ COMPONENT RIÊNG, KHÔNG PHẢI VÀI DÒNG TRONG `NganXuLy`
+ * ════════════════════════════════════════════════════════════════════════════
+ * `useMutation` là một HOOK: viết thẳng trong `NganXuLy` thì nó chạy cho MỌI
+ * người dùng, kể cả vai không có `andon`/canCreate — và mọi chỗ gọi cũ (màn
+ * Máy, lưới DOM có sẵn) phải biết trước điểm trpc mới. Đặt trong một component
+ * chỉ render khi `duocPhep` ⇒ hook chỉ tồn tại với người thật sự có quyền, đúng
+ * khuôn `AnTamAlarm` bên dưới.
+ *
+ * ★ `description` để TRỐNG vẫn gửi được: zod khai `.optional()`, và một lời kêu
+ *   cứu không lời vẫn là một lời kêu cứu (server raise với tiêu đề mặc định).
+ *   Chặn nút khi ô trống sẽ biến ca gấp nhất thành ca khó nhất.
+ */
+function BaoSuCo({
+  machineId,
+  ma,
+  chan,
+  onXong,
+}: {
+  machineId: number;
+  ma: string;
+  chan: boolean;
+  onXong: () => void;
+}) {
+  const { t } = useTranslation();
+  const [mo, setMo] = useState(false);
+  const [moTa, setMoTa] = useState("");
+
+  const guiM = trpc.andon.quickReport.useMutation({
+    onSuccess: (kq) => {
+      /*
+       * ★ NT-3 — `degraded` là lời khai của server rằng bộ phân loại đã rơi về
+       *   mặc định. Nuốt nó đi thì người báo tin tưởng cảnh báo đã được xếp
+       *   đúng loại, trong khi nó đang mang mức an toàn chung.
+       */
+      const d = (kq as { degraded?: boolean } | undefined)?.degraded === true;
+      toast.success(
+        d
+          ? t("twin3d.vanHanh.daBaoSuCoTho", "Đã báo sự cố — chưa phân loại được, cần người xem lại")
+          : t("twin3d.vanHanh.daBaoSuCo", "Đã báo sự cố"),
+      );
+      setMo(false);
+      setMoTa("");
+      onXong();
+    },
+    onError: (e) => toastTrpcError(e),
+  });
+
+  return (
+    <div className="mt-1.5">
+      <Button
+        size="sm"
+        variant="destructive"
+        className="w-full"
+        data-testid="nut-bao-su-co"
+        disabled={chan}
+        onClick={() => setMo((v) => !v)}
+      >
+        <Megaphone className="mr-1.5 h-3.5 w-3.5" />
+        {t("twin3d.vanHanh.baoSuCo", "Báo sự cố")}
+      </Button>
+      {mo ? (
+        <div className="mt-1.5 space-y-1.5" data-testid="form-bao-su-co">
+          <Label className="text-xs" htmlFor="twin-mo-ta-su-co">
+            {t("twin3d.vanHanh.moTaSuCo", "Mô tả ngắn (không bắt buộc)")}
+          </Label>
+          <Input
+            id="twin-mo-ta-su-co"
+            data-testid="o-mo-ta-su-co"
+            value={moTa}
+            onChange={(e) => setMoTa(e.target.value)}
+            placeholder={t("twin3d.vanHanh.viDuSuCo", "Ví dụ: kẹt phôi ở băng tải")}
+          />
+          <p className="text-[10px] text-text-2" data-testid="bao-su-co-pham-vi">
+            {t("twin3d.vanHanh.baoSuCoChoMay", "Cảnh báo sẽ gắn vào máy {{ma}}", { ma })}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1"
+              data-testid="nut-gui-su-co"
+              disabled={guiM.isPending}
+              onClick={() =>
+                guiM.mutate({
+                  machineId,
+                  // `undefined` chứ không `""`: zod khai `.optional()`, và một
+                  // chuỗi rỗng là một GIÁ TRỊ, không phải "không nhập".
+                  ...(moTa.trim() ? { description: moTa.trim() } : {}),
+                })
+              }
+            >
+              {t("twin3d.vanHanh.guiBaoSuCo", "Gửi")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setMo(false)}>
+              {t("common.cancel", "Huỷ")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

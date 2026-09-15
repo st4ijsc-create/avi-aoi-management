@@ -19959,7 +19959,16 @@
       "moTwinStudioMoTa": "Go to Twin Studio: design the plant, drag and drop machines, save the layout",
       "toanManMoTa": "Near full-screen 3D (collapse both side panels)",
       "soMayNgan_one": "{{n}} machine",
-      "soMayNgan_other": "{{n}} machines"
+      "soMayNgan_other": "{{n}} machines",
+      "baoSuCo": "Report issue",
+      "moTaSuCo": "Short description (optional)",
+      "viDuSuCo": "For example: material jam on the conveyor",
+      "baoSuCoChoMay": "The alarm will be attached to machine {{ma}}",
+      "guiBaoSuCo": "Send",
+      "daBaoSuCo": "Issue reported",
+      "daBaoSuCoTho": "Issue reported - could not be classified, needs review",
+      "dongNgan": "Close action panel",
+      "demTheoNhaMay": "(counted across the whole factory)"
     },
     "studio": {
       "tieuDe": "3D Factory — Design",
@@ -20310,7 +20319,10 @@
       "yellow": "Warning",
       "green": "Normal",
       "theoNhanh": "Scoped to selection",
-      "daAck": "Ack"
+      "daAck": "Ack",
+      "xuLyTaiCho": "Handle",
+      "phamViTaiKhoan": "Counted across your whole account scope",
+      "phamViNhanh": "Counted within {{nhanh}}"
     },
     "canvasUi": {
       "fitTatCa": "Fit all in view",

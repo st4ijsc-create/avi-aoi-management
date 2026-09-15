@@ -179,7 +179,7 @@ import {
   type MayVanHanh,
   tsTrangThaiTheoMay,
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
-import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
+import type { CanhBaoDangMo, LoaiDich, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
 // ── Đợt 11 lô J — §11 #16: KPI ĐỌC ĐƯỢC TRÊN CẢNH 3D (yêu cầu #6) ──────────
 import { locKpiTheoCanh, tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kpiNoiLogic";
 import { BangKpiNoi, chuaChoDaiViec } from "@/components/twin3d/van-hanh/BangKpiNoi";
@@ -912,6 +912,42 @@ export function ThanTwinVanHanh() {
   const mayVanHanh = useOnDinhTheoGiaTri(mayVanHanhTho, khoaMayVanHanh(mayVanHanhTho));
 
   /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ TASK 10 — MÁY ĐANG XỬ LÝ TẠI CHỖ (ngăn phải hoạt động trên `/twin`)  */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ĐO ĐƯỢC TRƯỚC KHI VÁ: NGĂN XỬ LÝ CỦA `/twin` RENDER **0 NÚT VỚI MỌI VAI**
+   * ════════════════════════════════════════════════════════════════════════
+   * Không phải vì thiếu quyền, mà vì `machineIdChon` ở đây **luôn `null`**:
+   * `dichManRieng` (QĐ-23) redirect cả `?chon=machine:` lẫn `?xem=machine:` sang
+   * `/twin/may/:id`, và ba bề mặt bấm máy đều gọi `chonMay` = RỜI TRANG. Ngăn
+   * phải vì thế thu về `w-0` ở mọi lượt xem. Một tầng 21 cảnh báo là 21 lần
+   * đi-về, đúng ngược mục tiêu tài liệu (*hành động ở ngăn phải, ngữ cảnh ở
+   * cảnh 3D trái*).
+   *
+   * ★★★ BẢN VÁ **KHÔNG ĐỤNG** QĐ-23. Bấm máy (cảnh 3D / 2D / danh sách / cây /
+   *   dải Line / breadcrumb / DÒNG cảnh báo) vẫn rời sang `/twin/may/:id` —
+   *   nguyên văn, và `cuaVaoTwin.unit.test.ts` vẫn ghim từng chỗ. Cái thêm vào
+   *   là một đường THỨ HAI: nút "Xử lý" trên mỗi dòng cảnh báo mở ngăn phải
+   *   NGAY TẠI `/twin`. Hai đường cùng tồn tại vì chúng phục vụ hai ý định khác
+   *   nhau: *đi xem kỹ một máy* ≠ *xử lý 21 cảnh báo của một tầng*.
+   *
+   * ⚠ KHÔNG ghi vào URL. `?chon=machine:` bị vỏ `/twin` redirect ngay ở lượt
+   *   đọc đầu, nên ghi vào đó là tự đá mình ra khỏi trang; một khoá URL MỚI thì
+   *   phải sửa `useTrangThaiTwin.ts` + `dinhTuyenTwinCu.ts`, hai tệp ngoài phạm
+   *   vi đợt này. Hệ quả ghi ra chứ không giấu: **F5 mất lựa chọn xử lý** (cảnh
+   *   báo vẫn còn nguyên trong dải, bấm lại một nhịp). Ghi vào sổ nợ.
+   *
+   * ★ `machineIdNgan` LỌC theo danh sách máy đang có: khi người dùng đổi nhà
+   *   máy/tầng, máy vừa xử lý có thể không còn trong cảnh — giữ nguyên id sẽ mở
+   *   một ngăn mang mã rỗng và cảnh báo của một máy không nhìn thấy. Đây là phép
+   *   SUY RA, không phải `useEffect` đồng bộ hai nguồn (G12).
+   */
+  const [mayXuLy, setMayXuLy] = useState<number | null>(null);
+  const machineIdNgan =
+    mayXuLy !== null && mayVanHanh.some((m) => m.id === mayXuLy) ? mayXuLy : machineIdChon;
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
   /* ★★★ §11 #50 — UNS STREAM ISA-95, NGUỒN REALTIME THỨ HAI                  */
   /* ═══════════════════════════════════════════════════════════════════════ */
 
@@ -1409,7 +1445,7 @@ export function ThanTwinVanHanh() {
   const canhBaoCuaMay = useMemo<CanhBaoDangMo[]>(
     () =>
       andonRows
-        .filter((a) => a.machineId === machineIdChon)
+        .filter((a) => a.machineId === machineIdNgan)
         .map((a) => ({
           id: a.id,
           mucDo: a.state,
@@ -1418,7 +1454,7 @@ export function ThanTwinVanHanh() {
           raisedAt: new Date(a.raisedAt).getTime(),
           machineId: a.machineId,
         })),
-    [andonRows, machineIdChon],
+    [andonRows, machineIdNgan],
   );
 
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -2189,6 +2225,16 @@ export function ThanTwinVanHanh() {
     // tên router dùng để hai bên không thể lệch.
     taoPhieu: hasPermission("machine_monitoring", "canCreate"),
     suaPhieu: hasPermission("machine_monitoring", "canEdit"),
+    /*
+     * ★★★ TASK 9 — BÁO SỰ CỐ. `andon`/**canCreate**, đúng tên và đúng MỨC mà
+     *   `andonRouter.quickReport` đòi (`requirePermission("andon","canCreate")`).
+     *
+     * ⚠ KHÔNG dùng lại `ackAlarm` (andon/canEdit): hai mức khác nhau và tập
+     *   người qua được cũng khác. Khai rộng hơn ⇒ nút hiện rồi server từ chối
+     *   (lỗi Khối D "một lối vào rồi TỪ CHỐI"); khai hẹp hơn ⇒ nút biến mất với
+     *   đúng người cần nó, và không lỗi nào nổ.
+     */
+    baoSuCo: hasPermission("andon", "canCreate"),
   };
 
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -2216,6 +2262,35 @@ export function ThanTwinVanHanh() {
      lại ở đây, đó sẽ là bản cài đặt thứ hai của cùng một phép ghi (G12). */
   const thuTrai = urlState.thu.includes("trai");
   const thuPhai = urlState.thu.includes("phai");
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ TASK 11 — VẬT THỂ MÀ NGĂN XỬ LÝ ĐANG NÓI VỀ                          */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /**
+   * `NganXuLy` khai `loaiDich` từ lâu, nhưng **0 chỗ gọi sản phẩm** truyền giá
+   * trị khác `"machine"` (chỉ 2 tệp lưới truyền) ⇒ quản đốc chọn cấp nhà máy vẫn
+   * chỉ thấy tập đích cấp máy — mà ở cấp ấy `machineId` là `null`, nên nhánh
+   * "chưa chọn" trả về TRƯỚC cả nhóm §9.3 và họ thấy **0 đích**.
+   *
+   * Bảng ánh xạ dưới đây đi từ CẤP ĐANG XEM, không từ URL thô:
+   *   `line` (có id)                  → đích cấp chuyền (WIP, OEE chuyền)
+   *   `tapDoan` / `nhaMay` / `tang`   → đích cấp nhà máy của **nhà máy đang nạp**
+   *   `may`                           → không tới được ở đây (QĐ-23 redirect)
+   *
+   * ★ `tang` dùng đích cấp nhà máy là CÓ CHỦ Ý: `LoaiDich` không có cấp tầng, và
+   *   mọi màn phân tích của hệ nhận `?factoryId=`/`?lineId=`, không nhận tầng.
+   *   Bịa một `loaiDich: "workshop"` cho tầng sẽ gửi `?workshopId=<id tầng>` —
+   *   một tham số SAI ĐẠI LƯỢNG, tệ hơn không có nút.
+   * ★ Máy đang XỬ LÝ thắng: khi ngăn mở cho một máy thì nó nói về máy ấy.
+   */
+  const dichNgan: { loai: LoaiDich; id: number } | null =
+    machineIdNgan !== null
+      ? { loai: "machine", id: machineIdNgan }
+      : phamVi.cap === "line" && phamVi.id !== null
+        ? { loai: "line", id: phamVi.id }
+        : factoryId !== null
+          ? { loai: "factory", id: factoryId }
+          : null;
+
   /*
    * ★★★ ĐỢT 45 (mục 2) — NGĂN PHẢI RỖNG THÌ THU VỀ 0, KHÔNG GHI URL.
    *   Sau QĐ-23 mọi lượt chọn máy rời sang `/twin/may/:id` và `?chon=machine:` redirect (K6) ⇒ trên
@@ -2223,7 +2298,25 @@ export function ThanTwinVanHanh() {
    *   Trạng thái SUY RA từ dữ liệu (không phải lựa chọn) nên không vào `?thu=` — khi có máy được chọn
    *   (đường cũ còn sống) ngăn tự mở lại. Câu gợi ý chuyển thành viên nhỏ đáy-phải cảnh (`goi-y-chon-may`).
    */
-  const nganPhaiTrong = machineIdChon === null;
+  /*
+   * ★★★ TASK 11 SỬA ĐIỀU KIỆN "RỖNG" — và đây là nửa sau của bản vá, không phải
+   *   một thay đổi kèm theo.
+   *
+   * Luật Đợt 45 viết nguyên văn: *"tay nắm phải chỉ hiện khi ngăn CÓ gì để mở"*.
+   * Lúc ấy `machineIdChon === null` ⇒ ngăn đúng là RỖNG (một câu chết). Task 11
+   * bỏ đúng điều kiện ấy: ở cấp nhà máy/chuyền ngăn nay mang nhóm §9.3 thật.
+   *
+   * ⇒ Giữ nguyên LUẬT, cập nhật PHÉP ĐO của nó. Nếu chỉ vá `NganXuLy` mà để
+   *   `nganPhaiTrong` cũ, nhóm §9.3 mới sẽ được render vào một `aside` có
+   *   `hidden` + `w-0` — tính năng "có mã, có lưới, không ai thấy" LẶP LẠI đúng
+   *   lớp lỗi mà Task 11 sinh ra để đóng (G16 ở tầng CSS).
+   *
+   * ⚠ HỆ QUẢ NHÌN THẤY ĐƯỢC, ghi ra chứ không giấu: trên `/twin` ngăn phải nay
+   *   MỞ MẶC ĐỊNH (`?thu=` chưa có "phai") thay vì luôn thu về 0. Người dùng thu
+   *   lại bằng tay nắm và lựa chọn đó ở URL nên nó bền qua F5. Cần nghiệm thu
+   *   bằng ẢNH: jsdom không có layout engine nên lưới không đo được bề rộng.
+   */
+  const nganPhaiTrong = machineIdNgan === null && dichNgan === null;
   const thuPhaiHieuLuc = thuPhai || nganPhaiTrong;
 
 
@@ -2338,7 +2431,7 @@ export function ThanTwinVanHanh() {
    *   nhúng không còn đường vào từ `/twin` nên phép tính này rời trang.
    */
 
-  const mayDangChon = mayVanHanh.find((m) => m.id === machineIdChon) ?? null;
+  const mayDangChon = mayVanHanh.find((m) => m.id === machineIdNgan) ?? null;
   const sanRongM = tangDau ? mmSangMet(tangDau.rongMm) : 40;
   const sanSauM = tangDau ? mmSangMet(tangDau.sauMm) : 30;
 
@@ -2396,6 +2489,39 @@ export function ThanTwinVanHanh() {
   // ⚠ KHÔNG `useMemo` ở đây, và đó là CÓ CHỦ Ý: `breadcrumb` ngay trên được
   //   dựng lại mỗi lượt render (không memo), nên một `useMemo` phụ thuộc nó sẽ
   //   tính lại mỗi lần y hệt — một lời khai "đã tối ưu" mà không tối ưu gì.
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ NHÃN PHẠM VI CHO DẢI CẢNH BÁO (chủ dự án chốt 2026-09-15)           */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * HAI CON SỐ TRÊN CÙNG MỘT MÀN, HAI MẪU SỐ — VÀ ĐÓ LÀ THIẾT KẾ, KHÔNG PHẢI LỖI
+   * ════════════════════════════════════════════════════════════════════════
+   *   `dem-may` (panel trái) đếm theo **NHÀ MÁY đang nạp** — cố ý, có tài liệu ở
+   *      `cayVanHanh.ts:58-61` ("cùng chữ máy, hai mẫu số"): nó trả lời *"nhà máy
+   *      này có bao nhiêu máy"*, còn cảnh 3D vẽ **một tầng**.
+   *   `dai-canh-bao` đếm theo **toàn phạm vi tài khoản** khi chưa thu hẹp nhánh:
+   *      `andon.active` KHÔNG nhận `factoryId` (`andonRouter.ts:348-358`), nên vai
+   *      giám đốc thấy 55 cảnh báo của ba công ty cạnh một cảnh một nhà máy.
+   *
+   * Quyết định: **KHÔNG đổi cách đếm, chỉ NÓI RA phạm vi.** Thu hẹp dải theo
+   * cảnh sẽ giấu cảnh báo của nhà máy khác — một màn giám sát im lặng nuốt cảnh
+   * báo còn tệ hơn một con số rộng đã khai rõ. Bảng KPI (Task 5 đợt trước) đã
+   * thu hẹp theo tầng, nên hai ô này nay lệch với nó *rõ hơn*; nhãn là thứ bỏ đi
+   * chỗ mơ hồ mà không đụng một phép đếm nào.
+   *
+   * ★ Hai ca, hai câu KHÁC NHAU — không gộp:
+   *     `phamViCanhBao !== null` ⇒ dải ĐANG lọc theo nhánh ⇒ nói TÊN nhánh.
+   *     `null`                   ⇒ chưa thu hẹp ⇒ nói "toàn phạm vi tài khoản".
+   *   Một câu chung cho cả hai sẽ đúng ở một ca và sai ở ca kia.
+   */
+  const nhanPhamViCanhBao =
+    phamViCanhBao === null
+      ? t("twin3d.daiCanhBao.phamViTaiKhoan", "Đếm trên toàn phạm vi tài khoản")
+      : t("twin3d.daiCanhBao.phamViNhanh", "Đếm trong nhánh {{nhanh}}", {
+          nhanh: breadcrumb.at(-1)?.nhan ?? "",
+        });
+
 
   /**
    * ⚠ Nhãn phải nói ĐÚNG chế độ đang hiện. Bản đầu cứng chuỗi "Cảnh 3D" và
@@ -3118,6 +3244,25 @@ export function ThanTwinVanHanh() {
                   {hienSo(demTuoi.ngungKhaiThac, dangTai)}
                 </span>
               </span>
+              {/*
+                ★★★ NHÃN PHẠM VI (chủ dự án chốt 2026-09-15) — MỘT câu cho CẢ NĂM số.
+
+                Cả năm ô trên đều suy từ `mayVanHanh`, tức tập máy của **nhà máy
+                đang nạp** — không phải tầng mà cảnh 3D đang vẽ, và không phải
+                mẫu số mà bảng KPI dùng sau Task 5. `cayVanHanh.ts:58-61` gọi
+                đúng chuyện này là *"cùng chữ máy, hai mẫu số"* và giữ nó CÓ CHỦ Ý.
+
+                ⚠ Một nhãn cho mỗi số sẽ lặp năm lần cùng một câu trong một hàng
+                  10 px — và đây là hàng mà Đợt 57 vừa ép từ 105 px xuống một
+                  dòng để mua lại chỗ cho dải cảnh báo. Một câu ở cuối hàng nói
+                  đúng chừng ấy sự thật với chi phí một mảnh chữ.
+              */}
+              <span
+                className="whitespace-nowrap text-text-2"
+                data-testid="tong-quan-pham-vi"
+              >
+                {t("twin3d.vanHanh.demTheoNhaMay", "(đếm theo toàn nhà máy)")}
+              </span>
             </div>
             {/*
               ★★★ ĐỢT 40 (QA Đợt 39 Pareto #1) — "—" PHẢI CÓ CÂU LÝ DO NGAY TẠI CHỖ. Đo trước vá
@@ -3229,6 +3374,11 @@ export function ThanTwinVanHanh() {
             dangTai={andonQ.isLoading}
             khongDoDuoc={andonQ.isError}
             onChonCanhBao={(c) => c.machineId != null && chonMay(c.machineId)}
+            /* ★★★ TASK 10 — đường THỨ HAI: xử lý ngay tại `/twin`, không rời trang.
+               Bấm DÒNG vẫn là `chonMay` (QĐ-23, ghim nguyên văn ở `cuaVaoTwin`). */
+            onXuLyTaiCho={(c) => c.machineId != null && setMayXuLy(c.machineId)}
+            /* ★ Nhãn phạm vi — xem docblock `nhanPhamViCanhBao`. */
+            nhanPhamVi={nhanPhamViCanhBao}
           />
           </div>
 
@@ -3334,7 +3484,7 @@ export function ThanTwinVanHanh() {
             <DanhSachMay
               may={mayVanHanh}
               trangThaiTheoMay={trangThaiTheoMay}
-              machineIdChon={machineIdChon}
+              machineIdChon={machineIdNgan}
               onChonMay={chonMay}
               bayGio={bayGio}
               dangTai={dangTai}
@@ -3361,7 +3511,7 @@ export function ThanTwinVanHanh() {
               may={mayVeTatCa}
               trangThaiTheoMay={trangThaiTheoMay}
               maTheoMay={maTheoMay}
-              machineIdChon={machineIdChon}
+              machineIdChon={machineIdNgan}
               onChonMay={chonMay}
               sanRongM={sanRongM}
               sanSauM={sanSauM}
@@ -3384,7 +3534,7 @@ export function ThanTwinVanHanh() {
                  docblock của `vienSucKhoeCanh` và `vungCanh` phía trên. */
               vienSucKhoe={vienSucKhoeCanh}
               vung={vungCanh}
-              machineIdChon={machineIdChon}
+              machineIdChon={machineIdNgan}
               onChonMay={chonMay}
               khungNhin={khungNhin}
               sanRongM={sanRongM}
@@ -3888,7 +4038,7 @@ export function ThanTwinVanHanh() {
           hidden={thuPhaiHieuLuc}
         >
           <NganXuLy
-            machineId={machineIdChon}
+            machineId={machineIdNgan}
             ma={mayDangChon?.ma ?? ""}
             ten={mayDangChon?.ten ?? ""}
             trangThai={
@@ -3903,6 +4053,12 @@ export function ThanTwinVanHanh() {
             coQuyenXem={(m) => hasPermission(m, "canView")}
             onDaXuLy={napLai}
             onDieuHuong={setLocation}
+            /* ★★★ TASK 11 — vật thể ngăn đang nói về; xem docblock `dichNgan`. */
+            loaiDich={dichNgan?.loai ?? "machine"}
+            dichId={dichNgan?.id ?? null}
+            /* ★★★ TASK 10 — chỉ có đường đóng khi ngăn mở VÌ người dùng bấm "Xử lý"
+               (máy đến từ `mayXuLy`). Ngăn mở vì URL thì đóng bằng tay nắm `?thu=`. */
+            onDongNgan={mayXuLy !== null ? () => setMayXuLy(null) : undefined}
             /* ★ Đợt 33 (QĐ-23 #4): KHÔNG `onMoTaiCho`/`nganNhung` — ngăn nhúng
                `NganNhung` mất đường vào từ `/twin`; bấm máy đã rời sang
                `/twin/may/:id` nên panel này chỉ còn gặp `machineId === null`

@@ -48,6 +48,7 @@ export type NhomHanhDong = "canhBao" | "taoViec" | "moChucNang";
 
 /** Mã hành động — khoá ổn định cho `data-testid` và cho test. */
 export type MaHanhDong =
+  | "baoSuCo"
   | "ack"
   | "anTam"
   | "ghiChu"
@@ -65,6 +66,36 @@ export interface QuyenXuLy {
   taoPhieu: boolean;
   /** `machine_monitoring`→`machine_status` / canEdit — gán KTV, đặt ưu tiên. */
   suaPhieu: boolean;
+  /**
+   * ★★★ TASK 9 — `andon` / **canCreate** — BÁO SỰ CỐ (`andon.quickReport`).
+   *
+   * Đây là việc thường xuyên nhất của công nhân, và cả ba mảnh đã sẵn từ lâu:
+   *   · máy chủ    : `andonRouter.raise` (:199) và `andonRouter.quickReport`
+   *                  (:239), cả hai `requirePermission("andon","canCreate")`;
+   *   · khuôn quyền: vai `operator` mặc định ĐÃ có `andon` canCreate=true
+   *                  (`permissionsRouter.ts`), y như `supervisor`/`engineer`/
+   *                  `quality_inspector`/`admin`;
+   *   · giao diện  : **thiếu đúng một nút**.
+   *
+   * ⚠ TUỲ CHỌN, mặc định **ẩn** (fail-closed). `hanhDongChoVatThe` đọc
+   *   `=== true`, nên một chỗ gọi chưa nối quyền này sẽ KHÔNG hiện nút — chứ
+   *   không hiện một nút mà server sẽ từ chối. Trường bắt buộc ở đây sẽ phá
+   *   biên dịch của các chỗ gọi nằm ngoài phạm vi đợt này (`TwinMay.tsx`,
+   *   `nhungTaiCho.dom.test.tsx`); mở rộng thì thêm vào CUỐI với mặc định an
+   *   toàn, không đổi hình dạng cũ.
+   *
+   * ⚠⚠ NỢ MỘT DÒNG — `/twin/may/:id` CHƯA NỐI. `TwinMay.tsx` dựng `quyen` với
+   *   đúng bốn dòng cũ, nên trên màn Máy nút "Báo sự cố" **KHÔNG hiện**. Tệp ấy
+   *   nằm ngoài danh sách tệp của đợt này. Dòng cần thêm, nguyên văn, vào khối
+   *   `const quyen: QuyenXuLy = {` của nó:
+   *
+   *       baoSuCo: hasPermission("andon", "canCreate"),
+   *
+   *   Chừng nào chưa thêm: trên `/twin` công nhân báo sự cố được cho máy CÓ dòng
+   *   trong dải cảnh báo (bấm "Xử lý" ⇒ ngăn mở ⇒ nút hiện); máy chưa có cảnh
+   *   báo nào thì phải vào màn Máy, và ở đó nút còn ẩn.
+   */
+  baoSuCo?: boolean;
 }
 
 export const QUYEN_RONG: QuyenXuLy = {
@@ -72,6 +103,7 @@ export const QUYEN_RONG: QuyenXuLy = {
   anTamAlarm: false,
   taoPhieu: false,
   suaPhieu: false,
+  baoSuCo: false,
 };
 
 /** Một cảnh báo đang mở trên vật thể đang chọn (`andon_events`). */
@@ -129,6 +161,20 @@ export function hanhDongChoVatThe(args: {
         : null;
 
   return [
+    /*
+     * ★★★ TASK 9 — BÁO SỰ CỐ. `lyDoChan` CHỈ phụ thuộc "đã chọn máy chưa".
+     *
+     * Ba hành động kia đòi có một cảnh báo đang mở vì chúng XỬ LÝ cảnh báo ấy.
+     * Báo sự cố đi ngược chiều: nó TẠO cảnh báo đầu tiên. Nếu ta cũng chặn nó
+     * bằng `khong_co_canh_bao` thì nút chỉ bấm được khi đã có người khác báo —
+     * tức là đúng lúc không còn cần tới nó nữa.
+     */
+    {
+      ma: "baoSuCo",
+      nhom: "canhBao",
+      duocPhep: quyen.baoSuCo === true,
+      lyDoChan: chuaChon ? "chua_chon_may" : null,
+    },
     { ma: "ack", nhom: "canhBao", duocPhep: quyen.ackAlarm, lyDoChan: lyDoCanhBao },
     {
       ma: "anTam",
@@ -283,9 +329,38 @@ export function nutDieuHuongCho(loai: LoaiDich, id: number): NutDieuHuong[] {
         { khoaNhan: "twin3d.vanHanh.dieuHuong.sanXuat", href: `/production-dashboard?workshopId=${id}`, quyen: "dashboard_view" },
         { khoaNhan: "twin3d.vanHanh.dieuHuong.andon", href: "/andon", quyen: "dashboard_view" },
       ];
+    /*
+     * ════════════════════════════════════════════════════════════════════════
+     * ★★★ TASK 11 — CẤP NHÀ MÁY CÓ ĐỦ ĐÍCH ĐỂ ĐI, VÀ ĐÍCH PHẢI **ĐỌC** ĐƯỢC ID
+     * ════════════════════════════════════════════════════════════════════════
+     * Trước đợt này nhánh `factory` có đúng MỘT mục, và `loaiDich` không có chỗ
+     * gọi nào truyền `"factory"` — nên quản đốc đứng ở cấp nhà máy thấy 0 đích.
+     *
+     * ★★★ MỖI MỤC THÊM VÀO ĐÂY ĐƯỢC ĐO Ở MÀN ĐÍCH, KHÔNG ĐOÁN (2026-09-15).
+     *   Tham số phạm vi của hệ là `?factoryId=`, đọc bởi `useScope`
+     *   (`patterns/ScopeFilterBar.tsx` — `CONTROL_KEY.factory = "factoryId"`),
+     *   và một màn CHỈ đọc những trục nó khai trong `useScope([...])`:
+     *     /andon               `AndonBoard.tsx`         useScope(["factory","line"])   ✔ đọc
+     *     /production-dashboard `ProductionDashboard.tsx` useScope(["factory","line"]) ✔ đọc
+     *     /oee-dashboard       `OEEDashboard.tsx`       useScope(["line","machine"])   ✘ KHÔNG đọc
+     *
+     * ⚠ Kế hoạch đề nghị thêm `/oee-dashboard` vào đây. **Bác bỏ, có số:** màn
+     *   ấy không khai trục `factory`, nên `?factoryId=` bị `toScope` bỏ trong
+     *   im lặng — người dùng bấm "OEE nhà máy" và nhận OEE của phạm vi cũ, một
+     *   con số SAI trông y hệt số đúng. Đó là G67 chạy theo chiều câm nhất.
+     *   Muốn có mục ấy thì phải mở trục `factory` ở `OEEDashboard` TRƯỚC, ở một
+     *   đợt có quyền chạm tệp đó. Ghi nợ tại đây để không ai "sửa" thành có.
+     *
+     * ⚠ `/corporate-dashboard?factoryId=` là mục CÓ TRƯỚC và `CorporateDashboard`
+     *   cũng không đọc tham số ấy (nợ có sẵn, không sinh ra ở đợt này). Giữ
+     *   nguyên href để không đổi hành vi ngoài phạm vi task; ghi ra ở đây thay
+     *   vì để nó im lặng.
+     */
     case "factory":
       return [
         { khoaNhan: "twin3d.vanHanh.dieuHuong.tapDoan", href: `/corporate-dashboard?factoryId=${id}`, quyen: "dashboard_corporate" },
+        { khoaNhan: "twin3d.vanHanh.dieuHuong.sanXuat", href: `/production-dashboard?factoryId=${id}`, quyen: "dashboard_view" },
+        { khoaNhan: "twin3d.vanHanh.dieuHuong.andon", href: `/andon?factoryId=${id}`, quyen: "dashboard_view" },
       ];
   }
 }

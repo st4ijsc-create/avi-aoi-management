@@ -98,8 +98,17 @@ function quetThuTuc(): Map<string, Set<string>> {
  * ★ GHIM — đo 2026-09-11 trên `6eec818f` (`.qa-dot42/grep-thu-tuc.mjs`: 115 tệp, 42 đường dẫn).
  * ★ 2026-09-15 (PH-12) — **43**: `twinCanh.noiCuaThucThe` thêm vào ở `TwinLine.tsx` + `TwinMay.tsx`
  *   (nhà máy/toà của CHÍNH chuyền/máy đang mở, thay cho `factories[0]`/`toaNha[0]`). Có ca ở `CA_DOC`.
+ * ★ 2026-09-15 (Task 9, PH-34) — **44**: `andon.quickReport` thêm ở `NganXuLy.tsx` (nút "Báo sự cố"
+ *   cho công nhân). Có ca ở `CA_GHI`.
+ *   ⚠⚠ MÓN CÒN MỞ, ghi ra chứ không giấu: `andon.raise`/`andon.quickReport` gác RBAC
+ *   (`requirePermission("andon","canCreate")`) nhưng **KHÔNG** gọi `congPhamViAndon` như
+ *   `acknowledge`/`resolve` — tức `machineId`/`lineId` NGOÀI phạm vi vẫn raise được nếu gọi thẳng API.
+ *   Lỗ này CÓ TRƯỚC đợt này (thủ tục đã sống trên `appRouter` từ F5a); Task 9 chỉ thêm một lối vào
+ *   giao diện, và lối ấy chỉ chào máy đang xem. `CA_GHI` đo ĐÚNG cái nó đo — cổng RBAC — nên đừng đọc
+ *   ca dưới là "đã rào phạm vi". Vá đúng chỗ là `andonRouter.ts` (một dòng `await congPhamViAndon`
+ *   theo khuôn `acknowledge`), nằm ngoài phạm vi tệp của đợt này.
  */
-const SO_THU_TUC_GHIM = 43;
+const SO_THU_TUC_GHIM = 44;
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // Fixture
@@ -374,6 +383,9 @@ interface CaGhi {
 /** §2 — 14 thủ tục GHI: người 0 QUYỀN, input RỖNG ⇒ `FORBIDDEN` TRƯỚC khi zod chạy (cổng đứng trước parse). */
 const CA_GHI: CaGhi[] = [
   { duongDan: "andon.acknowledge", goi: (c) => c.andon.acknowledge({} as never), cong: "requirePermission(andon, canEdit)" },
+  // ★ Task 9 — nút "Báo sự cố" của `NganXuLy`. Xem cảnh báo "MÓN CÒN MỞ" ở `SO_THU_TUC_GHIM`:
+  //   ca này đo cổng RBAC, KHÔNG đo cổng phạm vi (thủ tục chưa có cổng phạm vi).
+  { duongDan: "andon.quickReport", goi: (c) => c.andon.quickReport({} as never), cong: "requirePermission(andon, canCreate)" },
   { duongDan: "maintenance.createWorkOrder", goi: (c) => c.maintenance.createWorkOrder({} as never), cong: "requirePermission(machine_monitoring, canCreate)" },
   { duongDan: "twin.models.uploadAndRegister", goi: (c) => c.twin.models.uploadAndRegister({} as never), cong: "requirePermission(machine_control, canCreate)" },
   { duongDan: "twinCanh.dungNhaXuong", goi: (c) => c.twinCanh.dungNhaXuong({} as never), cong: "quyenThietKe(canCreate)" },
