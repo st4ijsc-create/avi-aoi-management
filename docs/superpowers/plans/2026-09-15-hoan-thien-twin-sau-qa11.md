@@ -1061,16 +1061,183 @@ HAVING COUNT(DISTINCT tn.id) > 1;
 
 Nếu truy vấn trả 0 hàng: ghi **N/A kèm chính câu truy vấn** làm bằng chứng, và ghi rằng bộ sinh dữ liệu hiện không dựng được ca này. Nếu trả hàng: mở chuyền đó và đếm khối trong cảnh so với số máy trong cơ sở dữ liệu; thiếu khối thì đó là lỗi đã xác nhận.
 
-- [ ] **Bước 4: Ghi kết quả**
+- [ ] **Bước 4: Đo hai chỉ số rủi ro ngược nhau trên màn máy**
+
+Ảnh đo được cho thấy một chip nói tình trạng nguy kịch trong khi ô cạnh nó nói rủi ro hỏng bằng không, cách nhau khoảng 300 điểm ảnh. Giả thuyết của chủ dự án: **lỗi dữ liệu sinh ngẫu nhiên**, không phải lỗi mã. Đo để phân xử.
+
+Truy vấn hai nguồn cho cùng một máy và so:
+
+```sql
+SELECT m.id, m.code,
+       (SELECT h."healthScore" FROM machine_health_history h
+         WHERE h."machineId" = m.id ORDER BY h."createdAt" DESC LIMIT 1) AS suc_khoe,
+       (SELECT COUNT(*) FROM predictive_alerts p
+         WHERE p."machineId" = m.id AND p."resolvedAt" IS NULL) AS canh_bao_pdm
+FROM machines m
+WHERE m.code LIKE 'QATD-%'
+ORDER BY suc_khoe ASC NULLS LAST
+LIMIT 20;
+```
+
+Ba kết cục có thể, mỗi kết cục một hành động khác nhau:
+- **Hai nguồn khớp nhau trong cơ sở dữ liệu nhưng màn hiển thị lệch** ⇒ lỗi mã, mở task vá.
+- **Hai nguồn lệch nhau ngay trong cơ sở dữ liệu** ⇒ đúng giả thuyết của chủ dự án: bộ sinh dữ liệu đặt điểm sức khoẻ và cảnh báo dự đoán **độc lập** nên chúng mâu thuẫn. Sửa bộ sinh trong `.qa-tapdoan/sinh-tap-doan.mjs` để hai đại lượng cùng một nguồn ngẫu nhiên, rồi sinh lại và đo lại.
+- **Một trong hai nguồn rỗng** ⇒ màn đang hiển thị giá trị mặc định thay vì nói không biết; ghi thành lỗi riêng.
+
+Ghi rõ kết cục nào xảy ra kèm số liệu, đừng kết luận trước khi truy vấn.
+
+- [ ] **Bước 5: Ghi kết quả**
 
 Ghi ba kết quả vào `.qa-tapdoan/PHAT-HIEN.md` theo đúng khuôn các mục sẵn có, mỗi mục nêu rõ đo được gì, phán quyết, và một câu vì sao. Món nào ra lỗi thì mở task vá riêng với bằng chứng kèm theo; món nào ra N/A thì ghi rõ điều kiện để đo lại được.
 
 ---
 
-## Việc cần chủ dự án quyết, không nằm trong task nào
+## Giai đoạn 6 — Mở rộng cảnh cho nhiều nhà máy (Task 17-19)
 
-- **Bản dựng phục vụ ở cổng 3000.** Hiện đã tắt, và bản dựng cũ hơn mã nguồn 26 tệp gồm cả bản vá rò phạm vi. Dựng lại rồi bật, hay để tắt cho tới khi kế hoạch này xong.
-- **Dữ liệu và tài khoản thử trong cơ sở dữ liệu phát triển.** Hiện vẫn còn. Giữ để đo tiếp, hay gỡ ngay bằng hai lệnh đã ghi ở Task 15 bước 6.
-- **Gộp nhiều nhà máy trong một cảnh.** Phạm vi tập đoàn hiện không gộp được vì hợp đồng của thủ tục dựng cảnh nhận đúng một nhà máy. Sản phẩm khai thẳng hạn chế này bằng banner nên không nói dối, nhưng vai giám đốc vì thế chưa dùng được. Mở rộng hợp đồng là một đợt riêng, cần thiết kế trước.
-- **Chỉ mục cho môi trường sản xuất.** Nợ từ trước, chưa áp được vì môi trường này không có đường tới cơ sở dữ liệu sản xuất.
-- **Hai chỉ số rủi ro ngược nhau trên màn máy.** Một chip nói tình trạng nguy kịch trong khi ô cạnh nó nói rủi ro hỏng bằng không. Chưa đo nên chưa biết cái nào đúng; cần một phép đo đối chiếu hai nguồn trước khi sửa.
+Chủ dự án chốt: **thiết kế để mở rộng thêm**. Hiện phạm vi tập đoàn không gộp được nhiều nhà máy vì thủ tục dựng cảnh nhận đúng một mã nhà máy; sản phẩm khai thẳng hạn chế bằng banner nên không nói dối, nhưng vai giám đốc vì thế chưa dùng được.
+
+### Task 17: Viết thiết kế trước khi chạm mã
+
+Đây là thay đổi hợp đồng dữ liệu, không phải một bản vá. Chạm mã trước khi có thiết kế là cách chắc chắn nhất để phải làm lại.
+
+**Tệp:**
+- Tạo: `docs/superpowers/specs/2026-09-16-twin-canh-nhieu-nha-may.md`
+
+- [ ] **Bước 1: Đo hiện trạng hợp đồng**
+
+Đọc và ghi lại chính xác, kèm số dòng: `server/routers/twinCanhRouter.ts:1003-1060` (thủ tục dựng cảnh, đầu vào nhận một mã nhà máy và tối đa 50 mã tầng), `server/db/twinCanh.ts:962` (cây phân cấp nhận một mã nhà máy, ngoài phạm vi trả cây rỗng), `server/db/twinCanh.ts:917` (đặt chỗ theo danh sách tầng, lọc từng tầng qua phạm vi), và `client/src/components/twin3d/van-hanh/boChonNap.ts` (hàm hạ cấp phạm vi tập đoàn xuống nhà máy). Ghi rõ chỗ nào đang chặn việc gộp.
+
+- [ ] **Bước 2: Đo chi phí thật trước khi thiết kế**
+
+Với dữ liệu đợt đo: một nhà máy có 371 đến 409 máy, ba nhà máy là 1.108. Đo thời gian và kích thước phản hồi của thủ tục dựng cảnh cho một nhà máy, rồi ước lượng cho ba. Nếu một nhà máy đã tốn 500 mili giây thì ba nhà máy trong một lượt gọi là một quyết định khác hẳn với việc ba lượt gọi song song. **Đo trước, thiết kế sau.**
+
+- [ ] **Bước 3: Viết thiết kế với ít nhất hai phương án và một khuyến nghị**
+
+Thiết kế phải trả lời được, mỗi câu kèm bằng chứng đo được:
+- Gộp ở đâu: mở rộng đầu vào thành danh sách mã nhà máy, hay giữ nguyên thủ tục và để phía trình duyệt gọi song song rồi ghép.
+- Hàng rào phạm vi giữ thế nào khi có nhiều mã: hiện mỗi mã được lọc riêng; với danh sách thì phải lọc từng mã và **im lặng bỏ mã ngoài phạm vi**, không được để một mã hợp lệ kéo theo cả danh sách.
+- Toạ độ: mỗi nhà máy có hệ toạ độ riêng gốc ở không. Gộp ba nhà máy vào một cảnh cần một phép dời chỗ, và phải quyết định dời theo lưới cố định hay theo vị trí địa lý thật nếu có.
+- Trần an toàn: giới hạn số nhà máy một lượt, và hành vi khi vượt trần.
+- Cách đo nghiệm thu: phép đo nào chứng minh cảnh có đủ ba khối nhà máy, và phép đo nào chứng minh người chỉ được gán một nhà máy vẫn chỉ thấy một.
+
+- [ ] **Bước 4: Trình chủ dự án chọn phương án**
+
+Không tự chọn. Thiết kế nêu khuyến nghị kèm lý do, chủ dự án chốt, rồi mới sang Task 18.
+
+### Task 18: Mở rộng hợp đồng phía máy chủ
+
+Chỉ làm sau khi Task 17 được chốt. Nếu thiết kế chọn phương án gọi song song ở trình duyệt thì **bỏ hẳn task này** và ghi rõ lý do.
+
+**Tệp:**
+- Sửa: `server/routers/twinCanhRouter.ts` (đầu vào thủ tục dựng cảnh)
+- Sửa: `server/db/twinCanh.ts` (cây phân cấp nhận danh sách)
+- Lưới: `server/routers/canhNhieuNhaMayPhamVi.db.test.ts` (tạo mới)
+
+**Giao diện:**
+- Sản xuất: đầu vào nhận thêm trường danh sách mã nhà máy, giữ nguyên trường một mã cũ để không phá chỗ gọi hiện có.
+
+- [ ] **Bước 1: Viết lưới phạm vi trước, đây là phần dễ sai nhất**
+
+```ts
+it("★ danh sách nhà máy ⇒ chỉ trả nhà máy TRONG phạm vi, im lặng bỏ phần ngoài", async () => {
+  const ctx = ctxCuaVai("gan_mot_nha_may_A");
+  const kq = await goi(ctx, "twinCanh.canhThietKe", { factoryIds: [idA, idB] });
+  expect(kq.cay.may.every((m) => m.factoryId === idA)).toBe(true);
+  expect(kq.cay.may.length).toBeGreaterThan(0);
+});
+
+it("★ mọi mã đều ngoài phạm vi ⇒ cây rỗng, KHÔNG lỗi và KHÔNG rò tên", async () => {
+  const ctx = ctxCuaVai("gan_mot_nha_may_A");
+  const kq = await goi(ctx, "twinCanh.canhThietKe", { factoryIds: [idB, idC] });
+  expect(kq.cay.may).toHaveLength(0);
+  expect(JSON.stringify(kq)).not.toContain("QATD-B");
+});
+
+it("★ đối chứng dương: admin xin ba nhà máy ⇒ nhận đủ ba", async () => {
+  const ctx = ctxCuaVai("admin");
+  const kq = await goi(ctx, "twinCanh.canhThietKe", { factoryIds: [idA, idB, idC] });
+  expect(new Set(kq.cay.may.map((m) => m.factoryId)).size).toBe(3);
+});
+
+it("★ vượt trần ⇒ từ chối rõ ràng, không cắt im lặng", async () => {
+  const ctx = ctxCuaVai("admin");
+  await expect(
+    goi(ctx, "twinCanh.canhThietKe", { factoryIds: Array.from({ length: 20 }, (_, i) => i + 1) }),
+  ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+});
+```
+
+- [ ] **Bước 2: Chạy, kỳ vọng ĐỎ toàn bộ**
+
+- [ ] **Bước 3: Mở rộng theo đúng phương án đã chốt, giữ nguyên đường một nhà máy**
+
+- [ ] **Bước 4: XANH, ablation gỡ bộ lọc phạm vi để thấy ca thứ nhất và thứ hai ĐỎ lại, hoàn nguyên**
+
+- [ ] **Bước 5: Cổng nền và commit**
+
+```bash
+npx vitest run phamVi
+npx vitest run server/routers/canhNhieuNhaMayPhamVi.db.test.ts
+npm run check
+git add server/routers/twinCanhRouter.ts server/db/twinCanh.ts server/routers/canhNhieuNhaMayPhamVi.db.test.ts
+git commit -m "feat(twin3d): canhThietKe nhan danh sach nha may, loc pham vi tung ma"
+```
+
+### Task 19: Cảnh tập đoàn ở phía trình duyệt
+
+**Tệp:**
+- Sửa: `client/src/components/twin3d/van-hanh/boChonNap.ts` (thôi hạ cấp phạm vi tập đoàn)
+- Sửa: `client/src/pages/TwinVanHanh.tsx`
+- Lưới: `client/src/components/twin3d/van-hanh/canhTapDoan.unit.test.ts` (tạo mới)
+
+- [ ] **Bước 1: Viết lưới ĐỎ**
+
+```ts
+it("★ phạm vi tập đoàn KHÔNG còn bị hạ cấp xuống một nhà máy", () => {
+  const kq = phamViThuc({ pv: "tapdoan", soNhaMayTrongPhamVi: 3 });
+  expect(kq.cap).toBe("tapDoan");
+  expect(kq.daHaCap).toBe(false);
+});
+
+it("★ chỉ được gán một nhà máy ⇒ phạm vi tập đoàn vẫn chỉ ra một khối", () => {
+  const kq = phamViThuc({ pv: "tapdoan", soNhaMayTrongPhamVi: 1 });
+  expect(kq.soNhaMayVe).toBe(1);
+});
+```
+
+- [ ] **Bước 2: Chạy, kỳ vọng ĐỎ**
+
+- [ ] **Bước 3: Bỏ hạ cấp và dời chỗ từng khối nhà máy theo thiết kế**
+
+- [ ] **Bước 4: Đo kết cục trên trình duyệt thật**
+
+Với tài khoản được gán cấp tập đoàn, mở phạm vi tập đoàn và đếm **số cụm khối** trong cảnh, kỳ vọng bằng ba. Với tài khoản chỉ được gán một nhà máy, kỳ vọng bằng một. Đây chính là mục 26 của bản thiết kế gốc, thứ chưa bao giờ đo được.
+
+- [ ] **Bước 5: Đo lại ngân sách vẽ**
+
+Cảnh ba nhà máy có 1.108 máy. Kiểm số lệnh vẽ vẫn dưới 150, số tam giác dưới 500 nghìn, số nhãn dưới 30, và số khung hình khi xoay vẫn từ 30 trở lên. Nếu vượt, đó là lý do chính đáng để quay lại thiết kế chứ không phải để nới ngưỡng.
+
+- [ ] **Bước 6: Gỡ banner khai hạn chế**
+
+Banner nói phạm vi tập đoàn chưa nạp được nhiều nhà máy nay thành lời khai sai, phải gỡ cùng lượt. Để lại là sản phẩm nói dối theo chiều ngược.
+
+- [ ] **Bước 7: Cổng nền và commit**
+
+```bash
+npx vitest run client/src/components/twin3d
+npm run check && npm run i18n:check
+git add client/src/components/twin3d/van-hanh/boChonNap.ts client/src/pages/TwinVanHanh.tsx client/src/components/twin3d/van-hanh/canhTapDoan.unit.test.ts
+git commit -m "feat(twin3d): canh pham vi tap doan gop nhieu nha may (muc 26 spec goc)"
+```
+
+---
+
+## Quyết định của chủ dự án (2026-09-15) — đã chốt, không còn treo
+
+| việc | quyết định | hệ quả trong kế hoạch |
+|---|---|---|
+| Bản dựng ở cổng 3000 | **Để tắt** cho tới khi kế hoạch này xong và đồng bộ | Không task nào bật lại cổng đó. Mọi phép đo dùng cổng riêng và bản dựng riêng trong `.qa-tapdoan/`. Bật lại là việc sau khi Task 15 đạt. |
+| Dữ liệu và tài khoản thử | **Toàn quyền xoá bỏ nếu cần** — hệ thống vẫn đang phát triển | Người thực thi được tự do gỡ và sinh lại bất cứ lúc nào bằng hai lệnh ở Task 15. Không cần hỏi lại. Vẫn phải giữ nguyên dữ liệu không mang tiền tố của đợt đo. |
+| Gộp nhiều nhà máy trong một cảnh | **Thiết kế để mở rộng thêm** | Thành Giai đoạn 6, Task 17 đến 19. |
+| Chỉ mục cho môi trường sản xuất | **Không còn là nợ** — hệ thống hiện chỉ nằm trong hệ sinh thái máy tự động hoá, chưa chạm sản xuất thật | Gỡ khỏi danh sách chờ. Khi nào có môi trường sản xuất thật thì mở lại. |
+| Hai chỉ số rủi ro ngược nhau | **Đồng ý đo**, giả thuyết là lỗi dữ liệu sinh ngẫu nhiên | Thành Task 16 bước 4. |
