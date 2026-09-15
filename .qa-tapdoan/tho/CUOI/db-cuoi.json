@@ -1,0 +1,1172 @@
+{
+ "factories": [
+  {
+   "id": 41,
+   "code": "QATD-A",
+   "name": "Công ty A",
+   "corporateCode": "QATD"
+  },
+  {
+   "id": 42,
+   "code": "QATD-B",
+   "name": "Công ty B",
+   "corporateCode": "QATD"
+  },
+  {
+   "id": 43,
+   "code": "QATD-C",
+   "name": "Công ty C",
+   "corporateCode": "QATD"
+  }
+ ],
+ "users": [
+  {
+   "id": 26920,
+   "username": "qatd_admin",
+   "role": "admin"
+  },
+  {
+   "id": 26919,
+   "username": "qatd_congnhan",
+   "role": "operator"
+  },
+  {
+   "id": 26916,
+   "username": "qatd_giamdoc",
+   "role": "supervisor"
+  },
+  {
+   "id": 26921,
+   "username": "qatd_khonggan",
+   "role": "operator"
+  },
+  {
+   "id": 26922,
+   "username": "qatd_khongquyen",
+   "role": "user"
+  },
+  {
+   "id": 26918,
+   "username": "qatd_kythuat",
+   "role": "engineer"
+  },
+  {
+   "id": 26917,
+   "username": "qatd_quanly",
+   "role": "supervisor"
+  }
+ ],
+ "demMay": [
+  {
+   "code": "QATD-A",
+   "n": 371
+  },
+  {
+   "code": "QATD-B",
+   "n": 409
+  },
+  {
+   "code": "QATD-C",
+   "n": 328
+  }
+ ],
+ "toaNha": [
+  {
+   "fcode": "QATD-A",
+   "toa_id": 65,
+   "toa_ma": "QATD-A-T1",
+   "toa_ten": "Toà 1",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_id": 66,
+   "toa_ma": "QATD-A-T2",
+   "toa_ten": "Toà 2",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_id": 67,
+   "toa_ma": "QATD-A-T3",
+   "toa_ten": "Toà 3",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_id": 68,
+   "toa_ma": "QATD-A-T4",
+   "toa_ten": "Toà 4",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 69,
+   "toa_ma": "QATD-B-T1",
+   "toa_ten": "Toà 1",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 70,
+   "toa_ma": "QATD-B-T2",
+   "toa_ten": "Toà 2",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 71,
+   "toa_ma": "QATD-B-T3",
+   "toa_ten": "Toà 3",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 72,
+   "toa_ma": "QATD-B-T4",
+   "toa_ten": "Toà 4",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_id": 73,
+   "toa_ma": "QATD-C-T1",
+   "toa_ten": "Toà 1",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_id": 74,
+   "toa_ma": "QATD-C-T2",
+   "toa_ten": "Toà 2",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_id": 75,
+   "toa_ma": "QATD-C-T3",
+   "toa_ten": "Toà 3",
+   "so_tang": 7
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_id": 76,
+   "toa_ma": "QATD-C-T4",
+   "toa_ten": "Toà 4",
+   "so_tang": 7
+  }
+ ],
+ "tang": [
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T1",
+   "toa_id": 65,
+   "tang_id": 165,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 45
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T1",
+   "toa_id": 65,
+   "tang_id": 166,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 40
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T1",
+   "toa_id": 65,
+   "tang_id": 167,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T1",
+   "toa_id": 65,
+   "tang_id": 168,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T1",
+   "toa_id": 65,
+   "tang_id": 169,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T1",
+   "toa_id": 65,
+   "tang_id": 170,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T1",
+   "toa_id": 65,
+   "tang_id": 171,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T2",
+   "toa_id": 66,
+   "tang_id": 172,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 68
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T2",
+   "toa_id": 66,
+   "tang_id": 173,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 45
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T2",
+   "toa_id": 66,
+   "tang_id": 174,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T2",
+   "toa_id": 66,
+   "tang_id": 175,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T2",
+   "toa_id": 66,
+   "tang_id": 176,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T2",
+   "toa_id": 66,
+   "tang_id": 177,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T2",
+   "toa_id": 66,
+   "tang_id": 178,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T3",
+   "toa_id": 67,
+   "tang_id": 179,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 40
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T3",
+   "toa_id": 67,
+   "tang_id": 180,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 39
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T3",
+   "toa_id": 67,
+   "tang_id": 181,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T3",
+   "toa_id": 67,
+   "tang_id": 182,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T3",
+   "toa_id": 67,
+   "tang_id": 183,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T3",
+   "toa_id": 67,
+   "tang_id": 184,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T3",
+   "toa_id": 67,
+   "tang_id": 185,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T4",
+   "toa_id": 68,
+   "tang_id": 186,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 41
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T4",
+   "toa_id": 68,
+   "tang_id": 187,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 53
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T4",
+   "toa_id": 68,
+   "tang_id": 188,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T4",
+   "toa_id": 68,
+   "tang_id": 189,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T4",
+   "toa_id": 68,
+   "tang_id": 190,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T4",
+   "toa_id": 68,
+   "tang_id": 191,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_ma": "QATD-A-T4",
+   "toa_id": 68,
+   "tang_id": 192,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T1",
+   "toa_id": 69,
+   "tang_id": 193,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 63
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T1",
+   "toa_id": 69,
+   "tang_id": 194,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 61
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T1",
+   "toa_id": 69,
+   "tang_id": 195,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T1",
+   "toa_id": 69,
+   "tang_id": 196,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T1",
+   "toa_id": 69,
+   "tang_id": 197,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T1",
+   "toa_id": 69,
+   "tang_id": 198,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T1",
+   "toa_id": 69,
+   "tang_id": 199,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T2",
+   "toa_id": 70,
+   "tang_id": 200,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 60
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T2",
+   "toa_id": 70,
+   "tang_id": 201,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 58
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T2",
+   "toa_id": 70,
+   "tang_id": 202,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T2",
+   "toa_id": 70,
+   "tang_id": 203,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T2",
+   "toa_id": 70,
+   "tang_id": 204,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T2",
+   "toa_id": 70,
+   "tang_id": 205,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T2",
+   "toa_id": 70,
+   "tang_id": 206,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T3",
+   "toa_id": 71,
+   "tang_id": 207,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 34
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T3",
+   "toa_id": 71,
+   "tang_id": 208,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 54
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T3",
+   "toa_id": 71,
+   "tang_id": 209,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T3",
+   "toa_id": 71,
+   "tang_id": 210,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T3",
+   "toa_id": 71,
+   "tang_id": 211,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T3",
+   "toa_id": 71,
+   "tang_id": 212,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T3",
+   "toa_id": 71,
+   "tang_id": 213,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T4",
+   "toa_id": 72,
+   "tang_id": 214,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 31
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T4",
+   "toa_id": 72,
+   "tang_id": 215,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 48
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T4",
+   "toa_id": 72,
+   "tang_id": 216,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T4",
+   "toa_id": 72,
+   "tang_id": 217,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T4",
+   "toa_id": 72,
+   "tang_id": 218,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T4",
+   "toa_id": 72,
+   "tang_id": 219,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_ma": "QATD-B-T4",
+   "toa_id": 72,
+   "tang_id": 220,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T1",
+   "toa_id": 73,
+   "tang_id": 221,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 39
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T1",
+   "toa_id": 73,
+   "tang_id": 222,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 32
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T1",
+   "toa_id": 73,
+   "tang_id": 223,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T1",
+   "toa_id": 73,
+   "tang_id": 224,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T1",
+   "toa_id": 73,
+   "tang_id": 225,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T1",
+   "toa_id": 73,
+   "tang_id": 226,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T1",
+   "toa_id": 73,
+   "tang_id": 227,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T2",
+   "toa_id": 74,
+   "tang_id": 228,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 31
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T2",
+   "toa_id": 74,
+   "tang_id": 229,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 60
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T2",
+   "toa_id": 74,
+   "tang_id": 230,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T2",
+   "toa_id": 74,
+   "tang_id": 231,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T2",
+   "toa_id": 74,
+   "tang_id": 232,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T2",
+   "toa_id": 74,
+   "tang_id": 233,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T2",
+   "toa_id": 74,
+   "tang_id": 234,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T3",
+   "toa_id": 75,
+   "tang_id": 235,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 36
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T3",
+   "toa_id": 75,
+   "tang_id": 236,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 34
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T3",
+   "toa_id": 75,
+   "tang_id": 237,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T3",
+   "toa_id": 75,
+   "tang_id": 238,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T3",
+   "toa_id": 75,
+   "tang_id": 239,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T3",
+   "toa_id": 75,
+   "tang_id": 240,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T3",
+   "toa_id": 75,
+   "tang_id": 241,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T4",
+   "toa_id": 76,
+   "tang_id": 242,
+   "cap_so": 1,
+   "tang_ten": "Tầng 1",
+   "so_may": 51
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T4",
+   "toa_id": 76,
+   "tang_id": 243,
+   "cap_so": 2,
+   "tang_ten": "Tầng 2",
+   "so_may": 45
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T4",
+   "toa_id": 76,
+   "tang_id": 244,
+   "cap_so": 3,
+   "tang_ten": "Tầng 3",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T4",
+   "toa_id": 76,
+   "tang_id": 245,
+   "cap_so": 4,
+   "tang_ten": "Tầng 4",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T4",
+   "toa_id": 76,
+   "tang_id": 246,
+   "cap_so": 5,
+   "tang_ten": "Tầng 5",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T4",
+   "toa_id": 76,
+   "tang_id": 247,
+   "cap_so": 6,
+   "tang_ten": "Tầng 6",
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_ma": "QATD-C-T4",
+   "toa_id": 76,
+   "tang_id": 248,
+   "cap_so": 7,
+   "tang_ten": "Tầng 7",
+   "so_may": 0
+  }
+ ],
+ "mayMau": [
+  {
+   "fcode": "QATD-A",
+   "may_id": 5305,
+   "may_code": "QATD-A-T1-X1-L1-M01",
+   "tram_id": 5104,
+   "chuyen_id": 315
+  },
+  {
+   "fcode": "QATD-B",
+   "may_id": 5676,
+   "may_code": "QATD-B-T1-X1-L1-M01",
+   "tram_id": 5475,
+   "chuyen_id": 347
+  },
+  {
+   "fcode": "QATD-C",
+   "may_id": 6085,
+   "may_code": "QATD-C-T1-X1-L1-M01",
+   "tram_id": 5884,
+   "chuyen_id": 382
+  }
+ ],
+ "andon": [
+  {
+   "fcode": "QATD-A",
+   "n": 15,
+   "n_mo": 15
+  },
+  {
+   "fcode": "QATD-B",
+   "n": 20,
+   "n_mo": 20
+  },
+  {
+   "fcode": "QATD-C",
+   "n": 20,
+   "n_mo": 20
+  }
+ ],
+ "andonMau": [
+  {
+   "fcode": "QATD-A",
+   "andon_id": 276,
+   "status": "raised",
+   "machineId": 5672,
+   "may_code": "QATD-A-T4-X2-L5-M05",
+   "resolvedAt": null,
+   "message": null
+  },
+  {
+   "fcode": "QATD-B",
+   "andon_id": 296,
+   "status": "raised",
+   "machineId": 6063,
+   "may_code": "QATD-B-T4-X2-L3-M07",
+   "resolvedAt": null,
+   "message": null
+  },
+  {
+   "fcode": "QATD-C",
+   "andon_id": 316,
+   "status": "raised",
+   "machineId": 6408,
+   "may_code": "QATD-C-T4-X2-L4-M05",
+   "resolvedAt": null,
+   "message": null
+  }
+ ],
+ "demAndonTong": 62,
+ "demGhiChuTong": 0,
+ "t3": [
+  {
+   "id": 6119,
+   "code": "QATD-C-T1-X1-L4-M11",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 6397,
+   "code": "QATD-C-T4-X2-L3-M03",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 6079,
+   "code": "QATD-B-T4-X2-L4-M10",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 6113,
+   "code": "QATD-C-T1-X1-L4-M05",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 6242,
+   "code": "QATD-C-T2-X2-L5-M09",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 6391,
+   "code": "QATD-C-T4-X2-L2-M10",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5724,
+   "code": "QATD-B-T1-X1-L4-M07",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 5905,
+   "code": "QATD-B-T2-X2-L5-M02",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5708,
+   "code": "QATD-B-T1-X1-L3-M03",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5366,
+   "code": "QATD-A-T1-X2-L2-M04",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5441,
+   "code": "QATD-A-T2-X1-L4-M12",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5756,
+   "code": "QATD-B-T1-X2-L2-M03",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5502,
+   "code": "QATD-A-T2-X2-L4-M14",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 6263,
+   "code": "QATD-C-T3-X1-L2-M07",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 5467,
+   "code": "QATD-A-T2-X2-L2-M01",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5342,
+   "code": "QATD-A-T1-X1-L4-M06",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 5582,
+   "code": "QATD-A-T4-X1-L1-M01",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5844,
+   "code": "QATD-B-T2-X1-L4-M08",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5397,
+   "code": "QATD-A-T2-X1-L1-M08",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 5446,
+   "code": "QATD-A-T2-X1-L5-M04",
+   "suc_khoe": 41,
+   "canh_bao_pdm": 1
+  }
+ ],
+ "t3dem": {
+  "hist_qatd": 12188,
+  "pdm_qatd": 575,
+  "hist_tong": 242743,
+  "pdm_tong": 834
+ },
+ "tangNhieuMay": [
+  {
+   "fcode": "QATD-A",
+   "toa_id": 66,
+   "toa_ma": "QATD-A-T2",
+   "tang_id": 172,
+   "capSo": 1,
+   "so_may": 68,
+   "da_khoa": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 69,
+   "toa_ma": "QATD-B-T1",
+   "tang_id": 193,
+   "capSo": 1,
+   "so_may": 63,
+   "da_khoa": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 69,
+   "toa_ma": "QATD-B-T1",
+   "tang_id": 194,
+   "capSo": 2,
+   "so_may": 61,
+   "da_khoa": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 70,
+   "toa_ma": "QATD-B-T2",
+   "tang_id": 200,
+   "capSo": 1,
+   "so_may": 60,
+   "da_khoa": 0
+  },
+  {
+   "fcode": "QATD-C",
+   "toa_id": 74,
+   "toa_ma": "QATD-C-T2",
+   "tang_id": 229,
+   "capSo": 2,
+   "so_may": 60,
+   "da_khoa": 0
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 70,
+   "toa_ma": "QATD-B-T2",
+   "tang_id": 201,
+   "capSo": 2,
+   "so_may": 58,
+   "da_khoa": 0
+  }
+ ]
+}

@@ -1,0 +1,46 @@
+{
+ "luc": "2026-09-15T16:44:47.259Z",
+ "base": "http://localhost:3064",
+ "ca": "P3",
+ "vai": "qatd_kythuat",
+ "deBai": "tang RONG (QATD-A QATD-A-T1 cap3, tang_id=167, DB=0 may) => kpi-mau-so PHAI = 0",
+ "kyVongDb": {
+  "tangRong": {
+   "fcode": "QATD-A",
+   "toa_id": 65,
+   "toa_ma": "QATD-A-T1",
+   "tang_id": 167,
+   "cap": 3,
+   "so_may": 0
+  },
+  "tangCoMay": {
+   "fcode": "QATD-A",
+   "toa_id": 65,
+   "toa_ma": "QATD-A-T1",
+   "tang_id": 165,
+   "cap": 1,
+   "so_may": 45
+  }
+ },
+ "anhCoMay": ".qa-tapdoan/anh/CUOI-P3-tang-co-may.png",
+ "tangCoMay": {
+  "mauSo": "45",
+  "mauSoChu": "45 machines",
+  "phamVi": "Công ty A · Toà 1 · Tầng 1",
+  "mauSoOee": "0",
+  "dbMay": 45
+ },
+ "anh": ".qa-tapdoan/anh/CUOI-P3-tang-rong.png",
+ "thay": {
+  "mauSo": "0",
+  "mauSoChu": "— machines",
+  "mauSoOee": "0",
+  "phamVi": "Công ty A · Toà 1 · Tầng 3",
+  "kpiChu": "Metrics — machines Công ty A · Toà 1 · Tầng 3 Running — Down — Maintenance — Offline — Running rate — Average OEE — Machines w/ andon — PdM risk — OEE measured on 0/0 machines",
+  "demMay": "371",
+  "danhSachRong": 0,
+  "soMayDs": 371
+ },
+ "pq": "ĐẠT",
+ "vi": "mau so = 0 tren tang RONG OK · mau so KHONG phai so ca nha may (371) OK · doi chung duong: tang CO may cho mau so = 45 OK · nhan pham vi NEU dung tang dang xem OK"
+}

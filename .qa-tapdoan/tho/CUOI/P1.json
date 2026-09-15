@@ -1,0 +1,57 @@
+{
+ "luc": "2026-09-15T16:44:04.011Z",
+ "base": "http://localhost:3064",
+ "ca": "P1",
+ "vai": "qatd_congnhan",
+ "vp": "1280x720",
+ "deBai": "danh-sach-may in tien to MOT LAN (danh-sach-may-tien-to) va 5 hang bat ky doc KHAC NHAU o phan duoi",
+ "anh": ".qa-tapdoan/anh/CUOI-P1-congnhan-1280.png",
+ "thay": {
+  "soTienTo": 1,
+  "chuTienTo": "Prefix: QATD-C-",
+  "soMayTrongDs": 0,
+  "soHangVe": 0,
+  "hang5": [
+   {
+    "tid": "may-hang-6099",
+    "viTri": 0,
+    "maDayDu": "QATD-C-T1-X1-L2-M07",
+    "chuHien": "T1-X1-L2-M07",
+    "chuHang": "T1-X1-L2-M07 Down/Stopped 28s"
+   },
+   {
+    "tid": "may-hang-6116",
+    "viTri": 1,
+    "maDayDu": "QATD-C-T1-X1-L4-M08",
+    "chuHien": "T1-X1-L4-M08",
+    "chuHang": "T1-X1-L4-M08 Down/Stopped 28s"
+   },
+   {
+    "tid": "may-hang-6144",
+    "viTri": 2,
+    "maDayDu": "QATD-C-T1-X2-L2-M11",
+    "chuHien": "T1-X2-L2-M11",
+    "chuHang": "T1-X2-L2-M11 Down/Stopped 28s"
+   },
+   {
+    "tid": "may-hang-6164",
+    "viTri": 3,
+    "maDayDu": "QATD-C-T2-X1-L2-M01",
+    "chuHien": "T2-X1-L2-M01",
+    "chuHang": "T2-X1-L2-M01 Down/Stopped 28s"
+   },
+   {
+    "tid": "may-hang-6167",
+    "viTri": 4,
+    "maDayDu": "QATD-C-T2-X1-L2-M04",
+    "chuHien": "T2-X1-L2-M04",
+    "chuHang": "T2-X1-L2-M04 Down/Stopped 28s"
+   }
+  ],
+  "duoiRieng": 5,
+  "demMay": "328",
+  "tongHangDom": 12
+ },
+ "pq": "ĐẠT",
+ "vi": "tien to in DUNG MOT LAN OK · chu tien to KHONG rong OK · 5 hang dau doc KHAC NHAU o phan duoi OK · moi hang van giu MA DAY DU o data-ma OK"
+}

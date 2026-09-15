@@ -1,0 +1,272 @@
+{
+ "luc": "2026-09-15T17:13:25.413Z",
+ "base": "http://localhost:3064",
+ "ca": "T3",
+ "vai": "qatd_kythuat",
+ "deBai": "so nguon 'suc khoe' (machine_health_history) voi nguon 'rui ro hong' (predictive_alerts + computeFailureRisk) cho CUNG mot may",
+ "truyVanKeHoach": "SELECT m.id, m.code,\n   (SELECT h.\"healthScore\" FROM machine_health_history h WHERE h.\"machineId\"=m.id ORDER BY h.\"createdAt\" DESC LIMIT 1) AS suc_khoe,\n   (SELECT COUNT(*) FROM predictive_alerts p WHERE p.\"machineId\"=m.id AND p.\"resolvedAt\" IS NULL) AS canh_bao_pdm\n FROM machines m WHERE m.code LIKE 'QATD-%' ORDER BY suc_khoe ASC NULLS LAST LIMIT 20",
+ "ketQuaTruyVan": [
+  {
+   "id": 6079,
+   "code": "QATD-B-T4-X2-L4-M10",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5397,
+   "code": "QATD-A-T2-X1-L1-M08",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 5724,
+   "code": "QATD-B-T1-X1-L4-M07",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 5905,
+   "code": "QATD-B-T2-X2-L5-M02",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 6397,
+   "code": "QATD-C-T4-X2-L3-M03",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 6242,
+   "code": "QATD-C-T2-X2-L5-M09",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5366,
+   "code": "QATD-A-T1-X2-L2-M04",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5467,
+   "code": "QATD-A-T2-X2-L2-M01",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5502,
+   "code": "QATD-A-T2-X2-L4-M14",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 6391,
+   "code": "QATD-C-T4-X2-L2-M10",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5582,
+   "code": "QATD-A-T4-X1-L1-M01",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5342,
+   "code": "QATD-A-T1-X1-L4-M06",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 6113,
+   "code": "QATD-C-T1-X1-L4-M05",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 6263,
+   "code": "QATD-C-T3-X1-L2-M07",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 5756,
+   "code": "QATD-B-T1-X2-L2-M03",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 6119,
+   "code": "QATD-C-T1-X1-L4-M11",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 0
+  },
+  {
+   "id": 5844,
+   "code": "QATD-B-T2-X1-L4-M08",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5441,
+   "code": "QATD-A-T2-X1-L4-M12",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5708,
+   "code": "QATD-B-T1-X1-L3-M03",
+   "suc_khoe": 40,
+   "canh_bao_pdm": 1
+  },
+  {
+   "id": 5733,
+   "code": "QATD-B-T1-X1-L5-M04",
+   "suc_khoe": 41,
+   "canh_bao_pdm": 0
+  }
+ ],
+ "bangCheo": [
+  {
+   "hang": "canh(<80)",
+   "so_may": 381,
+   "co_pdm_mo": 189,
+   "ti_le_pdm": "49.6"
+  },
+  {
+   "hang": "khoe(>=90)",
+   "so_may": 172,
+   "co_pdm_mo": 96,
+   "ti_le_pdm": "55.8"
+  },
+  {
+   "hang": "nguy_kich(<60)",
+   "so_may": 370,
+   "co_pdm_mo": 198,
+   "ti_le_pdm": "53.5"
+  },
+  {
+   "hang": "theo_doi(<90)",
+   "so_may": 185,
+   "co_pdm_mo": 92,
+   "ti_le_pdm": "49.7"
+  }
+ ],
+ "dauVaoRisk": {
+  "tong_hang": 13296,
+  "hang_tu_pdm": 12188,
+  "hang_do_that": 1108,
+  "hang_do_that_trong_14d": 1108,
+  "so_may_co_diem_do": 1108
+ },
+ "diemMoiMay": [
+  {
+   "n": 1,
+   "so_may": 1108
+  }
+ ],
+ "mayDoSong": [
+  {
+   "id": 5342,
+   "code": "QATD-A-T1-X1-L4-M06",
+   "hs": 40,
+   "pdm": 0
+  },
+  {
+   "id": 5366,
+   "code": "QATD-A-T1-X2-L2-M04",
+   "hs": 40,
+   "pdm": 1
+  },
+  {
+   "id": 5397,
+   "code": "QATD-A-T2-X1-L1-M08",
+   "hs": 40,
+   "pdm": 0
+  }
+ ],
+ "song": [
+  {
+   "mayId": 5342,
+   "ma": "QATD-A-T1-X1-L4-M06",
+   "dbHealthScore": 40,
+   "dbPdmMo": 0,
+   "manChipSucKhoe": "Health 40 % · critical",
+   "manChipHang": "nguy_kich",
+   "manDongRuiRo": [
+    "Failure risk",
+    "0",
+    "Active alarms"
+   ],
+   "manDongCoRisk": [
+    "Failure risk"
+   ],
+   "apiGetMachineRisk": {
+    "failureRisk": 0,
+    "maintenanceUrgency": "LOW",
+    "dataPoints": 1,
+    "rulMethod": "weibull",
+    "confidenceScore": 1,
+    "rulNote": "Weibull(k=0.37, λ=1277.9h) over 5 failure(s) + 3 censored."
+   },
+   "anh": ".qa-tapdoan/anh/CUOI-T3-may-5342.png"
+  },
+  {
+   "mayId": 5366,
+   "ma": "QATD-A-T1-X2-L2-M04",
+   "dbHealthScore": 40,
+   "dbPdmMo": 1,
+   "manChipSucKhoe": "Health 40 % · critical",
+   "manChipHang": "nguy_kich",
+   "manDongRuiRo": [
+    "Failure risk",
+    "0",
+    "Active alarms"
+   ],
+   "manDongCoRisk": [
+    "Failure risk"
+   ],
+   "apiGetMachineRisk": {
+    "failureRisk": 0,
+    "maintenanceUrgency": "LOW",
+    "dataPoints": 1,
+    "rulMethod": "insufficient_data",
+    "confidenceScore": 1,
+    "rulNote": "Only 0 real failure observation(s) (need 5); no RUL available (cold start)."
+   },
+   "anh": ".qa-tapdoan/anh/CUOI-T3-may-5366.png"
+  },
+  {
+   "mayId": 5397,
+   "ma": "QATD-A-T2-X1-L1-M08",
+   "dbHealthScore": 40,
+   "dbPdmMo": 0,
+   "manChipSucKhoe": "Health 40 % · critical",
+   "manChipHang": "nguy_kich",
+   "manDongRuiRo": [
+    "Failure risk",
+    "0",
+    "Active alarms"
+   ],
+   "manDongCoRisk": [
+    "Failure risk"
+   ],
+   "apiGetMachineRisk": {
+    "failureRisk": 0,
+    "maintenanceUrgency": "LOW",
+    "dataPoints": 1,
+    "rulMethod": "insufficient_data",
+    "confidenceScore": 1,
+    "rulNote": "Only 2 real failure observation(s) (need 5); no RUL available (cold start)."
+   },
+   "anh": ".qa-tapdoan/anh/CUOI-T3-may-5397.png"
+  }
+ ],
+ "ketCuc": [
+  "KẾT CỤC 2 — hai nguồn LỆCH NGAY TRONG CSDL: tỉ lệ máy có cảnh báo PdM mở gần như KHÔNG đổi theo hạng sức khoẻ ⇒ bộ sinh đặt hai đại lượng ĐỘC LẬP (đúng giả thuyết chủ dự án). Việc vá: sửa bộ sinh `.qa-tapdoan/sinh-tap-doan.mjs` cho hai đại lượng cùng một nguồn ngẫu nhiên.",
+  "KẾT CỤC 3 — nguồn 'rủi ro hỏng' RỖNG VỀ THỰC CHẤT: `computeFailureRisk` chỉ ăn hàng `machine_health_history` có `calculationMethod <> 'PREDICTIVE_WS4'` trong 14 ngày; bộ sinh cho ĐÚNG 1 điểm/máy nên hàm trả `failureRisk: 0` + `maintenanceUrgency: LOW` cho MỌI máy. Màn in '0 %' — một GIÁ TRỊ MẶC ĐỊNH — thay vì nói 'chưa đủ dữ liệu'. Đây là lỗi RIÊNG, mở task vá riêng."
+ ],
+ "pq": "ĐẠT",
+ "vi": "đã truy vấn cả hai nguồn và đọc cả hai trên màn sống · 2 kết cục: KẾT CỤC 2 + KẾT CỤC 3"
+}

@@ -1,0 +1,57 @@
+{
+ "luc": "2026-09-15T17:00:56.097Z",
+ "base": "http://localhost:3064",
+ "ca": "N5b",
+ "deBai": "nut sinh = cong ADMIN (quyen.sinh = laAdmin); nut/tab TAO TOA = cong canCreate. Do 3 vai: quan ly (0 ca hai), ky thuat (co canCreate, khong admin), admin (co ca hai)",
+ "thay": {
+  "quanly": {
+   "nutMoSinh": 0,
+   "tabConDuongB": 0,
+   "dungNhaXuong": 0,
+   "nutTao": 0,
+   "nutLuu": 1,
+   "nutCoChuTaoSinh": [],
+   "tongNut": 51,
+   "anh": ".qa-tapdoan/anh/CUOI-N5b-qatd_quanly.png"
+  },
+  "kythuat": {
+   "nutMoSinh": 0,
+   "tabConDuongB": 1,
+   "dungNhaXuong": 0,
+   "nutTao": 0,
+   "nutLuu": 1,
+   "nutCoChuTaoSinh": [
+    {
+     "t": "tab-con-duong-b",
+     "chu": "Add building",
+     "tat": false
+    }
+   ],
+   "tongNut": 55,
+   "anh": ".qa-tapdoan/anh/CUOI-N5b-qatd_kythuat.png"
+  },
+  "admin": {
+   "nutMoSinh": 1,
+   "tabConDuongB": 1,
+   "dungNhaXuong": 0,
+   "nutTao": 0,
+   "nutLuu": 1,
+   "nutCoChuTaoSinh": [
+    {
+     "t": "tab-con-duong-b",
+     "chu": "Add building",
+     "tat": false
+    },
+    {
+     "t": "nut-mo-sinh",
+     "chu": "Generate",
+     "tat": false
+    }
+   ],
+   "tongNut": 50,
+   "anh": ".qa-tapdoan/anh/CUOI-N5b-qatd_admin.png"
+  }
+ },
+ "pq": "ĐẠT",
+ "vi": "quan ly KHONG thay nut sinh OK · quan ly KHONG thay tab/nut tao toa nha OK · quan ly KHONG thay nut nao co chu generate/create/tao/sinh OK · ky thuat (KHONG admin) cung KHONG thay nut sinh — dung cong admin OK · doi chung DUONG cong canCreate: ky thuat THAY tab tao toa nha OK · doi chung DUONG cong admin: qatd_admin THAY nut sinh OK"
+}

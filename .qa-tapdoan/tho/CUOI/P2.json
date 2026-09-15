@@ -1,0 +1,96 @@
+{
+ "luc": "2026-09-15T16:44:29.178Z",
+ "base": "http://localhost:3064",
+ "ca": "P2",
+ "vai": "qatd_giamdoc",
+ "deBai": "moi dong canh bao mang MA MAY + TEN NHA MAY; giam doc 3 cong ty => phan ra duoc theo cong ty",
+ "anh": ".qa-tapdoan/anh/CUOI-P2-giamdoc-dai-canh-bao.png",
+ "thay": {
+  "soDong": 15,
+  "coMa": 15,
+  "coNhaMay": 15,
+  "nhaMayRieng": [
+   "Công ty A"
+  ],
+  "mau": [
+   {
+    "tid": "canh-bao-andon-263",
+    "maMay": "QATD-A-T1-X2-L2-M07",
+    "nhaMay": "Công ty A",
+    "muc": "red",
+    "tonDong": "0",
+    "chu": "▲ Ùn tắc tại trạm 07 (QATD) QATD-A-T1-X2-L2-M07 · Công ty A"
+   },
+   {
+    "tid": "canh-bao-andon-267",
+    "maMay": "QATD-A-T2-X2-L3-M08",
+    "nhaMay": "Công ty A",
+    "muc": "red",
+    "tonDong": "0",
+    "chu": "▲ Ùn tắc tại trạm 08 (QATD) QATD-A-T2-X2-L3-M08 · Công ty A"
+   },
+   {
+    "tid": "canh-bao-andon-272",
+    "maMay": "QATD-A-T4-X1-L1-M07",
+    "nhaMay": "Công ty A",
+    "muc": "red",
+    "tonDong": "0",
+    "chu": "▲ Ùn tắc tại trạm 07 (QATD) QATD-A-T4-X1-L1-M07 · Công ty A"
+   },
+   {
+    "tid": "canh-bao-andon-273",
+    "maMay": "QATD-A-T4-X2-L2-M07",
+    "nhaMay": "Công ty A",
+    "muc": "red",
+    "tonDong": "0",
+    "chu": "▲ Ùn tắc tại trạm 07 (QATD) QATD-A-T4-X2-L2-M07 · Công ty A"
+   },
+   {
+    "tid": "canh-bao-andon-275",
+    "maMay": "QATD-A-T4-X2-L4-M06",
+    "nhaMay": "Công ty A",
+    "muc": "red",
+    "tonDong": "0",
+    "chu": "▲ Ùn tắc tại trạm 06 (QATD) QATD-A-T4-X2-L4-M06 · Công ty A"
+   },
+   {
+    "tid": "canh-bao-andon-262",
+    "maMay": "QATD-A-T1-X1-L1-M07",
+    "nhaMay": "Công ty A",
+    "muc": "yellow",
+    "tonDong": "0",
+    "chu": "◆ Ùn tắc tại trạm 07 (QATD) QATD-A-T1-X1-L1-M07 · Công ty A"
+   },
+   {
+    "tid": "canh-bao-andon-264",
+    "maMay": "QATD-A-T1-X2-L3-M08",
+    "nhaMay": "Công ty A",
+    "muc": "yellow",
+    "tonDong": "0",
+    "chu": "◆ Ùn tắc tại trạm 08 (QATD) QATD-A-T1-X2-L3-M08 · Công ty A"
+   },
+   {
+    "tid": "canh-bao-andon-265",
+    "maMay": "QATD-A-T2-X1-L1-M06",
+    "nhaMay": "Công ty A",
+    "muc": "yellow",
+    "tonDong": "0",
+    "chu": "◆ Ùn tắc tại trạm 06 (QATD) QATD-A-T2-X1-L1-M06 · Công ty A"
+   }
+  ],
+  "daiChu": "Alarms (55) Counted across your whole account scope All55 Stop26 Call0 Warning29 Normal0 TODAY (55) ▲ Ùn tắc tại trạm 07 (QATD) QATD-A-T1-X2-L2-M07 · Công ty A Handle ▲ Ùn tắc tại trạm 08 (QATD) QATD-A-T2-X2-L3-M08 · Công ty A Handle ▲ Ùn tắc tại trạm 07 (QATD) QATD-A-T4-X1-L1-M07 · Công ty A Handle",
+  "daiTrong": 0
+ },
+ "chuTrenMan": [
+  "▲ Ùn tắc tại trạm 07 (QATD) QATD-A-T1-X2-L2-M07 · Công ty A",
+  "▲ Ùn tắc tại trạm 08 (QATD) QATD-A-T2-X2-L3-M08 · Công ty A",
+  "▲ Ùn tắc tại trạm 07 (QATD) QATD-A-T4-X1-L1-M07 · Công ty A",
+  "▲ Ùn tắc tại trạm 07 (QATD) QATD-A-T4-X2-L2-M07 · Công ty A",
+  "▲ Ùn tắc tại trạm 06 (QATD) QATD-A-T4-X2-L4-M06 · Công ty A",
+  "◆ Ùn tắc tại trạm 07 (QATD) QATD-A-T1-X1-L1-M07 · Công ty A",
+  "◆ Ùn tắc tại trạm 08 (QATD) QATD-A-T1-X2-L3-M08 · Công ty A",
+  "◆ Ùn tắc tại trạm 06 (QATD) QATD-A-T2-X1-L1-M06 · Công ty A"
+ ],
+ "pq": "ĐẠT",
+ "vi": "MOI dong mang ma may (data-ma-may) OK · MOI dong mang ten nha may (data-nha-may) OK · ma may HIEN trong chu nguoi dung doc OK · ten nha may HIEN trong chu nguoi dung doc OK · phan ra duoc theo cong ty (>=1 gia tri nha may rieng) OK"
+}

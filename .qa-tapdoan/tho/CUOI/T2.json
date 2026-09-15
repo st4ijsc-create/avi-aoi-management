@@ -1,0 +1,161 @@
+{
+ "luc": "2026-09-15T17:12:16.011Z",
+ "base": "http://localhost:3064",
+ "ca": "T2",
+ "vai": "qatd_kythuat",
+ "tang": {
+  "fcode": "QATD-A",
+  "toa_id": 66,
+  "tang_id": 172,
+  "cap": 1,
+  "n": 68
+ },
+ "deBai": "3 hang thay doi thuoc 2 loai (dan hang = DOI VI TRI, va lat KHOA) roi lap ba loi: o lai / bo thay doi / luu roi chuyen; loi luu phai ghi CA BA hang va deu mang ma tang CU",
+ "demHangTruoc": 68,
+ "tang0": "172",
+ "tangKhac": "173",
+ "dungLan1": {
+  "mayKhoa": 5434,
+  "maMayKhoa": "QATD-A-T2-X1-L4-M05",
+  "soSauKhoa": 1,
+  "daChon": [
+   5435,
+   5408,
+   5401,
+   5429,
+   5405,
+   5442
+  ],
+  "canhDuoc": true,
+  "nutCanhTrai": 1,
+  "nutCanhTraiTat": false,
+  "soCuoi": 6
+ },
+ "anhBuffer": ".qa-tapdoan/anh/CUOI-T2-buffer-3-hang.png",
+ "anhHopThoai": ".qa-tapdoan/anh/CUOI-T2-hop-thoai.png",
+ "loiOLai": {
+  "ketCucDoiO": "hop-thoai",
+  "hopThoaiHien": 1,
+  "demKhiHopThoai": 6,
+  "sauHuy": {
+   "hopThoai": 0,
+   "tang": "172",
+   "demChuaLuu": 6
+  },
+  "csdlKhac": 0
+ },
+ "loiBo": {
+  "ketCucDoiO": "hop-thoai",
+  "hopThoaiHien": 1,
+  "demKhiHopThoai": 6,
+  "sauBo": {
+   "hopThoai": 0,
+   "tang": "173",
+   "demChuaLuu": null
+  },
+  "csdlKhac": 0
+ },
+ "anhSauBo": ".qa-tapdoan/anh/CUOI-T2-sau-bo-thay-doi.png",
+ "dungLan3": {
+  "mayKhoa": 5434,
+  "maMayKhoa": "QATD-A-T2-X1-L4-M05",
+  "soSauKhoa": 1,
+  "daChon": [
+   5435,
+   5408,
+   5401,
+   5429,
+   5405,
+   5442
+  ],
+  "canhDuoc": true,
+  "nutCanhTrai": 1,
+  "nutCanhTraiTat": false,
+  "soCuoi": 6
+ },
+ "anhSauLuu": ".qa-tapdoan/anh/CUOI-T2-sau-luu-roi-chuyen.png",
+ "loiLuu": {
+  "ketCucDoiO": "hop-thoai",
+  "hopThoaiHien": 1,
+  "demKhiHopThoai": 6,
+  "sauLuu": {
+   "hopThoai": 0,
+   "tang": "173",
+   "demChuaLuu": null
+  },
+  "soHangDaGhi": 6,
+  "chiTietGhi": [
+   {
+    "id": 12432,
+    "thucTheId": 5405,
+    "cot": [
+     "viTriXMm",
+     "nguon"
+    ]
+   },
+   {
+    "id": 12435,
+    "thucTheId": 5408,
+    "cot": [
+     "viTriXMm",
+     "nguon"
+    ]
+   },
+   {
+    "id": 12472,
+    "thucTheId": 5429,
+    "cot": [
+     "viTriXMm",
+     "nguon"
+    ]
+   },
+   {
+    "id": 12491,
+    "thucTheId": 5434,
+    "cot": [
+     "daKhoa",
+     "nguon"
+    ]
+   },
+   {
+    "id": 12492,
+    "thucTheId": 5435,
+    "cot": [
+     "viTriXMm",
+     "nguon"
+    ]
+   },
+   {
+    "id": 12499,
+    "thucTheId": 5442,
+    "cot": [
+     "viTriXMm",
+     "nguon"
+    ]
+   }
+  ],
+  "tangIdCuaHangDaGhi": [
+   172,
+   172,
+   172,
+   172,
+   172,
+   172
+  ],
+  "tangCu": 172
+ },
+ "thay": {
+  "loaiThayDoiDaGhi": [
+   "doi-vi-tri",
+   "nguon",
+   "lat-khoa"
+  ]
+ },
+ "pq": "ĐẠT",
+ "vi": "dung duoc buffer >= 3 hang OK · buffer mang HAI loai thay doi (doi vi tri + lat khoa) OK · LOI 1 (o lai): hop thoai hien, tang CHUA doi, dem GIU, CSDL khong doi OK · LOI 2 (bo thay doi): tang DOI, dem ve 0, CSDL khong doi OK · LOI 3 (luu roi chuyen): tang DOI va dem ve 0 OK · LOI 3: CA BA hang duoc ghi OK · LOI 3: moi hang da ghi deu mang MA TANG CU OK",
+ "don": {
+  "khoiPhuc": 68,
+  "conKhac": 0
+ },
+ "donSach": true
+}

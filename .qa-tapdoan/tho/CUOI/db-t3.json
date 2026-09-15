@@ -1,0 +1,176 @@
+{
+ "hist_method": [
+  {
+   "calculationMethod": "PREDICTIVE_WS4",
+   "n": 11080,
+   "tu": "2026-09-15T00:51:25.782Z",
+   "den": "2026-09-15T09:37:33.615Z"
+  },
+  {
+   "calculationMethod": "WEIGHTED",
+   "n": 1108,
+   "tu": "2026-09-15T00:50:40.504Z",
+   "den": "2026-09-15T01:19:26.194Z"
+  }
+ ],
+ "hist_14d": [
+  {
+   "n": 1108,
+   "so_may": 1108
+  }
+ ],
+ "risk_cot": [
+  {
+   "n": 12188,
+   "risk_null": 0,
+   "risk_0": 11080,
+   "risk_max": 60
+  }
+ ],
+ "pdm_status": [
+  {
+   "status": "ACTIVE",
+   "n": 575,
+   "mo": 575
+  }
+ ],
+ "cheo": [
+  {
+   "hang": "canh(<70)",
+   "so_may": 375,
+   "co_pdm_mo": 197,
+   "khong_pdm": 178
+  },
+  {
+   "hang": "khoe(>=85)",
+   "so_may": 268,
+   "co_pdm_mo": 144,
+   "khong_pdm": 124
+  },
+  {
+   "hang": "nguy_kich(<50)",
+   "so_may": 181,
+   "co_pdm_mo": 98,
+   "khong_pdm": 83
+  },
+  {
+   "hang": "theo_doi(<85)",
+   "so_may": 284,
+   "co_pdm_mo": 136,
+   "khong_pdm": 148
+  }
+ ],
+ "mau": [
+  {
+   "id": 5342,
+   "code": "QATD-A-T1-X1-L4-M06",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 0
+  },
+  {
+   "id": 5366,
+   "code": "QATD-A-T1-X2-L2-M04",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 1
+  },
+  {
+   "id": 5397,
+   "code": "QATD-A-T2-X1-L1-M08",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 0
+  },
+  {
+   "id": 5441,
+   "code": "QATD-A-T2-X1-L4-M12",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 1
+  },
+  {
+   "id": 5467,
+   "code": "QATD-A-T2-X2-L2-M01",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 1
+  },
+  {
+   "id": 5502,
+   "code": "QATD-A-T2-X2-L4-M14",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 0
+  },
+  {
+   "id": 5582,
+   "code": "QATD-A-T4-X1-L1-M01",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 1
+  },
+  {
+   "id": 5708,
+   "code": "QATD-B-T1-X1-L3-M03",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 1
+  },
+  {
+   "id": 5724,
+   "code": "QATD-B-T1-X1-L4-M07",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 0
+  },
+  {
+   "id": 5756,
+   "code": "QATD-B-T1-X2-L2-M03",
+   "hs": 40,
+   "ts": "2026-09-15T09:37:33.615Z",
+   "ca": "2026-09-15T09:37:33.615Z",
+   "pp": "PREDICTIVE_WS4",
+   "pfr": 0,
+   "diem_14d": 1,
+   "pdm_mo": 1
+  }
+ ],
+ "bay_gio": "2026-09-15T16:38:02.754Z"
+}

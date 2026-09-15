@@ -1,0 +1,51 @@
+{
+ "luc": "2026-09-15T16:48:43.151Z",
+ "base": "http://localhost:3064",
+ "ca": "P8b",
+ "vai": "qatd_kythuat",
+ "deBai": "dung mot TOA 84 tang (hang tam QATD-TMP-P8) => banner-tang-vuot-tran PHAI hien va neu du 3 so (can/tran/thieu)",
+ "demTruoc": {
+  "toaNha": 13,
+  "tang": 85,
+  "toaTam": 0
+ },
+ "daTao": {
+  "toaId": 77,
+  "soTang": 84
+ },
+ "demSauTao": {
+  "toaNha": 14,
+  "tang": 169,
+  "toaTam": 1
+ },
+ "anh": ".qa-tapdoan/anh/CUOI-P8b-toa-84-tang.png",
+ "thay": {
+  "co": true,
+  "hien": true,
+  "chu": "This building has 84 floors but one load can only request 50 — 34 floors were NOT loaded, and machines on them are missing from the scene. hide",
+  "dataPhu": {
+   "data-loc": "client\\src\\components\\twin3d\\bo-cuc\\DaiHopNhat.tsx:83",
+   "data-testid": "banner-tang-vuot-tran",
+   "data-nhom": "duLieu",
+   "data-tong-tang": "84",
+   "data-tran-tang": "50",
+   "data-tang-bi-cat": "34"
+  },
+  "daiChu": "2 things to know hide",
+  "chiTietChu": "This building has 84 floors but one load can only request 50 — 34 floors were NOT loaded, and machines on them are missing from the scene. hide 371 machines are outside this load (other buildings were not queried) — whether they are placed is not known yet hide",
+  "soOTang": 84
+ },
+ "nguyenVan": "This building has 84 floors but one load can only request 50 — 34 floors were NOT loaded, and machines on them are missing from the scene. hide",
+ "pq": "ĐẠT",
+ "vi": "banner HIEN RA OK · can = 84 tang OK · tran = 50 OK · thieu = 34 OK · chu nguoi dung doc neu DU BA con so OK",
+ "don": {
+  "xoaTang": 84,
+  "xoaToaNha": 1
+ },
+ "demSauDon": {
+  "toaNha": 13,
+  "tang": 85,
+  "toaTam": 0
+ },
+ "donSach": true
+}

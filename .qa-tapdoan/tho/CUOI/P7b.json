@@ -1,0 +1,79 @@
+{
+ "luc": "2026-09-15T16:46:31.204Z",
+ "base": "http://localhost:3064",
+ "ca": "P7b",
+ "vai": "qatd_kythuat",
+ "deBai": "phan xu P7: bang-suc-khoe co dung mau so NHA MAY khong, va __demVien co dung mau so CANH khong",
+ "nguon": {
+  "http": 200,
+  "tong": 371,
+  "tongMayTrongPhamVi": 371,
+  "bayGio": 1789490788798,
+  "mauKhai": [
+   {
+    "machineId": 5305,
+    "ma": "QATD-A-T1-X1-L1-M01",
+    "diem": 50,
+    "nguyCo": 0,
+    "mucKhan": "LOW",
+    "hanBaoTri": null,
+    "mocMs": 1789465551958
+   },
+   {
+    "machineId": 5306,
+    "ma": "QATD-A-T1-X1-L1-M02",
+    "diem": 87,
+    "nguyCo": 0,
+    "mucKhan": "LOW",
+    "hanBaoTri": null,
+    "mocMs": 1789465551958
+   }
+  ]
+ },
+ "anh": ".qa-tapdoan/anh/CUOI-P7b-phan-xu.png",
+ "ghiChuHan": "tuổi khai lớn nhất 25236840 ms; dùng hạn 25236841 ms để KHÔNG tự tạo hạng het_han (bảng trên màn khai het_han = 0)",
+ "thay": {
+  "bangTrenMan": {
+   "nguy_kich": 124,
+   "canh": 133,
+   "theo_doi": 62,
+   "het_han": 0,
+   "khoe": 52,
+   "chua_do": 0
+  },
+  "tongBang": 371,
+  "tinhLaiTheoNhaMay": {
+   "nguy_kich": 124,
+   "canh": 133,
+   "theo_doi": 62,
+   "het_han": 0,
+   "khoe": 52,
+   "chua_do": 0
+  },
+  "soKhaiNhaMay": 371,
+  "tongMayTrongPhamVi": 371,
+  "demVien": {
+   "tong": 38,
+   "theoHang": {
+    "nguy_kich": 11,
+    "canh": 16,
+    "theo_doi": 11,
+    "het_han": 0
+   }
+  },
+  "soKhoiCanh": 45,
+  "soDatChoDb": 45,
+  "tinhLaiTheoCanh": {
+   "nguy_kich": 11,
+   "canh": 16,
+   "theo_doi": 11,
+   "het_han": 0,
+   "khoe": 7,
+   "chua_do": 0
+  },
+  "vienSuyTuCanh": 38
+ },
+ "giaiThich": "Sản phẩm khai TƯỜNG MINH (TwinVanHanh.tsx:1338-1343) rằng bảng đếm theo NHÀ MÁY còn `__demVien` đếm VÒNG TRÊN CẢNH; hai mẫu số khác nhau nên hai số PHẢI khác nhau.",
+ "pq": "ĐẠT",
+ "vi": "tong bang = so may CA NHA MAY (371) OK · bang KHOP phep tinh lai tu nguon sucKhoeMay theo NHA MAY OK · so khoi tren canh = so dat cho cua tang trong DB OK · __demVien.tong = so may TREN CANH thuoc 4 hang CO VIEN OK · __demVien.theoHang KHOP phep tinh lai theo CANH OK"
+}

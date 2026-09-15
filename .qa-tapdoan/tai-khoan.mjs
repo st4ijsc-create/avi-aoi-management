@@ -20,8 +20,13 @@ export const TAI_KHOAN = [
     quyen:[V("analytics_oee","analytics"), V("machine_status","machine_monitoring"), VE("machine_control","machine_control"), VE("andon","andon"), V("dashboard_corporate","dashboard"), V("dashboard_view","dashboard"), V("history_view","history")] },
   { ten:"qatd_kythuat",  vai:"KỸ THUẬT",  role:"engineer",   name:"Kỹ sư thiết bị A+B (QA)", ganTapDoan:[], ganNhaMay:["QATD-A","QATD-B"],
     quyen:[VCE("machine_status","machine_monitoring"), VCE("machine_control","machine_control"), VCED("settings_factory","settings"), VE("andon","andon"), V("dashboard_view","dashboard"), V("history_view","history")] },
+  // ★ V-17 (2026-09-16): `andon` phải là V+C+E, KHÔNG phải V+E. Khuôn quyền mặc định của vai
+  //   vận hành trong sản phẩm (`permissionsRouter.ts`, khối operator) CÓ `canCreate: true`, và
+  //   `andon.quickReport` gác đúng mức đó. Bản cũ thiếu C làm nút "Báo sự cố" ẩn ở MỌI vai QA,
+  //   nên ca P5 của đợt nghiệm thu chấm SAI trong khi mã sản phẩm đúng cả hai chiều (ablation
+  //   mở đúng cờ này ⇒ nút hiện, gửi thật ghi đúng máy/người/phạm vi). Lỗi ở LƯỚI, không ở mã.
   { ten:"qatd_congnhan", vai:"CÔNG NHÂN", role:"operator",   name:"Công nhân Công ty C (QA)", ganTapDoan:[], ganNhaMay:["QATD-C"],
-    quyen:[V("machine_status","machine_monitoring"), VE("andon","andon"), V("dashboard_view","dashboard")] },
+    quyen:[V("machine_status","machine_monitoring"), VCE("andon","andon"), V("dashboard_view","dashboard")] },
   // đối chứng
   { ten:"qatd_admin",    vai:"ĐỐI CHỨNG admin (bypass, thấy hết)", role:"admin", name:"Admin QA", ganTapDoan:[], ganNhaMay:[], quyen:[] },
   { ten:"qatd_khonggan", vai:"ĐỐI CHỨNG có quyền, 0 gán (kỳ vọng rỗng chuaGanNhaMay)", role:"operator", name:"Công nhân chưa gán (QA)", ganTapDoan:[], ganNhaMay:[], quyen:[V("machine_status","machine_monitoring")] },

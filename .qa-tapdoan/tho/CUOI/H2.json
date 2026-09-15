@@ -1,0 +1,132 @@
+{
+ "luc": "2026-09-15T17:13:13.706Z",
+ "base": "http://localhost:3064",
+ "ca": "H2",
+ "deBai": "__soCanvas=1 moi man · draw calls <= 150 · tam giac <= 500000 · nhan DOM <= 30",
+ "tran": {
+  "calls": 150,
+  "tamGiac": 500000,
+  "nhan": 30
+ },
+ "bang": [
+  {
+   "man": "twin",
+   "luot": 1,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 2,
+   "tamGiac": 2,
+   "nhanDom": 0
+  },
+  {
+   "man": "line",
+   "luot": 1,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 6,
+   "tamGiac": 1110,
+   "nhanDom": 10
+  },
+  {
+   "man": "may",
+   "luot": 1,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 3,
+   "tamGiac": 662,
+   "nhanDom": 1
+  },
+  {
+   "man": "studio",
+   "luot": 1,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 3,
+   "tamGiac": 2702,
+   "nhanDom": 0
+  },
+  {
+   "man": "twin",
+   "luot": 2,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 5,
+   "tamGiac": 15026,
+   "nhanDom": 5
+  },
+  {
+   "man": "line",
+   "luot": 2,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 6,
+   "tamGiac": 1110,
+   "nhanDom": 10
+  },
+  {
+   "man": "may",
+   "luot": 2,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 3,
+   "tamGiac": 662,
+   "nhanDom": 1
+  },
+  {
+   "man": "studio",
+   "luot": 2,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 3,
+   "tamGiac": 2702,
+   "nhanDom": 0
+  },
+  {
+   "man": "twin",
+   "luot": 3,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 5,
+   "tamGiac": 14426,
+   "nhanDom": 5
+  },
+  {
+   "man": "line",
+   "luot": 3,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 6,
+   "tamGiac": 1110,
+   "nhanDom": 11
+  },
+  {
+   "man": "may",
+   "luot": 3,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 3,
+   "tamGiac": 662,
+   "nhanDom": 1
+  },
+  {
+   "man": "studio",
+   "luot": 3,
+   "soCanvas": 1,
+   "canvasDom": 1,
+   "calls": 3,
+   "tamGiac": 2702,
+   "nhanDom": 0
+  }
+ ],
+ "thay": {
+  "xauCanvas": [],
+  "xauCalls": [],
+  "xauTri": [],
+  "xauNhan": [],
+  "maxCalls": 6,
+  "maxTri": 15026,
+  "maxNhan": 11
+ },
+ "pq": "ĐẠT",
+ "vi": "__soCanvas = 1 o MOI man MOI luot OK · draw calls <= 150 OK · tam giac <= 500000 OK · nhan DOM <= 30 OK"
+}

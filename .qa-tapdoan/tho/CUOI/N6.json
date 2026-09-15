@@ -1,0 +1,28 @@
+{
+ "luc": "2026-09-15T16:59:16.278Z",
+ "base": "http://localhost:3064",
+ "ca": "N6",
+ "vai": "qatd_kythuat",
+ "deBai": "qatd_kythuat goi twinCanh.sinhTuDong => van 403 (adminProcedure)",
+ "thay": {
+  "kythuat": {
+   "http": 403,
+   "ma": "FORBIDDEN",
+   "loi": "You do not have required permission (10002)"
+  },
+  "kythuatRong": {
+   "http": 403,
+   "ma": "FORBIDDEN",
+   "loi": "You do not have required permission (10002)"
+  },
+  "quanly": {
+   "http": 403,
+   "ma": "FORBIDDEN",
+   "loi": "You do not have required permission (10002)"
+  },
+  "datChoTruoc": 2420,
+  "datChoSau": 2420
+ },
+ "pq": "ĐẠT",
+ "vi": "ky thuat goi sinhTuDong => FORBIDDEN (403) OK · quan ly goi sinhTuDong => bi chan OK · so hang twin_dat_cho KHONG doi OK"
+}

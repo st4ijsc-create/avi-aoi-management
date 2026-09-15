@@ -1,0 +1,27 @@
+{
+ "luc": "2026-09-15T16:59:12.223Z",
+ "base": "http://localhost:3064",
+ "ca": "N4",
+ "vai": "qatd_khongquyen",
+ "deBai": "qatd_khongquyen (0 quyen, co gan QATD-A) goi factory.list => PHAI bi chan (truoc day tra 1 nha may)",
+ "thay": {
+  "khongQuyen": {
+   "http": 403,
+   "ma": "FORBIDDEN",
+   "loi": "Tài khoản chưa được cấp quyền nào nên không xem được danh sách nhà máy",
+   "soNhaMay": null,
+   "data": null
+  },
+  "doiChungDuongKyThuat": {
+   "http": 200,
+   "ma": null,
+   "soNhaMay": 2,
+   "ma_ds": [
+    "QATD-A",
+    "QATD-B"
+   ]
+  }
+ },
+ "pq": "ĐẠT",
+ "vi": "factory.list BI CHAN cho vai 0 quyen OK · KHONG tra ve nha may nao OK · doi chung DUONG: ky thuat van doc duoc dung 2 nha may A+B OK"
+}

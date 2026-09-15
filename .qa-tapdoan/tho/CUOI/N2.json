@@ -1,0 +1,48 @@
+{
+ "luc": "2026-09-15T16:59:12.051Z",
+ "base": "http://localhost:3064",
+ "ca": "N2",
+ "vai": "qatd_congnhan",
+ "deBai": "cookie cong nhan goi andon.raise + andon.quickReport nham may QATD-B (5676/QATD-B-T1-X1-L1-M01) => NOT_FOUND va dem andon_events KHONG tang",
+ "demTruoc": 62,
+ "demSau": 62,
+ "thay": {
+  "raise": {
+   "http": 403,
+   "data": null,
+   "ma": "FORBIDDEN",
+   "loi": "Bạn không có quyền create cho module \"andon\"",
+   "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền create cho module \\\"andon\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":403,\"path\":\"andon.raise\",\"stack\":null,\"appCode\":\"PERMISSION_DENIED\",\"appParams\":{\"action\":\"canCreate\"}}},\"meta\":{\"values\":{\"data.stack\":[\"undefined\"]}}}}"
+  },
+  "quick": {
+   "http": 403,
+   "data": null,
+   "ma": "FORBIDDEN",
+   "loi": "Bạn không có quyền create cho module \"andon\"",
+   "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền create cho module \\\"andon\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":403,\"path\":\"andon.quickReport\",\"stack\":null,\"appCode\":\"PERMISSION_DENIED\",\"appParams\":{\"action\":\"canCreate\"}}},\"meta\":{\"values\":{\"data.stack\":[\"undefined\"]}}}}"
+  },
+  "quickTheoMa": {
+   "http": 403,
+   "data": null,
+   "ma": "FORBIDDEN",
+   "loi": "Bạn không có quyền create cho module \"andon\"",
+   "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền create cho module \\\"andon\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":403,\"path\":\"andon.quickReport\",\"stack\":null,\"appCode\":\"PERMISSION_DENIED\",\"appParams\":{\"action\":\"canCreate\"}}},\"meta\":{\"values\":{\"data.stack\":[\"undefined\"]}}}}"
+  },
+  "raiseTheoTram": {
+   "http": 403,
+   "data": null,
+   "ma": "FORBIDDEN",
+   "loi": "Bạn không có quyền create cho module \"andon\"",
+   "tho": "{\"error\":{\"json\":{\"message\":\"Bạn không có quyền create cho module \\\"andon\\\"\",\"code\":-32003,\"data\":{\"code\":\"FORBIDDEN\",\"httpStatus\":403,\"path\":\"andon.raise\",\"stack\":null,\"appCode\":\"PERMISSION_DENIED\",\"appParams\":{\"action\":\"canCreate\"}}},\"meta\":{\"values\":{\"data.stack\":[\"undefined\"]}}}}"
+  },
+  "demTruoc": 62,
+  "demSau": 62,
+  "dauVetConLai": []
+ },
+ "pq": "SAI",
+ "vi": "andon.raise (machineId B) => NOT_FOUND: FORBIDDEN http=403 \"Bạn không có quyền create cho module \"andon\"\" · andon.quickReport (machineId B) => NOT_FOUND: FORBIDDEN http=403 \"Bạn không có quyền create cho module \"andon\"\"",
+ "sai": [
+  "andon.raise (machineId B) => NOT_FOUND",
+  "andon.quickReport (machineId B) => NOT_FOUND"
+ ]
+}

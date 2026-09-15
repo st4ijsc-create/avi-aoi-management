@@ -1,0 +1,53 @@
+{
+ "luc": "2026-09-15T17:00:50.803Z",
+ "base": "http://localhost:3064",
+ "ca": "N2b",
+ "vai": "qatd_congnhan (canCreate BẬT TẠM)",
+ "deBai": "mo tam andon.canCreate cho cong nhan roi goi raise/quickReport nham may QATD-B (5676/QATD-B-T1-X1-L1-M01) => PHAI NOT_FOUND va dem andon_events KHONG tang; doi chung DUONG: cung loi goi nham may QATD-C (QATD-C-T1-X1-L1-M01) => THANH CONG roi xoa",
+ "demTruoc": 62,
+ "thay": {
+  "raiseB": {
+   "ma": "NOT_FOUND",
+   "http": 404,
+   "loi": "machine 5676 not found"
+  },
+  "quickB": {
+   "ma": "NOT_FOUND",
+   "http": 404,
+   "loi": "machine 5676 not found"
+  },
+  "quickTheoMaB": {
+   "ma": "NOT_FOUND",
+   "http": 404,
+   "loi": "machine 5676 not found"
+  },
+  "raiseTramB": {
+   "ma": "NOT_FOUND",
+   "http": 404
+  },
+  "raiseChuyenB": {
+   "ma": "NOT_FOUND",
+   "http": 404
+  },
+  "raiseC_doiChungDuong": {
+   "ma": null,
+   "http": 200,
+   "idMoi": 319
+  },
+  "demTruoc": 62,
+  "demSauNamLoiGoiBiChan": 62,
+  "demSauDoiChungDuong": 63,
+  "idsTao": [
+   319
+  ]
+ },
+ "pq": "ĐẠT",
+ "vi": "raise(machineId B) => NOT_FOUND OK · quickReport(machineId B) => NOT_FOUND OK · quickReport(machineCode B) => NOT_FOUND OK · raise(stationId B) => NOT_FOUND OK · raise(lineId B) => NOT_FOUND OK · 5 loi goi ngoai pham vi KHONG tang mot hang nao OK · doi chung DUONG: may QATD-C THANH CONG (cong khong vá quá tay) OK",
+ "don": {
+  "xoaTheoId": 1,
+  "xoaTheoTieuDe": 0,
+  "quyenTraVe": false,
+  "demSauDon": 62
+ },
+ "donSach": true
+}

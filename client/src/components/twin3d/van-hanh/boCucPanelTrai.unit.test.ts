@@ -34,7 +34,7 @@ function theMo(ma: string, testId: string): string {
 
 /* ── Hằng bố cục, ĐO THẬT (px) ───────────────────────────────────────────────── */
 /*
- * ⚠⚠⚠ MỘT HẰNG Ở ĐÂY ĐÃ LẠC THỰC TẾ — ĐỌC TRƯỚC KHI TIN BẤT KỲ SỐ NÀO DƯỚI ĐÂY.
+ * ✅ 2026-09-16 — ĐÃ ĐO LẠI TRÊN BẢN DỰNG THẬT (GPU, 1 worker). Đọc mục "hai bề rộng" bên dưới.
  *
  * Mọi hằng dưới đây là số **viết tay** chép lại từ một lượt đo trình duyệt cũ. Tệp này
  * KHÔNG đo DOM (jsdom không có bộ dựng bố cục — `getBoundingClientRect` trả 0), nên khi
@@ -55,8 +55,32 @@ function theMo(ma: string, testId: string): string {
  *    rồi cập nhật hằng kèm ngày đo. Chỉ khi đó mới quyết được có cần cân lại tỉ lệ 7:5
  *    và trần 328 px (hai quyết định của Đợt 57/59) hay không.
  */
-const CAO_NGOAI_PANEL = 231; // vp.height − panel.height (header app + breadcrumb + thanh dưới)
-const KHOI_TONG_QUAN = 41; //   ⚠ LẠC THỰC TẾ từ 2026-09-15 — xem khối cảnh báo ngay trên
+const CAO_NGOAI_PANEL = 231; // vp.height − panel.height — đo lại 2026-09-16: VẪN ĐÚNG
+/*
+ * ★★★ `khoi-tong-quan` KHÔNG phải một hằng — nó phụ thuộc bề rộng.
+ *   Đo `getBoundingClientRect().height` trên bản dựng thật 2026-09-16:
+ *     1280×720 ⇒ **85 px**   (hàng số xuống HAI dòng khi hẹp)
+ *     1600×900 ⇒ **68 px**
+ *   Ước lượng 69 của lượt trước đúng ở 1600 và sai ở 1280 — đó là lý do một mô hình
+ *   MỘT-HẰNG không mô tả nổi khối này. Bảng sức khoẻ (Task 12) chiếm 25 px ở CẢ HAI.
+ *
+ * ⚠ Mô hình còn THIẾU một hằng: dòng tiền tố mã máy (Task 7) cao **17 px** và chưa ai
+ *   khai nó ở đây. Đó là vì sao @1600 thực tế hiện **7** hàng `danh-sach-may` chứ không
+ *   phải 8 như mô hình đoán. Thêm hằng đó là việc của lượt sau, cùng lúc với việc quyết
+ *   có cân lại tỉ lệ 7:5 và trần 328 px hay không.
+ */
+const KHOI_TONG_QUAN_1280 = 85; // đo 2026-09-16
+const KHOI_TONG_QUAN_1600 = 68; // đo 2026-09-16
+/*
+ * ⚠ MÔ HÌNH LỊCH SỬ vẫn dùng **41** — cố ý, và đây là lý do:
+ *   Các ca ở §② và §③ dưới đây sinh ra để đo *quyết định của Đợt 57/59* (tỉ lệ 7:5 và trần
+ *   328 px) trên bố cục **lúc ấy**. Thay 41 bằng số đo hôm nay biến chúng thành một câu hỏi
+ *   khác, và chúng sẽ đỏ vì **tiêu chí cũ không còn đạt** — chứ không phải vì ai đó làm hỏng
+ *   thứ chúng canh. Sửa kỳ vọng của chúng cho khớp số mới chính là "sửa cho xanh".
+ *   Nên: giữ mô hình lịch sử nguyên vẹn, và phơi hệ quả của bố cục MỚI ở §④ bên dưới bằng
+ *   chính hai số đã đo. Quyết định cân lại tỉ lệ/trần thuộc chủ dự án, không thuộc tệp này.
+ */
+const KHOI_TONG_QUAN = 41; // mô hình LỊCH SỬ (Đợt 57/59) — đừng đổi; xem §④ cho số hôm nay
 const DAI_CHUYEN_CHE_DO = 30; // "Máy | Cây phân cấp"
 const KHUNG_DAI_CANH_BAO = 91; // tiêu đề "Cảnh báo (N)" + hàng chip lọc (349−258 = 244−153)
 const TIEU_DE_NHOM = 24; //     "TỒN ĐỌNG >24H (7)" dính đầu ô cuộn
@@ -64,6 +88,7 @@ const HANG_TON_DONG = 41;
 const KHUNG_DANH_SACH = 44; //  tab Máy|Cây + ô lọc
 const HANG_MAY = 24;
 const TRAN_DAI_PX = 328; //     mục C
+const DONG_TIEN_TO = 17; //     dòng "Prefix: …" của Task 7 — đo 2026-09-16
 
 /** Mô hình: từ chiều cao viewport ⇒ số hàng ĐỦ của hai ô. `tran = null` = bản trước mục C. */
 function duDoan(vpH: number, tran: number | null) {
@@ -133,5 +158,52 @@ describe("★★★ ③ ĐỐI CHỨNG — vì sao `2xl:` (bề ngang) là câu 
   });
   it("cùng cửa sổ ấy, TRẦN chiều cao giữ nguyên 3 hàng (trần không chạm ở panel thấp)", () => {
     expect(duDoan(720, TRAN_DAI_PX).hangTonDong).toBeGreaterThanOrEqual(3);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════════
+ * ★★★ ④ BỐ CỤC HÔM NAY — số ĐO THẬT 2026-09-16, và hệ quả cho tiêu chí Đợt 57/59
+ * ════════════════════════════════════════════════════════════════════════════════
+ * §② ở trên đo mô hình LỊCH SỬ. Khối này đo bố cục **thật sau khi thêm bảng sức khoẻ
+ * (Task 12) và dòng tiền tố mã máy (Task 7)**, dùng đúng hai con số đọc được từ
+ * `getBoundingClientRect()` trên bản dựng `index-r3rg0upv.js`.
+ *
+ * Nó KHÔNG phán quyết đúng/sai — nó **ghim sự thật** để lần sửa bố cục kế tiếp không
+ * âm thầm làm xấu thêm, và để chủ dự án có số mà quyết.
+ */
+describe("★★★ ④ Bố cục HÔM NAY (đo thật 2026-09-16) — ghim sự thật, không phán quyết", () => {
+  /** Mô hình như §② nhưng nhận chiều cao khối tổng quan theo đúng bề rộng. */
+  function duDoanThat(vpH: number, khoiTongQuan: number, tienTo: number) {
+    const duPanel = vpH - CAO_NGOAI_PANEL - khoiTongQuan - DAI_CHUYEN_CHE_DO;
+    const dai = Math.min((duPanel * 7) / 12, TRAN_DAI_PX);
+    const danhSach = duPanel - dai;
+    return {
+      hangTonDong: Math.max(0, Math.floor((dai - KHUNG_DAI_CANH_BAO - TIEU_DE_NHOM) / HANG_TON_DONG)),
+      hangMay: Math.max(0, Math.floor((danhSach - KHUNG_DANH_SACH - tienTo) / HANG_MAY)),
+    };
+  }
+
+  it("khối tổng quan KHÔNG phải một hằng: 85 px @1280 vs 68 px @1600 (hàng số xuống hai dòng khi hẹp)", () => {
+    expect(KHOI_TONG_QUAN_1280).toBeGreaterThan(KHOI_TONG_QUAN_1600);
+    expect(KHOI_TONG_QUAN_1280 - KHOI_TONG_QUAN_1600).toBe(17);
+  });
+
+  it("@1600×900 bố cục hôm nay cho 7 hàng máy — KHÔNG phải 9 như tiêu chí Đợt 59 đặt ra", () => {
+    const nay = duDoanThat(900, KHOI_TONG_QUAN_1600, DONG_TIEN_TO);
+    expect(nay.hangMay).toBe(7);
+    expect(nay.hangMay).toBeLessThan(9); // tiêu chí Đợt 59 — nay KHÔNG còn đạt, cần quyết lại
+  });
+
+  it("@1280×720 nhóm tồn đọng tụt xuống 2 hàng — tiêu chí Đợt 57 đòi ≥3, nay KHÔNG còn đạt", () => {
+    const nay = duDoanThat(720, KHOI_TONG_QUAN_1280, DONG_TIEN_TO);
+    expect(nay.hangTonDong).toBe(2);
+    expect(nay.hangTonDong).toBeLessThan(3); // tiêu chí Đợt 57 — nay KHÔNG còn đạt
+  });
+
+  it("đối chứng — bỏ HAI thứ mới đi thì cả hai tiêu chí cũ đạt lại (chứng minh đúng thủ phạm)", () => {
+    const cu1600 = duDoanThat(900, 41, 0);
+    const cu1280 = duDoanThat(720, 41, 0);
+    expect(cu1600.hangMay).toBeGreaterThanOrEqual(9);
+    expect(cu1280.hangTonDong).toBeGreaterThanOrEqual(3);
   });
 });

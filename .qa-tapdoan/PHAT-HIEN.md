@@ -280,3 +280,47 @@ Hàng tạm: `daKhoa` 0 → 1 → **0**, dọn bằng **đường sản phẩm**
 5. Dung sai 1 mm của H5 là **lập luận**, chưa đo drift thật của `OrbitControls` ở vài khung đầu.
 6. `chonNoiTheoDatCho` chọn toà giữ **đa số** ⇒ chuyền trải hai toà sẽ có toà không vẽ; chưa biết ca đó có tồn tại không.
 7. PH-37 schema drift `workshops.tangId` (có trong DB, vắng trong schema Drizzle) chưa xử lý.
+
+# ══════ VÒNG 4 — NGHIỆM THU SAU KẾ HOẠCH HOÀN THIỆN (2026-09-16 00:20) ══════
+Bản dựng `.qa-tapdoan/dist-hoanthien` bundle `index-r3rg0upv.js` từ HEAD `0f3abd7e`, GPU thật (RTX 5090 qua ANGLE/D3D11), 1 worker. **27 ô · ĐẠT 15 · CHẶN-ĐÚNG 6 · SAI 5 · HỎNG 1 · 0 ô không phán quyết.** Thô `.qa-tapdoan/tho/CUOI/` (40 tệp), ảnh `CUOI-*.png` (44), bảng `BANG-CUOI.md`.
+
+## V-15 ★★★ ĐẠT · 7/8 bản vá đóng trực tiếp trên màn sống, 1 phải dựng ca mới
+| bản vá | phán quyết | số quyết định |
+|---|---|---|
+| Rút tiền tố mã máy | ĐẠT | 1 khối "Prefix: QATD-C-", **5/5 đuôi khác nhau**, `data-ma` giữ mã đầy đủ |
+| Danh tính dòng cảnh báo | ĐẠT | **15/15 dòng** mang mã máy + tên nhà máy, đọc được bằng chữ |
+| Mẫu số KPI theo tầng | ĐẠT | tầng rỗng ⇒ mẫu số **0**, "— machines"; tầng đối chứng ⇒ **45** |
+| KPI không che banner | ĐẠT | giao nhau **0 px²** cả khi mở lẫn khi thu; `chua-cho-dai`=51 = đúng chiều cao dải |
+| Ghi chú cảnh báo | ĐẠT | `andon_notes` 0→1, hàng `andon_events` **không đổi từng cột** |
+| Bảng sức khoẻ | ĐẠT (sau phân xử) | xem V-16 |
+| Báo sự cố | ĐẠT (qua ablation) | xem V-17 |
+| Banner cắt tầng | ĐẠT (ca dựng tay) | mọi toà chỉ 7 tầng nên **không ca tự nhiên nào** chạm trần 50; dựng toà 84 tầng tạm ⇒ banner nêu **84 / 50 / 34**, xoá hàng tạm sau đo |
+
+## V-16 · PHÂN XỬ · Bảng sức khoẻ 371 vs bộ đếm vòng 38 — KHÁC NHAU THEO THIẾT KẾ
+Ca đầu chấm SAI vì kỳ vọng hai số bằng nhau. Đo lại: bảng đếm theo **nhà máy** (371), `__demVien` đếm **vòng vẽ trên cảnh** (38). Tính lại từ `sucKhoeMay` cho cả hai ⇒ **cả hai đều đúng số**. Bằng nhau là **không thể theo thiết kế** (`TwinVanHanh.tsx:1338-1343`). ⇒ ĐẠT. Bài học: kỳ vọng của thước sai, không phải sản phẩm sai.
+
+## V-17 · LỖI CẤU HÌNH CỦA CHỦ ĐỢT · không tài khoản QA nào có quyền tạo cảnh báo
+Nút báo sự cố = 0 ở mọi vai vì **bộ sinh tài khoản của tôi** cấp `andon` chỉ V+E, thiếu C — trong khi khuôn quyền mặc định của vai vận hành **có** C. Ablation mở đúng cờ đó ⇒ nút hiện, bấm gửi thật ⇒ `andon_events` 62→63 đúng máy, đúng người, đúng phạm vi; đóng lại ⇒ 62. **Mã đúng cả hai chiều; lưới sai ở tài khoản.** Đã sửa bộ sinh (xem commit).
+
+## V-18 ★★★ ĐẠT · Hàng rào giữ 6/6, lỗ andon ĐÓNG trên cả bốn đường
+`andon.raise` và `quickReport` nhắm máy ngoài phạm vi qua **cả bốn trục** (`machineId` · `machineCode` · `stationId` · `lineId`) ⇒ **NOT_FOUND**, `andon_events` 62→**62**; đối chứng dương trong phạm vi **vẫn ghi được**. Ghi chú chặn cả hai chiều. `factory.list` nay **403** với vai 0 quyền (trước trả 1 nhà máy). Quản đốc không thấy nút sinh lẫn nút tạo toà, mỗi nút có đối chứng dương riêng. Sinh tự động vẫn 403.
+
+## V-19 ★★ ĐẠT · Hiệu năng cải thiện qua ba mốc
+p50 **2.045 ms**, p90 2.079, **1/12 lượt vượt 2.500 ms**. Chuỗi: vòng 1 **2.615** (48/48 vượt) → vòng 2 **2.137** → nay **2.045**; tỉ lệ vượt ngưỡng **100 % → 8,3 %**. Vẫn trên mốc quản trị 1.087 ms — phần dư là cây phân cấp, thuộc Task 18. Ngân sách vẽ còn rất rộng: 1 canvas mọi màn, lệnh vẽ tối đa **6/150**, tam giác **15.026/500.000**, nhãn **11/30**.
+
+## V-20 ★★ SỐ THẬT cho hằng bố cục — và nó KHÔNG phải một hằng
+Đo `getBoundingClientRect().height` của `khoi-tong-quan`: **85,00 px @1280×720** và **68,00 px @1600×900**. Hằng trong lưới ghi **41**; ước chưa đo của agent là 69 — **đúng ở 1600, sai ở 1280** vì hàng số xuống hai dòng khi hẹp. `bang-suc-khoe` = 25 px ở cả hai. Ba hằng khác (`CAO_NGOAI_PANEL` 231, `TRAN_DAI_PX` 328, `HANG_MAY` 24) đo lại **vẫn đúng**.
+Hai lỗ của mô hình: (a) **không có hằng cho dòng tiền tố 17 px** mà bản vá rút tiền tố vừa thêm — đó là lý do @1600 hiện **7** hàng chứ không phải 8 như mô hình đoán; (b) dự đoán "tồn đọng 3→2" **không kiểm được** vì cả 55 cảnh báo QATD cùng mốc thời gian, **0 cái quá 24 h**.
+
+## V-21 ★★★ T3 — HAI kết cục cùng lúc, và giả thuyết chủ dự án ĐÚNG
+(1) **Lệch đã có sẵn trong cơ sở dữ liệu:** tỉ lệ máy có cảnh báo dự đoán mở, theo hạng sức khoẻ = **53,5 / 49,6 / 49,7 / 55,8 %** — phẳng, và hạng **khoẻ nhất lại cao nhất** ⇒ bộ sinh đặt hai đại lượng **độc lập nhau**. Đúng giả thuyết chủ dự án. Sửa ở bộ sinh, không ở mã sản phẩm.
+(2) **Một lỗi mã THẬT, riêng biệt:** `computeFailureRisk` chỉ nhận hàng sức khoẻ **không phải** loại `PREDICTIVE_WS4`, mà dữ liệu có **đúng một điểm mỗi máy** ⇒ nó trả `failureRisk 0 / urgency LOW` cho **mọi** máy. Màn in "**0 %**" cạnh chip "**Health 40 % · critical**". Đây là PH-36 tái hiện trong một khung hình.
+
+## PH-38 (MỚI, TRUNG BÌNH) · Dải cảnh báo: tiêu đề đếm toàn phạm vi, danh sách render một nhà máy
+Giám đốc thấy "Alarms (**55**)" phía trên **15** dòng, tất cả đều Công ty A; kỹ thuật thấy "Today (**35**)" trên 15 dòng. **40 dòng biến mất không câu nào nói ra.** Banner hạ cấp chỉ nói về cảnh 3D, không nói về dải. Cùng họ PH-06 nhưng ở chỗ khác.
+
+## PH-39 (MỚI, TRUNG BÌNH) · "Failure risk 0 %" là giá trị mặc định, không phải phép đo
+Xem V-21 mục (2). Màn nói "0 %" trong khi thứ nó biết là "chưa đủ dữ liệu" (`rulNote` ghi "cold start"). Nói **0** khi nghĩa là **chưa biết** — cùng lớp lỗi với "Cảnh báo (0)" đã vá ở đợt trước.
+
+## PH-41 (MỚI, THẤP, chưa phân xử) · Bấm cảnh khi đang chọn nhiều không thu về một
+`XuongThietKe.tsx:1088` có ý định thay thế lựa chọn nhưng đo được là không. Agent đi vòng qua cây phân cấp. Chưa phân xử được là lỗi sản phẩm hay giới hạn của cú bấm tổng hợp.

@@ -1,0 +1,52 @@
+{
+ "luc": "2026-09-15T16:45:04.524Z",
+ "base": "http://localhost:3064",
+ "ca": "P7",
+ "vai": "qatd_kythuat",
+ "deBai": "bang-suc-khoe hien ra tren /twin (QATD-A QATD-A-T1 cap1) va so theo hang KHOP __demVien.theoHang",
+ "anh": ".qa-tapdoan/anh/CUOI-P7-bang-suc-khoe.png",
+ "thay": {
+  "bangHien": true,
+  "bangChu": "critical 124 warning 133 watch 62 stale 0 healthy 52 not measured 0",
+  "hangBang": {
+   "nguy_kich": 124,
+   "canh": 133,
+   "theo_doi": 62,
+   "het_han": 0,
+   "khoe": 52,
+   "chua_do": 0
+  },
+  "demVien": {
+   "tong": 38,
+   "theoHang": {
+    "nguy_kich": 11,
+    "canh": 16,
+    "theo_doi": 11,
+    "het_han": 0
+   }
+  },
+  "lech": [
+   [
+    "nguy_kich",
+    11
+   ],
+   [
+    "canh",
+    16
+   ],
+   [
+    "theo_doi",
+    11
+   ]
+  ],
+  "thuocTinhBang": {
+   "data-loc": "client\\src\\pages\\TwinVanHanh.tsx:3454",
+   "data-testid": "bang-suc-khoe"
+  }
+ },
+ "pq": "SAI",
+ "vi": "so theo hang tren bang KHOP __demVien.theoHang: lệch [[\"nguy_kich\",11],[\"canh\",16],[\"theo_doi\",11]] · bảng {\"nguy_kich\":124,\"canh\":133,\"theo_doi\":62,\"het_han\":0,\"khoe\":52,\"chua_do\":0} · đếm {\"nguy_kich\":11,\"canh\":16,\"theo_doi\":11,\"het_han\":0}",
+ "sai": [
+  "so theo hang tren bang KHOP __demVien.theoHang"
+ ]
+}

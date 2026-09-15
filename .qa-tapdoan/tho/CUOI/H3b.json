@@ -1,0 +1,99 @@
+{
+ "luc": "2026-09-15T17:15:08.246Z",
+ "base": "http://localhost:3064",
+ "ca": "H3b",
+ "vai": "qatd_kythuat",
+ "duong": "/twin?do=1&nm=41&toa=66&tang=172",
+ "deBai": "dem DUNG so hang nhom ton dong (data-ton-dong) va so hang danh-sach-may THAY DUOC o 1280x720 va 1600x900",
+ "csdl": {
+  "tong": 62,
+  "dang_mo": 62,
+  "qua_24h": 7,
+  "som_nhat": "2026-07-12T21:58:48.595Z",
+  "muon_nhat": "2026-09-15T00:35:39.046Z"
+ },
+ "do": {
+  "1280x720": {
+   "vp": {
+    "w": 1280,
+    "h": 720
+   },
+   "coTieuDeTonDong": false,
+   "chuTieuDeTonDong": null,
+   "coTieuDeHomNay": true,
+   "chuTieuDeHomNay": "Today (35)",
+   "soHangTong": 15,
+   "soHangTonDong": 0,
+   "soHangHomNay": 15,
+   "tonDongThayDuoc": 0,
+   "homNayThayDuoc": 2,
+   "caoHangCanhBao": 39.33,
+   "caoDaiCuon": 107.45,
+   "caoDaiCanhBao": 218.45,
+   "caoKhoiTongQuan": 85,
+   "caoHangTongQuan": 49,
+   "caoBangSucKhoe": 25,
+   "caoPanelTrai": 489,
+   "caoDanhSachMay": 156.05,
+   "caoUl": 95.05,
+   "caoTienTo": 17,
+   "soHangMayVe": 12,
+   "soHangMayThayDuoc": 3,
+   "caoHangMay": 24,
+   "soMayTongDs": 371
+  },
+  "1600x900": {
+   "vp": {
+    "w": 1600,
+    "h": 900
+   },
+   "coTieuDeTonDong": false,
+   "chuTieuDeTonDong": null,
+   "coTieuDeHomNay": true,
+   "chuTieuDeHomNay": "Today (35)",
+   "soHangTong": 15,
+   "soHangTonDong": 0,
+   "soHangHomNay": 15,
+   "tonDongThayDuoc": 0,
+   "homNayThayDuoc": 4,
+   "caoHangCanhBao": 39.33,
+   "caoDaiCuon": 217,
+   "caoDaiCanhBao": 328,
+   "caoKhoiTongQuan": 68,
+   "caoHangTongQuan": 32,
+   "caoBangSucKhoe": 25,
+   "caoPanelTrai": 669,
+   "caoDanhSachMay": 243.5,
+   "caoUl": 182.5,
+   "caoTienTo": 17,
+   "soHangMayVe": 16,
+   "soHangMayThayDuoc": 7,
+   "caoHangMay": 24,
+   "soMayTongDs": 371
+  }
+ },
+ "anh1280": ".qa-tapdoan/anh/CUOI-H3b-1280x720.png",
+ "anh1600": ".qa-tapdoan/anh/CUOI-H3b-1600x900.png",
+ "moHinh": {
+  "hangTrongLuoi": 41,
+  "uocChuaDo": 69,
+  "duDoan": {
+   "tonDong1280": "3 → 2",
+   "danhSachMay1600": "9 → 8"
+  }
+ },
+ "thay": {
+  "cao1280": 85,
+  "cao1600": 68,
+  "tonDong1280": 0,
+  "tonDongThayDuoc1280": 0,
+  "tonDong1600": 0,
+  "tonDongThayDuoc1600": 0,
+  "danhSachMayThayDuoc1280": 3,
+  "danhSachMayThayDuoc1600": 7,
+  "csdlAndonQua24h": 7,
+  "csdlAndonDangMo": 62
+ },
+ "pq": "ĐẠT",
+ "vi": "doc duoc chieu cao THAT o ca hai be rong OK · chieu cao KHAC hang 41 (hang da lac thuc te) OK · dem duoc so hang danh-sach-may THAY DUOC o ca hai be rong OK · nhom TON DONG co ton tai de dem (CSDL co andon qua 24h) OK"
+}

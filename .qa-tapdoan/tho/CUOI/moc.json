@@ -1,0 +1,211 @@
+{
+ "luc": "2026-09-15T16:39:00.469Z",
+ "factories": [
+  {
+   "id": 41,
+   "code": "QATD-A",
+   "name": "Công ty A"
+  },
+  {
+   "id": 42,
+   "code": "QATD-B",
+   "name": "Công ty B"
+  },
+  {
+   "id": 43,
+   "code": "QATD-C",
+   "name": "Công ty C"
+  }
+ ],
+ "F": {
+  "QATD-A": 41,
+  "QATD-B": 42,
+  "QATD-C": 43
+ },
+ "tangDong": {
+  "fcode": "QATD-A",
+  "toa_id": 66,
+  "toa_ma": "QATD-A-T2",
+  "tang_id": 172,
+  "cap": 1,
+  "so_may": 68
+ },
+ "tangRongA": {
+  "fcode": "QATD-A",
+  "toa_id": 65,
+  "toa_ma": "QATD-A-T1",
+  "tang_id": 167,
+  "cap": 3,
+  "so_may": 0
+ },
+ "tangC": {
+  "fcode": "QATD-C",
+  "toa_id": 73,
+  "toa_ma": "QATD-C-T1",
+  "tang_id": 221,
+  "cap": 1,
+  "so_may": 39
+ },
+ "tangA": {
+  "fcode": "QATD-A",
+  "toa_id": 65,
+  "toa_ma": "QATD-A-T1",
+  "tang_id": 165,
+  "cap": 1,
+  "so_may": 45
+ },
+ "mayDong": [
+  {
+   "id": 5390,
+   "code": "QATD-A-T2-X1-L1-M01",
+   "tram": 5189,
+   "chuyen": 322
+  },
+  {
+   "id": 5391,
+   "code": "QATD-A-T2-X1-L1-M02",
+   "tram": 5190,
+   "chuyen": 322
+  },
+  {
+   "id": 5392,
+   "code": "QATD-A-T2-X1-L1-M03",
+   "tram": 5191,
+   "chuyen": 322
+  }
+ ],
+ "mayB": [
+  {
+   "id": 5676,
+   "code": "QATD-B-T1-X1-L1-M01"
+  },
+  {
+   "id": 5677,
+   "code": "QATD-B-T1-X1-L1-M02"
+  }
+ ],
+ "mayC": [
+  {
+   "id": 6085,
+   "code": "QATD-C-T1-X1-L1-M01"
+  },
+  {
+   "id": 6086,
+   "code": "QATD-C-T1-X1-L1-M02"
+  },
+  {
+   "id": 6087,
+   "code": "QATD-C-T1-X1-L1-M03"
+  }
+ ],
+ "andonA": [
+  {
+   "id": 262,
+   "status": "raised",
+   "message": null,
+   "resolvedAt": null,
+   "machineId": 5311,
+   "may": "QATD-A-T1-X1-L1-M07"
+  },
+  {
+   "id": 263,
+   "status": "raised",
+   "message": null,
+   "resolvedAt": null,
+   "machineId": 5369,
+   "may": "QATD-A-T1-X2-L2-M07"
+  }
+ ],
+ "andonC": [
+  {
+   "id": 297,
+   "machineId": 6089,
+   "may": "QATD-C-T1-X1-L1-M05"
+  },
+  {
+   "id": 298,
+   "machineId": 6097,
+   "may": "QATD-C-T1-X1-L2-M05"
+  }
+ ],
+ "tangT2": [
+  {
+   "fcode": "QATD-A",
+   "toa_id": 66,
+   "tang_id": 172,
+   "cap": 1,
+   "n": 68
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 69,
+   "tang_id": 193,
+   "cap": 1,
+   "n": 63
+  },
+  {
+   "fcode": "QATD-B",
+   "toa_id": 69,
+   "tang_id": 194,
+   "cap": 2,
+   "n": 61
+  }
+ ],
+ "maxTangMoiToa": 7,
+ "soTangTheoToa": {
+  "QATD-A-T1": 7,
+  "QATD-A-T2": 7,
+  "QATD-A-T3": 7,
+  "QATD-A-T4": 7,
+  "QATD-B-T1": 7,
+  "QATD-B-T2": 7,
+  "QATD-B-T3": 7,
+  "QATD-B-T4": 7,
+  "QATD-C-T1": 7,
+  "QATD-C-T2": 7,
+  "QATD-C-T3": 7,
+  "QATD-C-T4": 7
+ },
+ "tangRongDs": [
+  {
+   "fcode": "QATD-A",
+   "toa_id": 65,
+   "toa_ma": "QATD-A-T1",
+   "tang_id": 167,
+   "cap": 3,
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_id": 65,
+   "toa_ma": "QATD-A-T1",
+   "tang_id": 168,
+   "cap": 4,
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_id": 65,
+   "toa_ma": "QATD-A-T1",
+   "tang_id": 169,
+   "cap": 5,
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_id": 65,
+   "toa_ma": "QATD-A-T1",
+   "tang_id": 170,
+   "cap": 6,
+   "so_may": 0
+  },
+  {
+   "fcode": "QATD-A",
+   "toa_id": 65,
+   "toa_ma": "QATD-A-T1",
+   "tang_id": 171,
+   "cap": 7,
+   "so_may": 0
+  }
+ ]
+}

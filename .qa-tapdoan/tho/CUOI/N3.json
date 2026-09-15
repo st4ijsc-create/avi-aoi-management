@@ -1,0 +1,44 @@
+{
+ "luc": "2026-09-15T16:59:12.116Z",
+ "base": "http://localhost:3064",
+ "ca": "N3",
+ "vai": "qatd_kythuat",
+ "deBai": "ky thuat (A+B) goi andon.ghiChu + danhSachGhiChu tren canh bao 297 cua QATD-C => bi chan; dem andon_notes KHONG tang",
+ "demTruoc": 0,
+ "demSau": 0,
+ "thay": {
+  "ghiChuNgoai": {
+   "http": 404,
+   "data": null,
+   "ma": "NOT_FOUND",
+   "loi": "Andon không tồn tại.",
+   "tho": "{\"error\":{\"json\":{\"message\":\"Andon không tồn tại.\",\"code\":-32004,\"data\":{\"code\":\"NOT_FOUND\",\"httpStatus\":404,\"path\":\"andon.ghiChu\",\"stack\":null,\"appCode\":\"ENTITY_NOT_FOUND\",\"appParams\":{\"entity\":\"andonEvent\"}}},\"meta\":{\"values\":{\"data.stack\":[\"undefined\"]}}}}"
+  },
+  "danhSachNgoai": {
+   "http": 404,
+   "data": null,
+   "ma": "NOT_FOUND",
+   "loi": "Andon không tồn tại.",
+   "tho": "{\"error\":{\"json\":{\"message\":\"Andon không tồn tại.\",\"code\":-32004,\"data\":{\"code\":\"NOT_FOUND\",\"httpStatus\":404,\"path\":\"andon.danhSachGhiChu\",\"stack\":null,\"appCode\":\"ENTITY_NOT_FOUND\",\"appParams\":{\"entity\":\"andonEvent\"}}},\"meta\":{\"values\":{\"data.stack\":[\"undefined\"]}}}}"
+  },
+  "ghiChuIdKhongTonTai": {
+   "http": 404,
+   "data": null,
+   "ma": "NOT_FOUND",
+   "loi": "Andon không tồn tại.",
+   "tho": "{\"error\":{\"json\":{\"message\":\"Andon không tồn tại.\",\"code\":-32004,\"data\":{\"code\":\"NOT_FOUND\",\"httpStatus\":404,\"path\":\"andon.ghiChu\",\"stack\":null,\"appCode\":\"ENTITY_NOT_FOUND\",\"appParams\":{\"entity\":\"andonEvent\"}}},\"meta\":{\"values\":{\"data.stack\":[\"undefined\"]}}}}"
+  },
+  "danhSachTrongPhamVi": {
+   "http": 200,
+   "data": [],
+   "ma": null,
+   "loi": null,
+   "tho": "{\"result\":{\"data\":{\"json\":[]}}}"
+  },
+  "demTruoc": 0,
+  "demSau": 0,
+  "dauVetConLai": []
+ },
+ "pq": "ĐẠT",
+ "vi": "andon.ghiChu (canh bao QATD-C) => bi chan OK · andon.danhSachGhiChu (canh bao QATD-C) => bi chan, KHONG tra noi dung OK · andon.ghiChu (id khong ton tai) => bi chan OK · doi chung DUONG: danhSachGhiChu canh bao QATD-A => 200 OK · dem andon_notes KHONG tang OK · KHONG con dau vet ghi chu QATD-TMP OK"
+}
