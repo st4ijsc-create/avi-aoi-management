@@ -107,6 +107,38 @@ const DON_VI: Readonly<Record<string, string | null>> = {
 };
 
 /**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ QA LẦN 11 · PH-06 — BỘ CHỌN MẪU SỐ: KPI ĐO ĐÚNG THỨ CẢNH ĐANG VẼ
+ * ════════════════════════════════════════════════════════════════════════════
+ * `tinhKpiNoi` vốn đúng — mẫu số của nó luôn bằng `may.length`. Thứ sai là ĐẦU
+ * VÀO: `TwinVanHanh.tsx` truyền tập của CẢ NHÀ MÁY trong khi bảng in nhãn phạm
+ * vi chạy tới cấp TẦNG. Đo được (`.qa-tapdoan/PHAT-HIEN.md` PH-06, ảnh
+ * `AB-B4-qatd_giamdoc-tang3-trong.png`): QATD-A toà T1 **tầng 3** có 0 máy,
+ * cảnh 3D vẽ **0 khối**, bảng vẫn in **371 machines · Running 261 · andon 15**.
+ *
+ * ★ Thước của "máy trên tầng này" là **số khối trong cảnh 3D**, không phải ô
+ *   `dem-may` của panel trái (ô đó CỐ Ý đếm theo nhà máy — `cayVanHanh.ts:58-61`,
+ *   và chủ đợt QA đã chuẩn hoá lại ở PH-08). Nên tập đúng là tập id mà cảnh
+ *   thật sự nhận để vẽ, không phải một phép lọc thứ hai suy từ `phamVi` (G12:
+ *   hai bản cài đặt của cùng một luật chỉ đồng ý tới lần sửa đầu tiên).
+ *
+ * ⚠⚠ `idTrongCanh === null` nghĩa **CHƯA BIẾT cảnh vẽ gì** (truy vấn hình học
+ *   đang tải hoặc bị 403) — KHÁC hẳn `new Set()` nghĩa "đã biết, và tầng này
+ *   rỗng". Gộp hai ca làm một sẽ cho mẫu số 0 mỗi lần `canhThietKe` bị từ chối,
+ *   tức làm bảng KPI câm đúng ca docblock `kpiChuaDo` bảo vệ: *người không có
+ *   quyền xem bố cục vẫn được phép biết bao nhiêu máy đang chạy*.
+ *
+ * Hàm THUẦN, giữ nguyên thứ tự, không sửa đầu vào.
+ */
+export function locKpiTheoCanh(
+  may: readonly MayTongQuanKpi[],
+  idTrongCanh: ReadonlySet<number> | null,
+): readonly MayTongQuanKpi[] {
+  if (idTrongCanh === null) return may;
+  return may.filter((m) => idTrongCanh.has(m.id));
+}
+
+/**
  * ★★★ HÀM TRUNG TÂM. Đầu vào RỖNG ⇒ mọi ô `null`, KHÔNG phải 0.
  *
  * Đây là điểm G5/G32 của module: một bản cài đặt `f(x) = 0` sẽ cho mọi cổng

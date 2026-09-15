@@ -14,7 +14,7 @@
  *   (c) bỏ cờ `chuaDo`            → bắt bởi "chuaDo THẮNG cả dữ liệu khác rỗng"
  */
 import { describe, it, expect } from "vitest";
-import { tinhKpiNoi, type MayTongQuanKpi } from "./kpiNoiLogic";
+import { locKpiTheoCanh, tinhKpiNoi, type MayTongQuanKpi } from "./kpiNoiLogic";
 
 /** Dựng một máy với mặc định "im lặng", chỉ ghi đè cái đang được đo. */
 function may(p: Partial<MayTongQuanKpi> & { id: number }): MayTongQuanKpi {
@@ -225,5 +225,100 @@ describe("tinhKpiNoi — thuần & không phá đầu vào", () => {
   it("gọi hai lần cùng đầu vào ⇒ cùng đầu ra (không đồng hồ ẩn)", () => {
     const ds = [may({ id: 1, status: "running" }), may({ id: 2, status: "down" })];
     expect(JSON.stringify(tinhKpiNoi(ds))).toBe(JSON.stringify(tinhKpiNoi(ds)));
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ QA LẦN 11 · PH-06 — MẪU SỐ PHẢI CÙNG PHẠM VI VỚI NHÃN                  */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Số đo gốc (`.qa-tapdoan/PHAT-HIEN.md` PH-06, ảnh
+ * `anh/AB-B4-qatd_giamdoc-tang3-trong.png`): `qatd_giamdoc` mở `/twin` QATD-A
+ * toà T1 **tầng 3**. DB: tầng 3 có **0 máy**; cảnh 3D vẽ **0 khối**. Bảng KPI
+ * in nhãn phạm vi `"Corporate · Công ty A · Floor"` rồi ngay cạnh in
+ * **371 machines · Running 261 · Machines w/ andon 15** — mẫu số của CẢ nhà máy.
+ *
+ * Hai nhóm dưới đây đo hai nửa khác nhau của cùng một lỗi:
+ *   · `tinhKpiNoi` — HỢP ĐỒNG của hàm. Hàm vốn ĐÚNG; đây là lưới BẢO VỆ.
+ *   · `locKpiTheoCanh` — thứ THẬT SỰ thiếu: bộ chọn tập đầu vào.
+ * Nửa "chỗ gọi đã nối hay chưa" nằm ở `nguonKpiTheoTang.unit.test.ts`.
+ */
+describe("★★★ PH-06 — mẫu số bằng ĐÚNG số máy được truyền vào", () => {
+  it("★ mẫu số PHẢI bằng số máy được truyền vào, không phải tổng nhà máy", () => {
+    const mayTang = [
+      may({ id: 1, status: "running", oeePercent: 80 }),
+      may({ id: 2, status: "idle" }),
+    ];
+    const kq = tinhKpiNoi(mayTang, false);
+    expect(kq.mauSo).toBe(2);
+    expect(o(kq, "dangChay").giaTri).toBe(1);
+  });
+
+  it("★ tầng KHÔNG có máy ⇒ mẫu số 0 và mọi ô null, KHÔNG mượn số của nhà máy", () => {
+    const kq = tinhKpiNoi([], false);
+    expect(kq.mauSo).toBe(0);
+    expect(kq.o.length).toBeGreaterThan(0); // tập rỗng của `o` sẽ làm vòng dưới tự thoả
+    for (const x of kq.o) expect(x.giaTri).toBeNull();
+  });
+});
+
+describe("★★★ PH-06 — locKpiTheoCanh: mẫu số là tập CẢNH ĐANG VẼ", () => {
+  /** 371 máy của QATD-A như `factoryCommand.overview` trả về. */
+  const NHA_MAY_371 = Array.from({ length: 371 }, (_, i) =>
+    may({ id: i + 1, status: i < 261 ? "running" : "idle", andonActive: i < 15 }),
+  );
+
+  it("dữ kiện nền: tập nhà máy đúng 371 máy / 261 chạy / 15 andon (khớp PH-06)", () => {
+    const kq = tinhKpiNoi(NHA_MAY_371, false);
+    expect(kq.mauSo).toBe(371);
+    expect(o(kq, "dangChay").giaTri).toBe(261);
+    expect(o(kq, "andonMo").giaTri).toBe(15);
+  });
+
+  it("★★★ TẦNG 3 — cảnh vẽ 0 khối ⇒ mẫu số 0, KHÔNG phải 371", () => {
+    const tang3 = locKpiTheoCanh(NHA_MAY_371, new Set<number>());
+    expect(tang3.length).toBe(0);
+    const kq = tinhKpiNoi(tang3, false);
+    expect(kq.mauSo).toBe(0);
+    expect(o(kq, "dangChay").giaTri).toBeNull();
+    expect(o(kq, "andonMo").giaTri).toBeNull();
+  });
+
+  it("★ TẦNG 1 — cảnh vẽ 45 khối ⇒ mẫu số ĐÚNG 45 (số khối, không phải số máy nhà máy)", () => {
+    // 45 = số khối agent QA đếm được trên cảnh QATD-A tầng 1 (PH-08).
+    const idTang1 = new Set(Array.from({ length: 45 }, (_, i) => i + 1));
+    const tang1 = locKpiTheoCanh(NHA_MAY_371, idTang1);
+    expect(tang1.length).toBe(45);
+    expect(tinhKpiNoi(tang1, false).mauSo).toBe(45);
+  });
+
+  it("★★★ ĐỐI CHỨNG BIẾT KÊU — thước này BÁC BỎ bản chưa vá (371 ≠ 45)", () => {
+    const idTang1 = new Set(Array.from({ length: 45 }, (_, i) => i + 1));
+    const daVa = tinhKpiNoi(locKpiTheoCanh(NHA_MAY_371, idTang1), false).mauSo;
+    const chuaVa = tinhKpiNoi(NHA_MAY_371, false).mauSo; // chỗ gọi cũ: nguyên tập nhà máy
+    expect(chuaVa).toBe(371);
+    expect(daVa).toBe(45);
+    expect(daVa).not.toBe(chuaVa);
+  });
+
+  it("★ CHƯA BIẾT CẢNH VẼ GÌ (`null`) ⇒ KHÔNG thu hẹp — im lặng còn tệ hơn rộng", () => {
+    // `canhThietKe` đang tải / bị 403: ta KHÔNG biết tầng có máy nào. Trả 0 ở đây
+    // sẽ làm bảng KPI câm đúng ca docblock `kpiChuaDo` bảo vệ ("người không có
+    // quyền xem bố cục vẫn được biết bao nhiêu máy đang chạy").
+    expect(locKpiTheoCanh(NHA_MAY_371, null).length).toBe(371);
+  });
+
+  it("★ máy trong cảnh mà KHÔNG có trong overview ⇒ không bịa thêm hàng", () => {
+    const ds = [may({ id: 1 }), may({ id: 2 })];
+    expect(locKpiTheoCanh(ds, new Set([1, 2, 99, 100])).map((m) => m.id)).toEqual([1, 2]);
+  });
+
+  it("★ thuần: KHÔNG sửa mảng đầu vào và giữ nguyên thứ tự", () => {
+    const ds = [may({ id: 3 }), may({ id: 1 }), may({ id: 2 })];
+    const chup = JSON.stringify(ds);
+    const ra = locKpiTheoCanh(ds, new Set([1, 3]));
+    expect(ra.map((m) => m.id)).toEqual([3, 1]);
+    expect(JSON.stringify(ds)).toBe(chup);
   });
 });

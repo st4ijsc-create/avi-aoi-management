@@ -35,6 +35,56 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { hienSo } from "./trungThucDuLieu";
 import type { KetQuaKpiNoi, SacThaiKpi } from "./kpiNoiLogic";
 
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ QA LẦN 11 · PH-31 — LỚP PHỦ KPI KHÔNG ĐƯỢC CHE LỜI KHAI CỦA SẢN PHẨM   */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Chiều cao MỘT dòng của dải việc `DaiHopNhat`, px — **suy từ CSS đã build,
+ * calibrate khớp số đo thật của QA lần 11**, không phải một con số ưa thích.
+ *
+ * `DaiHopNhat.veMuc()` vẽ mỗi dòng là `px-3 py-1 text-[11px]` + `border-t`
+ * (dòng đầu `first:border-t-0`), icon `h-3.5` = 14 px:
+ *   · `text-[11px]` chỉ đặt cỡ chữ; `line-height` thừa kế 1,5 của preflight
+ *     ⇒ 11 × 1,5 = **16,5 px**, lớn hơn icon 14 px nên nó quyết chiều cao dòng;
+ *   · `py-1` = 4 px × 2 = **8 px**;
+ *   · viền = **1 px**.
+ *   ⇒ 16,5 + 8 + 1 = **25,5 px**.
+ *
+ * ★ ĐỐI CHIẾU VỚI ẢNH THẬT `.qa-tapdoan/anh/AB-B7-qatd_giamdoc-tapdoan.png`
+ *   (1600×900, 2 mục): lớp phủ chi tiết đo được **≈51 px** (y≈207→258) —
+ *   2 × 25,5 = 51. Khớp.
+ */
+export const CAO_MOT_DONG_DAI_VIEC_PX = 25.5;
+
+/**
+ * ★★★ Bao nhiêu px trên cùng của khung cảnh phải CHỪA cho dải việc.
+ *
+ * `DaiHopNhat` vẽ phần MỞ của nó bằng `absolute inset-x-0 top-full z-30` — tức
+ * nó **thả xuống ĐÈ lên khung cảnh**, đúng bằng chiều cao các dòng đang bật
+ * (`gopDuoc`; dải AN TOÀN nằm TRONG dòng chảy nên không thả xuống, không tính).
+ * Trong khi đó lớp phủ KPI neo `absolute left-2 top-2` **của khung cảnh** ⇒ hai
+ * thứ dùng chung y ∈ [0, chiều cao dải]. Cùng `z-30`, và lớp phủ KPI đứng SAU
+ * trong DOM nên nó thắng: **sản phẩm nói thật về hạn chế của mình rồi tự che**.
+ *
+ * Đo được (PH-31, ba ảnh vai giám đốc): lớp phủ `bang-kpi-noi` đè lên banner
+ * *"326 machines are outside this load"* và lên cả hai dòng banner của
+ * `?pv=tapdoan`, **cắt câu giải thích ở giữa** — 43 px chồng lấn.
+ *
+ * ⚠⚠ VÌ SAO CHỪA CẢ KHI DẢI ĐANG THU: trạng thái mở/đóng sống TRONG
+ *   `DaiHopNhat` (`useState`), trang không đọc được nó, và nâng state ấy lên là
+ *   sửa một tệp thuộc lô khác. Chừa theo SỐ MỤC ĐANG BẬT là bất biến hình học
+ *   duy nhất trang tự biết chắc. Giá phải trả: khi dải đang thu, lớp phủ KPI
+ *   nằm thấp hơn cần thiết `soMuc × 25,5` px — **thà thừa chỗ còn hơn che một
+ *   câu nói thật**, và ca thường gặp nhất (`soMuc = 0`) chừa ĐÚNG 0 px.
+ *
+ * @param soMucGop Số mục đang bật trong nhóm GỘP (`tachAnToan(...).gopDuoc`).
+ */
+export function chuaChoDaiViec(soMucGop: number): number {
+  if (!Number.isFinite(soMucGop) || soMucGop <= 0) return 0;
+  return Math.ceil(soMucGop * CAO_MOT_DONG_DAI_VIEC_PX);
+}
+
 /**
  * Sắc thái → lớp Tailwind.
  *

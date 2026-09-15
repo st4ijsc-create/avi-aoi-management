@@ -181,8 +181,8 @@ import {
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
 // ── Đợt 11 lô J — §11 #16: KPI ĐỌC ĐƯỢC TRÊN CẢNH 3D (yêu cầu #6) ──────────
-import { tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kpiNoiLogic";
-import { BangKpiNoi } from "@/components/twin3d/van-hanh/BangKpiNoi";
+import { locKpiTheoCanh, tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kpiNoiLogic";
+import { BangKpiNoi, chuaChoDaiViec } from "@/components/twin3d/van-hanh/BangKpiNoi";
 // ── ★★★ Đợt 34 (QĐ-24) — `NganMoPhong` + `useMoPhongTwin` + `dungDauVaoWhatIf` ĐÃ RỜI trang này sang
 //    `TwinLine.tsx`. Sau QĐ-23 `/twin` không bao giờ ở cấp Line (`?pv=line:` redirect sang
 //    `/twin/line/:id`), nên `lineDangXem` ở đây luôn `null` ⇒ ngăn luôn khai `chua_chon_line` (đo K11
@@ -254,7 +254,7 @@ import {
  *   sau này đổi `? :` thành `hidden`.
  */
 import DaiHopNhat from "@/components/twin3d/bo-cuc/DaiHopNhat";
-import type { MucViec } from "@/components/twin3d/bo-cuc/daiHopNhatLogic";
+import { tachAnToan, type MucViec } from "@/components/twin3d/bo-cuc/daiHopNhatLogic";
 import { coQuyenSuaNhaXuong } from "@/components/twin3d/bo-cuc/vungQuyen";
 
 /*
@@ -2070,7 +2070,50 @@ export function ThanTwinVanHanh() {
    */
   const kpiChuaDo =
     overviewQ.isLoading || overviewQ.isError || factoryId === null;
-  const kpiNoi = useMemo(() => tinhKpiNoi(mayKpi, kpiChuaDo), [mayKpi, kpiChuaDo]);
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ QA LẦN 11 · PH-06 — MẪU SỐ PHẢI CÙNG PHẠM VI VỚI NHÃN
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo được (ảnh `.qa-tapdoan/anh/AB-B4-qatd_giamdoc-tang3-trong.png`): QATD-A
+   * toà T1 **tầng 3** — DB có 0 máy, cảnh 3D vẽ **0 khối** — mà bảng KPI in
+   * nhãn `"Corporate · Công ty A · Floor"` rồi ngay cạnh in **371 machines ·
+   * Running 261 · Machines w/ andon 15**, tức mẫu số của CẢ NHÀ MÁY.
+   *
+   * ★★★ GỐC RỄ, tự đọc mã: `PHAM_VI_MAC_DINH = { cap: "tang", id: null }`
+   *   (`:275`). Hai đường cùng đọc `phamVi` và cho HAI phạm vi khác nhau —
+   *   đúng lớp G12:
+   *     · `dungBreadcrumb` chạy tới `pv.cap` ⇒ **3 mắt xích**, mắt cuối "Floor"
+   *       ⇒ nhãn KHAI tới cấp tầng.
+   *     · `phamViCanhBao` mở đầu bằng `if (phamVi.id === null …) return null`
+   *       ⇒ `mayKpi` KHÔNG bị lọc gì, giữ nguyên 371 máy.
+   *   Bản vá lô J (`nhanPhamVi`, `:3318-3321`) sinh ra để chặn đúng lớp lỗi này
+   *   và **chính nó gây ra** nó: nhãn nói tầng, số nói nhà máy.
+   *
+   * ⇒ Mẫu số lấy từ tập mà **cảnh thật sự vẽ** (`mayVeTatCa` — CÙNG mảng truyền
+   *   cho `CanhVanHanh`/`CanhVanHanh2D` ở `:3254`/`:3266`), không lọc lần hai
+   *   theo `phamVi`. Đó cũng là thước mà chủ đợt QA đã chuẩn hoá ở PH-08:
+   *   "số máy của một tầng đo bằng SỐ KHỐI TRONG CẢNH 3D".
+   *
+   * ⚠⚠ `null` (chưa biết cảnh vẽ gì) KHÁC `new Set()` (đã biết, tầng rỗng). Khi
+   *   `canhThietKe` đang tải hoặc bị 403 ta chưa biết tầng có máy nào; trả tập
+   *   rỗng ở đó sẽ làm bảng KPI câm đúng ca docblock `kpiChuaDo` ngay trên bảo
+   *   vệ. Xem docblock `locKpiTheoCanh`.
+   */
+  const idMayTrongCanh = useMemo<ReadonlySet<number> | null>(() => {
+    if (canhQ.data == null) return null;
+    // `hien !== false`: `LoBatchMay` coi `hien: false` là KHÔNG vẽ. Hiện
+    // `dungMayVe` chưa sinh nhánh đó (máy ngoài phạm vi chỉ bị PHA VỀ NỀN, vẫn
+    // vẽ), nhưng đọc cờ tại chỗ giữ phép đếm khớp với cảnh nếu nhánh ấy xuất hiện.
+    return new Set(mayVeTatCa.filter((m) => m.hien !== false).map((m) => m.machineId));
+  }, [canhQ.data, mayVeTatCa]);
+
+  const mayKpiTang = useMemo(
+    () => locKpiTheoCanh(mayKpi, idMayTrongCanh),
+    [mayKpi, idMayTrongCanh],
+  );
+
+  const kpiNoi = useMemo(() => tinhKpiNoi(mayKpiTang, kpiChuaDo), [mayKpiTang, kpiChuaDo]);
 
   /** Bảng KPI mở/thu — dùng CHUNG khoá `?thu=` với hai panel bên (G40). */
   const thuKpi = urlState.thu.includes("kpi");
@@ -2311,6 +2354,50 @@ export function ThanTwinVanHanh() {
   const bcGop = gopBreadcrumb(breadcrumb, gon);
 
   /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-06 (nửa thứ hai) — NHÃN CỦA BẢNG KPI PHẢI NÓI VỀ **TẬP ĐƯỢC ĐO**
+   * ════════════════════════════════════════════════════════════════════════
+   * Trước bản này nhãn là `breadcrumb.map(m => m.nhan).join(" · ")`. Breadcrumb
+   * dừng ở `phamVi.cap` và **không biết gì về lượt nạp**, nên nó sai theo CẢ
+   * HAI chiều:
+   *   · quá RỘNG — `{cap:"tang", id:null}` (mặc định) in "… · Floor" mà không
+   *     có tầng nào được chọn ⇒ đúng PH-06;
+   *   · quá HẸP — `?pv=tapdoan` bị `phamViThuc` hạ xuống nhà máy ⇒ nhãn
+   *     "Corporate · Công ty A" trong khi cảnh chỉ vẽ MỘT tầng của MỘT toà
+   *     (ảnh `AB-B7-qatd_giamdoc-tapdoan.png`). Nếu chỉ vá mẫu số mà giữ nhãn
+   *     này thì ta chỉ đổi chiều nói dối.
+   *
+   * ⇒ Nhãn dựng từ **lượt nạp thật** (nhà máy · toà · tầng — chính ba ô chọn
+   *   quyết định cảnh vẽ gì), rồi nối thêm mắt xích của `phamVi` khi nó thu hẹp
+   *   SÂU HƠN tầng (line/máy), vì `phamViCanhBao` có lọc thêm ở hai cấp đó.
+   *
+   * ★ 0 khoá i18n mới: mọi nhãn ở đây là DỮ LIỆU (tên nhà máy/toà/tầng do
+   *   `mucNhaMay`/`mucToaNha`/`mucTang` mang sẵn) — RB-8.3, không dịch lên chung.
+   * ★ Cùng khuôn `TwinLine.tsx:1069` (`nhanPhamVi={tenLine}`): nhãn nói tên
+   *   THỨ ĐƯỢC ĐO, không phải đường đi tới nó.
+   */
+  const nhanPhamViKpi = ((): string | null => {
+    const manh: string[] = [];
+    const nhaMay = mucNhaMay.find((m) => m.id === factoryId)?.nhan;
+    const toa = mucToaNha.find((m) => m.id === toaNhaId)?.nhan;
+    const tang = mucTang.find((m) => m.id === tangId)?.nhan;
+    if (nhaMay) manh.push(nhaMay);
+    if (toa) manh.push(toa);
+    if (tang) manh.push(tang);
+    // Chỉ hai cấp SÂU HƠN tầng mới thu hẹp thêm tập đo (`phamViCanhBao`).
+    if (phamVi.cap === "line" || phamVi.cap === "may") {
+      const cuoi = breadcrumb.at(-1)?.nhan;
+      if (cuoi) manh.push(cuoi);
+    }
+    // Rỗng ⇒ `null` để `BangKpiNoi` KHÔNG in một dòng trống: chưa nạp được gì
+    // thì không có phạm vi nào để khai (NT-3.5, "rỗng khác 0").
+    return manh.length > 0 ? manh.join(" · ") : null;
+  })();
+  // ⚠ KHÔNG `useMemo` ở đây, và đó là CÓ CHỦ Ý: `breadcrumb` ngay trên được
+  //   dựng lại mỗi lượt render (không memo), nên một `useMemo` phụ thuộc nó sẽ
+  //   tính lại mỗi lần y hệt — một lời khai "đã tối ưu" mà không tối ưu gì.
+
+  /**
    * ⚠ Nhãn phải nói ĐÚNG chế độ đang hiện. Bản đầu cứng chuỗi "Cảnh 3D" và
    *   nghiệm thu bắt được nó vẫn đọc "Cảnh 3D" khi đang ở chế độ 2D — với người
    *   dùng trình đọc màn hình, đó là bề mặt DUY NHẤT mô tả cảnh, nên nói sai
@@ -2500,6 +2587,26 @@ export function ThanTwinVanHanh() {
     ketQuaXuatUsd,
     duocSuaNhaXuong,
   ]);
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ QA LẦN 11 · PH-31 — CHỪA CHỖ CHO DẢI VIỆC THẢ XUỐNG
+   * ════════════════════════════════════════════════════════════════════════
+   * `DaiHopNhat` vẽ phần MỞ bằng `absolute inset-x-0 top-full z-30` — nó KHÔNG
+   * đẩy canvas co lại (đó là toàn bộ điểm của §13b 14.1.1), nhưng vì thế nó ĐÈ
+   * lên đúng dải trên cùng của khung cảnh, nơi ba lớp phủ của trang đang đứng.
+   *
+   * ★ Đếm trên `gopDuoc` chứ KHÔNG trên `demViec()`: mục nhóm `anToan` hiện
+   *   RIÊNG và nằm TRONG dòng chảy (LUẬT CỨNG 1 của `daiHopNhatLogic`), nó đẩy
+   *   khung cảnh xuống chứ không đè lên — tính nó vào đây là chừa hai lần.
+   *
+   * ⚠ Cờ mở/đóng của dải nằm trong `useState` của `DaiHopNhat`, trang không đọc
+   *   được. Nên ta chừa theo SỐ MỤC ĐANG BẬT, kể cả khi dải đang thu: thà thừa
+   *   `soMuc × 25,5` px còn hơn che một câu nói thật. Ca thường gặp nhất
+   *   (`soMucDaiGop = 0`) chừa ĐÚNG 0 px, nên phần lớn thời gian không mất gì.
+   */
+  const soMucDaiGop = useMemo(() => tachAnToan(mucViec).gopDuoc.length, [mucViec]);
+  const chuaChoDai = chuaChoDaiViec(soMucDaiGop);
 
   /**
    * Tra khoá hành động của `DaiHopNhat` → hàm thật. Khoá lạ ⇒ nút không hiện.
@@ -3349,13 +3456,38 @@ export function ThanTwinVanHanh() {
               drei z-index 20 — G41). Thêm một tầng `z` nữa chỉ tạo một ngữ cảnh
               xếp chồng mới và làm `z-30` của con mất nghĩa so với panel `z-20`.
           */}
+          {/*
+            ════════════════════════════════════════════════════════════════
+            ★★★ QA LẦN 11 · PH-31 — KHUNG NEO CŨNG PHẢI THỤT XUỐNG DƯỚI DẢI VIỆC
+            ════════════════════════════════════════════════════════════════
+            Đợt 21 thụt khung này vào theo BỀ NGANG panel. Đo được ở QA lần 11
+            (ba ảnh vai giám đốc): nó còn thiếu một chiều nữa — **chiều dọc**.
+            `DaiHopNhat` thả phần MỞ của nó xuống bằng `absolute … top-full
+            z-30`, tức ĐÈ vào đúng mép trên khung cảnh, nơi `BangKpiNoi`
+            (`top-2`), `cum-trang-thai-du-lieu` (`top-2`) và `goi-y-chon-may`
+            (`top-12`) đang đứng. Cùng `z-30`, mà ba lớp phủ này đứng SAU trong
+            DOM ⇒ chúng THẮNG và che banner:
+
+              · `AB-B7-…-tapdoan.png` — bảng "Metrics" cắt ĐÔI cả hai dòng banner
+                trung thực của `?pv=tapdoan` (chồng lấn đo được **43 px**);
+              · `AB-A3`/`AB-B4` — che câu "326 machines are outside this load".
+
+            Sản phẩm nói thật về hạn chế của mình rồi TỰ CHE câu đó.
+
+            ⇒ Chừa sẵn `chuaChoDai` px trên cùng. Cùng khuôn với bề ngang: sửa
+              thứ mà `absolute` đo vào, KHÔNG chạm `BangKpiNoi`/`DaiHopNhat`.
+              Công thức + hiệu chuẩn theo ảnh: docblock `chuaChoDaiViec`.
+              `data-chua-cho-dai` để nghiệm thu đọc được SỐ, không phải suy từ CSS.
+          */}
           <div
             className={
-              "pointer-events-none absolute inset-y-0 " +
+              "pointer-events-none absolute bottom-0 " +
               (thuTrai ? "left-0 " : "left-56 2xl:left-72 ") +
               (thuPhaiHieuLuc ? "right-0" : "right-64 2xl:right-80")
             }
+            style={{ top: chuaChoDai }}
             data-testid="khung-neo-lop-phu"
+            data-chua-cho-dai={chuaChoDai}
           >
           {/*
             ── ★★★ ĐỢT 11 LÔ J — §11 #16: BẢNG KPI NỔI TRÊN CẢNH (yêu cầu #6) ──
@@ -3379,8 +3511,11 @@ export function ThanTwinVanHanh() {
             onDoiMo={() => doiThu("kpi")}
             /* ★ Nói RÕ đang đo phạm vi nào — một bảng KPI không khai phạm vi thì
                người xem mặc định hiểu là toàn nhà máy, trong khi cảnh chỉ nạp
-               một tầng (đúng lớp lỗi `?pv=tapdoan` của §11e.6 F3). */
-            nhanPhamVi={breadcrumb.map((m) => m.nhan).join(" · ")}
+               một tầng (đúng lớp lỗi `?pv=tapdoan` của §11e.6 F3).
+               ★★★ PH-06: nhãn nay dựng từ LƯỢT NẠP THẬT, không từ breadcrumb —
+               breadcrumb không biết gì về toà/tầng đang nạp nên nó sai theo cả
+               hai chiều. Xem docblock `nhanPhamViKpi`. */
+            nhanPhamVi={nhanPhamViKpi}
           />
 
           {/*
