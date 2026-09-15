@@ -26,6 +26,9 @@
 - **`vite build --outDir` phải là đường tuyệt đối.** Cấu hình đặt gốc ở thư mục `client` nên đường tương đối ghi lạc vào đó mà vẫn báo thành công.
 - **Cấm `drizzle-kit push`** trên repo này (lý do ở Task 2).
 - Mỗi task kết thúc bằng một commit riêng, dùng pathspec. Không `git stash`, không `git checkout --`, không `reset --hard` trên cây dùng chung.
+- **Thông điệp commit luôn ghi ra tệp rồi dùng `-F`, không bao giờ dùng `-m` với chuỗi dài.** Dấu huyền ngược và `$(...)` trong chuỗi nháy kép bị shell **thực thi**. Chủ đợt đã dính đúng bẫy này ở Task 1-2: thông điệp trích tên hai lệnh đồng bộ schema và bash chạy cả hai. Vô hại nhờ may (quyền cơ sở dữ liệu thiếu, lệnh kia không có trong đường dẫn). Kiểm sau commit: `git log -1 --format=%B | grep -cE '^>'` phải bằng 0.
+- **Hai ca lưới trong kế hoạch này từng tự thoả trên tập rỗng** (`expect(Array.isArray([])).toBe(true)` đúng cả khi không đọc được gì). Agent thực thi Task 1 bắt được và thêm ca dữ kiện nền cùng ràng buộc số hàng tối thiểu. Khi gặp lưới tương tự trong các task sau, **sửa lưới trước khi chạy**, đừng chạy rồi tin.
+- `scripts/apply-migration-0350.mjs` **không tồn tại** (cao nhất là `0349`). Chỗ nào trong kế hoạch trích dẫn tên đó thì đọc `apply-migration-0349.mjs` làm mẫu.
 
 ---
 
