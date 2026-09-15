@@ -124,10 +124,32 @@ describe("★★★ Task 14 (PH-01) — tệp trong thư mục công khai KHÔNG
     expect(tepChu.length, "0 tệp chữ ⇒ bộ lọc phần mở rộng đã nuốt hết").toBeGreaterThanOrEqual(6);
   });
 
-  it("dữ kiện nền — ĐÚNG tệp thử QA lần 11 nằm trong tập quét (không phải quét chỗ khác)", () => {
-    expect(tepChu).toContain("aoi-upload-test-client.html");
+  it("dữ kiện nền — bộ quét chạm ĐÚNG thư mục công khai, không phải chỗ khác", () => {
     expect(tepChu).toContain("sw.js");
     expect(tepChu).toContain("models/aoi-machine.gltf");
+  });
+
+  /*
+   * ★ Tệp `aoi-upload-test-client.html` — thứ QA lần 11 bắt được khoá API trong đó —
+   *   ĐÃ BỊ XOÁ khỏi thư mục công khai (chủ dự án quyết 2026-09-15, không chỉ gỡ khoá
+   *   mặc định mà bỏ hẳn bề mặt). Nó là công cụ thử thủ công gửi ảnh vào đường nhận dữ
+   *   liệu, phục vụ ở đường dẫn gốc, KHÔNG qua phiên đăng nhập / RouteGuard / tRPC.
+   *   Người thử vẫn mở được bản sao từ đĩa.
+   *
+   *   Ca dưới đây là CẦU CHÌ cho quyết định ấy: nếu ai đó đặt lại tệp vào thư mục công
+   *   khai thì nó ĐỎ ngay, kèm lý do — chứ không đợi tới lúc có người dán khoá vào lần
+   *   thứ hai. Đây là ca ÂM, nên nó cũng phải chứng minh được là biết KÊU: đổi tên tệp
+   *   trong `CAM` thành `sw.js` (tệp CÓ thật) sẽ làm nó đỏ.
+   */
+  const CAM = ["aoi-upload-test-client.html"] as const;
+  it("★ tệp thử đã xoá KHÔNG được quay lại thư mục công khai", () => {
+    for (const ten of CAM) {
+      expect(
+        tepChu,
+        `${ten} đã bị xoá 2026-09-15 vì phục vụ công khai không qua cổng quyền nào. ` +
+          `Nếu cần công cụ thử, để ngoài thư mục được máy chủ phục vụ.`,
+      ).not.toContain(ten);
+    }
   });
 
   // ── Ca ∀ — kết cục thật ────────────────────────────────────────────────────────────────────────
