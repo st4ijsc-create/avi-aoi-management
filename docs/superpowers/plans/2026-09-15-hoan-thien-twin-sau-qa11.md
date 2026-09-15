@@ -1002,6 +1002,15 @@ sh .qa-tapdoan/server.sh start hoanthien
 
 Chạy lại các lô đã dựng sẵn trong `.qa-tapdoan/`, đối chiếu với `BANG-AB.md`, `BANG-C.md`, `BANG-DE.md`, `BANG-F.md`. Mỗi ca từng SAI phải chuyển ĐẠT, mỗi ca CHẶN-ĐÚNG phải giữ nguyên.
 
+- [ ] **Bước 4b: Đo lại chiều cao khối tổng quan ở bảng trái — hằng đang lạc thực tế**
+
+Task 12 thêm bảng xếp hạng sức khoẻ vào khối tổng quan. Lưới mô hình bố cục (`boCucPanelTrai.unit.test.ts`) dùng **số viết tay** chứ không đo DOM, nên nó vẫn xanh trong khi mô hình đã sai. Ước lượng chưa đo: khối cao thêm khoảng 28 điểm ảnh, tức hằng thật khoảng 69 thay vì 41.
+
+Mở `/twin` ở **1280×720** và **1600×900**, đọc `getBoundingClientRect().height` của `khoi-tong-quan`, rồi:
+- cập nhật hằng trong lưới kèm **ngày đo** và gỡ khối cảnh báo đã cắm ở đó;
+- đếm số hàng thật của nhóm tồn đọng và của danh sách máy ở cả hai bề rộng, so với mô hình (mô hình dự đoán tồn đọng 3 → 2 ở 1280, danh sách máy 9 → 8 ở 1600);
+- chỉ khi có số thật mới quyết được có cần cân lại tỉ lệ 7 trên 5 và trần 328 điểm ảnh hay không. Hai con số ấy là quyết định của các đợt trước, **không đổi khi chưa có phép đo**.
+
 - [ ] **Bước 5: Chạy lại suite đầu cuối**
 
 ```bash
