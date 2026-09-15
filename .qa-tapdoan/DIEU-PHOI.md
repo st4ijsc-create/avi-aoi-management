@@ -37,3 +37,9 @@ chỉ hỏi khi **đổi kế hoạch lớn** hoặc **xoá tệp** (xoá DỮ L
 
 ### Đợt A1 (Task 1-2) — XONG 2026-09-15T17:47:57+07:00
 commit `6825b906`. Agent bác kế hoạch 5 lần, cả 5 đúng: lưới tự thoả trên tập rỗng · mốc ĐỎ không thể ở bước biên dịch (tsconfig loại trừ tệp test) · import sai barrel · trích dẫn script không tồn tại · chú thích sai sẵn ở tài liệu triển khai. Phát hiện thêm 9 cột + 37 bảng vắng schema (ghi lại, không vá). SỰ CỐ chủ đợt: backtick trong `-m` chạy đúng hai lệnh vừa cấm, vô hại nhờ may.
+
+### Đợt B (Task 7-8) — XONG 2026-09-15T20:28:50+07:00
+commit `6cd8f3ea`. Task 7: lời giải màn Chuyền MỘT MÌNH không đủ (tiền tố chung chỉ 7/19 ký tự vì danh sách trải 3 tầng × 2 xưởng) ⇒ thêm cơ chế 2 chặn cột trạng thái. Task 8: buộc chạm TwinVanHanh vì state socket phải đổi hình dạng, nếu không bản không-danh-tính thắng bản có-danh-tính ở mọi lần nạp lại. Hai lỗi kế hoạch nữa bị bác đúng (jsdom không có layout engine; vị trí tham số nuốt mất tham số cũ). Cổng: 115 tệp/2.712 xanh.
+
+### Quyết định chủ dự án giữa chừng 2026-09-15T20:28:50+07:00
+1. Vá cổng phạm vi TRƯỚC (Task 17b mới), rồi mới gộp nhiều nhà máy. 2. Vá cả hai lỗi mới trong giai đoạn này (Task 17c mới).

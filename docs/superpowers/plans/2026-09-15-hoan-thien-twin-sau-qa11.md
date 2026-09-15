@@ -1127,6 +1127,48 @@ Thiết kế phải trả lời được, mỗi câu kèm bằng chứng đo đ�
 
 Không tự chọn. Thiết kế nêu khuyến nghị kèm lý do, chủ dự án chốt, rồi mới sang Task 18.
 
+### Task 17b: Vá cổng phạm vi — chủ dự án chốt làm TRƯỚC Task 18
+
+**Chủ dự án quyết 2026-09-15:** vá cổng trước, giữ nguyên đầu vào một nhà máy; nới danh sách để lượt sau. Lý do: phần lợi lớn nhất rơi **ngoài** việc gộp — màn một nhà máy của vai thường đi từ 207 câu truy vấn xuống khoảng 9, cho **mọi** người dùng không phải quản trị.
+
+Thiết kế đã đo: `traDatChoTheoTang(N)` sinh `4N+1` câu khi có phạm vi (84 tầng ra 337 câu, khớp tuyệt đối), `traVungAnToan(N)` sinh `3N+2` (84 tầng ra 254 câu **dù trả về 0 hàng**). Cổng phân giải lại phạm vi cho **từng tầng** thay vì gộp một lần. Ablation cổng gộp đã chạy thật: 10 câu, 25 mili giây, và trả về **kết quả giống hệt** đường sản phẩm, không rò dữ liệu nhà máy ngoài phạm vi.
+
+**Tệp:**
+- Sửa: `server/db/twinCanh.ts` (`traDatChoTheoTang`, `traVungAnToan`)
+- Lưới: `server/db/congPhamViGop.db.test.ts` (tạo mới)
+
+- [ ] **Bước 1: Viết lưới đo SỐ CÂU TRUY VẤN, không chỉ đo kết quả**
+
+Dùng bộ đếm của chính sản phẩm (`queryMonitor.getQueryStats`) như thiết kế đã làm. Lưới phải có: ca đếm câu cho 1 tầng, ca cho 84 tầng, và **ca đối chứng biết kêu** (gỡ bản vá thì số câu phải vọt lên lại). Kèm ca kết quả: tập đặt chỗ trả về phải **giống hệt** trước và sau.
+
+- [ ] **Bước 2: Chạy, ghi số câu trước khi vá**
+
+Kỳ vọng khớp công thức `4N+1` và `3N+2`.
+
+- [ ] **Bước 3: Gộp phép phân giải phạm vi một lần cho cả danh sách tầng**
+
+Lọc tầng qua phép nối tới bảng toà nhà, **không** qua danh sách mã nhà máy do phía gọi truyền xuống. Đây là điều kiện để cổng tầng đứng độc lập.
+
+- [ ] **Bước 4: Chạy lại, kỳ vọng số câu giảm mạnh và kết quả không đổi**
+
+- [ ] **Bước 5: Ablation và đối chứng âm**
+
+Gỡ bản vá, số câu phải vọt lại. Và với vai chỉ được gán một nhà máy, kết quả phải **vẫn chỉ có nhà máy đó**, không rò tên nhà máy khác.
+
+- [ ] **Bước 6: Cổng nền và commit**
+
+```bash
+npx vitest run phamVi
+npx vitest run server/db/congPhamViGop.db.test.ts
+npm run check
+```
+
+### Task 17c: Hai lỗi đang tồn tại — chủ dự án chốt vá trong giai đoạn này
+
+**Lỗi một: màn vận hành cắt im lặng 34 trong 84 tầng.** `client/src/pages/TwinVanHanh.tsx:650` có `.slice(0, 50)` trên danh sách mã tầng gửi lên. Với toà 7 tầng và nhiều toà thì danh sách vượt 50 và phần dư bị bỏ **không báo gì**. Vá: hoặc nâng trần theo đúng giới hạn thật của thủ tục, hoặc giữ trần nhưng **nói ra** khi cắt. Lưới phải có ca danh sách vượt trần và kỳ vọng người dùng đọc được điều đó.
+
+**Lỗi hai: phép dựng cảnh chưa bao giờ cộng toạ độ toà nhà.** `client/src/components/twin3d/van-hanh/hopNhatCanh.ts:191` đưa thẳng toạ độ đặt chỗ vào cảnh, không cộng gốc của toà. Hai toà của **cùng một nhà máy** vì thế sẽ chồng lên nhau; chưa lộ vì cảnh chỉ lọc một tầng. Vá trước khi gộp nhiều nhà máy, nếu không thì lỗi này sẽ bị đổ nhầm cho việc gộp. ⚠ Dữ liệu thử đã nướng sẵn một khoảng dời một kilômét cho mỗi nhà máy vào toạ độ toà, nhưng dữ liệu cũ thì ở gốc toạ độ — nên đó là quyết định của **bộ sinh**, không phải luật của hệ thống. Một lưới dời chỗ cố định chồng lên nó sẽ cộng hai lần. Lưới phải có ca hai toà và kỳ vọng chúng **không** giao nhau.
+
 ### Task 18: Mở rộng hợp đồng phía máy chủ
 
 Chỉ làm sau khi Task 17 được chốt. Nếu thiết kế chọn phương án gọi song song ở trình duyệt thì **bỏ hẳn task này** và ghi rõ lý do.
@@ -1145,7 +1187,9 @@ Chỉ làm sau khi Task 17 được chốt. Nếu thiết kế chọn phương �
 it("★ danh sách nhà máy ⇒ chỉ trả nhà máy TRONG phạm vi, im lặng bỏ phần ngoài", async () => {
   const ctx = ctxCuaVai("gan_mot_nha_may_A");
   const kq = await goi(ctx, "twinCanh.canhThietKe", { factoryIds: [idA, idB] });
-  expect(kq.cay.may.every((m) => m.factoryId === idA)).toBe(true);
+  // ⚠ `machines` KHÔNG có cột nhà máy. Chuỗi thật: máy → trạm → chuyền → xưởng → nhà máy.
+  // Đối chiếu bằng mã máy (tiền tố mang mã nhà máy) hoặc bằng tập id lấy từ truy vấn riêng.
+  expect(kq.cay.may.every((m) => m.code.startsWith("QATD-A-"))).toBe(true);
   expect(kq.cay.may.length).toBeGreaterThan(0);
 });
 
