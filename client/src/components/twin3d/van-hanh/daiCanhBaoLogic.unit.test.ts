@@ -57,6 +57,9 @@ function cb(sua: Partial<CanhBaoDai> & { idNguon: number }): CanhBaoDai {
     lineId: null,
     stationId: null,
     workshopId: null,
+    // PH-30 — hai ô danh tính mặc định CHƯA BIẾT; ca nào cần thì truyền qua `sua`.
+    maMay: null,
+    tenNhaMay: null,
     ...sua,
   };
 }

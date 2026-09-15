@@ -117,6 +117,26 @@ function DongCanhBao({
   nhanAck: string;
 }) {
   const kieu = KIEU_MUC[c.muc];
+  /**
+   * ★★★ PH-30 — DÒNG PHỤ DANH TÍNH. Chỉ vẽ khi CÓ ít nhất một ô.
+   *
+   * Hai ô `null` phải cho đúng một dòng tiêu đề như trước, không phải một dòng
+   * phụ rỗng: panel trái có trần chiều cao `max-h-[328px]` tính theo SỐ HÀNG
+   * (docblock chỗ dựng ở `TwinVanHanh.tsx`), nên một dòng trống ở mọi hàng ăn
+   * mất đúng những hàng mà mục 13 vừa mua được.
+   *
+   * ★ `?? undefined` ở `data-*` chứ không `?? ""`: React BỎ HẲN thuộc tính khi
+   *   giá trị `undefined`, nên "chưa biết" đọc từ DOM là *thuộc tính vắng mặt*
+   *   chứ không phải chuỗi rỗng — phép đo nghiệm thu phân biệt được hai ca.
+   *
+   * ⚠⚠ `data-testid` của dòng phụ KHÔNG được bắt đầu bằng `canh-bao-`. Bộ đếm
+   *   dòng của lưới là `queryAllByTestId(/^canh-bao-/)`; một tiền tố trùng làm
+   *   nó đếm cả dòng phụ và khai **gấp đôi** số cảnh báo đang hiện. Bản viết
+   *   đầu của mục này dùng `canh-bao-danh-tinh-…` và lưới cũ đã kêu ngay
+   *   (15 → 30) — giữ lại ghi chú vì cái bẫy nằm ở phía người đặt tên, không
+   *   phải ở phía lưới.
+   */
+  const coDanhTinh = c.maMay !== null || c.tenNhaMay !== null;
   return (
     <li>
       <button
@@ -125,6 +145,8 @@ function DongCanhBao({
         data-muc={c.muc}
         data-pha={c.pha}
         data-ton-dong={tonDong ? "1" : "0"}
+        data-ma-may={c.maMay ?? undefined}
+        data-nha-may={c.tenNhaMay ?? undefined}
         className="flex w-full items-start gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-accent/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
         onClick={() => onChon?.(c)}
       >
@@ -135,6 +157,20 @@ function DongCanhBao({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate">{c.tieuDe}</span>
+          {/* RB-8.3 — hai ô này là DỮ LIỆU (`machines.ma`, `factories.name`),
+              KHÔNG phải nhãn giao diện ⇒ không `t()`. Dấu phân cách `·` chỉ vẽ
+              khi CẢ HAI ô có chữ, nếu không nó đứng trơ ở đầu/cuối dòng và
+              trông như dữ liệu bị cắt. */}
+          {coDanhTinh ? (
+            <span
+              className="block truncate text-[10px] text-text-2"
+              data-testid={`danh-tinh-${c.nguon}-${c.idNguon}`}
+            >
+              {c.maMay}
+              {c.maMay !== null && c.tenNhaMay !== null ? " · " : null}
+              {c.tenNhaMay}
+            </span>
+          ) : null}
           <span className="mt-0.5 flex flex-wrap items-center gap-1">
             {tonDong ? (
               <span className="rounded border border-warning/40 bg-warning/15 px-1 text-[10px] text-warning">

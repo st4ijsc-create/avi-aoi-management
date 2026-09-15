@@ -218,3 +218,158 @@ describe("H1 — thiết bị đo tự canh mình", () => {
     expect(r.container.querySelector('[data-testid="may-hang-549"]')).not.toBeNull();
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ PH-27 (QA lần 11) — MÃ MÁY PHẢI ĐỌC ĐƯỢC RIÊNG TỪNG HÀNG @1280         */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * 14 mã THẬT mà QA lần 11 đo được là bị cắt (`.qa-tapdoan/tho/F/F4-gpu.json`
+ * → `dep[4].cat[*].chu`): `scrollWidth 124 > clientWidth 66` ở 1280×720.
+ */
+const MA_QA11 = [
+  "QATD-A-T1-X1-L1-M05",
+  "QATD-A-T1-X1-L1-M11",
+  "QATD-A-T1-X1-L2-M02",
+  "QATD-A-T1-X2-L1-M05",
+  "QATD-A-T1-X2-L1-M11",
+  "QATD-A-T1-X2-L2-M07",
+  "QATD-A-T2-X1-L1-M03",
+  "QATD-A-T2-X1-L1-M06",
+  "QATD-A-T2-X1-L1-M08",
+  "QATD-A-T2-X1-L3-M09",
+  "QATD-A-T2-X1-L5-M02",
+  "QATD-A-T2-X2-L1-M06",
+  "QATD-A-T2-X2-L2-M04",
+  "QATD-A-T3-X1-L2-M07",
+];
+
+/**
+ * NGÂN SÁCH KÝ TỰ của ô mã sau bản vá. **Đây là một con số ĐO ĐƯỢC, không phải
+ * một sở thích**: ô mã rộng **85 px** (đo trên CSS đã build của bản QA đo, sau
+ * khi cột trạng thái bị chặn ở 48 px), và 12 ký tự `T1-X1-L1-M05` rộng 76,5 px.
+ * Ký tự thứ 13–14 (~6,5 px mỗi ký tự) vẫn còn chỗ; từ 14 trở lên thì hết.
+ *
+ * ⚠⚠ **VÌ SAO KHÔNG ĐO `scrollWidth <= clientWidth + 1` Ở ĐÂY** (kế hoạch Task 7
+ *   bước 4 đề nghị thế): jsdom KHÔNG có layout engine — `scrollWidth` và
+ *   `clientWidth` của MỌI phần tử đều là **0**, nên ca ấy là `0 <= 1`, **luôn
+ *   xanh và không đo gì cả** (họ G5/G6, đúng lớp lỗi mà `caoKhungTest` ở đầu tệp
+ *   này tồn tại để chống). Phép đo px thật thuộc về Playwright ở cổng QA; ở đây
+ *   đo thứ jsdom ĐO ĐƯỢC THẬT: **chữ nhìn thấy được của mỗi hàng**, và ngân sách
+ *   ký tự suy ra từ số px đã đo. Bảng đo đầy đủ: `danhSachMayMaNgan.unit.test.ts`.
+ */
+const NGAN_SACH_KY_TU = 13;
+
+function veMa(ma: string[], cao: number | undefined = 480) {
+  const may: MayVanHanh[] = ma.map((m, i) => ({
+    id: i + 1,
+    ma: m,
+    ten: "May " + (i + 1),
+    loaiMay: "aoi",
+    trangThaiBaoCao: "running",
+    thoiDiemDuLieu: 1_700_000_000_000,
+    isActive: true,
+    stationId: null,
+    lineId: 1,
+  }));
+  const tt = new Map<number, string>(may.map((m) => [m.id, "down"]));
+  const r = render(
+    <DanhSachMay
+      may={may}
+      trangThaiTheoMay={tt}
+      machineIdChon={null}
+      onChonMay={() => {}}
+      bayGio={1_700_000_010_000}
+      dangTai={false}
+      caoKhungTest={cao}
+    />,
+  );
+  const oMa = [...r.container.querySelectorAll("[data-ma]")] as HTMLElement[];
+  return { r, may, oMa };
+}
+
+describe("★★★ PH-27 — 14 hàng phải đọc KHÁC NHAU ở bề rộng 1280", () => {
+  it("dữ kiện nền: render đủ 14 hàng, mỗi hàng có ô mã — không đo trên tập rỗng", () => {
+    const { r, oMa } = veMa(MA_QA11);
+    expect(r.container.querySelectorAll('[data-testid^="may-hang-"]').length).toBe(14);
+    expect(oMa.length).toBe(14);
+  });
+
+  it("★★★ CHỮ NHÌN THẤY của 14 hàng ĐÔI MỘT KHÁC NHAU (tiêu chí (b) của QA)", () => {
+    const { oMa } = veMa(MA_QA11);
+    const nhin = oMa.map((e) => e.textContent ?? "");
+    expect(nhin.length).toBe(14);
+    expect(new Set(nhin).size).toBe(14);
+    // …và không hàng nào còn mang tiền tố dùng chung (thứ làm 14 hàng giống nhau).
+    for (const c of nhin) expect(c.startsWith("QATD-A-")).toBe(false);
+  });
+
+  it("★★★ mỗi hàng nằm trong ngân sách ký tự đo được — ĐỐI CHỨNG: mã đầy đủ thì KHÔNG", () => {
+    const { oMa } = veMa(MA_QA11);
+    expect(oMa.length).toBe(14);
+    for (const e of oMa) {
+      expect((e.textContent ?? "").length).toBeLessThanOrEqual(NGAN_SACH_KY_TU);
+      // Nửa BIẾT KÊU của phép đo: chính thước này bác bỏ bản CHƯA vá (19 > 13).
+      expect((e.getAttribute("data-ma") ?? "").length).toBeGreaterThan(NGAN_SACH_KY_TU);
+    }
+  });
+
+  it("★ tiền tố in ĐÚNG MỘT lần ở đầu danh sách, và nó là tiền tố THẬT", () => {
+    const { r } = veMa(MA_QA11);
+    const o = r.container.querySelectorAll('[data-testid="danh-sach-may-tien-to"]');
+    expect(o.length).toBe(1);
+    expect(o[0].textContent).toContain("QATD-A-");
+  });
+
+  it("★ RÚT ĐỂ ĐỌC, KHÔNG PHẢI ĐỂ GIẤU — mã đầy đủ còn nguyên ở `title` và `data-ma`", () => {
+    const { oMa, may } = veMa(MA_QA11);
+    expect(oMa.length).toBe(may.length);
+    oMa.forEach((e, i) => {
+      expect(e.getAttribute("title")).toBe(may[i].ma);
+      expect(e.getAttribute("data-ma")).toBe(may[i].ma);
+      // Ghép lại phải ra ĐÚNG mã gốc — không ký tự nào bị nuốt mất.
+      expect("QATD-A-" + (e.textContent ?? "")).toBe(may[i].ma);
+    });
+  });
+
+  it("★ ĐỐI CHỨNG f(x)=x — MỘT máy: không có tiền tố chung ⇒ hiện NGUYÊN mã", () => {
+    const { r, oMa } = veMa(["QATD-A-T1-X1-L1-M05"]);
+    expect(oMa.length).toBe(1);
+    expect(oMa[0].textContent).toBe("QATD-A-T1-X1-L1-M05");
+    expect(r.container.querySelector('[data-testid="danh-sach-may-tien-to"]')).toBeNull();
+  });
+
+  it("★ ĐỐI CHỨNG f(x)=x — một mã LẠC LOÀI ⇒ KHÔNG rút gì cả, cả 3 hàng nguyên mã", () => {
+    // Luật 1 của `maNgan.ts`: rút "gần đúng" là bịa ra một ranh giới không có.
+    const ma = ["QATD-A-T1-X1-L1-M05", "QATD-A-T1-X1-L1-M11", "SIM-L2-AOI01"];
+    const { r, oMa } = veMa(ma);
+    expect(oMa.length).toBe(3);
+    oMa.forEach((e, i) => expect(e.textContent).toBe([...ma].sort((a, b) => a.localeCompare(b))[i]));
+    expect(r.container.querySelector('[data-testid="danh-sach-may-tien-to"]')).toBeNull();
+  });
+
+  it("★★ GÕ BỘ LỌC KHÔNG làm mã nhảy chữ — tiền tố tính trên `may`, không trên tập đã lọc", () => {
+    // Nếu tiền tố tính trên `hienThi`, lọc còn 1 máy ⇒ `tienToChung` trả "" ⇒ mã
+    // bung lại 19 ký tự ngay giữa lúc người dùng đang tìm, và khối tiền tố biến mất.
+    const { r } = veMa(MA_QA11);
+    const o = r.container.querySelector('[data-testid="o-loc-may"]') as HTMLInputElement;
+    fireEvent.change(o, { target: { value: "T3-X1-L2-M07" } });
+    const ul = r.container.querySelector("ul") as HTMLUListElement;
+    expect(ul.getAttribute("data-so-may")).toBe("1");
+    const con = [...r.container.querySelectorAll("[data-ma]")] as HTMLElement[];
+    expect(con.length).toBe(1);
+    expect(con[0].textContent).toBe("T3-X1-L2-M07");
+    expect(r.container.querySelector('[data-testid="danh-sach-may-tien-to"]')).not.toBeNull();
+  });
+
+  it("★ cột TRẠNG THÁI bị chặn bề rộng nhưng KHÔNG mất nghĩa: chữ đầy đủ ở `title`", () => {
+    // Cơ chế 2 của PH-27 lấy 18,8 px từ cột này trả về cho ô mã. Nếu ai đó gỡ
+    // `title` đi thì chữ bị cắt thành một lời khai cụt — ca này giữ chỗ ấy.
+    const { r } = veMa(MA_QA11);
+    const o = r.container.querySelector(".max-w-12") as HTMLElement | null;
+    expect(o).not.toBeNull();
+    expect(o!.className).toContain("truncate");
+    expect((o!.getAttribute("title") ?? "").length).toBeGreaterThan(0);
+    expect(o!.getAttribute("title")).toBe(o!.textContent);
+  });
+});

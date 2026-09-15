@@ -97,7 +97,9 @@ import {
   chuanHoaHang,
   type CanhBaoDai,
   type ChonMuc,
+  type HangCanhBaoTho,
   type TapPhamVi,
+  type TraDanhTinh,
 } from "@/components/twin3d/van-hanh/daiCanhBaoLogic";
 import { DaiLine } from "@/components/twin3d/van-hanh/DaiLine";
 import { xuatUsd, type KetQuaXuatUsd } from "@/components/twin3d/van-hanh/xuatUsd";
@@ -991,6 +993,46 @@ export function ThanTwinVanHanh() {
   }, [mayVanHanh]);
 
   /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-30 — BẢN ĐỒ TRA DANH TÍNH CHO TỪNG DÒNG CỦA DẢI CẢNH BÁO
+   * ════════════════════════════════════════════════════════════════════════
+   * QA lần 11 đo được: `qatd_quanly` thấy "Alarms (15)" mà **cả 15 dòng đọc y
+   * hệt nhau** (dải chỉ in `tieuDe`, và 15 hàng andon dùng chung một tiêu đề);
+   * `qatd_giamdoc` thấy "Alarms (55)" của ba công ty trộn làm một nên câu hỏi
+   * trung tâm của vai ấy — *"công ty nào tệ nhất hôm nay"* — không trả lời được.
+   *
+   * ★ TÁI DÙNG `maTheoMay`, KHÔNG dựng nguồn mã thứ hai. Bản đồ này đã là nguồn
+   *   mã cho badge cảnh báo 3D (`dungCanhBao3D` ngay bên dưới). Dựng một bản đồ
+   *   riêng cho dải 2D là mở đường để hai bề mặt gọi CÙNG một máy bằng hai tên —
+   *   đúng lớp lỗi §13d Z3 mà roll-up cảnh báo của cây đã phải tránh.
+   *
+   * ★★★ VÌ SAO GÁN ĐƯỢC **MỘT** TÊN NHÀ MÁY CHO MỌI MÁY — ĐÂY LÀ PHÉP NỐI, KHÔNG
+   *   PHẢI PHỎNG ĐOÁN: `mayVanHanh` bắt nguồn từ `canhQ`
+   *   (`twinCanh.canhThietKe({ factoryId })`, dòng ~656) nên MỌI máy trong
+   *   `maTheoMay` thuộc đúng `factoryId` đang xem, và tên của nhà máy ấy là
+   *   `nhaMayHienTai.name`. `andon_events` KHÔNG có cột nhà máy (bảng chỉ có
+   *   `lineId`/`stationId`/`machineId`), nên đây là đường tra duy nhất ở tầng này.
+   *
+   * ⚠⚠ HẠN CHẾ ĐO ĐƯỢC, GHI RA CHỨ KHÔNG GIẤU: `andon.active` **không nhận
+   *   `factoryId`** (`andonRouter.ts:348-358`) — nó trả cảnh báo của MỌI nhà máy
+   *   trong phạm vi tài khoản. Cảnh báo của máy thuộc nhà máy KHÁC nhà máy đang
+   *   tải cảnh sẽ không có trong `maTheoMay` ⇒ hai ô ra `null` ⇒ dòng đó hiện
+   *   **y như trước bản vá**, không hiện sai. Vá trọn cho vai giám đốc đòi
+   *   `andon.active` trả kèm mã máy + nhà máy (đổi máy chủ), nằm ngoài Task 8.
+   *
+   * ★ Tên nhà máy rỗng ⇒ BỎ HẲN bản đồ tên, không nạp chuỗi rỗng: `chuanHoaHang`
+   *   quy chuỗi rỗng về `null` rồi, nhưng dựng sẵn một bản đồ toàn `""` là mời
+   *   người sau tin rằng "đã tra được".
+   */
+  const traDanhTinhCanhBao = useMemo<TraDanhTinh>(() => {
+    const tenNhaMay = (nhaMayHienTai?.name ?? "").trim();
+    if (tenNhaMay === "") return { maTheoMay };
+    const tenNhaMayTheoMay = new Map<number, string>();
+    for (const id of maTheoMay.keys()) tenNhaMayTheoMay.set(id, tenNhaMay);
+    return { maTheoMay, tenNhaMayTheoMay };
+  }, [maTheoMay, nhaMayHienTai]);
+
+  /**
    * Đặt chỗ theo máy **CỦA TẦNG ĐANG HIỆN** — nguồn vị trí 3D.
    *
    * ★★★ F2 — `canhQ` nay hỏi MỌI tầng của toà (để đối soát nói đúng), nên bản
@@ -1400,20 +1442,34 @@ export function ThanTwinVanHanh() {
    * **0**. `gopCanhBao` khoá theo `{nguon}:{idNguon}` — ổn định qua hai lần đọc.
    */
 
-  /** Cảnh báo đến qua socket, giữ trong state để `gopCanhBao` trộn với seed. */
-  const [canhBaoSong, setCanhBaoSong] = useState<readonly CanhBaoDai[]>([]);
+  /**
+   * Gói socket THÔ + mốc NHẬN, giữ trong state; chuẩn hoá ở memo bên dưới.
+   *
+   * ★★★ PH-30 — VÌ SAO GIỮ **THÔ** CHỨ KHÔNG GIỮ BẢN ĐÃ CHUẨN HOÁ (đây là chỗ
+   *   bản vá suýt sai): nếu chuẩn hoá ngay lúc gói tới thì `maMay`/`tenNhaMay`
+   *   bị ĐÓNG BĂNG theo bản đồ tra cứu *tại thời điểm đó*. Một cảnh báo tới
+   *   trước khi `canhThietKe` trả về sẽ mang `null` **vĩnh viễn** — và tệ hơn:
+   *   `gopCanhBao` phá hoà bằng `>=` với `song` nạp SAU seed, nên bản socket
+   *   không danh tính **thắng** bản seed có danh tính ở mọi lần refetch. Dòng
+   *   ấy sẽ không bao giờ hiện mã máy dù dữ liệu đã có đủ từ lâu.
+   *
+   * ★ `nhanLuc` là mốc NHẬN GÓI, giữ nguyên hợp đồng `mocDuPhong` của
+   *   `chuanHoaHang` (RB-8.1: hàm thuần không tự đọc đồng hồ). Nó phải được ghi
+   *   Ở ĐÂY, lúc gói tới — đọc `Date.now()` trong memo sẽ cho tuổi của lần
+   *   render, không phải tuổi của cảnh báo.
+   */
+  const [goiCanhBaoSong, setGoiCanhBaoSong] = useState<
+    readonly { tho: HangCanhBaoTho; nhanLuc: number }[]
+  >([]);
 
   useEffect(() => {
     const socket = getSharedSocket();
     const nhan = (goi: unknown) => {
-      const tho = goi as Parameters<typeof chuanHoaHang>[0] | null;
+      const tho = goi as HangCanhBaoTho | null;
       if (!tho || typeof tho.id !== "number") return;
-      // ★ `mocDuPhong` = thời điểm NHẬN GÓI, không `Date.now()` bên trong
-      //   `chuanHoaHang` (RB-8.1: hàm thuần không tự đọc đồng hồ).
-      const c = chuanHoaHang(tho, Date.now());
       // Giữ mảng có trần: `gopCanhBao` cũng cap 100, nhưng cắt ở đây để state
       // không phình vô hạn giữa hai lần render.
-      setCanhBaoSong((truoc) => [c, ...truoc].slice(0, 200));
+      setGoiCanhBaoSong((truoc) => [{ tho, nhanLuc: Date.now() }, ...truoc].slice(0, 200));
     };
     socket.on("andon:event", nhan);
     return () => {
@@ -1421,10 +1477,16 @@ export function ThanTwinVanHanh() {
     };
   }, []);
 
+  /** Cảnh báo socket đã chuẩn hoá — tra danh tính lại mỗi khi bản đồ đổi. */
+  const canhBaoSong = useMemo<readonly CanhBaoDai[]>(
+    () => goiCanhBaoSong.map((g) => chuanHoaHang(g.tho, g.nhanLuc, null, traDanhTinhCanhBao)),
+    [goiCanhBaoSong, traDanhTinhCanhBao],
+  );
+
   /** Seed từ `andon.active`, chuẩn hoá bằng CÙNG hàm với đường socket. */
   const canhBaoSeed = useMemo<readonly CanhBaoDai[]>(
-    () => andonRows.map((a) => chuanHoaHang(a, bayGio)),
-    [andonRows, bayGio],
+    () => andonRows.map((a) => chuanHoaHang(a, bayGio, null, traDanhTinhCanhBao)),
+    [andonRows, bayGio, traDanhTinhCanhBao],
   );
 
   /** Chip mức đang chọn (#14). */

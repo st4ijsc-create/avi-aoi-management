@@ -63,6 +63,7 @@ import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
 import { computeVirtualWindow } from "@/components/DataTable";
 import { giaiMauCanh, mauChoTrangThai } from "../mauTrangThai";
+import { rutTienTo, tienToChung } from "./maNgan";
 import { nhanDoTuoi, nhanTuoiDocDuoc, type MayVanHanh } from "./trungThucDuLieu";
 
 /**
@@ -140,6 +141,32 @@ export function DanhSachMay({
       return a.ma.localeCompare(b.ma);
     });
   }, [may, loc, trangThaiTheoMay]);
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-27 (QA lần 11) — MÃ NGẮN: TIỀN TỐ CHUNG IN MỘT LẦN, KHÔNG CẮT ĐUÔI
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo được ở 1280×720 (`.qa-tapdoan/tho/F/F4-gpu.json`): **14 chuỗi** trong
+   * `danh-sach-may` có `scrollWidth 124 > clientWidth 66` — mất 47 %. Cả 14 là
+   * mã 19 ký tự của kịch bản tập đoàn, và phần **sống sót** sau khi `truncate`
+   * cắt là `QATD-A-T…`, tức **tiền tố dùng chung của mọi máy**; phần phân biệt
+   * (`-X1-L1-M05`) nằm ở ĐUÔI và bị cắt mất ⇒ mọi hàng đọc GIỐNG HỆT NHAU.
+   *
+   * ⚠ **TÍNH TRÊN `may`, KHÔNG TRÊN `hienThi`.** `hienThi` đổi theo từng ký tự
+   *   gõ vào ô lọc: tính trên nó thì tiền tố (và do đó MỌI hàng) nhảy chữ khi
+   *   người dùng gõ, và khi lọc còn đúng 1 máy thì `tienToChung` trả `""`
+   *   (luật 1 `maNgan.ts`) ⇒ mã bung lại 19 ký tự giữa lúc đang tìm. `hienThi`
+   *   là tập con của `may` nên tiền tố của `may` KHÔNG BAO GIỜ dài hơn tiền tố
+   *   của tập đang hiện — rút theo `may` không bao giờ rút quá tay.
+   *
+   * ⚠⚠ **RÚT TIỀN TỐ MỘT MÌNH LÀ CHƯA ĐỦ — đo được, không phải phỏng đoán.**
+   *   Tiền tố chung của danh sách này chỉ `QATD-A-` (7/19 ký tự) vì nó trải 3
+   *   tầng × 2 xưởng; 12 ký tự còn lại vẫn rộng **76,5 px** so với ô **66 px**
+   *   ⇒ `truncate` lại cắt đuôi, và hai máy cùng chuyền lại đọc như nhau. Cơ
+   *   chế thứ hai nằm ở cột trạng thái bên dưới (`max-w-12`). Bảng đo 4 biến
+   *   thể và 4 tổ hợp nhãn/ngôn ngữ: `danhSachMayMaNgan.unit.test.ts`.
+   */
+  const tienToMa = useMemo(() => tienToChung(may.map((m) => m.ma)), [may]);
 
   /**
    * Con trỏ bàn phím — CHỈ SỐ trong `hienThi`, không phải `machineId`. Nó phải
@@ -291,6 +318,26 @@ export function DanhSachMay({
       </div>
 
       {/*
+        ★ PH-27 — TIỀN TỐ ĐÃ RÚT KHỎI TỪNG HÀNG, IN MỘT LẦN Ở ĐÂY (luật 4 của
+          `maNgan.ts`: rút để ĐỌC ĐƯỢC, không phải để giấu). Cùng cách màn Chuyền
+          in `dai-line-tien-to`, và DÙNG LẠI đúng khoá i18n ấy (G12) — không đẻ
+          khoá thứ hai cho cùng một chữ.
+        ⚠ Chỗ này ăn ~14 px chiều cao của ô cuộn. Đó là giá ĐÃ CÂN: 14 px đổi
+          lấy việc 14/14 hàng thôi đọc giống hệt nhau; `leading-3` giữ giá ở mức
+          thấp nhất có thể. Khi KHÔNG rút được tiền tố (mã lạc loài, hoặc chỉ
+          một máy) thì khối này biến mất hoàn toàn và không tốn px nào.
+      */}
+      {tienToMa ? (
+        <div
+          className="shrink-0 truncate px-2 pb-1 text-[10px] leading-3 text-text-2"
+          data-testid="danh-sach-may-tien-to"
+        >
+          {t("twin3d.vanHanh.tienToChung", "Tiền tố")}:{" "}
+          <b className="font-mono">{tienToMa}</b>
+        </div>
+      ) : null}
+
+      {/*
         `role="listbox"` + `aria-activedescendant` là khuôn ARIA đúng cho một
         danh sách CHỌN ĐƯỢC (khác `list`, vốn chỉ để đọc) — VÀ là khuôn duy nhất
         sống được cùng ảo hoá: một điểm dừng Tab, con trỏ chạy trên MẢNG.
@@ -386,12 +433,34 @@ export function DanhSachMay({
                             : undefined,
                       }}
                     />
-                    {/* ★ Đợt 47 (N6) — `truncate` cắt 5 mã @1280: `title` giữ tên đầy đủ khi rê. */}
-                    <span className="min-w-0 flex-1 truncate" title={m.ma}>
-                      {m.ma}
+                    {/*
+                      ★ Đợt 47 (N6) — `truncate` cắt 5 mã @1280: `title` giữ tên đầy đủ khi rê.
+                      ★★★ PH-27 — hiện mã ĐÃ RÚT TIỀN TỐ (xem `tienToMa` phía trên). Mã ĐẦY ĐỦ
+                        vẫn ở `title` (rê chuột) và ở `data-ma` (thiết bị đo + bàn phím/máy đọc
+                        màn hình lấy được), nên đây là rút để đọc, không phải giấu bớt dữ liệu.
+                        ⚠ Màn cảm ứng ở xưởng KHÔNG có "rê chuột" — đó chính là lý do mã hiện ra
+                        phải tự nó phân biệt được, chứ `title` một mình không cứu được ai.
+                    */}
+                    <span className="min-w-0 flex-1 truncate" title={m.ma} data-ma={m.ma}>
+                      {rutTienTo(m.ma, tienToMa)}
                     </span>
-                    {/* Chữ trạng thái — chiều thứ ba của mã hoá dư thừa. */}
-                    <span className="shrink-0 text-[10px] text-text-2">
+                    {/*
+                      Chữ trạng thái — chiều thứ ba của mã hoá dư thừa.
+                      ★★★ PH-27 CƠ CHẾ 2 — `max-w-12` (48 px) + `truncate`. Đo được: nhãn
+                        `Down/Stopped` chiếm **66,8 px**, tức RỘNG HƠN cả ô mã máy (66 px) — một
+                        BẢN SAO của chấm màu + hoạ tiết lại được ưu tiên hơn DANH TÍNH của máy.
+                        Chặn cột này ở 48 px trả 18,8 px về cho ô mã (66 → **85 px**), đủ cho 12
+                        ký tự còn lại (76,5 px) ở cả 4 tổ hợp nhãn/ngôn ngữ xấu nhất đã đo.
+                      ⚠ KHÔNG bóp `gap`/`px` của hàng để lấy chỗ: đo được chỉ ra 76 px — thiếu
+                        0,5 px, tức chỉ "xanh" nhờ dung sai `+1` của phép đo, và đổi lại là vùng
+                        chạm nhỏ đi trên màn cảm ứng.
+                      ★ Chữ đầy đủ giữ ở `title`; nghĩa của ô KHÔNG mất vì chấm màu + hoạ tiết
+                        vẫn nói nguyên câu ấy (§10.3 luật 2).
+                    */}
+                    <span
+                      className="shrink-0 max-w-12 truncate text-[10px] text-text-2"
+                      title={t(kieu.khoaNhan)}
+                    >
                       {t(kieu.khoaNhan)}
                     </span>
                     {/*

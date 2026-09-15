@@ -147,6 +147,74 @@ export interface CanhBaoDai {
   lineId: number | null;
   stationId: number | null;
   workshopId: number | null;
+  /**
+   * Mã máy để NGƯỜI ĐỌC phân biệt các dòng.
+   *
+   * ★★★ QA lần 11 đo được (PH-30): `qatd_quanly` thấy "Alarms (15)" mà **cả 15
+   *   dòng đọc y hệt nhau**, vì `DaiCanhBao.tsx` chỉ in `tieuDe` và 15 hàng
+   *   andon dùng chung một tiêu đề. `machineId` đã có sẵn trong kiểu này từ
+   *   trước — nhưng một con số id nội bộ không phải thứ dán trên vỏ máy, nên
+   *   in nó ra cũng không giúp ai đi tới đúng thiết bị.
+   *
+   * ★ `null` = CHƯA BIẾT, và đó là tình huống hợp lệ theo hai đường: (a) cảnh
+   *   báo không gắn máy nào (`andon_events.machineId` nullable —
+   *   `drizzle/schema/andon.ts:22`); (b) máy thuộc nhà máy KHÁC nhà máy trang
+   *   đang tải cảnh — `andon.active` không nhận `factoryId` nên nó trả cảnh báo
+   *   của MỌI nhà máy trong phạm vi tài khoản (`andonRouter.ts:348-358`).
+   *   KHÔNG bịa `""` và KHÔNG suy `"#4977"` từ id: cả hai biến "chưa biết"
+   *   thành một chuỗi trông như dữ liệu thật.
+   */
+  maMay: string | null;
+  /**
+   * Tên nhà máy — để vai nhìn nhiều công ty PHÂN RÃ được theo công ty.
+   *
+   * ★ Cùng PH-30: `qatd_giamdoc` thấy "Alarms (55)" của ba công ty trộn làm
+   *   một, nên câu hỏi trung tâm của vai ấy — *"công ty nào tệ nhất hôm nay"* —
+   *   không có đường nào trả lời. `andon_events` KHÔNG có cột nhà máy (bảng chỉ
+   *   có `lineId`/`stationId`/`machineId`), nên ô này do người gọi tra và
+   *   truyền vào, cùng cách `workshopId` đã làm.
+   */
+  tenNhaMay: string | null;
+}
+
+/**
+ * Bản đồ tra cứu danh tính, do TRANG truyền xuống cho {@link chuanHoaHang}.
+ *
+ * ★★★ VÌ SAO LÀ THAM SỐ CHỨ KHÔNG PHẢI MỘT PHÉP TRA BÊN TRONG: module này
+ *   THUẦN (RB-8.1) — không react, không truy vấn, không đồng hồ. Một phép tra
+ *   ẩn ở đây sẽ kéo theo một nguồn dữ liệu thứ hai cho mã máy, và dải 2D sẽ gọi
+ *   cùng một máy bằng một tên khác với badge 3D (`dungCanhBao3D` đã đọc
+ *   `maTheoMay`). Truyền CHÍNH bản đồ ấy vào là cách duy nhất để hai bề mặt
+ *   không thể lệch.
+ *
+ * ★ Cả hai khoá đều TUỲ CHỌN và tra độc lập: biết mã máy mà chưa biết nhà máy
+ *   là một trạng thái thật (trang tải cảnh trước, danh sách nhà máy sau), và
+ *   ép chúng đi cùng nhau sẽ giấu mất ô đã biết.
+ */
+export interface TraDanhTinh {
+  /** `machineId` → mã máy hiển thị (`machines.ma`). */
+  maTheoMay?: ReadonlyMap<number, string> | null;
+  /** `machineId` → tên nhà máy (`factories.name`). */
+  tenNhaMayTheoMay?: ReadonlyMap<number, string> | null;
+}
+
+/**
+ * Tra một chuỗi danh tính. Trả `null` cho MỌI ca chưa biết — kể cả khi bản đồ
+ * có khoá nhưng giá trị rỗng/toàn khoảng trắng.
+ *
+ * ★ `""` và `null` KHÔNG thay thế nhau được ở đây: `""` là "đã biết, và rỗng",
+ *   nên dòng phụ sẽ vẽ ra một dấu phân cách trơ trọi giữa hai khoảng trắng —
+ *   người đọc tưởng dữ liệu bị cắt chứ không phải chưa có.
+ */
+function traChuoi(
+  ban: ReadonlyMap<number, string> | null | undefined,
+  khoa: number | null,
+): string | null {
+  if (ban === null || ban === undefined || khoa === null) return null;
+  const v = ban.get(khoa);
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return s === "" ? null : s;
 }
 
 /**
@@ -436,15 +504,20 @@ const PHA_HOP_LE: ReadonlySet<string> = new Set(["raised", "acknowledged", "reso
  *   khớp được qua ba trục còn lại.
  * @param mocDuPhong dùng khi hàng thô không có `raisedAt` đọc được. Người gọi
  *   truyền thời điểm nhận gói. KHÔNG mặc định `Date.now()` bên trong (RB-8.1).
+ * @param tra bản đồ tra danh tính (PH-30). Bỏ trống ⇒ `maMay`/`tenNhaMay` là
+ *   `null` — hợp đồng cũ không vỡ, và một dòng thiếu danh tính vẫn hiện đầy đủ
+ *   mọi thứ nó từng hiện.
  */
 export function chuanHoaHang(
   tho: HangCanhBaoTho,
   mocDuPhong: number,
   workshopId: number | null = null,
+  tra: TraDanhTinh | null = null,
 ): CanhBaoDai {
   const luc = docMoc(tho.raisedAt) ?? mocDuPhong;
   const ack = docMoc(tho.acknowledgedAt);
   const phaTho = (tho.status ?? "").trim().toLowerCase();
+  const machineId = tho.machineId ?? null;
   return {
     idNguon: tho.id,
     nguon: "andon",
@@ -454,9 +527,14 @@ export function chuanHoaHang(
     luc,
     // Bản mới hơn thắng khi trùng khoá: mốc ack (nếu có) mới là tin tức mới nhất.
     capNhatLuc: ack !== null && ack > luc ? ack : luc,
-    machineId: tho.machineId ?? null,
+    machineId,
     lineId: tho.lineId ?? null,
     stationId: tho.stationId ?? null,
     workshopId,
+    // PH-30 — danh tính ĐỌC ĐƯỢC. Tra theo `machineId` chứ không theo `lineId`:
+    // một dòng nói "chuyền 3" vẫn không nói được máy nào, và `stationId` NULL ở
+    // 7/7 hàng đang mở trên DB dev (docblock đầu tệp) nên không dùng được.
+    maMay: traChuoi(tra?.maTheoMay, machineId),
+    tenNhaMay: traChuoi(tra?.tenNhaMayTheoMay, machineId),
   };
 }

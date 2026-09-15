@@ -48,6 +48,9 @@ function cb(sua: Partial<CanhBaoDai> & { idNguon: number }): CanhBaoDai {
     lineId: null,
     stationId: null,
     workshopId: null,
+    // PH-30 — hai ô danh tính mặc định CHƯA BIẾT; ca nào cần thì truyền qua `sua`.
+    maMay: null,
+    tenNhaMay: null,
     ...sua,
   };
 }
@@ -347,6 +350,67 @@ describe("end-to-end — hàng thô (Date của tRPC + chuỗi ISO của socket)
   it("★ tiêu đề từ DB hiện NGUYÊN VĂN — component không gọi t() lên dữ liệu", () => {
     ve({ seed: [chuanHoaHang({ id: 1, title: "Kẹt băng tải", raisedAt: BAY_GIO }, BAY_GIO)] });
     expect(screen.getByTestId("canh-bao-andon-1")).toHaveTextContent("Kẹt băng tải");
+  });
+
+  it("★★★ PH-30 — 15 dòng CÙNG tiêu đề đọc ra 15 chuỗi PHÂN BIỆT trong DOM", () => {
+    // Đúng ca QA lần 11 đo được trên `.qa-tapdoan/anh/DE-D1-quanly-twin.png`:
+    // "Alarms (15)" mà cả 15 dòng đọc y hệt nhau. Phép đo ở đây là CHỮ TRONG
+    // DOM (`textContent`), không phải sự tồn tại của một thuộc tính — một
+    // `toHaveAttribute` sẽ xanh cả khi 15 dòng mang cùng một mã máy.
+    const seed = Array.from({ length: 15 }, (_, i) =>
+      cb({
+        idNguon: i + 1,
+        tieuDe: "Máy dừng ngoài kế hoạch",
+        machineId: 4900 + i,
+        maMay: `QATD-${"ABC"[i % 3]}-T1-X1-L1-M${String(i + 1).padStart(2, "0")}`,
+        tenNhaMay: `Công ty ${"ABC"[i % 3]}`,
+      }),
+    );
+    ve({ seed });
+    const hang = dong();
+    expect(hang).toHaveLength(15);
+    // ĐỐI CHỨNG — phép đo biết kêu: cùng 15 dòng mà GỠ hai ô ⇒ tụt về 1 chuỗi.
+    cleanup();
+    ve({ seed: seed.map((c) => ({ ...c, maMay: null, tenNhaMay: null })) });
+    const truocVa = dong();
+    expect(truocVa).toHaveLength(15);
+    expect(new Set(truocVa.map((e) => e.textContent ?? "")).size).toBe(1);
+    // SAU VÁ — 15 chuỗi khác nhau.
+    cleanup();
+    ve({ seed });
+    expect(new Set(dong().map((e) => e.textContent ?? "")).size).toBe(15);
+  });
+
+  it("★★★ PH-30 — mã máy và tên nhà máy hiện NGUYÊN VĂN, không qua t()", () => {
+    ve({ seed: [cb({ idNguon: 9, machineId: 4977, maMay: "QATD-C-T1-X1-L1-M05", tenNhaMay: "Công ty C" })] });
+    const hang = screen.getByTestId("canh-bao-andon-9");
+    expect(hang).toHaveTextContent("QATD-C-T1-X1-L1-M05");
+    expect(hang).toHaveTextContent("Công ty C");
+    // `t()` của bộ mock trả về CHÍNH khoá; nếu component dịch hai ô này thì chữ
+    // trên màn sẽ là khoá i18n, không phải mã máy — ca trên đã chặn. Thêm ràng
+    // buộc DOM để đo được từ ngoài mà không đọc mã nguồn.
+    expect(hang).toHaveAttribute("data-ma-may", "QATD-C-T1-X1-L1-M05");
+    expect(hang).toHaveAttribute("data-nha-may", "Công ty C");
+  });
+
+  it("★★★ PH-30 — cảnh báo KHÔNG gắn máy: KHÔNG vẽ dòng phụ, KHÔNG có thuộc tính rỗng", () => {
+    // `null` và `""` phải phân biệt được TỪ DOM: một chuỗi rỗng in ra một dấu
+    // phân cách trơ trọi và một thuộc tính `data-ma-may=""` trông như đã tra được.
+    ve({ seed: [cb({ idNguon: 3, tieuDe: "Kẹt băng tải" })] });
+    const hang = screen.getByTestId("canh-bao-andon-3");
+    expect(hang).toHaveTextContent("Kẹt băng tải");
+    expect(hang).not.toHaveAttribute("data-ma-may");
+    expect(hang).not.toHaveAttribute("data-nha-may");
+    expect(screen.queryByTestId("danh-tinh-andon-3")).toBeNull();
+    expect(hang.textContent ?? "").not.toContain("·");
+  });
+
+  it("★ PH-30 — chỉ có mã máy: in mã, KHÔNG in dấu phân cách trơ trọi", () => {
+    ve({ seed: [cb({ idNguon: 4, machineId: 7, maMay: "QATD-A-T1-X1-L1-M07" })] });
+    const hang = screen.getByTestId("canh-bao-andon-4");
+    expect(hang).toHaveTextContent("QATD-A-T1-X1-L1-M07");
+    expect(hang).not.toHaveAttribute("data-nha-may");
+    expect(hang.textContent ?? "").not.toContain("·");
   });
 
   it("bấm một dòng gọi onChonCanhBao với đúng cảnh báo", () => {
