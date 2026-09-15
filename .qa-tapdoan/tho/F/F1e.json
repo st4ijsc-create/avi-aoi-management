@@ -1,0 +1,1020 @@
+{
+  "ca": "F1e",
+  "base": "http://localhost:3064",
+  "luc": "2026-09-15T02:44:33.992Z",
+  "soWorker": 1,
+  "do": [
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 1,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1779,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 1,
+      "thuTuc": "andon.active",
+      "ms": 8,
+      "status": 403,
+      "loi": "FORBIDDEN",
+      "coByte": 283
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 1,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 5,
+      "status": 200,
+      "loi": null,
+      "coByte": 470
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 1,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 5,
+      "status": 200,
+      "loi": null,
+      "coByte": 105
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 1,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1815,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 1,
+      "thuTuc": "andon.active",
+      "ms": 19,
+      "status": 200,
+      "loi": null,
+      "coByte": 9869
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 1,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 9,
+      "status": 200,
+      "loi": null,
+      "coByte": 1274
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 1,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 43,
+      "status": 200,
+      "loi": null,
+      "coByte": 111087
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 1,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1720,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 1,
+      "thuTuc": "andon.active",
+      "ms": 18,
+      "status": 200,
+      "loi": null,
+      "coByte": 7414
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 1,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 6,
+      "status": 200,
+      "loi": null,
+      "coByte": 2916
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 1,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 50,
+      "status": 200,
+      "loi": null,
+      "coByte": 124656
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 1,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1739,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 1,
+      "thuTuc": "andon.active",
+      "ms": 22,
+      "status": 200,
+      "loi": null,
+      "coByte": 17240
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 1,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 6,
+      "status": 200,
+      "loi": null,
+      "coByte": 2498
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 1,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 53,
+      "status": 200,
+      "loi": null,
+      "coByte": 262302
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 1,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1654,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 1,
+      "thuTuc": "andon.active",
+      "ms": 23,
+      "status": 200,
+      "loi": null,
+      "coByte": 27077
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 1,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 9,
+      "status": 200,
+      "loi": null,
+      "coByte": 2502
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 1,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 56,
+      "status": 200,
+      "loi": null,
+      "coByte": 373287
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 1,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1767,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 1,
+      "thuTuc": "andon.active",
+      "ms": 10,
+      "status": 200,
+      "loi": null,
+      "coByte": 31048
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 1,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 7,
+      "status": 200,
+      "loi": null,
+      "coByte": 33
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 1,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 50,
+      "status": 200,
+      "loi": null,
+      "coByte": 398627
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 2,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1646,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 2,
+      "thuTuc": "andon.active",
+      "ms": 15,
+      "status": 403,
+      "loi": "FORBIDDEN",
+      "coByte": 283
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 2,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 9,
+      "status": 200,
+      "loi": null,
+      "coByte": 470
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 2,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 8,
+      "status": 200,
+      "loi": null,
+      "coByte": 105
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 2,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1667,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 2,
+      "thuTuc": "andon.active",
+      "ms": 16,
+      "status": 200,
+      "loi": null,
+      "coByte": 9869
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 2,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 8,
+      "status": 200,
+      "loi": null,
+      "coByte": 1274
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 2,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 40,
+      "status": 200,
+      "loi": null,
+      "coByte": 111087
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 2,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1685,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 2,
+      "thuTuc": "andon.active",
+      "ms": 19,
+      "status": 200,
+      "loi": null,
+      "coByte": 7414
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 2,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 11,
+      "status": 200,
+      "loi": null,
+      "coByte": 2916
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 2,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 42,
+      "status": 200,
+      "loi": null,
+      "coByte": 124656
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 2,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1629,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 2,
+      "thuTuc": "andon.active",
+      "ms": 24,
+      "status": 200,
+      "loi": null,
+      "coByte": 17240
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 2,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 7,
+      "status": 200,
+      "loi": null,
+      "coByte": 2498
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 2,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 53,
+      "status": 200,
+      "loi": null,
+      "coByte": 262302
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 2,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1914,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 2,
+      "thuTuc": "andon.active",
+      "ms": 20,
+      "status": 200,
+      "loi": null,
+      "coByte": 27077
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 2,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 6,
+      "status": 200,
+      "loi": null,
+      "coByte": 2502
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 2,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 55,
+      "status": 200,
+      "loi": null,
+      "coByte": 373287
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 2,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1664,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 2,
+      "thuTuc": "andon.active",
+      "ms": 12,
+      "status": 200,
+      "loi": null,
+      "coByte": 31048
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 2,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 5,
+      "status": 200,
+      "loi": null,
+      "coByte": 33
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 2,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 46,
+      "status": 200,
+      "loi": null,
+      "coByte": 398627
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 3,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1598,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 3,
+      "thuTuc": "andon.active",
+      "ms": 10,
+      "status": 403,
+      "loi": "FORBIDDEN",
+      "coByte": 283
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 3,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 8,
+      "status": 200,
+      "loi": null,
+      "coByte": 470
+    },
+    {
+      "tk": "qatd_khonggan",
+      "may": 0,
+      "luot": 3,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 8,
+      "status": 200,
+      "loi": null,
+      "coByte": 105
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 3,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1737,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 3,
+      "thuTuc": "andon.active",
+      "ms": 21,
+      "status": 200,
+      "loi": null,
+      "coByte": 9869
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 3,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 5,
+      "status": 200,
+      "loi": null,
+      "coByte": 1274
+    },
+    {
+      "tk": "qatd_congnhan",
+      "may": 328,
+      "luot": 3,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 50,
+      "status": 200,
+      "loi": null,
+      "coByte": 111087
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 3,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1690,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 3,
+      "thuTuc": "andon.active",
+      "ms": 16,
+      "status": 200,
+      "loi": null,
+      "coByte": 7414
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 3,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 7,
+      "status": 200,
+      "loi": null,
+      "coByte": 2916
+    },
+    {
+      "tk": "qatd_quanly",
+      "may": 371,
+      "luot": 3,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 40,
+      "status": 200,
+      "loi": null,
+      "coByte": 124656
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 3,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1796,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 3,
+      "thuTuc": "andon.active",
+      "ms": 23,
+      "status": 200,
+      "loi": null,
+      "coByte": 17240
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 3,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 7,
+      "status": 200,
+      "loi": null,
+      "coByte": 2498
+    },
+    {
+      "tk": "qatd_kythuat",
+      "may": 780,
+      "luot": 3,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 48,
+      "status": 200,
+      "loi": null,
+      "coByte": 262302
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 3,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1768,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 3,
+      "thuTuc": "andon.active",
+      "ms": 20,
+      "status": 200,
+      "loi": null,
+      "coByte": 27077
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 3,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 6,
+      "status": 200,
+      "loi": null,
+      "coByte": 2502
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "may": 1108,
+      "luot": 3,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 52,
+      "status": 200,
+      "loi": null,
+      "coByte": 373287
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 3,
+      "thuTuc": "commandCenter.hierarchy",
+      "ms": 1604,
+      "status": 200,
+      "loi": null,
+      "coByte": 450813
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 3,
+      "thuTuc": "andon.active",
+      "ms": 7,
+      "status": 200,
+      "loi": null,
+      "coByte": 31048
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 3,
+      "thuTuc": "permissions.getMyPermissions",
+      "ms": 5,
+      "status": 200,
+      "loi": null,
+      "coByte": 33
+    },
+    {
+      "tk": "qatd_admin",
+      "may": 1150,
+      "luot": 3,
+      "thuTuc": "factoryCommand.overview",
+      "ms": 57,
+      "status": 200,
+      "loi": null,
+      "coByte": 398627
+    }
+  ],
+  "tomTat": {
+    "commandCenter.hierarchy/qatd_khonggan": {
+      "may": 0,
+      "so": [
+        1779,
+        1646,
+        1598
+      ],
+      "p50": 1646,
+      "max": 1779,
+      "loi": [],
+      "kb": 440
+    },
+    "commandCenter.hierarchy/qatd_congnhan": {
+      "may": 328,
+      "so": [
+        1815,
+        1667,
+        1737
+      ],
+      "p50": 1737,
+      "max": 1815,
+      "loi": [],
+      "kb": 440
+    },
+    "commandCenter.hierarchy/qatd_quanly": {
+      "may": 371,
+      "so": [
+        1720,
+        1685,
+        1690
+      ],
+      "p50": 1690,
+      "max": 1720,
+      "loi": [],
+      "kb": 440
+    },
+    "commandCenter.hierarchy/qatd_kythuat": {
+      "may": 780,
+      "so": [
+        1739,
+        1629,
+        1796
+      ],
+      "p50": 1739,
+      "max": 1796,
+      "loi": [],
+      "kb": 440
+    },
+    "commandCenter.hierarchy/qatd_giamdoc": {
+      "may": 1108,
+      "so": [
+        1654,
+        1914,
+        1768
+      ],
+      "p50": 1768,
+      "max": 1914,
+      "loi": [],
+      "kb": 440
+    },
+    "commandCenter.hierarchy/qatd_admin": {
+      "may": 1150,
+      "so": [
+        1767,
+        1664,
+        1604
+      ],
+      "p50": 1664,
+      "max": 1767,
+      "loi": [],
+      "kb": 440
+    },
+    "andon.active/qatd_khonggan": {
+      "may": 0,
+      "so": [
+        8,
+        15,
+        10
+      ],
+      "p50": 10,
+      "max": 15,
+      "loi": [
+        "FORBIDDEN"
+      ],
+      "kb": 0
+    },
+    "andon.active/qatd_congnhan": {
+      "may": 328,
+      "so": [
+        19,
+        16,
+        21
+      ],
+      "p50": 19,
+      "max": 21,
+      "loi": [],
+      "kb": 10
+    },
+    "andon.active/qatd_quanly": {
+      "may": 371,
+      "so": [
+        18,
+        19,
+        16
+      ],
+      "p50": 18,
+      "max": 19,
+      "loi": [],
+      "kb": 7
+    },
+    "andon.active/qatd_kythuat": {
+      "may": 780,
+      "so": [
+        22,
+        24,
+        23
+      ],
+      "p50": 23,
+      "max": 24,
+      "loi": [],
+      "kb": 17
+    },
+    "andon.active/qatd_giamdoc": {
+      "may": 1108,
+      "so": [
+        23,
+        20,
+        20
+      ],
+      "p50": 20,
+      "max": 23,
+      "loi": [],
+      "kb": 26
+    },
+    "andon.active/qatd_admin": {
+      "may": 1150,
+      "so": [
+        10,
+        12,
+        7
+      ],
+      "p50": 10,
+      "max": 12,
+      "loi": [],
+      "kb": 30
+    },
+    "permissions.getMyPermissions/qatd_khonggan": {
+      "may": 0,
+      "so": [
+        5,
+        9,
+        8
+      ],
+      "p50": 8,
+      "max": 9,
+      "loi": [],
+      "kb": 0
+    },
+    "permissions.getMyPermissions/qatd_congnhan": {
+      "may": 328,
+      "so": [
+        9,
+        8,
+        5
+      ],
+      "p50": 8,
+      "max": 9,
+      "loi": [],
+      "kb": 1
+    },
+    "permissions.getMyPermissions/qatd_quanly": {
+      "may": 371,
+      "so": [
+        6,
+        11,
+        7
+      ],
+      "p50": 7,
+      "max": 11,
+      "loi": [],
+      "kb": 3
+    },
+    "permissions.getMyPermissions/qatd_kythuat": {
+      "may": 780,
+      "so": [
+        6,
+        7,
+        7
+      ],
+      "p50": 7,
+      "max": 7,
+      "loi": [],
+      "kb": 2
+    },
+    "permissions.getMyPermissions/qatd_giamdoc": {
+      "may": 1108,
+      "so": [
+        9,
+        6,
+        6
+      ],
+      "p50": 6,
+      "max": 9,
+      "loi": [],
+      "kb": 2
+    },
+    "permissions.getMyPermissions/qatd_admin": {
+      "may": 1150,
+      "so": [
+        7,
+        5,
+        5
+      ],
+      "p50": 5,
+      "max": 7,
+      "loi": [],
+      "kb": 0
+    },
+    "factoryCommand.overview/qatd_khonggan": {
+      "may": 0,
+      "so": [
+        5,
+        8,
+        8
+      ],
+      "p50": 8,
+      "max": 8,
+      "loi": [],
+      "kb": 0
+    },
+    "factoryCommand.overview/qatd_congnhan": {
+      "may": 328,
+      "so": [
+        43,
+        40,
+        50
+      ],
+      "p50": 43,
+      "max": 50,
+      "loi": [],
+      "kb": 108
+    },
+    "factoryCommand.overview/qatd_quanly": {
+      "may": 371,
+      "so": [
+        50,
+        42,
+        40
+      ],
+      "p50": 42,
+      "max": 50,
+      "loi": [],
+      "kb": 122
+    },
+    "factoryCommand.overview/qatd_kythuat": {
+      "may": 780,
+      "so": [
+        53,
+        53,
+        48
+      ],
+      "p50": 53,
+      "max": 53,
+      "loi": [],
+      "kb": 256
+    },
+    "factoryCommand.overview/qatd_giamdoc": {
+      "may": 1108,
+      "so": [
+        56,
+        55,
+        52
+      ],
+      "p50": 55,
+      "max": 56,
+      "loi": [],
+      "kb": 365
+    },
+    "factoryCommand.overview/qatd_admin": {
+      "may": 1150,
+      "so": [
+        50,
+        46,
+        57
+      ],
+      "p50": 50,
+      "max": 57,
+      "loi": [],
+      "kb": 389
+    }
+  }
+}

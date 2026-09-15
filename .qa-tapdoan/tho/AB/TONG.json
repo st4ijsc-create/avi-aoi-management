@@ -1,0 +1,243 @@
+{
+  "luc": "2026-09-15T02:13:14.894Z",
+  "nguon": "bang-AB.mjs (đếm lại từ mọi tệp ca)",
+  "soCa": 38,
+  "dem": {
+    "ĐẠT": 20,
+    "SAI": 16,
+    "HỎNG": 0,
+    "CHẶN-ĐÚNG": 1,
+    "N/A": 1
+  },
+  "khongPhanQuyet": 0,
+  "ca": [
+    {
+      "id": "A1",
+      "vai": "qatd_giamdoc",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:04:09.394Z"
+    },
+    {
+      "id": "A1",
+      "vai": "qatd_quanly",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:04:51.807Z"
+    },
+    {
+      "id": "A1",
+      "vai": "qatd_kythuat",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:05:04.407Z"
+    },
+    {
+      "id": "A1",
+      "vai": "qatd_congnhan",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:05:46.694Z"
+    },
+    {
+      "id": "A1",
+      "vai": "qatd_admin",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:06:20.811Z"
+    },
+    {
+      "id": "A1",
+      "vai": "qatd_khonggan",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:07:55.840Z"
+    },
+    {
+      "id": "A1",
+      "vai": "qatd_khongquyen",
+      "pq": "CHẶN-ĐÚNG",
+      "luc": "2026-09-15T02:11:00.201Z"
+    },
+    {
+      "id": "A2",
+      "vai": "qatd_giamdoc",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:04:09.395Z"
+    },
+    {
+      "id": "A2",
+      "vai": "qatd_quanly",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:04:51.808Z"
+    },
+    {
+      "id": "A2",
+      "vai": "qatd_kythuat",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:05:04.408Z"
+    },
+    {
+      "id": "A2",
+      "vai": "qatd_congnhan",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:05:46.695Z"
+    },
+    {
+      "id": "A2",
+      "vai": "qatd_admin",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:06:20.813Z"
+    },
+    {
+      "id": "A2",
+      "vai": "qatd_khonggan",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:07:55.891Z"
+    },
+    {
+      "id": "A2",
+      "vai": "qatd_khongquyen",
+      "pq": "N/A",
+      "luc": "2026-09-15T02:11:00.202Z"
+    },
+    {
+      "id": "A3",
+      "vai": "qatd_giamdoc",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:04:15.513Z"
+    },
+    {
+      "id": "A3",
+      "vai": "qatd_quanly",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:04:58.109Z"
+    },
+    {
+      "id": "A3",
+      "vai": "qatd_kythuat",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:05:09.662Z"
+    },
+    {
+      "id": "A3",
+      "vai": "qatd_congnhan",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:05:52.144Z"
+    },
+    {
+      "id": "B1",
+      "vai": "qatd_giamdoc",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:04:20.706Z"
+    },
+    {
+      "id": "B1",
+      "vai": "qatd_kythuat",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:05:14.970Z"
+    },
+    {
+      "id": "B1",
+      "vai": "qatd_congnhan",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:05:57.981Z"
+    },
+    {
+      "id": "B2",
+      "vai": "qatd_giamdoc",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:04:23.759Z"
+    },
+    {
+      "id": "B2",
+      "vai": "qatd_kythuat",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:05:18.029Z"
+    },
+    {
+      "id": "B2",
+      "vai": "qatd_congnhan",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:06:00.990Z"
+    },
+    {
+      "id": "B3",
+      "vai": "qatd_giamdoc",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:04:27.007Z"
+    },
+    {
+      "id": "B3",
+      "vai": "qatd_kythuat",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:05:21.305Z"
+    },
+    {
+      "id": "B3",
+      "vai": "qatd_congnhan",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:06:04.245Z"
+    },
+    {
+      "id": "B4",
+      "vai": "qatd_giamdoc",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:12:32.876Z"
+    },
+    {
+      "id": "B4",
+      "vai": "qatd_kythuat",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:12:45.922Z"
+    },
+    {
+      "id": "B4",
+      "vai": "qatd_congnhan",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:12:59.236Z"
+    },
+    {
+      "id": "B5",
+      "vai": "qatd_giamdoc",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:12:36.284Z"
+    },
+    {
+      "id": "B5",
+      "vai": "qatd_kythuat",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:12:49.548Z"
+    },
+    {
+      "id": "B5",
+      "vai": "qatd_congnhan",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:13:02.601Z"
+    },
+    {
+      "id": "B6",
+      "vai": "qatd_giamdoc",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:04:40.318Z"
+    },
+    {
+      "id": "B6",
+      "vai": "qatd_kythuat",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:05:34.506Z"
+    },
+    {
+      "id": "B6",
+      "vai": "qatd_congnhan",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:06:17.576Z"
+    },
+    {
+      "id": "B7",
+      "vai": "qatd_giamdoc",
+      "pq": "SAI",
+      "luc": "2026-09-15T02:04:45.569Z"
+    },
+    {
+      "id": "B8",
+      "vai": "qatd_kythuat",
+      "pq": "ĐẠT",
+      "luc": "2026-09-15T02:05:39.856Z"
+    }
+  ]
+}

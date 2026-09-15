@@ -1,0 +1,117 @@
+{
+ "luc": "2026-09-15T02:14:46.642Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "C5",
+ "vai": "qatd_congnhan",
+ "me": "cache",
+ "deBai": "đi /twin (nm=40 toa=61 tang=137, QATD-C toà T1 — đối chứng dương) → bấm khối máy → /twin/may/:id → ve-man-line → ve-man-nha-may ⇒ phải về ĐÚNG line của máy và ĐÚNG nhà máy 40",
+ "buoc": [
+  "bấm khối máy 4977 trên cảnh",
+  "click ve-man-line (\"Line 1\")",
+  "click ve-man-nha-may"
+ ],
+ "twinBanDau": {
+  "nhaMayDangChon": {
+   "soMuc": 1,
+   "value": "40",
+   "nhanDangChon": "Công ty C"
+  },
+  "toaDangChon": {
+   "soMuc": 4,
+   "value": "61",
+   "nhanDangChon": "Toà 1"
+  },
+  "tangDangChon": {
+   "soMuc": 7,
+   "value": "137",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "328"
+ },
+ "census": {
+  "soTrongKhung": 39,
+  "soBamDuoc": 39,
+  "loai": []
+ },
+ "manMay": {
+  "tenMay": "FEEDER-01",
+  "loaiMay": "FEEDER",
+  "sucKhoeChu": "Sức khoẻ 86 % · theo dõi",
+  "sucKhoeHang": "theo_doi",
+  "khoiCanhMay": 1,
+  "canvasTrongKhoiCanh": 1,
+  "chuaDatCho": 0,
+  "chuaDatChoChu": null,
+  "khongMoDuoc": 0,
+  "lyDo": null,
+  "khongMoChu": null,
+  "dangTai": 0,
+  "veManLine": 1,
+  "veManLineChu": "Line 1",
+  "veManLineHref": "/twin/line/284",
+  "veNhaMayHref": "/twin?nm=40&toa=61&tang=137&do=1&cam=78.83%2C27.43%2C74.7%2C32.21%2C28.08",
+  "canvasTrongMan": 1
+ },
+ "urlMay": "/twin/may/4977",
+ "mayId": 4977,
+ "anhMay": ".qa-tapdoan/anh/C-C5-qatd_congnhan-nm40-toa61-may4977.png",
+ "coVeManLine": true,
+ "hrefVeManLine": "/twin/line/284",
+ "chuVeManLine": "Line 1",
+ "manLine": {
+  "tenLine": "Line 1",
+  "demMayChu": "Máy 8",
+  "demMaySo": 8,
+  "demTramChu": "Trạm 8",
+  "demTramSo": 8,
+  "wipChu": "WIP 47",
+  "wipSo": 47,
+  "lineRong": 0,
+  "lineRongChu": null,
+  "khongMoDuoc": 0,
+  "lyDo": null,
+  "khongMoChu": null,
+  "idKhongHopLe": 0,
+  "idKhongHopLeChu": null,
+  "canvasTrongMan": 1,
+  "soNhanMay": 8,
+  "soOTram": 8,
+  "daiLine": 1,
+  "veNhaMayHref": "/twin?nm=40&toa=61&tang=137&do=1&cam=78.83%2C27.43%2C74.7%2C32.21%2C28.08"
+ },
+ "urlLine": "/twin/line/284",
+ "lineId": 284,
+ "anhLine": ".qa-tapdoan/anh/C-C5-qatd_congnhan-nm40-toa61-line284.png",
+ "manNhaMay": {
+  "oNhaMay": {
+   "soMuc": 1,
+   "value": "40",
+   "nhanDangChon": "Công ty C"
+  },
+  "oToaNha": {
+   "soMuc": 4,
+   "value": "61",
+   "nhanDangChon": "Toà 1"
+  },
+  "oTang": {
+   "soMuc": 7,
+   "value": "137",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "328",
+  "canvasTrongMan": 1
+ },
+ "urlNhaMay": "/twin?nm=40&toa=61&tang=137&do=1&cam=78.83%2C27.43%2C74.7%2C32.21%2C28.08",
+ "anh": ".qa-tapdoan/anh/C-C5-qatd_congnhan-nm40-toa61-ve-man-nha-may.png",
+ "mayDetailApi": {
+  "http": 200,
+  "ma": null,
+  "ten": null
+ },
+ "pq": "ĐẠT",
+ "vi": "ve-man-line tới /twin/line/:id ✓ · ve-man-nha-may về /twin ✓ · nhà máy sau khi về = 40 (đang xem) ✓ · toà = 61, tầng = 137 ✓"
+}

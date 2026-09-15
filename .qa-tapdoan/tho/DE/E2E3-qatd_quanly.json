@@ -1,0 +1,453 @@
+{
+ "ca": "E2E3",
+ "vai": "qatd_quanly",
+ "cach": "cache",
+ "base": "http://localhost:3064",
+ "luc": "2026-09-15T01:59:44.026Z",
+ "vaoDuoc": 1,
+ "studio": {
+  "url": "/twin-studio",
+  "coManStudio": 1,
+  "biChan": 0,
+  "chuBiChan": null,
+  "chonNhaMay": {
+   "co": 1,
+   "chu": "Công ty A",
+   "hien": true,
+   "tat": 0
+  },
+  "demToaNha": {
+   "co": 1,
+   "chu": "Building: 4",
+   "hien": true,
+   "tat": 0
+  },
+  "tabThietKe": {
+   "co": 1,
+   "chu": "Design",
+   "hien": true,
+   "tat": 0
+  },
+  "tabConDuongA": {
+   "co": 1,
+   "chu": "Choose drawing file",
+   "hien": true,
+   "tat": 0
+  },
+  "tabConDuongB": {
+   "co": 1,
+   "chu": "Add building",
+   "hien": true,
+   "tat": 0
+  },
+  "chuaCoTang": {
+   "co": 0
+  },
+  "chuaCoNhaMay": {
+   "co": 0
+  },
+  "daiPhamViRong": {
+   "co": 0
+  },
+  "xuongThietKe": {
+   "co": 1,
+   "chu": "Move Rotate Snap Grid Generate Save Data health: 45 machines placed · 326 awaiting placement · 45 dimensions not measured Distribute horizontally Distribute vertically Linear array Radial array Measur",
+   "hien": true,
+   "tat": 0
+  },
+  "vungCanvas": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "khuChoXepCho": {
+   "co": 1,
+   "chu": "UNPLACED MACHINES (326) QATD-A-T1-X2-L1-M01 — AXI-01 QATD-A-T1-X2-L1-M02 — AOI-02 QATD-A-T1-X2-L1-M03 — STENCIL_PRINTER-03 QATD-A-T1-X2-L1-M04 — ICT_FUNC-04 QATD-A-T1-X2-L1-M05 — DISPENSING-05 QATD-A-",
+   "hien": true,
+   "tat": 0
+  },
+  "thuVienAsset": {
+   "co": 1,
+   "chu": "Asset library Machines Infrastructure Warehouse Upload model buong kiem quang ban test may gap dat lo nhiet may in phun canh tay robot tram chung Drag a card into the scene to place the model on the f",
+   "hien": true,
+   "tat": 0
+  },
+  "miniMap": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "bangThuocTinh": {
+   "co": 1,
+   "chu": "Select an object in the tree or in the 3D scene",
+   "hien": true,
+   "tat": 0
+  },
+  "cayPhanCap": {
+   "co": 1,
+   "chu": "QATD-A-T1-X1 — Xưởng T1 tầng 1 QATD-A-T1-X2 — Xưởng T1 tầng 2 QATD-A-T2-X1 — Xưởng T2 tầng 1 QATD-A-T2-X2 — Xưởng T2 tầng 2 QATD-A-T3-X1 — Xưởng T3 tầng 1 QATD-A-T3-X2 — Xưởng T3 tầng 2 QATD-A-T4-X1 —",
+   "hien": true,
+   "tat": 0
+  },
+  "nutCheDoTranslate": {
+   "co": 1,
+   "chu": "Move",
+   "hien": true,
+   "tat": 0
+  },
+  "nutCheDoRotate": {
+   "co": 1,
+   "chu": "Rotate",
+   "hien": true,
+   "tat": 0
+  },
+  "congTacBatDinh": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "congTacLuoi": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "nutHoanTac": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 1
+  },
+  "nutLamLai": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 1
+  },
+  "nutMoSinh": {
+   "co": 1,
+   "chu": "Generate",
+   "hien": true,
+   "tat": 0
+  },
+  "nutLuu": {
+   "co": 1,
+   "chu": "Save",
+   "hien": true,
+   "tat": 1
+  },
+  "huyHieuChiXem": {
+   "co": 0
+  },
+  "khoiVungAnToan": {
+   "co": 1,
+   "chu": "Safety zones Draw safety zone No safety zones on this floor yet.",
+   "hien": true,
+   "tat": 0
+  },
+  "veVung": {
+   "co": 1,
+   "chu": "Draw safety zone No safety zones on this floor yet.",
+   "hien": true,
+   "tat": 0
+  },
+  "veVungBatDau": {
+   "co": 1,
+   "chu": "Draw safety zone",
+   "hien": true,
+   "tat": 0
+  },
+  "veVungTrong": {
+   "co": 1,
+   "chu": "No safety zones on this floor yet.",
+   "hien": true,
+   "tat": 0
+  },
+  "veVungDanhSach": {
+   "co": 0
+  },
+  "soVungMuc": 0,
+  "dsVung": [],
+  "soCanvas": 1,
+  "canvasDom": 1,
+  "boChon": [
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Factory",
+    "aria": "Factory"
+   },
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Line",
+    "aria": "Line"
+   },
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Machine",
+    "aria": "Machine"
+   },
+   {
+    "tid": "chon-nha-may",
+    "the": "button",
+    "chu": "Công ty A",
+    "aria": null
+   }
+  ],
+  "coChuToa": 1,
+  "coChuTang": 1,
+  "nhanTangHienTai": null,
+  "dauMan": "Skip to content Production (MES) Show advanced menu Simple Q Quản đốc Công ty A (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 15 Live 🇺🇸 English Production MES 3D Factory Design 3D Factory — Design Build buildings and floors, import engineering drawings, place machines, and publish a version for operations. Factory Công ty A Add building Choose drawing file Design Building: 4 Move Rotate Snap Grid Generate Save Data health: 45 machines placed · 326 awaiting placement · 45 dimensions not measured Distribute horizontally Distribute vertica"
+ },
+ "luaChonNhaMay": [
+  "Công ty A"
+ ],
+ "boChonSauKhiDong": [
+  {
+   "tid": null,
+   "the": "button",
+   "chu": "Factory",
+   "aria": "Factory"
+  },
+  {
+   "tid": null,
+   "the": "button",
+   "chu": "Line",
+   "aria": "Line"
+  },
+  {
+   "tid": null,
+   "the": "button",
+   "chu": "Machine",
+   "aria": "Machine"
+  },
+  {
+   "tid": "chon-nha-may",
+   "the": "button",
+   "chu": "Công ty A",
+   "aria": null
+  }
+ ],
+ "thietKe": {
+  "url": "/twin-studio",
+  "coManStudio": 1,
+  "biChan": 0,
+  "chuBiChan": null,
+  "chonNhaMay": {
+   "co": 1,
+   "chu": "Công ty A",
+   "hien": true,
+   "tat": 0
+  },
+  "demToaNha": {
+   "co": 1,
+   "chu": "Building: 4",
+   "hien": true,
+   "tat": 0
+  },
+  "tabThietKe": {
+   "co": 1,
+   "chu": "Design",
+   "hien": true,
+   "tat": 0
+  },
+  "tabConDuongA": {
+   "co": 1,
+   "chu": "Choose drawing file",
+   "hien": true,
+   "tat": 0
+  },
+  "tabConDuongB": {
+   "co": 1,
+   "chu": "Add building",
+   "hien": true,
+   "tat": 0
+  },
+  "chuaCoTang": {
+   "co": 0
+  },
+  "chuaCoNhaMay": {
+   "co": 0
+  },
+  "daiPhamViRong": {
+   "co": 0
+  },
+  "xuongThietKe": {
+   "co": 1,
+   "chu": "Move Rotate Snap Grid Generate Save Data health: 45 machines placed · 326 awaiting placement · 45 dimensions not measured Distribute horizontally Distribute vertically Linear array Radial array Measur",
+   "hien": true,
+   "tat": 0
+  },
+  "vungCanvas": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "khuChoXepCho": {
+   "co": 1,
+   "chu": "UNPLACED MACHINES (326) QATD-A-T1-X2-L1-M01 — AXI-01 QATD-A-T1-X2-L1-M02 — AOI-02 QATD-A-T1-X2-L1-M03 — STENCIL_PRINTER-03 QATD-A-T1-X2-L1-M04 — ICT_FUNC-04 QATD-A-T1-X2-L1-M05 — DISPENSING-05 QATD-A-",
+   "hien": true,
+   "tat": 0
+  },
+  "thuVienAsset": {
+   "co": 1,
+   "chu": "Asset library Machines Infrastructure Warehouse Upload model buong kiem quang ban test may gap dat lo nhiet may in phun canh tay robot tram chung Drag a card into the scene to place the model on the f",
+   "hien": true,
+   "tat": 0
+  },
+  "miniMap": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "bangThuocTinh": {
+   "co": 1,
+   "chu": "Select an object in the tree or in the 3D scene",
+   "hien": true,
+   "tat": 0
+  },
+  "cayPhanCap": {
+   "co": 1,
+   "chu": "QATD-A-T1-X1 — Xưởng T1 tầng 1 QATD-A-T1-X2 — Xưởng T1 tầng 2 QATD-A-T2-X1 — Xưởng T2 tầng 1 QATD-A-T2-X2 — Xưởng T2 tầng 2 QATD-A-T3-X1 — Xưởng T3 tầng 1 QATD-A-T3-X2 — Xưởng T3 tầng 2 QATD-A-T4-X1 —",
+   "hien": true,
+   "tat": 0
+  },
+  "nutCheDoTranslate": {
+   "co": 1,
+   "chu": "Move",
+   "hien": true,
+   "tat": 0
+  },
+  "nutCheDoRotate": {
+   "co": 1,
+   "chu": "Rotate",
+   "hien": true,
+   "tat": 0
+  },
+  "congTacBatDinh": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "congTacLuoi": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "nutHoanTac": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 1
+  },
+  "nutLamLai": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 1
+  },
+  "nutMoSinh": {
+   "co": 1,
+   "chu": "Generate",
+   "hien": true,
+   "tat": 0
+  },
+  "nutLuu": {
+   "co": 1,
+   "chu": "Save",
+   "hien": true,
+   "tat": 1
+  },
+  "huyHieuChiXem": {
+   "co": 0
+  },
+  "khoiVungAnToan": {
+   "co": 1,
+   "chu": "Safety zones Draw safety zone No safety zones on this floor yet.",
+   "hien": true,
+   "tat": 0
+  },
+  "veVung": {
+   "co": 1,
+   "chu": "Draw safety zone No safety zones on this floor yet.",
+   "hien": true,
+   "tat": 0
+  },
+  "veVungBatDau": {
+   "co": 1,
+   "chu": "Draw safety zone",
+   "hien": true,
+   "tat": 0
+  },
+  "veVungTrong": {
+   "co": 1,
+   "chu": "No safety zones on this floor yet.",
+   "hien": true,
+   "tat": 0
+  },
+  "veVungDanhSach": {
+   "co": 0
+  },
+  "soVungMuc": 0,
+  "dsVung": [],
+  "soCanvas": 1,
+  "canvasDom": 1,
+  "boChon": [
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Factory",
+    "aria": "Factory"
+   },
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Line",
+    "aria": "Line"
+   },
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Machine",
+    "aria": "Machine"
+   },
+   {
+    "tid": "chon-nha-may",
+    "the": "button",
+    "chu": "Công ty A",
+    "aria": null
+   }
+  ],
+  "coChuToa": 1,
+  "coChuTang": 1,
+  "nhanTangHienTai": null,
+  "dauMan": "Skip to content Production (MES) Show advanced menu Simple Q Quản đốc Công ty A (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 15 Live 🇺🇸 English Production MES 3D Factory Design 3D Factory — Design Build buildings and floors, import engineering drawings, place machines, and publish a version for operations. Factory Công ty A Add building Choose drawing file Design Building: 4 Move Rotate Snap Grid Generate Save Data health: 45 machines placed · 326 awaiting placement · 45 dimensions not measured Distribute horizontally Distribute vertica"
+ },
+ "cayChu": "QATD-A-T1-X1 — Xưởng T1 tầng 1 QATD-A-T1-X2 — Xưởng T1 tầng 2 QATD-A-T2-X1 — Xưởng T2 tầng 1 QATD-A-T2-X2 — Xưởng T2 tầng 2 QATD-A-T3-X1 — Xưởng T3 tầng 1 QATD-A-T3-X2 — Xưởng T3 tầng 2 QATD-A-T4-X1 — Xưởng T4 tầng 1 QATD-A-T4-X2 — Xưởng T4 tầng 2 UNPLACED MACHINES (326) QATD-A-T1-X2-L1-M01 — AXI-01 QATD-A-T1-X2-L1-M02 — AOI-02 QATD-A-T1-X2-L1-M03 — STENCIL_PRINTER-03 QATD-A-T1-X2-L1-M04 — ICT_FUNC-04 QATD-A-T1-X2-L1-M05 — DISPENSING-05 QATD-A-T1-X2-L1-M06 — REFLOW-06 QATD-A-T1-X2-L1-M07 — SPI-07 QATD-A-T1-X2-L1-M08 — FCT-08 QATD-A-T1-X2-L1-M09 — ROBOT_TEST-09 QATD-A-T1-X2-L1-M10 — PALLETIZER-10 QATD-A-T1-X2-L1-M11 — SCREWDRIVE-11 QATD-A-T1-X2-L1-M12 — AVI-12 QATD-A-T1-X2-L1-M13 — FEEDER-13 QATD-A-T1-X2-L2-M01 — WELDER-01 QATD-A-T1-X2-L2-M02 — AOI-02 QATD-A-T1-X2-L2-M03 — CMM-03 QATD-A-T1-X2-L2-M04 — DISPENSING-04 QATD-A-T1-X2-L2-M05 — AUTOMATION-05 QATD-A-T1-X2-L2-M06 — AXI-06 QATD-A-T1",
+ "maMayTrenCanh": {
+  "so": 326,
+  "mau": [
+   "QATD-A-T1-X2-L1-M01",
+   "QATD-A-T1-X2-L1-M02",
+   "QATD-A-T1-X2-L1-M03",
+   "QATD-A-T1-X2-L1-M04",
+   "QATD-A-T1-X2-L1-M05",
+   "QATD-A-T1-X2-L1-M06",
+   "QATD-A-T1-X2-L1-M07",
+   "QATD-A-T1-X2-L1-M08",
+   "QATD-A-T1-X2-L1-M09",
+   "QATD-A-T1-X2-L1-M10",
+   "QATD-A-T1-X2-L1-M11",
+   "QATD-A-T1-X2-L1-M12"
+  ]
+ }
+}

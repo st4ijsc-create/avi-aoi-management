@@ -1,0 +1,170 @@
+{
+ "qatd_admin": {
+  "hierarchy": {
+   "st": 200,
+   "byte": 450811,
+   "ms": 1692,
+   "md5": "f6c484e0d0a1",
+   "err": null,
+   "tenLoRa": [
+    "QATD-A",
+    "QATD-B",
+    "QATD-C",
+    "SIM-FAC",
+    "T12-SHOT"
+   ],
+   "dem": {
+    "may": 1151,
+    "chuoiByte": 450782
+   }
+  },
+  "factoryList": {
+   "so": 5,
+   "ms": 11
+  },
+  "overview": {
+   "may": 1150,
+   "byte": 398625,
+   "ms": 68
+  }
+ },
+ "qatd_giamdoc": {
+  "hierarchy": {
+   "st": 200,
+   "byte": 450811,
+   "ms": 1558,
+   "md5": "f6c484e0d0a1",
+   "err": null,
+   "tenLoRa": [
+    "QATD-A",
+    "QATD-B",
+    "QATD-C",
+    "SIM-FAC",
+    "T12-SHOT"
+   ],
+   "dem": {
+    "may": 1151,
+    "chuoiByte": 450782
+   }
+  },
+  "factoryList": {
+   "so": 3,
+   "ms": 14
+  },
+  "overview": {
+   "may": 1108,
+   "byte": 373285,
+   "ms": 58
+  }
+ },
+ "qatd_kythuat": {
+  "hierarchy": {
+   "st": 200,
+   "byte": 450811,
+   "ms": 1721,
+   "md5": "f6c484e0d0a1",
+   "err": null,
+   "tenLoRa": [
+    "QATD-A",
+    "QATD-B",
+    "QATD-C",
+    "SIM-FAC",
+    "T12-SHOT"
+   ],
+   "dem": {
+    "may": 1151,
+    "chuoiByte": 450782
+   }
+  },
+  "factoryList": {
+   "so": 2,
+   "ms": 14
+  },
+  "overview": {
+   "may": 780,
+   "byte": 262300,
+   "ms": 82
+  }
+ },
+ "qatd_congnhan": {
+  "hierarchy": {
+   "st": 200,
+   "byte": 450811,
+   "ms": 1680,
+   "md5": "f6c484e0d0a1",
+   "err": null,
+   "tenLoRa": [
+    "QATD-A",
+    "QATD-B",
+    "QATD-C",
+    "SIM-FAC",
+    "T12-SHOT"
+   ],
+   "dem": {
+    "may": 1151,
+    "chuoiByte": 450782
+   }
+  },
+  "factoryList": {
+   "so": 1,
+   "ms": 13
+  },
+  "overview": {
+   "may": 328,
+   "byte": 111085,
+   "ms": 46
+  }
+ },
+ "qatd_khonggan": {
+  "hierarchy": {
+   "st": 200,
+   "byte": 450811,
+   "ms": 1768,
+   "md5": "f6c484e0d0a1",
+   "err": null,
+   "tenLoRa": [
+    "QATD-A",
+    "QATD-B",
+    "QATD-C",
+    "SIM-FAC",
+    "T12-SHOT"
+   ],
+   "dem": {
+    "may": 1151,
+    "chuoiByte": 450782
+   }
+  },
+  "factoryList": {
+   "so": 0,
+   "ms": 10
+  },
+  "overview": {
+   "may": 0,
+   "byte": 103,
+   "ms": 13
+  }
+ },
+ "qatd_khongquyen": {
+  "hierarchy": {
+   "st": 403,
+   "byte": 305,
+   "ms": 27,
+   "md5": "b5a09ae83754",
+   "err": "FORBIDDEN",
+   "tenLoRa": null,
+   "dem": null
+  },
+  "factoryList": {
+   "so": 1,
+   "ms": 12
+  },
+  "overview": {
+   "may": "FORBIDDEN",
+   "byte": 301,
+   "ms": 13
+  }
+ }
+}
+
+== md5 hierarchy theo vai: [["qatd_admin","f6c484e0d0a1"],["qatd_giamdoc","f6c484e0d0a1"],["qatd_kythuat","f6c484e0d0a1"],["qatd_congnhan","f6c484e0d0a1"],["qatd_khonggan","f6c484e0d0a1"]]
+== số md5 khác nhau: 1 (1 = MỌI VAI NHẬN BYTE Y HỆT ⇒ 0 lọc tenant)

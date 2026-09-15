@@ -1,0 +1,69 @@
+{
+ "luc": "2026-09-15T02:08:16.667Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "C2",
+ "vai": "qatd_kythuat",
+ "me": "cache",
+ "deBai": "mở /twin/may/4197 (QATD-A, ICT, stopped — đối chứng dương nhà máy ĐẦU) ⇒ man-twin-may, ten-may/loai-may đúng DB, khoi-canh-may có canvas + __soCanvas=1, KHÔNG may-chua-dat-cho, suc-khoe-may có hạng",
+ "kyVongDb": {
+  "id": 4197,
+  "name": "ICT-01",
+  "code": "QATD-A-T1-X1-L1-M01",
+  "machineType": "ICT",
+  "operationStatus": "stopped",
+  "lastHeartbeat": "2026-09-14T19:00:14.859Z",
+  "isActive": true,
+  "stationId": 3996,
+  "stationName": "Trạm 01",
+  "lineId": 217,
+  "lineName": "Line 1",
+  "facCode": "QATD-A",
+  "facId": 38,
+  "toaMa": "QATD-A-T1",
+  "capSo": 1,
+  "tangId": 81,
+  "soDatCho": "1"
+ },
+ "msVe": 7047,
+ "thay": {
+  "url": "/twin/may/4197?do=1",
+  "trang": {
+   "man_van_hanh": 0,
+   "man_line": 0,
+   "man_may": 1
+  },
+  "line": null,
+  "may": {
+   "tenMay": "ICT-01",
+   "loaiMay": "ICT",
+   "sucKhoeChu": "Sức khoẻ 50 % · nguy kịch",
+   "sucKhoeHang": "nguy_kich",
+   "khoiCanhMay": 1,
+   "canvasTrongKhoiCanh": 1,
+   "chuaDatCho": 0,
+   "chuaDatChoChu": null,
+   "khongMoDuoc": 0,
+   "lyDo": null,
+   "khongMoChu": null,
+   "dangTai": 0,
+   "veManLine": 1,
+   "veManLineChu": "Line 1",
+   "veManLineHref": "/twin/line/217",
+   "veNhaMayHref": "/twin",
+   "canvasTrongMan": 1
+  },
+  "vanHanh": null,
+  "soCanvasKit": 1,
+  "canvasDom": 1,
+  "veCalls": 5,
+  "spin": 0,
+  "thanTrangDai": 1534
+ },
+ "anh": ".qa-tapdoan/anh/C-C2-qatd_kythuat-may4197.png",
+ "pq": "ĐẠT",
+ "vi": "URL = /twin/may/4197 ✓ · ten-may = \"ICT-01\" (DB) ✓ · loai-may chứa \"ICT\" (DB) ✓ · khoi-canh-may có canvas, __soCanvas=1 ✓ · KHÔNG may-chua-dat-cho ✓ · suc-khoe-may có hạng ✓"
+}

@@ -1,0 +1,58 @@
+{
+  "luc": "2026-09-15T02:04:45.569Z",
+  "base": "http://localhost:3064",
+  "id": "B7",
+  "vai": "qatd_giamdoc",
+  "moTa": "B7 · GIÁM ĐỐC · /twin?pv=tapdoan",
+  "deBai": "Mở /twin?pv=tapdoan ⇒ phải thấy/đếm được đủ 3 công ty (§15 mục 26). Đọc nhãn phạm vi + dem-may + ảnh.",
+  "duKienDoc": {
+    "URL": "/twin?pv=tapdoan&do=1&cam=82.12%2C31.43%2C80.21%2C29.91%2C28",
+    "số nhà máy trong ô chọn (chọn được)": 3,
+    "CHỮ các nhà máy": [
+      "Công ty A",
+      "Công ty B",
+      "Công ty C"
+    ],
+    "nhà máy ĐANG hiện dữ liệu": {
+      "id": 38,
+      "ma": "QATD-A",
+      "máyDB": 371
+    },
+    "tầng đang chọn": {
+      "id": 81,
+      "capSo": 1,
+      "máyDB": 45
+    },
+    "dem-may": "371",
+    "máy VẼ trên cảnh (dsMay)": {
+      "so": 45,
+      "trongKhung": 45
+    },
+    "tổng máy 3 công ty QATD (DB)": 1108,
+    "breadcrumb": "Corporate›Công ty A",
+    "breadcrumb nói 'Tập đoàn'": true,
+    "banner-ha-cap": "Showing data for ONE factory (3 factories in the system). The Corporate scope cannot load several factories at once yet — use the Factory box to switch.hide",
+    "mọi banner": {
+      "banner-ngoai-luot-nap": "326 machines are outside this load (other buildings were not queried) — whether they are placed is not known yethide",
+      "banner-ha-cap": "Showing data for ONE factory (3 factories in the system). The Corporate scope cannot load several factories at once yet — use the Factory box to switch.hide"
+    },
+    "dải hợp nhất": {
+      "soViec": "2",
+      "mo": "1",
+      "chu": "2 things to knowhide"
+    },
+    "số công ty có dữ liệu trên màn": 1,
+    "cửa chờ": {
+      "coMan": true,
+      "coKhungDau": true,
+      "hetDauGach": true,
+      "onDinh": true,
+      "soLuotOnDinh": 3,
+      "ms": 5076
+    }
+  },
+  "ketCuc": "ô chọn có 3 nhà máy nhưng màn chỉ mang dữ liệu của 1 công ty (dem-may=371 = QATD-A 371 máy; cảnh vẽ 45 máy của tầng 81); banner-ha-cap=CÓ",
+  "phanQuyet": "SAI",
+  "viSao": "Chỉ MỘT khối nhà máy có dữ liệu: dem-may=371 = đúng tổng của QATD-A (371), không phải 1.108 của 3 công ty. Đây là hạ cấp CÓ KHAI (banner-ha-cap: \"Showing data for ONE factory (3 factories in the system). The Corporate scope cannot load several factories at once yet — use the Factory box to switc\") do phamViThuc() ở boChonNap.ts:241 hạ tapDoan→nhaMay vì canhThietKe nhận ĐÚNG MỘT factoryId (twinCanhRouter.ts:1003-1010). Nghĩa là §15 mục 26 vẫn CHƯA ĐẠT, nhưng màn KHÔNG nói dối.",
+  "anh": ".qa-tapdoan/anh/AB-B7-qatd_giamdoc-tapdoan.png"
+}

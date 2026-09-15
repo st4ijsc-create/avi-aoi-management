@@ -1,0 +1,6 @@
+toaNha[0] mỗi nhà máy: {"1":24,"38":53,"39":57,"40":61}
+qatd_kythuat    phạm vi 67 line / 780 máy | VẼ ĐỦ 7 line / 85 máy | ĐẦU ĐÚNG CẢNH RỖNG 25 line / 286 máy | TỪ CHỐI HẲN 35 line / 409 máy  ⇒ hỏng 89.6% line
+qatd_giamdoc    phạm vi 98 line / 1108 máy | VẼ ĐỦ 7 line / 85 máy | ĐẦU ĐÚNG CẢNH RỖNG 25 line / 286 máy | TỪ CHỐI HẲN 66 line / 737 máy  ⇒ hỏng 92.9% line
+qatd_admin      phạm vi 102 line / 1150 máy | VẼ ĐỦ 7 line / 85 máy | ĐẦU ĐÚNG CẢNH RỖNG 25 line / 286 máy | TỪ CHỐI HẲN 70 line / 779 máy  ⇒ hỏng 93.1% line
+qatd_congnhan   phạm vi 31 line / 328 máy | VẼ ĐỦ 7 line / 71 máy | ĐẦU ĐÚNG CẢNH RỖNG 24 line / 257 máy | TỪ CHỐI HẲN 0 line / 0 máy  ⇒ hỏng 77.4% line
+qatd_quanly     phạm vi 32 line / 371 máy | VẼ ĐỦ 7 line / 85 máy | ĐẦU ĐÚNG CẢNH RỖNG 25 line / 286 máy | TỪ CHỐI HẲN 0 line / 0 máy  ⇒ hỏng 78.1% line

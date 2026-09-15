@@ -1,0 +1,24 @@
+{
+  "luc": "2026-09-15T02:07:55.891Z",
+  "base": "http://localhost:3064",
+  "id": "A2",
+  "vai": "qatd_khonggan",
+  "moTa": "A2 · 0 GÁN · ô chọn nhà máy + lý do rỗng",
+  "deBai": "Kỳ vọng 0 nhà máy VÀ có câu lý do rỗng đọc được (không phải màn trống im lặng).",
+  "duKienDoc": {
+    "bo-chon-nap có/không": false,
+    "chon-nha-may": null,
+    "factory.list (API)": [],
+    "chữ trên màn": "Your account is not assigned to any factory | No inspection records therefore fall within your data scope. This is an EMPTY SCOPE — not a finding that the line has stopped running. Contact an administrator to be assigned a factory.",
+    "h3": [
+      "Your account is not assigned to any factory"
+    ],
+    "ly-do-so-trong": null,
+    "dem-may": null,
+    "spinner trong màn": 0
+  },
+  "ketCuc": "0 nhà máy · bo-chon-nap=false · lý do rỗng đọc được: \"Your account is not assigned to any factory | No inspection records therefore fall within your data scope. This is an EMPTY SCOPE — not a finding that the line has stopped running.\"",
+  "phanQuyet": "ĐẠT",
+  "anh": ".qa-tapdoan/anh/AB-A2-qatd_khonggan.png",
+  "viSao": "Rỗng vì CHƯA ĐƯỢC GÁN khác rỗng vì yên ổn — màn nói đúng câu thứ nhất."
+}

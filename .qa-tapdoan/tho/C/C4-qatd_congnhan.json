@@ -1,0 +1,461 @@
+{
+ "luc": "2026-09-15T02:12:11.954Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "C4",
+ "vai": "qatd_congnhan",
+ "me": "cache",
+ "deBai": "qatd_congnhan (phạm vi QATD-C(40)) mở /twin/line/249 và /twin/may/4568 (nhà máy id 39) ⇒ line-khong-mo-duoc / may-khong-mo-duoc, API NOT_FOUND (không FORBIDDEN)",
+ "uiLine": {
+  "tenLine": "Chuyền 249",
+  "demMayChu": "Máy 0",
+  "demMaySo": 0,
+  "demTramChu": "Trạm 0",
+  "demTramSo": 0,
+  "wipChu": "WIP 0",
+  "wipSo": 0,
+  "lineRong": 1,
+  "lineRongChu": "Chuyền này chưa có máy nào trên bố cục Chuyền có thể chưa được xếp chỗ trong Twin Studio, hoặc thuộc một nhà máy khác.",
+  "khongMoDuoc": 0,
+  "lyDo": null,
+  "khongMoChu": null,
+  "idKhongHopLe": 0,
+  "idKhongHopLeChu": null,
+  "canvasTrongMan": 0,
+  "soNhanMay": 0,
+  "soOTram": 0,
+  "daiLine": 0,
+  "veNhaMayHref": "/twin"
+ },
+ "anhLine": ".qa-tapdoan/anh/C-C4-qatd_congnhan-line249-chan.png",
+ "uiMay": {
+  "tenMay": "Máy #4568",
+  "loaiMay": null,
+  "sucKhoeChu": null,
+  "sucKhoeHang": null,
+  "khoiCanhMay": 0,
+  "canvasTrongKhoiCanh": null,
+  "chuaDatCho": 0,
+  "chuaDatChoChu": null,
+  "khongMoDuoc": 1,
+  "lyDo": "ngoaiPhamVi",
+  "khongMoChu": "Không mở được máy #4568 Đối tượng này không thuộc phạm vi đang xem (hoặc không còn tồn tại). Hãy đổi nhà máy/tầng rồi mở lại. Nhà máy",
+  "dangTai": 0,
+  "veManLine": 0,
+  "veManLineChu": null,
+  "veManLineHref": null,
+  "veNhaMayHref": "/twin",
+  "canvasTrongMan": 0
+ },
+ "anh": ".qa-tapdoan/anh/C-C4-qatd_congnhan-may4568-chan.png",
+ "api": {
+  "factoryCommand.machineDetail": {
+   "http": 404,
+   "data": null,
+   "ma": "NOT_FOUND",
+   "loi": "Machine 4568 not found"
+  },
+  "machine.getById": {
+   "http": 200,
+   "data": null,
+   "ma": null,
+   "loi": null
+  },
+  "twinCanh.danhSachToaNha(facNgoai)": {
+   "http": 200,
+   "data": [],
+   "ma": null,
+   "loi": null
+  },
+  "twinCanh.canhThietKe(facNgoai)": {
+   "http": 200,
+   "data": {
+    "xuong": [],
+    "chuyen": [],
+    "tram": [],
+    "may": [],
+    "datCho": [],
+    "kichThuoc": [
+     {
+      "loaiMay": "AVI",
+      "rongMm": 1200,
+      "caoMm": 1500,
+      "sauMm": 1000,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "AOI",
+      "rongMm": 1300,
+      "caoMm": 1500,
+      "sauMm": 1100,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "SPI",
+      "rongMm": 1200,
+      "caoMm": 1500,
+      "sauMm": 1000,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "AXI",
+      "rongMm": 1600,
+      "caoMm": 1900,
+      "sauMm": 1400,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "ICT",
+      "rongMm": 1500,
+      "caoMm": 1800,
+      "sauMm": 1200,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "FCT",
+      "rongMm": 1400,
+      "caoMm": 1800,
+      "sauMm": 1200,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "ICT_FUNC",
+      "rongMm": 1800,
+      "caoMm": 1800,
+      "sauMm": 1300,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "CMM",
+      "rongMm": 1600,
+      "caoMm": 2000,
+      "sauMm": 1800,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "MOUNTER",
+      "rongMm": 2200,
+      "caoMm": 1600,
+      "sauMm": 1800,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "REFLOW",
+      "rongMm": 4500,
+      "caoMm": 1600,
+      "sauMm": 1300,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "STENCIL_PRINTER",
+      "rongMm": 1500,
+      "caoMm": 1600,
+      "sauMm": 1400,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "WAVE_SOLDER",
+      "rongMm": 3500,
+      "caoMm": 1700,
+      "sauMm": 1500,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "AUTOMATION",
+      "rongMm": 1500,
+      "caoMm": 1800,
+      "sauMm": 1200,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "ROBOT",
+      "rongMm": 1000,
+      "caoMm": 1800,
+      "sauMm": 1000,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "ROBOT_TEST",
+      "rongMm": 2000,
+      "caoMm": 2000,
+      "sauMm": 1600,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "WELDER",
+      "rongMm": 1800,
+      "caoMm": 2000,
+      "sauMm": 1500,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "PALLETIZER",
+      "rongMm": 2500,
+      "caoMm": 2400,
+      "sauMm": 2000,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "PACKAGING",
+      "rongMm": 2500,
+      "caoMm": 1800,
+      "sauMm": 1400,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "ASSEMBLY",
+      "rongMm": 1500,
+      "caoMm": 1200,
+      "sauMm": 900,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "SCREWDRIVE",
+      "rongMm": 1000,
+      "caoMm": 1400,
+      "sauMm": 800,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "DISPENSING",
+      "rongMm": 1200,
+      "caoMm": 1500,
+      "sauMm": 1000,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "FEEDER",
+      "rongMm": 600,
+      "caoMm": 1200,
+      "sauMm": 500,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "IOT_SENSOR",
+      "rongMm": 120,
+      "caoMm": 120,
+      "sauMm": 80,
+      "laGiaDinh": true
+     },
+     {
+      "loaiMay": "IOT_GATEWAY",
+      "rongMm": 300,
+      "caoMm": 200,
+      "sauMm": 150,
+      "laGiaDinh": true
+     }
+    ],
+    "vung": [],
+    "scopeApplied": true,
+    "scopeEmptyReason": null,
+    "scopeMessage": null
+   },
+   "ma": null,
+   "loi": null
+  },
+  "factoryCommand.overview(facNgoai)": {
+   "http": 200,
+   "data": {
+    "factories": [],
+    "machines": [],
+    "issues": [],
+    "oeeDefinitionVersion": "OEE@v1"
+   },
+   "ma": null,
+   "loi": null
+  },
+  "factory.getById(facNgoai)": {
+   "http": 200,
+   "data": null,
+   "ma": null,
+   "loi": null
+  }
+ },
+ "lineListSo": 31,
+ "lineListCoLineNgoai": false,
+ "doiChungDuong": {
+  "vai": "qatd_kythuat",
+  "factoryCommand.machineDetail": {
+   "http": 200,
+   "data": {
+    "identity": {
+     "id": 4568,
+     "code": "QATD-B-T1-X1-L1-M01",
+     "name": "WAVE_SOLDER-01",
+     "machineType": "WAVE_SOLDER",
+     "lineId": 249,
+     "lineName": "Line 1",
+     "factoryName": "Công ty B"
+    },
+    "status": "running",
+    "liveStatusRaw": "online",
+    "oee": {
+     "availability": 100,
+     "performance": null,
+     "quality": null,
+     "oee": null,
+     "definitionVersion": "OEE@v1"
+    },
+    "alarms": [],
+    "recipe": null,
+    "recipeHistory": [],
+    "workorders": [],
+    "telemetryTags": [
+     {
+      "key": "state",
+      "label": "PackML state",
+      "dataType": "string"
+     },
+     {
+      "key": "mode",
+      "label": "Mode",
+      "dataType": "string"
+     },
+     {
+      "key": "solder_pot_temp",
+      "label": "Solder pot temp",
+      "dataType": "float",
+      "unit": "degC"
+     },
+     {
+      "key": "preheat_temp",
+      "label": "Preheat temp",
+      "dataType": "float",
+      "unit": "degC"
+     },
+     {
+      "key": "conveyor_speed",
+      "label": "Conveyor speed",
+      "dataType": "float",
+      "unit": "mm/min"
+     }
+    ]
+   },
+   "ma": null,
+   "loi": null
+  },
+  "twinCanh.danhSachToaNha(facNgoai)": {
+   "http": 200,
+   "data": [
+    {
+     "id": 57,
+     "factoryId": 39,
+     "ma": "QATD-B-T1",
+     "ten": "Toà 1",
+     "viTriXMm": "1000000.000",
+     "viTriYMm": "0.000",
+     "viTriZMm": "0.000",
+     "rongMm": "110000.000",
+     "sauMm": "80000.000",
+     "caoMm": "42000.000",
+     "quatX": "0.000000000",
+     "quatY": "0.000000000",
+     "quatZ": "0.000000000",
+     "quatW": "1.000000000",
+     "modelVoId": null,
+     "donViNguon": null,
+     "nguon": "sinh",
+     "isActive": true,
+     "createdAt": "2026-09-15T00:14:37.597Z",
+     "updatedAt": "2026-09-15T00:14:37.597Z"
+    },
+    {
+     "id": 58,
+     "factoryId": 39,
+     "ma": "QATD-B-T2",
+     "ten": "Toà 2",
+     "viTriXMm": "1130000.000",
+     "viTriYMm": "0.000",
+     "viTriZMm": "0.000",
+     "rongMm": "110000.000",
+     "sauMm": "80000.000",
+     "caoMm": "42000.000",
+     "quatX": "0.000000000",
+     "quatY": "0.000000000",
+     "quatZ": "0.000000000",
+     "quatW": "1.000000000",
+     "modelVoId": null,
+     "donViNguon": null,
+     "nguon": "sinh",
+     "isActive": true,
+     "createdAt": "2026-09-15T00:14:37.597Z",
+     "updatedAt": "2026-09-15T00:14:37.597Z"
+    },
+    {
+     "id": 59,
+     "factoryId": 39,
+     "ma": "QATD-B-T3",
+     "ten": "Toà 3",
+     "viTriXMm": "1000000.000",
+     "viTriYMm": "100000.000",
+     "viTriZMm": "0.000",
+     "rongMm": "110000.000",
+     "sauMm": "80000.000",
+     "caoMm": "42000.000",
+     "quatX": "0.000000000",
+     "quatY": "0.000000000",
+     "quatZ": "0.000000000",
+     "quatW": "1.000000000",
+     "modelVoId": null,
+     "donViNguon": null,
+     "nguon": "sinh",
+     "isActive": true,
+     "createdAt": "2026-09-15T00:14:37.597Z",
+     "updatedAt": "2026-09-15T00:14:37.597Z"
+    },
+    {
+     "id": 60,
+     "factoryId": 39,
+     "ma": "QATD-B-T4",
+     "ten": "Toà 4",
+     "viTriXMm": "1130000.000",
+     "viTriYMm": "100000.000",
+     "viTriZMm": "0.000",
+     "rongMm": "110000.000",
+     "sauMm": "80000.000",
+     "caoMm": "42000.000",
+     "quatX": "0.000000000",
+     "quatY": "0.000000000",
+     "quatZ": "0.000000000",
+     "quatW": "1.000000000",
+     "modelVoId": null,
+     "donViNguon": null,
+     "nguon": "sinh",
+     "isActive": true,
+     "createdAt": "2026-09-15T00:14:37.597Z",
+     "updatedAt": "2026-09-15T00:14:37.597Z"
+    }
+   ],
+   "ma": null,
+   "loi": null
+  }
+ },
+ "doiChungDuongTomTat": {
+  "machineDetail_http": 200,
+  "machineDetail_ma": null,
+  "coDuLieu": true,
+  "soToaNha": 4
+ },
+ "phanRieng": {
+  "C4a_uiLine": {
+   "pq": "SAI",
+   "vi": "UI line ngoài phạm vi NÓI RA bằng line-khong-mo-duoc: khong-mo-duoc 0 lý do \"null\" · line-rong 1 · chữ NGUYÊN VĂN \"Chuyền này chưa có máy nào trên bố cục Chuyền có thể chưa được xếp chỗ trong Twin Studio, hoặc thuộc một nhà máy khác.\"",
+   "sai": [
+    "UI line ngoài phạm vi NÓI RA bằng line-khong-mo-duoc"
+   ]
+  },
+  "C4b_uiMay": {
+   "pq": "ĐẠT",
+   "vi": "UI máy ngoài phạm vi ⇒ may-khong-mo-duoc / ngoaiPhamVi ✓"
+  },
+  "C4c_api": {
+   "pq": "ĐẠT",
+   "vi": "machineDetail = NOT_FOUND (không FORBIDDEN) ✓ · machine.getById không rò (null) ✓ · danhSachToaNha nhà máy ngoài = rỗng, KHÔNG FORBIDDEN ✓ · overview nhà máy ngoài KHÔNG rò máy ✓ · factory.getById nhà máy ngoài = không tồn tại ✓ · line.list KHÔNG chứa line ngoài phạm vi ✓ · đối chứng DƯƠNG qatd_kythuat nhận dữ liệu thật ✓"
+  }
+ },
+ "pq": "SAI",
+ "vi": "C4a SAI · C4b ĐẠT · C4c ĐẠT"
+}

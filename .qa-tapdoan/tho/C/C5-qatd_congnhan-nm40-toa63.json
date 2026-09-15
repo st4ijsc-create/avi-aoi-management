@@ -1,0 +1,117 @@
+{
+ "luc": "2026-09-15T02:15:08.401Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "C5",
+ "vai": "qatd_congnhan",
+ "me": "cache",
+ "deBai": "đi /twin (nm=40 toa=63 tang=151, QATD-C toà T3 — toà THỨ BA) → bấm khối máy → /twin/may/:id → ve-man-line → ve-man-nha-may ⇒ phải về ĐÚNG line của máy và ĐÚNG nhà máy 40",
+ "buoc": [
+  "bấm khối máy 5139 trên cảnh",
+  "click ve-man-line (\"Line 1\")",
+  "click ve-man-nha-may"
+ ],
+ "twinBanDau": {
+  "nhaMayDangChon": {
+   "soMuc": 1,
+   "value": "40",
+   "nhanDangChon": "Công ty C"
+  },
+  "toaDangChon": {
+   "soMuc": 4,
+   "value": "63",
+   "nhanDangChon": "Toà 3"
+  },
+  "tangDangChon": {
+   "soMuc": 7,
+   "value": "151",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "328"
+ },
+ "census": {
+  "soTrongKhung": 36,
+  "soBamDuoc": 36,
+  "loai": []
+ },
+ "manMay": {
+  "tenMay": "SPI-01",
+  "loaiMay": null,
+  "sucKhoeChu": null,
+  "sucKhoeHang": null,
+  "khoiCanhMay": 1,
+  "canvasTrongKhoiCanh": 0,
+  "chuaDatCho": 1,
+  "chuaDatChoChu": "Máy này chưa có chỗ trên bố cục 3D Xếp chỗ trong Twin Studio để thấy máy giữa hàng xóm của nó. Buồng lái và ngăn xử lý bên dưới vẫn dùng được.",
+  "khongMoDuoc": 0,
+  "lyDo": null,
+  "khongMoChu": null,
+  "dangTai": 0,
+  "veManLine": 1,
+  "veManLineChu": "Line 1",
+  "veManLineHref": "/twin/line/299",
+  "veNhaMayHref": "/twin?nm=40&toa=63&tang=151&do=1&cam=61.88%2C22.45%2C65.78%2C24.1%2C28",
+  "canvasTrongMan": 0
+ },
+ "urlMay": "/twin/may/5139",
+ "mayId": 5139,
+ "anhMay": ".qa-tapdoan/anh/C-C5-qatd_congnhan-nm40-toa63-may5139.png",
+ "coVeManLine": true,
+ "hrefVeManLine": "/twin/line/299",
+ "chuVeManLine": "Line 1",
+ "manLine": {
+  "tenLine": "Line 1",
+  "demMayChu": "Máy 10",
+  "demMaySo": 10,
+  "demTramChu": "Trạm 10",
+  "demTramSo": 10,
+  "wipChu": "WIP 56",
+  "wipSo": 56,
+  "lineRong": 0,
+  "lineRongChu": null,
+  "khongMoDuoc": 0,
+  "lyDo": null,
+  "khongMoChu": null,
+  "idKhongHopLe": 0,
+  "idKhongHopLeChu": null,
+  "canvasTrongMan": 1,
+  "soNhanMay": 0,
+  "soOTram": 10,
+  "daiLine": 1,
+  "veNhaMayHref": "/twin?nm=40&toa=63&tang=151&do=1&cam=61.88%2C22.45%2C65.78%2C24.1%2C28"
+ },
+ "urlLine": "/twin/line/299",
+ "lineId": 299,
+ "anhLine": ".qa-tapdoan/anh/C-C5-qatd_congnhan-nm40-toa63-line299.png",
+ "manNhaMay": {
+  "oNhaMay": {
+   "soMuc": 1,
+   "value": "40",
+   "nhanDangChon": "Công ty C"
+  },
+  "oToaNha": {
+   "soMuc": 4,
+   "value": "63",
+   "nhanDangChon": "Toà 3"
+  },
+  "oTang": {
+   "soMuc": 7,
+   "value": "151",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "328",
+  "canvasTrongMan": 1
+ },
+ "urlNhaMay": "/twin?nm=40&toa=63&tang=151&do=1&cam=61.88%2C22.45%2C65.78%2C24.1%2C28",
+ "anh": ".qa-tapdoan/anh/C-C5-qatd_congnhan-nm40-toa63-ve-man-nha-may.png",
+ "mayDetailApi": {
+  "http": 200,
+  "ma": null,
+  "ten": null
+ },
+ "pq": "ĐẠT",
+ "vi": "ve-man-line tới /twin/line/:id ✓ · ve-man-nha-may về /twin ✓ · nhà máy sau khi về = 40 (đang xem) ✓ · toà = 63, tầng = 151 ✓"
+}

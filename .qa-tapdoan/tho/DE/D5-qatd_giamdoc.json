@@ -1,0 +1,244 @@
+{
+ "ca": "D5",
+ "vai": "qatd_giamdoc",
+ "cach": "cache",
+ "base": "http://localhost:3064",
+ "luc": "2026-09-15T02:19:44.250Z",
+ "may": {
+  "id": 4197,
+  "ma": "QATD-A-T1-X1-L1-M01",
+  "nm": 38
+ },
+ "tang": {
+  "toa": 53,
+  "tang": 81
+ },
+ "twinCanhBao": {
+  "url": "/twin?nm=38&toa=53&tang=81&cam=73.88%2C25.93%2C71.97%2C29.91%2C28",
+  "lopCanhBao": {
+   "co": 1,
+   "soCon": 1,
+   "chu": "◆ QATD-A-T1-X1-L1-M07"
+  },
+  "daiCanhBao": {
+   "co": 1,
+   "chu": "Alarms (55) All55 Stop26 Call0 Warning29 Normal0 TODAY (55) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 08 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 08 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc"
+  },
+  "daiTrong": 0,
+  "daiChuaDo": 0,
+  "bangKpi": {
+   "co": 1,
+   "chu": "Metrics 371 machines Corporate · Công ty A · Floor Running 261 Down 25 Maintenance 20 Offline 7 Running rate 70.4% Average OEE — Machines w/ andon 15 PdM risk 0 OEE measured on 0/371 machines"
+  },
+  "demMay": "371",
+  "chuToanMan": "Skip to content Production (MES) Show advanced menu Simple G Giám đốc tập đoàn (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 55 Live 🇺🇸 English Production MES 3D Factory Corporate › Công ty A › Floor Factory Công ty A Công ty B Công ty C Building Toà 1 Toà 2 Toà 3 Toà 4 Floor Tầng 1 Tầng 2 Tầng 3 Tầng 4 Tầng 5 Tầng 6 Tầng 7 Export USD 3D 1 thing to know View Machines 371 Fresh data 364 Stale data 0 Unknown 7 Decommissioned 0 Alarms (55) All55 Stop26 Call0 Warning29 Normal0 TODAY (55) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 08 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 08 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 08 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 07 (QATD) ◆ Ùn tắc tại trạm 08 (QATD) ◆ Ùn tắc tại trạm 06 (QATD) ◆ Ùn tắc tại trạm 07 (QATD) ◆ Ùn tắc tại trạm 08 (QATD) ◆ Ùn tắc tại trạm 06 (QATD) ◆ Ùn tắc tại trạm 06 (QATD) ◆ Ùn tắc tại trạm 08 (QATD) ◆ "
+ },
+ "twinNgan": {
+  "url": "/twin?nm=38&toa=53&tang=81&cam=73.88%2C25.93%2C71.97%2C29.91%2C28",
+  "coNgan": 1,
+  "nganChu": "Select a machine on the scene or in the list to open its 3D machine screen.",
+  "bocThu": "1",
+  "bocLyDoThu": "trong",
+  "bocAn": 1,
+  "nutAck": {
+   "co": 0
+  },
+  "nutAnTam": {
+   "co": 0
+  },
+  "nutTaoPhieu": {
+   "co": 0
+  },
+  "nutGhiChu": {
+   "co": 0
+  },
+  "nhomCanhBao": {
+   "co": 0
+  },
+  "nhomTaoViec": {
+   "co": 0
+  },
+  "nhomMoChucNang": {
+   "co": 0
+  },
+  "nganChuaChon": {
+   "co": 1,
+   "chu": "Select a machine on the scene or in the list to open its 3D machine screen.",
+   "hien": false,
+   "tat": 0,
+   "bam": 0
+  },
+  "nganMaMay": {
+   "co": 0
+  },
+  "nganTrangThai": {
+   "co": 0
+  },
+  "formTaoPhieu": {
+   "co": 0
+  },
+  "chonKyThuatVien": {
+   "co": 0
+  },
+  "soCanhBaoNgan": 0,
+  "canhBaoNgan": [],
+  "khongCanhBao": {
+   "co": 0
+  },
+  "nutTrongNgan": [],
+  "nutDieuHuong": [],
+  "soCanvas": 1,
+  "canvasDom": 1,
+  "coMan": {
+   "man-twin-van-hanh": 1,
+   "man-twin-may": 0,
+   "man-twin-line": 0,
+   "man-twin-studio": 0
+  },
+  "biChan": 0,
+  "chuBiChan": null,
+  "tenMay": null,
+  "mayDangTai": 0,
+  "mayKhongMoDuoc": {
+   "co": 0
+  },
+  "mayChuaDatCho": 0
+ },
+ "mayNgan": {
+  "url": "/twin/may/4197",
+  "coNgan": 1,
+  "nganChu": "QATD-A-T1-X1-L1-M01 ICT-01 Idle AOI RESULTS OK 5 NG 1 NTF 0 YIELD 83.33% Total inspected: 6 · FPY 83.33% ALARMS (0) No open alarms. OPEN MODULE Full cockpit Machine health History Traceability",
+  "bocThu": null,
+  "bocLyDoThu": null,
+  "bocAn": 0,
+  "nutAck": {
+   "co": 0
+  },
+  "nutAnTam": {
+   "co": 0
+  },
+  "nutTaoPhieu": {
+   "co": 0
+  },
+  "nutGhiChu": {
+   "co": 0
+  },
+  "nhomCanhBao": {
+   "co": 1,
+   "chu": "ALARMS (0) No open alarms.",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "nhomTaoViec": {
+   "co": 0
+  },
+  "nhomMoChucNang": {
+   "co": 1,
+   "chu": "OPEN MODULE Full cockpit Machine health History Traceability",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "nganChuaChon": {
+   "co": 0
+  },
+  "nganMaMay": {
+   "co": 1,
+   "chu": "QATD-A-T1-X1-L1-M01",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "nganTrangThai": {
+   "co": 1,
+   "chu": "Idle",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "formTaoPhieu": {
+   "co": 0
+  },
+  "chonKyThuatVien": {
+   "co": 0
+  },
+  "soCanhBaoNgan": 0,
+  "canhBaoNgan": [],
+  "khongCanhBao": {
+   "co": 1,
+   "chu": "No open alarms.",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "nutTrongNgan": [
+   {
+    "tid": "nut-dieu-huong-cockpit",
+    "chu": "Full cockpit",
+    "aria": null,
+    "tat": 0,
+    "hien": 1
+   },
+   {
+    "tid": "nut-dieu-huong-sucKhoeMay",
+    "chu": "Machine health",
+    "aria": null,
+    "tat": 0,
+    "hien": 1
+   },
+   {
+    "tid": "nut-dieu-huong-lichSu",
+    "chu": "History",
+    "aria": null,
+    "tat": 0,
+    "hien": 1
+   },
+   {
+    "tid": "nut-dieu-huong-truyXuat",
+    "chu": "Traceability",
+    "aria": null,
+    "tat": 0,
+    "hien": 1
+   }
+  ],
+  "nutDieuHuong": [
+   {
+    "tid": "nut-dieu-huong-cockpit",
+    "chu": "Full cockpit",
+    "taiCho": "0"
+   },
+   {
+    "tid": "nut-dieu-huong-sucKhoeMay",
+    "chu": "Machine health",
+    "taiCho": "0"
+   },
+   {
+    "tid": "nut-dieu-huong-lichSu",
+    "chu": "History",
+    "taiCho": "0"
+   },
+   {
+    "tid": "nut-dieu-huong-truyXuat",
+    "chu": "Traceability",
+    "taiCho": "0"
+   }
+  ],
+  "soCanvas": 1,
+  "canvasDom": 1,
+  "coMan": {
+   "man-twin-van-hanh": 0,
+   "man-twin-may": 1,
+   "man-twin-line": 0,
+   "man-twin-studio": 0
+  },
+  "biChan": 0,
+  "chuBiChan": null,
+  "tenMay": "ICT-01",
+  "mayDangTai": 0,
+  "mayKhongMoDuoc": {
+   "co": 0
+  },
+  "mayChuaDatCho": 0
+ }
+}

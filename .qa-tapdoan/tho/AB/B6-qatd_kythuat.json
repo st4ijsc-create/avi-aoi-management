@@ -1,0 +1,99 @@
+{
+  "luc": "2026-09-15T02:05:34.506Z",
+  "base": "http://localhost:3064",
+  "id": "B6",
+  "vai": "qatd_kythuat",
+  "moTa": "B6 · KỸ THUẬT · đổi sang toà 2,3,4",
+  "deBai": "Đổi sang toà 2, 3, 4 qua ô chọn thật ⇒ dem-may đổi ĐÚNG theo mayTheoTang của từng toà (chứng minh bộ chọn toà hoạt động).",
+  "duKienDoc": {
+    "nhà máy": {
+      "id": 38,
+      "ma": "QATD-A"
+    },
+    "các bước": [
+      {
+        "toaSo": 2,
+        "toaId": 54,
+        "toaMa": "QATD-A-T2",
+        "toà UI đang chọn": "54",
+        "CHỮ toà": "Toà 2",
+        "tầng UI đang chọn": "88",
+        "tầng kỳ vọng (cấp 1 của toà)": 88,
+        "máy DB của tầng ấy": 68,
+        "dem-may": "371",
+        "máy VẼ trên cảnh (dsMay)": {
+          "so": 68,
+          "trongKhung": 68
+        },
+        "URL": "/twin?do=1&cam=86.64%2C31.54%2C87.94%2C32.7%2C34&toa=54",
+        "dem-may khớp": "nhàMáy(tổng)",
+        "cửa chờ": {
+          "coMan": true,
+          "coKhungDau": true,
+          "hetDauGach": true,
+          "onDinh": true,
+          "soLuotOnDinh": 3,
+          "ms": 2181
+        }
+      },
+      {
+        "toaSo": 3,
+        "toaId": 55,
+        "toaMa": "QATD-A-T3",
+        "toà UI đang chọn": "55",
+        "CHỮ toà": "Toà 3",
+        "tầng UI đang chọn": "95",
+        "tầng kỳ vọng (cấp 1 của toà)": 95,
+        "máy DB của tầng ấy": 40,
+        "dem-may": "371",
+        "máy VẼ trên cảnh (dsMay)": {
+          "so": 40,
+          "trongKhung": 40
+        },
+        "URL": "/twin?do=1&cam=69.19%2C24.56%2C69.54%2C27.65%2C28&toa=55",
+        "dem-may khớp": "nhàMáy(tổng)",
+        "cửa chờ": {
+          "coMan": true,
+          "coKhungDau": true,
+          "hetDauGach": true,
+          "onDinh": true,
+          "soLuotOnDinh": 3,
+          "ms": 2207
+        }
+      },
+      {
+        "toaSo": 4,
+        "toaId": 56,
+        "toaMa": "QATD-A-T4",
+        "toà UI đang chọn": "56",
+        "CHỮ toà": "Toà 4",
+        "tầng UI đang chọn": "102",
+        "tầng kỳ vọng (cấp 1 của toà)": 102,
+        "máy DB của tầng ấy": 41,
+        "dem-may": "371",
+        "máy VẼ trên cảnh (dsMay)": {
+          "so": 41,
+          "trongKhung": 41
+        },
+        "URL": "/twin?do=1&cam=73.82%2C25.93%2C71.91%2C29.86%2C27.95&toa=56",
+        "dem-may khớp": "nhàMáy(tổng)",
+        "cửa chờ": {
+          "coMan": true,
+          "coKhungDau": true,
+          "hetDauGach": true,
+          "onDinh": true,
+          "soLuotOnDinh": 3,
+          "ms": 2189
+        }
+      }
+    ],
+    "ô chọn toà nhận lệnh": true,
+    "cảnh 3D đổi đúng theo tầng của từng toà": true,
+    "dem-may đổi đúng theo tầng": false,
+    "dem-may có đổi giữa các toà": false,
+    "cảnh có đổi giữa các toà": true
+  },
+  "ketCuc": "toà2(QATD-A-T2) DB 68 → dem-may=371 · cảnh=68 ; toà3(QATD-A-T3) DB 40 → dem-may=371 · cảnh=40 ; toà4(QATD-A-T4) DB 41 → dem-may=371 · cảnh=41",
+  "phanQuyet": "SAI",
+  "viSao": "Bộ chọn toà HOẠT ĐỘNG (cảnh 3D đổi đúng ở cả 3 toà: 68/40/41 khớp DB 68/40/41), nhưng dem-may KHÔNG đổi (371/371/371) vì nó là số của cả nhà máy — cùng gốc rễ với B2/B3."
+}

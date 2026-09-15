@@ -1,0 +1,66 @@
+{
+  "luc": "2026-09-15T02:05:39.856Z",
+  "base": "http://localhost:3064",
+  "id": "B8",
+  "vai": "qatd_kythuat",
+  "moTa": "B8 · KỸ THUẬT · /twin?nm=39 (QATD-B)",
+  "deBai": "Mở /twin?nm=39 (QATD-B, KHÔNG phải nhà máy đầu trong danh sách) ⇒ cảnh dựng cho đúng QATD-B, dem-may khớp phạm vi của QATD-B.",
+  "duKienDoc": {
+    "URL": "/twin?nm=39&do=1&cam=87.28%2C31.76%2C88.33%2C32.95%2C34",
+    "nhà máy UI đang chọn": {
+      "id": 39,
+      "chu": "Công ty B"
+    },
+    "thứ tự ô chọn": [
+      "38:Công ty A",
+      "39:Công ty B"
+    ],
+    "nhà máy ĐẦU trong danh sách": {
+      "gt": "38",
+      "chu": "Công ty A"
+    },
+    "toà đang chọn": {
+      "id": "57",
+      "chu": "Toà 1"
+    },
+    "tầng đang chọn": {
+      "id": 109,
+      "capSo": 1,
+      "toa": "QATD-B-T1",
+      "nm": "QATD-B",
+      "máyDB": 63
+    },
+    "dem-may": "409",
+    "dem-may khớp": "nhàMáy(tổng)",
+    "máy DB QATD-B": {
+      "tong": 409,
+      "active": 409
+    },
+    "máy VẼ trên cảnh (dsMay)": {
+      "so": 63,
+      "trongKhung": 63
+    },
+    "cảnh khớp tầng của QATD-B": true,
+    "breadcrumb": "Corporate›Công ty B›Floor",
+    "banner": {
+      "banner-ngoai-luot-nap": "346 machines are outside this load (other buildings were not queried) — whether they are placed is not known yethide"
+    },
+    "__thongKeVe": {
+      "calls": 5,
+      "triangles": 14342,
+      "matContext": 0
+    },
+    "cửa chờ": {
+      "coMan": true,
+      "coKhungDau": true,
+      "hetDauGach": true,
+      "onDinh": true,
+      "soLuotOnDinh": 3,
+      "ms": 5124
+    }
+  },
+  "ketCuc": "nhà máy=39 (Công ty B) · nhà máy ĐẦU trong ô là 38 ⇒ KHÔNG lấy cứng [0]=true · tầng 109 thuộc QATD-B DB 63 máy · cảnh vẽ 63 · dem-may=409 (khớp nhàMáy(tổng))",
+  "phanQuyet": "ĐẠT",
+  "viSao": "?nm=39 mở đúng QATD-B (không rơi về nhà máy đầu 38); cảnh vẽ 63 = số máy DB của tầng 109, dem-may khớp nhàMáy(tổng) của QATD-B.",
+  "anh": ".qa-tapdoan/anh/AB-B8-qatd_kythuat-nm39.png"
+}

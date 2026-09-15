@@ -1,0 +1,39 @@
+{
+ "luc": "2026-09-15T02:09:24.588Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "dem": {
+  "SAI": 2,
+  "ĐẠT": 2
+ },
+ "so": 4,
+ "ghi": [
+  {
+   "ca": "C2",
+   "vai": "qatd_kythuat",
+   "pq": "SAI",
+   "vi": "máy 4568 (QATD-B, WAVE_SOLDER, running) · may-khong-mo-duoc data-ly-do=\"ngoaiPhamVi\" — chữ NGUYÊN VĂN: \"Không mở được máy #4568 Đối tượng này không thuộc phạm vi đang xem (hoặc không còn tồn tại). Hãy đổi nhà máy/tầng rồi mở lại. Nhà máy\" · nhưng máy 4568 THUỘC phạm vi QATD-A(38)+QATD-B(39) (DB: nhà máy QATD-B, toà QATD-B-T1, tầng cấp 1)"
+  },
+  {
+   "ca": "C2",
+   "vai": "qatd_congnhan",
+   "pq": "ĐẠT",
+   "vi": "máy 4977 (QATD-C, FEEDER, running) · URL = /twin/may/4977 ✓ · ten-may = \"FEEDER-01\" (DB) ✓ · loai-may chứa \"FEEDER\" (DB) ✓ · khoi-canh-may có canvas, __soCanvas=1 ✓ · KHÔNG may-chua-dat-cho ✓ · suc-khoe-may có hạng ✓"
+  },
+  {
+   "ca": "C2",
+   "vai": "qatd_kythuat",
+   "pq": "ĐẠT",
+   "vi": "máy 4197 (QATD-A, ICT, stopped — đối chứng dương nhà máy ĐẦU) · URL = /twin/may/4197 ✓ · ten-may = \"ICT-01\" (DB) ✓ · loai-may chứa \"ICT\" (DB) ✓ · khoi-canh-may có canvas, __soCanvas=1 ✓ · KHÔNG may-chua-dat-cho ✓ · suc-khoe-may có hạng ✓"
+  },
+  {
+   "ca": "C2",
+   "vai": "qatd_congnhan",
+   "pq": "SAI",
+   "vi": "máy 5139 (QATD-C toà T3, SPI, running — ĐÚNG nhà máy nhưng toà THỨ BA (tách tầng lỗi toaNha[0])) · may-chua-dat-cho — chữ NGUYÊN VĂN: \"Máy này chưa có chỗ trên bố cục 3D Xếp chỗ trong Twin Studio để thấy máy giữa hàng xóm của nó. Buồng lái và ngăn xử lý bên dưới vẫn dùng được.\" · nhưng DB CÓ 1 hàng twin_dat_cho cho máy 5139 (nhà máy QATD-C, toà QATD-C-T3) · kéo theo MẤT loai-may + suc-khoe-may + canvas (khoi-canh-may 1 canvas 0, __soCanvas 0)"
+  }
+ ]
+}

@@ -1,0 +1,63 @@
+{
+ "luc": "2026-09-15T02:14:25.242Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "C5",
+ "vai": "qatd_kythuat",
+ "me": "cache",
+ "deBai": "đi /twin (nm=39 toa=57 tang=109, QATD-B toà T1 — nhà máy THỨ HAI) → bấm khối máy → /twin/may/:id → ve-man-line → ve-man-nha-may ⇒ phải về ĐÚNG line của máy và ĐÚNG nhà máy 39",
+ "buoc": [
+  "bấm khối máy 4568 trên cảnh"
+ ],
+ "twinBanDau": {
+  "nhaMayDangChon": {
+   "soMuc": 2,
+   "value": "39",
+   "nhanDangChon": "Công ty B"
+  },
+  "toaDangChon": {
+   "soMuc": 4,
+   "value": "57",
+   "nhanDangChon": "Toà 1"
+  },
+  "tangDangChon": {
+   "soMuc": 7,
+   "value": "109",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "409"
+ },
+ "census": {
+  "soTrongKhung": 63,
+  "soBamDuoc": 63,
+  "loai": []
+ },
+ "manMay": {
+  "tenMay": "Máy #4568",
+  "loaiMay": null,
+  "sucKhoeChu": null,
+  "sucKhoeHang": null,
+  "khoiCanhMay": 0,
+  "canvasTrongKhoiCanh": null,
+  "chuaDatCho": 0,
+  "chuaDatChoChu": null,
+  "khongMoDuoc": 1,
+  "lyDo": "ngoaiPhamVi",
+  "khongMoChu": "Không mở được máy #4568 Đối tượng này không thuộc phạm vi đang xem (hoặc không còn tồn tại). Hãy đổi nhà máy/tầng rồi mở lại. Nhà máy",
+  "dangTai": 0,
+  "veManLine": 0,
+  "veManLineChu": null,
+  "veManLineHref": null,
+  "veNhaMayHref": "/twin?nm=39&toa=57&tang=109&do=1&cam=87.28%2C31.76%2C88.33%2C32.95%2C34",
+  "canvasTrongMan": 0
+ },
+ "urlMay": "/twin/may/4568",
+ "mayId": 4568,
+ "anhMay": ".qa-tapdoan/anh/C-C5-qatd_kythuat-nm39-toa57-may4568.png",
+ "coVeManLine": false,
+ "pq": "SAI",
+ "vi": "bấm được khối máy 4568 trên cảnh /twin (63/63 máy bấm được, ô chọn nhà máy \"Công ty B\" = 39) NHƯNG màn đích /twin/may/4568 TỪ CHỐI: may-khong-mo-duoc ly-do=\"ngoaiPhamVi\" — chữ NGUYÊN VĂN \"Không mở được máy #4568 Đối tượng này không thuộc phạm vi đang xem (hoặc không còn tồn tại). Hãy đổi nhà máy/tầng rồi mở lại. Nhà máy\" · ten-may rơi về dự phòng \"Máy #4568\" · KHÔNG có ve-man-line ⇒ breadcrumb đứt, không đo tiếp được C5 · (href ve-man-nha-may VẪN đúng: \"/twin?nm=39&toa=57&tang=109&do=1&cam=87.28%2C31.76%2C88.33%2C32.95%2C34\" ⇒ id nhà máy đúng CÓ SẴN trong trang)"
+}

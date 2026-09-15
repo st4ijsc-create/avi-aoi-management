@@ -1,0 +1,64 @@
+{
+ "qatd_admin": {
+  "soNhaMay": 5,
+  "nhaMayDau": "38 QATD-A Công ty A",
+  "thuTu": [
+   "Công ty A",
+   "Công ty B",
+   "Công ty C",
+   "Nhà máy ảo (SIM)",
+   "Task 12 anh chup - factory"
+  ],
+  "may4977_API": "CÓ DỮ LIỆU",
+  "toaNhaCuaNhaMayDau": 4,
+  "toaNhaCuaQATD_C": [
+   "QATD-C-T1",
+   "QATD-C-T2",
+   "QATD-C-T3",
+   "QATD-C-T4"
+  ]
+ },
+ "qatd_giamdoc": {
+  "soNhaMay": 3,
+  "nhaMayDau": "38 QATD-A Công ty A",
+  "thuTu": [
+   "Công ty A",
+   "Công ty B",
+   "Công ty C"
+  ],
+  "may4977_API": "CÓ DỮ LIỆU",
+  "toaNhaCuaNhaMayDau": 4,
+  "toaNhaCuaQATD_C": [
+   "QATD-C-T1",
+   "QATD-C-T2",
+   "QATD-C-T3",
+   "QATD-C-T4"
+  ]
+ },
+ "qatd_kythuat": {
+  "soNhaMay": 2,
+  "nhaMayDau": "38 QATD-A Công ty A",
+  "thuTu": [
+   "Công ty A",
+   "Công ty B"
+  ],
+  "may4977_API": "NOT_FOUND",
+  "toaNhaCuaNhaMayDau": 4,
+  "toaNhaCuaQATD_C": []
+ },
+ "qatd_congnhan": {
+  "soNhaMay": 1,
+  "nhaMayDau": "40 QATD-C Công ty C",
+  "thuTu": [
+   "Công ty C"
+  ],
+  "may4977_API": "CÓ DỮ LIỆU",
+  "toaNhaCuaNhaMayDau": 4,
+  "toaNhaCuaQATD_C": [
+   "QATD-C-T1",
+   "QATD-C-T2",
+   "QATD-C-T3",
+   "QATD-C-T4"
+  ]
+ }
+}

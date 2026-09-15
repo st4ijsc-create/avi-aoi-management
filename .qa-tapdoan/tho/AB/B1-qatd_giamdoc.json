@@ -1,0 +1,75 @@
+{
+  "luc": "2026-09-15T02:04:20.706Z",
+  "base": "http://localhost:3064",
+  "id": "B1",
+  "vai": "qatd_giamdoc",
+  "moTa": "B1 · GIÁM ĐỐC · đếm toà và tầng trong bộ chọn",
+  "deBai": "Đếm số toà trong ô chọn toà và số tầng trong ô chọn tầng; kỳ vọng 4 toà/nhà máy, 7 tầng/toà (BRIEF §3.1 B1). Ghi chú: `bang-tang` chỉ tồn tại ở màn Studio (DungNhaXuong.tsx:280) nên tầng đọc từ `chon-tang`.",
+  "duKienDoc": {
+    "nhà máy đang chọn": {
+      "id": 38,
+      "ma": "QATD-A"
+    },
+    "số toà trong ô chọn": 4,
+    "data-so-muc(toà)": "4",
+    "CHỮ các toà": [
+      "Toà 1",
+      "Toà 2",
+      "Toà 3",
+      "Toà 4"
+    ],
+    "id các toà (UI)": [
+      53,
+      54,
+      55,
+      56
+    ],
+    "id các toà (DB)": [
+      53,
+      54,
+      55,
+      56
+    ],
+    "số tầng trong ô chọn": 7,
+    "data-so-muc(tầng)": "7",
+    "CHỮ các tầng": [
+      "Tầng 1",
+      "Tầng 2",
+      "Tầng 3",
+      "Tầng 4",
+      "Tầng 5",
+      "Tầng 6",
+      "Tầng 7"
+    ],
+    "id các tầng (UI)": [
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87
+    ],
+    "id các tầng (DB toà đầu)": [
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87
+    ],
+    "bang-tang trên /twin": "KHÔNG có (thuộc màn Studio)",
+    "cửa chờ": {
+      "coMan": true,
+      "coKhungDau": true,
+      "hetDauGach": true,
+      "onDinh": true,
+      "soLuotOnDinh": 3,
+      "ms": 5140
+    }
+  },
+  "ketCuc": "4 toà [Toà 1 · Toà 2 · Toà 3 · Toà 4] · 7 tầng [Tầng 1 · Tầng 2 · Tầng 3 · Tầng 4 · Tầng 5 · Tầng 6 · Tầng 7]",
+  "phanQuyet": "ĐẠT",
+  "viSao": "Bộ chọn liệt kê ĐÚNG 4 toà của nhà máy và 7 tầng của toà đang chọn, id khớp DB."
+}

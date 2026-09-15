@@ -1,0 +1,22 @@
+Lô H — suite e2e twin có sẵn trên dữ liệu tập đoàn, base 3064, 2026-09-15T10:17:11+07:00
+HEAD a147fc35 · bundle index-DxxtO34H.js
+
+## project chromium-canh-3d (workers=1 cứng trong config)
+Running 121 tests using 1 worker
+    .qa-pw-output\twin-dot24-nghiem-thu-V1-—-43909--gán-KHÔNG-khai-số-cảnh-báo-chromium-canh-3d\test-failed-1.png
+    .qa-pw-output\twin-dot31-may-A5-—-★★★-G9-952a7-s-DOM-mà-soCanvas-vẫn-1-mù--chromium-canh-3d\test-failed-1.png
+    .qa-pw-output\twin-dot38-nghiem-thu-P6-1-3c0cc-dcaster-phát-ngay-khi-join--chromium-canh-3d\test-failed-1.png
+    .qa-pw-output\twin-lo-f-Lo-F-—-nghiem-th-7574c-ruoc-0-select-trong-ca-man--chromium-canh-3d\test-failed-1.png
+    .qa-pw-output\twin-lo-v-tuong-tac-V1-—-t-ab1f7-e-keo-gizmo-—-do-do-doi-anh-chromium-canh-3d\test-failed-1.png
+    .qa-pw-output\twin-lo-y-noi-lo-z-NỐI-2-—-67264-à-trả-lời-khai-đo-qua-mạng--chromium-canh-3d\test-failed-1.png
+  6 failed
+  79 passed (19.4m)
+
+## project chromium, chỉ e2e/twin-*
+Running 7 tests using 4 workers
+    .qa-pw-output\twin-lo-m-LO-M-—-18-43-55--c7d82-rong-DOM-that-o-twin-studio-chromium\test-failed-1.png
+    expect(locator).toBeVisible() failed
+    .qa-pw-output\twin-lo-w-nghiem-thu-W1-—--a35f8-uyen-xoay-KHONG-con-Co-gian-chromium\test-failed-1.png
+  2 failed
+  5 passed (1.5m)
+xong 2026-09-15T10:38:17+07:00

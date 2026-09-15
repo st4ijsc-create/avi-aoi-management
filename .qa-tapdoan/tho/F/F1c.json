@@ -1,0 +1,782 @@
+{
+  "ca": "F1c",
+  "base": "http://localhost:3064",
+  "url": "/twin?nm=38&toa=54&tang=88",
+  "luc": "2026-09-15T02:41:28.446Z",
+  "soWorker": 1,
+  "luot": [
+    {
+      "tk": "qatd_kythuat",
+      "luot": 1,
+      "msGoto": 186,
+      "msAttached": 3334,
+      "msVisible": 3334,
+      "msKhungDau": 3425,
+      "dcl": 183,
+      "trpcChamNhat": [
+        {
+          "n": "permissions.getMyPermissions,commandCenter.hierarchy,aiInbox.count,andon.active,license.sy",
+          "t0": 391,
+          "t1": 2678,
+          "ms": 2287
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 3434,
+          "t1": 3577,
+          "ms": 143
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 3090,
+          "t1": 3217,
+          "ms": 127
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 3360,
+          "t1": 3388,
+          "ms": 28
+        },
+        {
+          "n": "factory.list",
+          "t0": 3058,
+          "t1": 3073,
+          "ms": 16
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 2730,
+          "t1": 2743,
+          "ms": 13
+        },
+        {
+          "n": "auth.me",
+          "t0": 291,
+          "t1": 302,
+          "ms": 10
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_admin",
+      "luot": 1,
+      "msGoto": 166,
+      "msAttached": 1304,
+      "msVisible": 1304,
+      "msKhungDau": 1455,
+      "dcl": 163,
+      "trpcChamNhat": [
+        {
+          "n": "sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState",
+          "t0": 349,
+          "t1": 2940,
+          "ms": 2591
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 683,
+          "t1": 800,
+          "ms": 117
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 993,
+          "t1": 1079,
+          "ms": 87
+        },
+        {
+          "n": "auth.me",
+          "t0": 240,
+          "t1": 252,
+          "ms": 12
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 3079,
+          "t1": 3090,
+          "ms": 11
+        },
+        {
+          "n": "factory.list",
+          "t0": 643,
+          "t1": 653,
+          "ms": 10
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 919,
+          "t1": 928,
+          "ms": 10
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "luot": 1,
+      "msGoto": 237,
+      "msAttached": 2769,
+      "msVisible": 2769,
+      "msKhungDau": 3024,
+      "dcl": 233,
+      "trpcChamNhat": [
+        {
+          "n": "permissions.getMyPermissions,commandCenter.hierarchy,aiInbox.count,andon.active,license.sy",
+          "t0": 491,
+          "t1": 2385,
+          "ms": 1894
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 3175,
+          "t1": 3374,
+          "ms": 199
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 2786,
+          "t1": 2934,
+          "ms": 148
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 3069,
+          "t1": 3098,
+          "ms": 28
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 2434,
+          "t1": 2455,
+          "ms": 22
+        },
+        {
+          "n": "factory.list",
+          "t0": 2757,
+          "t1": 2776,
+          "ms": 19
+        },
+        {
+          "n": "auth.me",
+          "t0": 351,
+          "t1": 363,
+          "ms": 12
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_kythuat",
+      "luot": 2,
+      "msGoto": 164,
+      "msAttached": 3125,
+      "msVisible": 3126,
+      "msKhungDau": 3351,
+      "dcl": 162,
+      "trpcChamNhat": [
+        {
+          "n": "permissions.getMyPermissions,commandCenter.hierarchy,aiInbox.count,andon.active,license.sy",
+          "t0": 352,
+          "t1": 2689,
+          "ms": 2338
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 3395,
+          "t1": 3524,
+          "ms": 130
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 3085,
+          "t1": 3207,
+          "ms": 122
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 3342,
+          "t1": 3373,
+          "ms": 31
+        },
+        {
+          "n": "auth.me",
+          "t0": 245,
+          "t1": 258,
+          "ms": 13
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 2742,
+          "t1": 2754,
+          "ms": 12
+        },
+        {
+          "n": "factory.list",
+          "t0": 3065,
+          "t1": 3074,
+          "ms": 9
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_admin",
+      "luot": 2,
+      "msGoto": 178,
+      "msAttached": 1152,
+      "msVisible": 1153,
+      "msKhungDau": 1225,
+      "dcl": 177,
+      "trpcChamNhat": [
+        {
+          "n": "sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState",
+          "t0": 380,
+          "t1": 3153,
+          "ms": 2773
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 731,
+          "t1": 846,
+          "ms": 114
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 1145,
+          "t1": 1246,
+          "ms": 101
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 1043,
+          "t1": 1075,
+          "ms": 31
+        },
+        {
+          "n": "auth.me",
+          "t0": 270,
+          "t1": 287,
+          "ms": 17
+        },
+        {
+          "n": "factory.list",
+          "t0": 687,
+          "t1": 703,
+          "ms": 16
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 3318,
+          "t1": 3334,
+          "ms": 16
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "luot": 2,
+      "msGoto": 157,
+      "msAttached": 3151,
+      "msVisible": 3151,
+      "msKhungDau": 3169,
+      "dcl": 155,
+      "trpcChamNhat": [
+        {
+          "n": "permissions.getMyPermissions,commandCenter.hierarchy,aiInbox.count,andon.active,license.sy",
+          "t0": 312,
+          "t1": 2402,
+          "ms": 2090
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 3087,
+          "t1": 3256,
+          "ms": 169
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 2806,
+          "t1": 2901,
+          "ms": 95
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 3002,
+          "t1": 3044,
+          "ms": 42
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 2447,
+          "t1": 2465,
+          "ms": 18
+        },
+        {
+          "n": "auth.me",
+          "t0": 249,
+          "t1": 266,
+          "ms": 17
+        },
+        {
+          "n": "factory.list",
+          "t0": 2776,
+          "t1": 2790,
+          "ms": 14
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_kythuat",
+      "luot": 3,
+      "msGoto": 172,
+      "msAttached": 3155,
+      "msVisible": 3155,
+      "msKhungDau": 3177,
+      "dcl": 168,
+      "trpcChamNhat": [
+        {
+          "n": "permissions.getMyPermissions,commandCenter.hierarchy,aiInbox.count,andon.active,license.sy",
+          "t0": 371,
+          "t1": 2309,
+          "ms": 1938
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 3074,
+          "t1": 3316,
+          "ms": 242
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 2711,
+          "t1": 2816,
+          "ms": 106
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 2989,
+          "t1": 3026,
+          "ms": 37
+        },
+        {
+          "n": "auth.me",
+          "t0": 258,
+          "t1": 281,
+          "ms": 23
+        },
+        {
+          "n": "factory.list",
+          "t0": 2689,
+          "t1": 2699,
+          "ms": 11
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 2360,
+          "t1": 2369,
+          "ms": 9
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_admin",
+      "luot": 3,
+      "msGoto": 200,
+      "msAttached": 1365,
+      "msVisible": 1365,
+      "msKhungDau": 1520,
+      "dcl": 197,
+      "trpcChamNhat": [
+        {
+          "n": "sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState",
+          "t0": 467,
+          "t1": 4505,
+          "ms": 4038
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 900,
+          "t1": 1177,
+          "ms": 277
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 1516,
+          "t1": 1697,
+          "ms": 181
+        },
+        {
+          "n": "auth.me",
+          "t0": 291,
+          "t1": 366,
+          "ms": 75
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 1360,
+          "t1": 1392,
+          "ms": 31
+        },
+        {
+          "n": "factory.list",
+          "t0": 836,
+          "t1": 855,
+          "ms": 19
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 4612,
+          "t1": 4626,
+          "ms": 14
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "luot": 3,
+      "msGoto": 205,
+      "msAttached": 3339,
+      "msVisible": 3339,
+      "msKhungDau": 3444,
+      "dcl": 202,
+      "trpcChamNhat": [
+        {
+          "n": "permissions.getMyPermissions,commandCenter.hierarchy,aiInbox.count,andon.active,license.sy",
+          "t0": 437,
+          "t1": 2680,
+          "ms": 2243
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 3485,
+          "t1": 3607,
+          "ms": 122
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 3106,
+          "t1": 3214,
+          "ms": 108
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 3396,
+          "t1": 3432,
+          "ms": 36
+        },
+        {
+          "n": "auth.me",
+          "t0": 300,
+          "t1": 329,
+          "ms": 29
+        },
+        {
+          "n": "factory.list",
+          "t0": 3075,
+          "t1": 3087,
+          "ms": 12
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 2748,
+          "t1": 2758,
+          "ms": 10
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_kythuat",
+      "luot": 4,
+      "msGoto": 175,
+      "msAttached": 3154,
+      "msVisible": 3154,
+      "msKhungDau": 3165,
+      "dcl": 174,
+      "trpcChamNhat": [
+        {
+          "n": "permissions.getMyPermissions,commandCenter.hierarchy,aiInbox.count,andon.active,license.sy",
+          "t0": 331,
+          "t1": 2352,
+          "ms": 2021
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 2765,
+          "t1": 2889,
+          "ms": 124
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 3076,
+          "t1": 3196,
+          "ms": 120
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 3030,
+          "t1": 3063,
+          "ms": 33
+        },
+        {
+          "n": "factory.list",
+          "t0": 2730,
+          "t1": 2747,
+          "ms": 17
+        },
+        {
+          "n": "auth.me",
+          "t0": 263,
+          "t1": 279,
+          "ms": 16
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 2408,
+          "t1": 2419,
+          "ms": 11
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_admin",
+      "luot": 4,
+      "msGoto": 165,
+      "msAttached": 1182,
+      "msVisible": 1182,
+      "msKhungDau": 1195,
+      "dcl": 163,
+      "trpcChamNhat": [
+        {
+          "n": "sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState",
+          "t0": 424,
+          "t1": 3013,
+          "ms": 2589
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 723,
+          "t1": 837,
+          "ms": 114
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 1108,
+          "t1": 1196,
+          "ms": 88
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 992,
+          "t1": 1009,
+          "ms": 16
+        },
+        {
+          "n": "auth.me",
+          "t0": 260,
+          "t1": 275,
+          "ms": 15
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 3131,
+          "t1": 3140,
+          "ms": 9
+        },
+        {
+          "n": "factory.list",
+          "t0": 708,
+          "t1": 714,
+          "ms": 7
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    },
+    {
+      "tk": "qatd_giamdoc",
+      "luot": 4,
+      "msGoto": 166,
+      "msAttached": 3216,
+      "msVisible": 3216,
+      "msKhungDau": 3276,
+      "dcl": 163,
+      "trpcChamNhat": [
+        {
+          "n": "permissions.getMyPermissions,commandCenter.hierarchy,aiInbox.count,andon.active,license.sy",
+          "t0": 324,
+          "t1": 2514,
+          "ms": 2189
+        },
+        {
+          "n": "twinCanh.canhThietKe",
+          "t0": 3208,
+          "t1": 3340,
+          "ms": 132
+        },
+        {
+          "n": "twinCanh.danhSachToaNha,twinCanh.canhThietKe,factoryCommand.overview,twinCanh.anToanRobot,",
+          "t0": 2914,
+          "t1": 2998,
+          "ms": 84
+        },
+        {
+          "n": "twinCanh.chiTietToaNha",
+          "t0": 3112,
+          "t1": 3149,
+          "ms": 37
+        },
+        {
+          "n": "auth.me",
+          "t0": 247,
+          "t1": 263,
+          "ms": 16
+        },
+        {
+          "n": "license.getAllowedModules",
+          "t0": 2571,
+          "t1": 2584,
+          "ms": 13
+        },
+        {
+          "n": "factory.list",
+          "t0": 2895,
+          "t1": 2905,
+          "ms": 10
+        }
+      ],
+      "khoi": 68,
+      "soCanvas": 1,
+      "demMay": "371",
+      "soApi": 7
+    }
+  ],
+  "tomTat": {
+    "qatd_kythuat": {
+      "visible": {
+        "so": [
+          3334,
+          3126,
+          3155,
+          3154
+        ],
+        "p50": 3154,
+        "p90": 3334,
+        "max": 3334
+      },
+      "khungDau": {
+        "so": [
+          3425,
+          3351,
+          3177,
+          3165
+        ],
+        "p50": 3177,
+        "p90": 3425
+      },
+      "khoi": [
+        68,
+        68,
+        68,
+        68
+      ]
+    },
+    "qatd_admin": {
+      "visible": {
+        "so": [
+          1304,
+          1153,
+          1365,
+          1182
+        ],
+        "p50": 1182,
+        "p90": 1365,
+        "max": 1365
+      },
+      "khungDau": {
+        "so": [
+          1455,
+          1225,
+          1520,
+          1195
+        ],
+        "p50": 1225,
+        "p90": 1520
+      },
+      "khoi": [
+        68,
+        68,
+        68,
+        68
+      ]
+    },
+    "qatd_giamdoc": {
+      "visible": {
+        "so": [
+          2769,
+          3151,
+          3339,
+          3216
+        ],
+        "p50": 3151,
+        "p90": 3339,
+        "max": 3339
+      },
+      "khungDau": {
+        "so": [
+          3024,
+          3169,
+          3444,
+          3276
+        ],
+        "p50": 3169,
+        "p90": 3444
+      },
+      "khoi": [
+        68,
+        68,
+        68,
+        68
+      ]
+    }
+  }
+}

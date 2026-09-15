@@ -1,0 +1,94 @@
+LÔ C — XONG (QA lần 11, kịch bản tập đoàn)
+==========================================
+Thời điểm chạy: 2026-09-15, các lượt đo từ ~09:05 đến ~11:10 (giờ máy). Kết thúc lô: xem mtime của
+.qa-tapdoan/BANG-C.md và .qa-tapdoan/tho/C/TONG-*.json.
+
+Môi trường đo
+-------------
+HEAD `a147fc35` · bản dựng `.qa-tapdoan/dist-a147fc35` · server 3064 PID 19136 (KHÔNG bật/tắt, KHÔNG chạm 3000/3001/3008)
+Chromium headless của @playwright/test, **1 trình duyệt, tuần tự, 1 "worker"** (G147) · viewport 1600×900 · localStorage i18nextLng=vi
+Nhịp tim nền `.qa-tapdoan/nhip.sh` chạy suốt (không tắt).
+Toàn bộ truy vấn DB của lô này là **SELECT** — 0 câu ghi.
+
+LỆNH CHẠY LẠI (từ D:\SOURCES\avi-aoi-management)
+------------------------------------------------
+  # 1) dựng lại kỳ vọng DB (chỉ SELECT)
+  node .qa-tapdoan/db-C.mjs --mays=4197,4568,4977,5139 > .qa-tapdoan/tho/C/db-C.json
+
+  # 2) các ca (mỗi lệnh độc lập, ghi .tmp rồi rename)
+  node .qa-tapdoan/do-C.mjs --ca=C1     # 4 ca line qua CÂY PHÂN CẤP
+  node .qa-tapdoan/do-C.mjs --ca=C2     # 4 ca màn Máy mở thẳng
+  node .qa-tapdoan/do-C.mjs --ca=C3     # bấm tâm khối 5 máy trên canvas
+  node .qa-tapdoan/do-C.mjs --ca=C4     # ngoài phạm vi: UI line / UI máy / API
+  node .qa-tapdoan/do-C.mjs --ca=C5     # breadcrumb ve-man-line → ve-man-nha-may
+  node .qa-tapdoan/do-C.mjs --ca=C6     # line rỗng (N/A, có truy vấn chứng minh)
+  node .qa-tapdoan/do-C.mjs --ca=C7     # id xấu
+  node .qa-tapdoan/do-C.mjs --ca=AB     # ABLATION: đổi vai ⇒ đổi factory.list[0]
+  node .qa-tapdoan/do-C.mjs --ca=all    # tất cả (≈25 phút)
+
+  # 3) bán kính ảnh hưởng + trích mã nguồn
+  node .qa-tapdoan/pham-vi-hong.mjs      > .qa-tapdoan/tho/C/pham-vi-hong.txt
+  node .qa-tapdoan/trich-ma.mjs          > .qa-tapdoan/tho/C/trich-ma.txt
+
+  Tuỳ chọn: --base=http://localhost:3064  --w=1280 --h=720
+  Xoá .qa-tapdoan/tho/C/state-*.json nếu đổi mật khẩu tài khoản.
+
+KẾT QUẢ (17 ca chính): ĐẠT 7 · SAI 6 · CHẶN-ĐÚNG 3 · HỎNG 0 · N/A 1. Ô không phán quyết: 0.
+Ablation: 3/3 SAI đúng như dự đoán, kèm 2 mốc so ĐẠT của vai khác.
+
+TỆP SINH RA (chỉ trong .qa-tapdoan/)
+------------------------------------
+  do-C.mjs · db-C.mjs · pham-vi-hong.mjs · trich-ma.mjs · cot.mjs (soi cột/enum, dùng tạm)
+  BANG-C.md · C-XONG.txt
+  tho/C/*.json (thô từng ca + db-C.json + TONG-*.json + AB-factory-list.json)
+  tho/C/run-*.log · tho/C/pham-vi-hong.txt · tho/C/trich-ma.txt
+  anh/C-*.png (29 ảnh)
+KHÔNG sửa một byte nào ngoài .qa-tapdoan/. KHÔNG git. KHÔNG .env.
+
+ĐIỀU TÔI KHÔNG CHẮC
+-------------------
+1. **Ablation của tôi đổi VAI, không đổi thứ tự `factory.list`.** Cách mạnh hơn là đổi tên
+   "Công ty B" thành một tên đứng trước "Công ty A" rồi đo lại (kỳ vọng: 249 xanh, 217 đỏ — lật
+   hai chiều). Tôi KHÔNG làm vì lô này bị ràng buộc "chỉ SELECT". Lập luận thay thế: giám đốc và
+   admin có quyền **rộng hơn** công nhân mà vẫn đỏ đúng máy/line công nhân mở được ⇒ quyền và
+   phạm vi bị loại; nhưng tôi thừa nhận đây là suy luận loại trừ, không phải phép lật trực tiếp.
+
+2. **Con số bán kính ảnh hưởng (bảng §3 của BANG-C.md) là MÔ HÌNH, không phải 1.150 phép đo.**
+   Mô hình dự đoán đúng 10/10 điểm đã đo, nhưng tôi chỉ mở 6 line và 5 máy thật. Nếu ai cần con số
+   chắc chắn thì phải quét thật (ước ~6 giờ ở nhịp hiện tại).
+
+3. **C4a — "SAI" hay "CHẶN-ĐÚNG"?** Line ngoài phạm vi KHÔNG rò dữ liệu (API sạch 7/7) và người
+   dùng vẫn bị chặn. Tôi chấm SAI vì câu hiển thị **trùng từng chữ** với câu của lỗi `factories[0]`
+   (C1.1), nên nó không nói được sự thật nào; nếu chủ dự án coi "chặn được là đủ" thì ô này nên là
+   CHẶN-ĐÚNG kèm một ghi chú UX. Tôi để nguyên bằng chứng để chủ dự án tự quyết.
+
+4. **C6 là N/A THẬT, không phải né.** 0/102 line isActive có 0 máy. Vì vậy nhánh `line-rong` chưa
+   bao giờ được đo ở ca "rỗng thật" — mà nó LẠI chính là nhánh đang hứng cả lỗi `factories[0]` lẫn
+   ca ngoài-phạm-vi. Một ca rỗng thật (cần INSERT/UPDATE) sẽ làm rõ nhánh này.
+
+5. **WIP: tôi chỉ kiểm "có số", không kiểm ĐÚNG số.** Brief chỉ đòi `tong-wip-line` có số. Tôi
+   không dựng được kỳ vọng WIP rời từ DB trong khung thời gian (WIP là số sống theo nhịp).
+
+6. **Chỉ đo ở 1600×900 và tiếng Việt.** Không đo 1280×720, không đo en/zh cho lô này (thuộc lô F).
+
+7. **Nhịp tim nền có thể làm màu/trạng thái đổi giữa hai lượt chạy.** Các ô tôi chấm (tên, đếm
+   máy/trạm, số nhãn, có canvas, lý do chặn) đều KHÔNG phụ thuộc màu, nên tôi cho là ổn định — nhưng
+   `suc-khoe-may` hạng (`theo_doi`, 86 %) thì có thể đổi giữa các lượt.
+
+8. **Tôi không chạy `--ca=all` một lượt liền mạch**; mỗi ca chạy rời (và C1/C2/C4/C5 được chạy lại
+   sau khi tôi vá thiết bị đo). Bảng tổng trong BANG-C.md là tổng hợp TAY từ 8 tệp TONG-*.json, không
+   phải một tệp TONG duy nhất — ai chạy lại nên dùng `--ca=all` để có một tệp tổng.
+
+VÁ THIẾT BỊ ĐO TRONG LÔ (ghi lại để không ai tin nhầm lượt chạy đầu)
+--------------------------------------------------------------------
+a) C1 lượt đầu chấm ĐẠT cho line 299 vì tiêu chí chỉ hỏi "có canvas". Thêm ô
+   "khối máy VẼ trên cảnh (nhãn máy = số máy DB)" ⇒ line 299 lật sang SAI. Tiêu chí cũ XANH OAN
+   trên một cảnh 3D **trống trơn** — đúng lớp G146.
+b) `trpc()` lượt đầu dùng `j?.result?.data?.json ?? j?.result?.data`: superjson trả
+   `{json:null,meta:…}` cho "không có" ⇒ `??` nhảy sang cái BỌC (truthy) ⇒ ô "machine.getById không
+   rò" đỏ oan. Sửa: xét CÓ KHOÁ `json` hay không, không xét giá trị.
+c) C7 lượt đầu báo "thiếu dữ kiện" vì `line-id-khong-hop-le` nằm NGOÀI bọc `man-twin-line`
+   (TwinLine.tsx:223 return sớm) mà bộ đọc chỉ moi trong bọc. Sửa: đọc ở cấp trang.
+d) C2/C5 lượt đầu trả HỎNG cho máy 5139 / 4568 vì `loai-may`/`ve-man-line` vắng. Nhưng chúng vắng
+   vì **sản phẩm từ chối**, không phải vì phép đo hỏng ⇒ thêm nhánh tường minh chấm SAI kèm chữ
+   nguyên văn. (Fail-closed vẫn giữ cho mọi ô còn lại.)

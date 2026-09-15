@@ -1,0 +1,27 @@
+QA lần 11 — HOÀN TẤT 2026-09-15
+HEAD đo: a147fc35 · dist đo .qa-tapdoan/dist-a147fc35 (bundle index-DxxtO34H.js)
+Server đo 3064: sh .qa-tapdoan/server.sh start a147fc35 | stop | status
+Nhịp heartbeat: sh .qa-tapdoan/nhip.sh (45 s); dừng: touch .qa-tapdoan/NHIP-DUNG
+
+DỮ LIỆU còn trong DB dev (tiền tố QATD-): 1 tập đoàn · 3 công ty · 12 toà · 84 tầng · 24 xưởng · 98 line · 1.108 máy · 2.338 đặt chỗ
+  gỡ:      node .qa-tapdoan/sinh-tap-doan.mjs --go        (chạy khô: --go --kho)
+  làm tươi: node .qa-tapdoan/sinh-tap-doan.mjs --chi-nhip
+TÀI KHOẢN còn trong DB (qatd_*, mật khẩu Qatd!2026, id 26483-26489)
+  gỡ: node .qa-tapdoan/tai-khoan.mjs xoa
+
+HÀNG TẠM đã dọn: andon_events 62→62 · maintenance_work_orders 29→29 · twin_vat_the 341→341
+  CÒN 2 hàng audit_logs (id 5765, 5778, entityName LIKE 'QATD-DE-%') — bảng append-only, không xoá được
+
+ĐẦU RA
+  docs/superpowers/specs/2026-09-15-qa-lan11-tap-doan-twin.md   báo cáo đầy đủ
+  .qa-tapdoan/PHAT-HIEN.md        36 phát hiện đánh số, kèm tệp:dòng
+  .qa-tapdoan/TONG-HOP.md         bảng số + Pareto + ablation
+  .qa-tapdoan/BANG-{AB,C,DE,F}.md bảng phán quyết từng lô
+  .qa-tapdoan/REVIEW-QUANLY-GIAMDOC.md · REVIEW-KYTHUAT-CONGNHAN.md
+  .qa-tapdoan/tho/**              119 tệp thô
+  .qa-tapdoan/anh/**              134 ảnh PNG
+  .qa-tapdoan/H-suite-e2e.txt     hồi quy suite có sẵn (79+5 đạt · 8 đỏ)
+  .qa-tapdoan/K-cong-nen.txt      cổng nền
+  artifact: https://claude.ai/code/artifact/83a63b77-fe3e-4210-977e-b30aec9b7963
+
+CHẠY LẠI: xem đầu mỗi BANG-*.md và *-XONG.txt của từng lô.

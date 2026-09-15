@@ -1,0 +1,276 @@
+{
+ "ca": "E6",
+ "vai": "qatd_quanly",
+ "cach": "cache",
+ "base": "http://localhost:3064",
+ "luc": "2026-09-15T02:19:07.629Z",
+ "vaoDuoc": 1,
+ "thietKe": {
+  "url": "/twin-studio",
+  "coManStudio": 1,
+  "biChan": 0,
+  "chuBiChan": null,
+  "chonNhaMay": {
+   "co": 1,
+   "chu": "Công ty A",
+   "hien": true,
+   "tat": 0
+  },
+  "demToaNha": {
+   "co": 1,
+   "chu": "Building: 4",
+   "hien": true,
+   "tat": 0
+  },
+  "tabThietKe": {
+   "co": 1,
+   "chu": "Design",
+   "hien": true,
+   "tat": 0
+  },
+  "tabConDuongA": {
+   "co": 1,
+   "chu": "Choose drawing file",
+   "hien": true,
+   "tat": 0
+  },
+  "tabConDuongB": {
+   "co": 1,
+   "chu": "Add building",
+   "hien": true,
+   "tat": 0
+  },
+  "chuaCoTang": {
+   "co": 0
+  },
+  "chuaCoNhaMay": {
+   "co": 0
+  },
+  "daiPhamViRong": {
+   "co": 0
+  },
+  "xuongThietKe": {
+   "co": 1,
+   "chu": "Move Rotate Snap Grid Generate Save Data health: 45 machines placed · 326 awaiting placement · 45 dimensions not measured Distribute horizontally Distribute vertically Linear array Radial array Measur",
+   "hien": true,
+   "tat": 0
+  },
+  "vungCanvas": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "khuChoXepCho": {
+   "co": 1,
+   "chu": "UNPLACED MACHINES (326) QATD-A-T1-X2-L1-M01 — AXI-01 QATD-A-T1-X2-L1-M02 — AOI-02 QATD-A-T1-X2-L1-M03 — STENCIL_PRINTER-03 QATD-A-T1-X2-L1-M04 — ICT_FUNC-04 QATD-A-T1-X2-L1-M05 — DISPENSING-05 QATD-A-",
+   "hien": true,
+   "tat": 0
+  },
+  "thuVienAsset": {
+   "co": 1,
+   "chu": "Asset library Machines Infrastructure Warehouse Upload model buong kiem quang ban test may gap dat lo nhiet may in phun canh tay robot tram chung Drag a card into the scene to place the model on the f",
+   "hien": true,
+   "tat": 0
+  },
+  "miniMap": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "bangThuocTinh": {
+   "co": 1,
+   "chu": "Select an object in the tree or in the 3D scene",
+   "hien": true,
+   "tat": 0
+  },
+  "cayPhanCap": {
+   "co": 1,
+   "chu": "QATD-A-T1-X1 — Xưởng T1 tầng 1 QATD-A-T1-X2 — Xưởng T1 tầng 2 QATD-A-T2-X1 — Xưởng T2 tầng 1 QATD-A-T2-X2 — Xưởng T2 tầng 2 QATD-A-T3-X1 — Xưởng T3 tầng 1 QATD-A-T3-X2 — Xưởng T3 tầng 2 QATD-A-T4-X1 —",
+   "hien": true,
+   "tat": 0
+  },
+  "nutCheDoTranslate": {
+   "co": 1,
+   "chu": "Move",
+   "hien": true,
+   "tat": 0
+  },
+  "nutCheDoRotate": {
+   "co": 1,
+   "chu": "Rotate",
+   "hien": true,
+   "tat": 0
+  },
+  "congTacBatDinh": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "congTacLuoi": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 0
+  },
+  "nutHoanTac": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 1
+  },
+  "nutLamLai": {
+   "co": 1,
+   "chu": "",
+   "hien": true,
+   "tat": 1
+  },
+  "nutMoSinh": {
+   "co": 1,
+   "chu": "Generate",
+   "hien": true,
+   "tat": 0
+  },
+  "nutLuu": {
+   "co": 1,
+   "chu": "Save",
+   "hien": true,
+   "tat": 1
+  },
+  "huyHieuChiXem": {
+   "co": 0
+  },
+  "khoiVungAnToan": {
+   "co": 1,
+   "chu": "Safety zones Draw safety zone No safety zones on this floor yet.",
+   "hien": true,
+   "tat": 0
+  },
+  "veVung": {
+   "co": 1,
+   "chu": "Draw safety zone No safety zones on this floor yet.",
+   "hien": true,
+   "tat": 0
+  },
+  "veVungBatDau": {
+   "co": 1,
+   "chu": "Draw safety zone",
+   "hien": true,
+   "tat": 0
+  },
+  "veVungTrong": {
+   "co": 1,
+   "chu": "No safety zones on this floor yet.",
+   "hien": true,
+   "tat": 0
+  },
+  "veVungDanhSach": {
+   "co": 0
+  },
+  "soVungMuc": 0,
+  "dsVung": [],
+  "soCanvas": 1,
+  "canvasDom": 1,
+  "boChon": [
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Factory",
+    "aria": "Factory"
+   },
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Line",
+    "aria": "Line"
+   },
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Machine",
+    "aria": "Machine"
+   },
+   {
+    "tid": "chon-nha-may",
+    "the": "button",
+    "chu": "Công ty A",
+    "aria": null
+   }
+  ],
+  "coChuToa": 1,
+  "coChuTang": 1,
+  "nhanTangHienTai": null,
+  "dauMan": "Skip to content Production (MES) Show advanced menu Simple Q Quản đốc Công ty A (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 15 Live 🇺🇸 English Production MES 3D Factory Design 3D Factory — Design Build buildings and floors, import engineering drawings, place machines, and publish a version for operations. Factory Công ty A Add building Choose drawing file Design Building: 4 Move Rotate Snap Grid Generate Save Data health: 45 machines placed · 326 awaiting placement · 45 dimensions not measured Distribute horizontally Distribute vertica"
+ },
+ "nutThanhCongCu": [
+  {
+   "tid": "nut-che-do-translate",
+   "chu": "Move",
+   "aria": null,
+   "tat": 0
+  },
+  {
+   "tid": "nut-che-do-rotate",
+   "chu": "Rotate",
+   "aria": null,
+   "tat": 0
+  },
+  {
+   "tid": "cong-tac-bat-dinh",
+   "chu": "",
+   "aria": null,
+   "tat": 0
+  },
+  {
+   "tid": "cong-tac-luoi",
+   "chu": "",
+   "aria": null,
+   "tat": 0
+  },
+  {
+   "tid": "nut-hoan-tac",
+   "chu": "",
+   "aria": "Undo",
+   "tat": 1
+  },
+  {
+   "tid": "nut-lam-lai",
+   "chu": "",
+   "aria": "Redo",
+   "tat": 1
+  },
+  {
+   "tid": "nut-mo-sinh",
+   "chu": "Generate",
+   "aria": null,
+   "tat": 0
+  },
+  {
+   "tid": "nut-luu",
+   "chu": "Save",
+   "aria": null,
+   "tat": 1
+  }
+ ],
+ "duongTao": {
+  "tabConDuongB": 1,
+  "tabConDuongA": 1,
+  "nutMoSinh": 1,
+  "nutMoSinhTat": 0
+ },
+ "tabDung": {
+  "dungNhaXuong": 1,
+  "nutTao": 0,
+  "buocToaNha": 1,
+  "chu": "Skip to content Production (MES) Show advanced menu Simple Q Quản đốc Công ty A (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 15 Live 🇺🇸 English Production MES 3D Factory Design 3D Factory — Design Build buildings and floors, import engineering drawings, place machines, and publish a version for operations. Factory Công ty A Add building Choose drawing file Design Building: 4 1. Building 2. Floor 3. Preview Building Code Name Length (m) Wi"
+ },
+ "tabDungBuoc3": {
+  "buocXemTruoc": 1,
+  "nutTao": 1,
+  "nutTaoChu": "Create building",
+  "nutTaoTat": 0
+ },
+ "khongBamTao": "KHÔNG bấm nut-tao ⇒ 0 hàng twin_toa_nha mới"
+}

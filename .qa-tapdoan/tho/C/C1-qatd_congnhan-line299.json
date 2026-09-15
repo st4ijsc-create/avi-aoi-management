@@ -1,0 +1,159 @@
+{
+ "luc": "2026-09-15T02:07:45.385Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "C1",
+ "vai": "qatd_congnhan",
+ "me": "cache",
+ "deBai": "qua CÂY PHÂN CẤP trên /twin, bung tới line 299 (QATD-C toà T3 tầng 1 — toà THỨ BA (tách tầng lỗi toaNha[0])) rồi BẤM ⇒ /twin/line/299 với tên/đếm máy/đếm trạm đúng DB",
+ "kyVongDb": {
+  "lineId": 299,
+  "lineName": "Line 1",
+  "lineCode": "QATD-C-T3-X1-L1",
+  "lineActive": true,
+  "wsId": 74,
+  "wsName": "Xưởng T3 tầng 1",
+  "tangId": 151,
+  "tangDbId": 151,
+  "capSo": 1,
+  "toaNhaId": 63,
+  "toaMa": "QATD-C-T3",
+  "toaTen": "Toà 3",
+  "facId": 40,
+  "facCode": "QATD-C",
+  "facName": "Công ty C",
+  "soTram": "10",
+  "soMay": "10"
+ },
+ "duongBam": [
+  "goto /twin?do=1",
+  "selectOption chon-nha-may=40",
+  "selectOption chon-toa-nha=63",
+  "selectOption chon-tang=151",
+  "click mo-cay-phan-cap + bung mũi tên",
+  "click node-cay-line:299 (\"QATD-C-T3-X1-L1 — Line 1101\")"
+ ],
+ "truocChon": {
+  "oNhaMay": {
+   "soMuc": 1,
+   "value": "40",
+   "nhanDangChon": "Công ty C"
+  },
+  "oToaNha": {
+   "soMuc": 4,
+   "value": "61",
+   "nhanDangChon": "Toà 1"
+  },
+  "oTang": {
+   "soMuc": 7,
+   "value": "137",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "328",
+  "canvasTrongMan": 1
+ },
+ "sauChon": {
+  "oNhaMay": {
+   "soMuc": 1,
+   "value": "40",
+   "nhanDangChon": "Công ty C"
+  },
+  "oToaNha": {
+   "soMuc": 4,
+   "value": "63",
+   "nhanDangChon": "Toà 3"
+  },
+  "oTang": {
+   "soMuc": 7,
+   "value": "151",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "328",
+  "canvasTrongMan": 1
+ },
+ "anhTwin": ".qa-tapdoan/anh/C-C1-qatd_congnhan-line299-truoc-twin.png",
+ "soNode": 695,
+ "nodeLineCoTrongCay": [
+  "node-cay-line:284",
+  "node-cay-line:285",
+  "node-cay-line:286",
+  "node-cay-line:287",
+  "node-cay-line:288",
+  "node-cay-line:289",
+  "node-cay-line:290",
+  "node-cay-line:291",
+  "node-cay-line:292",
+  "node-cay-line:293",
+  "node-cay-line:294",
+  "node-cay-line:295",
+  "node-cay-line:296",
+  "node-cay-line:297",
+  "node-cay-line:298",
+  "node-cay-line:299",
+  "node-cay-line:300",
+  "node-cay-line:301",
+  "node-cay-line:302",
+  "node-cay-line:303",
+  "node-cay-line:304",
+  "node-cay-line:305",
+  "node-cay-line:306",
+  "node-cay-line:307",
+  "node-cay-line:308",
+  "node-cay-line:309",
+  "node-cay-line:310",
+  "node-cay-line:311",
+  "node-cay-line:312",
+  "node-cay-line:313",
+  "node-cay-line:314"
+ ],
+ "soNodeLine": 31,
+ "coNodeDich": true,
+ "chuNodeDich": "QATD-C-T3-X1-L1 — Line 1101",
+ "toiUrl": true,
+ "msVe": 4619,
+ "thay": {
+  "url": "/twin/line/299",
+  "trang": {
+   "man_van_hanh": 0,
+   "man_line": 1,
+   "man_may": 0
+  },
+  "line": {
+   "tenLine": "Line 1",
+   "demMayChu": "Máy 10",
+   "demMaySo": 10,
+   "demTramChu": "Trạm 10",
+   "demTramSo": 10,
+   "wipChu": "WIP 56",
+   "wipSo": 56,
+   "lineRong": 0,
+   "lineRongChu": null,
+   "khongMoDuoc": 0,
+   "lyDo": null,
+   "khongMoChu": null,
+   "idKhongHopLe": 0,
+   "idKhongHopLeChu": null,
+   "canvasTrongMan": 1,
+   "soNhanMay": 0,
+   "soOTram": 10,
+   "daiLine": 1,
+   "veNhaMayHref": "/twin?do=1&cam=61.88%2C22.45%2C65.78%2C24.1%2C28&nm=40&toa=63&tang=151"
+  },
+  "may": null,
+  "vanHanh": null,
+  "soCanvasKit": 1,
+  "canvasDom": 1,
+  "veCalls": 5,
+  "spin": 0,
+  "thanTrangDai": 714
+ },
+ "anh": ".qa-tapdoan/anh/C-C1-qatd_congnhan-line299.png",
+ "pq": "SAI",
+ "vi": "khối máy VẼ trên cảnh (nhãn máy = 10 máy DB): nhãn máy trên cảnh 0 / DB 10 · ô trạm 10 · dải line 1",
+ "sai": [
+  "khối máy VẼ trên cảnh (nhãn máy = 10 máy DB)"
+ ]
+}

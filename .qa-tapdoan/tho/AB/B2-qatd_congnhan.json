@@ -1,0 +1,60 @@
+{
+  "luc": "2026-09-15T02:06:00.990Z",
+  "base": "http://localhost:3064",
+  "id": "B2",
+  "vai": "qatd_congnhan",
+  "moTa": "B2 · CÔNG NHÂN · tầng cấp 1 của toà 1 (QATD-C-T1)",
+  "deBai": "Chọn tầng cấp 1 (tang_id=137, toà QATD-C-T1) qua ô chọn thật ⇒ dem-may khớp mayTheoTang của ĐÚNG tang_id đó (39 máy).",
+  "duKienDoc": {
+    "tầng đã chọn (UI)": "137",
+    "tang_id kỳ vọng": 137,
+    "CHỮ tầng": "Tầng 1",
+    "toà đã chọn (UI)": "61",
+    "toà kỳ vọng": 61,
+    "CHỮ toà": "Toà 1",
+    "URL sau khi chọn": "/twin?do=1&cam=78.83%2C27.43%2C74.7%2C32.21%2C28.08&toa=61&tang=137",
+    "dem-may": "328",
+    "dem-tuoi": "0",
+    "dem-cu": "322",
+    "dem-khong-ro": "6",
+    "dem-ngung": "0",
+    "máy DB của tầng": 39,
+    "máy DB của nhà máy": {
+      "tong": 328,
+      "active": 328
+    },
+    "máy VẼ trên cảnh (dsMay)": {
+      "so": 39,
+      "trongKhung": 39
+    },
+    "cảnh khớp tầng": true,
+    "dem-may khớp": "nhàMáy(tổng)",
+    "danh-sach-may data-so-may": "328",
+    "breadcrumb": "Corporate›Công ty C›Floor",
+    "banner": {
+      "banner-ngoai-luot-nap": "289 machines are outside this load (other buildings were not queried) — whether they are placed is not known yethide"
+    },
+    "dải hợp nhất": {
+      "soViec": "1",
+      "mo": "1",
+      "chu": "1 thing to knowhide"
+    },
+    "__thongKeVe": {
+      "calls": 5,
+      "triangles": 9062,
+      "matContext": 0
+    },
+    "cửa chờ": {
+      "coMan": true,
+      "coKhungDau": true,
+      "hetDauGach": true,
+      "onDinh": true,
+      "soLuotOnDinh": 3,
+      "ms": 1428
+    }
+  },
+  "ketCuc": "tầng 137 (cấp 1) · DB 39 máy · dem-may=328 (khớp nhàMáy(tổng)) · cảnh vẽ 39 máy (khớp tầng=true)",
+  "phanQuyet": "SAI",
+  "viSao": "dem-may là số của CẢ NHÀ MÁY (328 = QATD-C 328 máy), KHÔNG phải của tầng (39). Cảnh 3D thì vẽ đúng 39 máy của tầng ⇒ lỗi ở CHỖ ĐẾM, không ở dữ liệu. Nguồn: TwinVanHanh.tsx:2924 (dem-may = mayVanHanh.length) ← :910 ← :821 (canhQ.data.may) ← server/db/twinCanh.ts:951.",
+  "anh": ".qa-tapdoan/anh/AB-B2-qatd_congnhan-tang1.png"
+}

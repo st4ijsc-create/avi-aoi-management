@@ -1,0 +1,39 @@
+{
+  "luc": "2026-09-15T02:07:55.840Z",
+  "base": "http://localhost:3064",
+  "id": "A1",
+  "vai": "qatd_khonggan",
+  "moTa": "A1 · 0 GÁN · mở /twin",
+  "deBai": "Mở /twin?do=1. Vai có quyền ⇒ thấy man-twin-van-hanh; qatd_khongquyen ⇒ bị chặn ĐÚNG (ghi biểu hiện + URL cuối).",
+  "duKienDoc": {
+    "URL cuối": "/twin?do=1",
+    "man-twin-van-hanh": true,
+    "h1": [],
+    "h3": [
+      "Your account is not assigned to any factory"
+    ],
+    "canvas trong màn": 0,
+    "__soCanvas": 0,
+    "__thongKeVe": {
+      "calls": 2,
+      "triangles": 2,
+      "matContext": 0
+    },
+    "cửa chờ": {
+      "coMan": true,
+      "coKhungDau": true,
+      "hetDauGach": false,
+      "onDinh": true,
+      "soLuotOnDinh": 3,
+      "ms": 94689
+    },
+    "chữ trên màn": "Your account is not assigned to any factory | No inspection records therefore fall within your data scope. This is an EMPTY SCOPE — not a finding that the line has stopped running. Contact an administrator to be assigned a factory.",
+    "chữ trên body": "You don't have permission to: view. | Skip to content | Production (MES) | Show advanced menu | Simple | C | Công nhân chưa gán (QA) | - | Toggle Sidebar | Production (MES) | All sites | Search pages, commands… | ⌘K | Factory | › | Line | › | Machine | Live | 🇺🇸 English | Production | MES | 3D Factory | Your account is not assigned to any factory | No inspection records therefore fall within your data scope. This is an EMPTY SCOPE — not a finding that the line has stopped running. Contact an administrator to be assigned a factory. | Search pages, commands… | Search pages, commands…",
+    "lỗi trang": [],
+    "factory.list (API)": 0
+  },
+  "ketCuc": "coMan=true · url=/twin?do=1 · canvas(trongMan)=0 · __soCanvas=0 · khungĐầu=true",
+  "phanQuyet": "ĐẠT",
+  "viSao": "Vai này phải vào được /twin theo bảng §2 và màn Vận hành đã hiện.",
+  "anh": ".qa-tapdoan/anh/AB-A1-qatd_khonggan.png"
+}

@@ -1,0 +1,129 @@
+{
+ "ca": "E1",
+ "vai": "qatd_congnhan",
+ "cach": "moi",
+ "base": "http://localhost:3064",
+ "luc": "2026-09-15T01:58:30.264Z",
+ "studio": {
+  "url": "/twin-studio",
+  "coManStudio": 0,
+  "biChan": 1,
+  "chuBiChan": "mmands… ⌘K Factory › Line › Machine 20 Live 🇺🇸 English Production MES 3D Factory Design Access denied You don't have permission to access this page. Please contact an administrator if you think this is a mistake. Back to home Search pages, c",
+  "chonNhaMay": {
+   "co": 0
+  },
+  "demToaNha": {
+   "co": 0
+  },
+  "tabThietKe": {
+   "co": 0
+  },
+  "tabConDuongA": {
+   "co": 0
+  },
+  "tabConDuongB": {
+   "co": 0
+  },
+  "chuaCoTang": {
+   "co": 0
+  },
+  "chuaCoNhaMay": {
+   "co": 0
+  },
+  "daiPhamViRong": {
+   "co": 0
+  },
+  "xuongThietKe": {
+   "co": 0
+  },
+  "vungCanvas": {
+   "co": 0
+  },
+  "khuChoXepCho": {
+   "co": 0
+  },
+  "thuVienAsset": {
+   "co": 0
+  },
+  "miniMap": {
+   "co": 0
+  },
+  "bangThuocTinh": {
+   "co": 0
+  },
+  "cayPhanCap": {
+   "co": 0
+  },
+  "nutCheDoTranslate": {
+   "co": 0
+  },
+  "nutCheDoRotate": {
+   "co": 0
+  },
+  "congTacBatDinh": {
+   "co": 0
+  },
+  "congTacLuoi": {
+   "co": 0
+  },
+  "nutHoanTac": {
+   "co": 0
+  },
+  "nutLamLai": {
+   "co": 0
+  },
+  "nutMoSinh": {
+   "co": 0
+  },
+  "nutLuu": {
+   "co": 0
+  },
+  "huyHieuChiXem": {
+   "co": 0
+  },
+  "khoiVungAnToan": {
+   "co": 0
+  },
+  "veVung": {
+   "co": 0
+  },
+  "veVungBatDau": {
+   "co": 0
+  },
+  "veVungTrong": {
+   "co": 0
+  },
+  "veVungDanhSach": {
+   "co": 0
+  },
+  "soVungMuc": 0,
+  "dsVung": [],
+  "soCanvas": null,
+  "canvasDom": 0,
+  "boChon": [
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Factory",
+    "aria": "Factory"
+   },
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Line",
+    "aria": "Line"
+   },
+   {
+    "tid": null,
+    "the": "button",
+    "chu": "Machine",
+    "aria": "Machine"
+   }
+  ],
+  "coChuToa": 0,
+  "coChuTang": 0,
+  "nhanTangHienTai": null,
+  "dauMan": "Skip to content Production (MES) Show advanced menu Simple C Công nhân Công ty C (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 20 Live 🇺🇸 English Production MES 3D Factory Design Access denied You don't have permission to access this page. Please contact an administrator if you think this is a mistake. Back to home Search pages, commands… Search pages, commands…"
+ },
+ "urlCuoi": "/twin-studio"
+}

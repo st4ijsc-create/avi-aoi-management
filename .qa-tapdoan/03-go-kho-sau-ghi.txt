@@ -1,0 +1,36 @@
+
+==========================================================================
+  GO TAP DOAN QATD   [--kho: CHI DO, KHONG XOA]
+==========================================================================
+  Vai: aoi   CSDL: aoi_management   TimeZone phien: Etc/UTC
+  Nha may khop (3): QATD-A#38, QATD-B#39, QATD-C#40
+  Cay: workshops=24 lines=98 stations=1108 machines=1108 toa_nha=12 tang=84
+  twin_dat_cho: theo tang=2338 theo thuc the=2338 chi-tang=0 chi-thuc-the=0
+  Se xoa (dem truoc):
+    wip_tracking                 5949
+    product_inspections          6648
+    machine_health_history       1108
+    machine_heartbeats           0
+    ot_telemetry_30d             13296
+    rul_estimates                0
+    machine_status_logs          1108
+    predictive_alerts            29
+    station_dwell_time           0
+    measurement_point_defs       0
+    andon_events                 55
+    line_balance_metrics         98
+    twin_dat_cho                 2338
+    twin_vat_the                 336
+    twin_ban_ghi                 0
+    twin_tang                    84
+    twin_toa_nha                 12
+    machines                     1108
+    stations                     1108
+    production_lines             98
+    workshops                    24
+    user_factory_assignments     0
+    factories                    3
+    user_corporate_assignments   0
+    corporates                   1
+
+  [--kho] KHONG xoa gi. Dung.

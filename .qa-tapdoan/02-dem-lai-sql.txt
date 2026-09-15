@@ -1,0 +1,30 @@
+corporates                       1
+factories                        3
+twin_toa_nha                     12
+twin_tang                        84
+twin_vat_the                     336
+workshops                        24
+production_lines                 98
+stations                         1108
+machines                         1108
+twin_dat_cho                     2338
+dat_cho_may                      1108
+machine_health_history           1108
+wip_tracking                     5949
+line_balance_metrics             98
+andon_events                     55
+product_inspections              6648
+ot_telemetry_1h_server_bom       8864
+machine_status_logs_server_bom   1108
+machine_heartbeats_server_bom    0
+ufa                              0
+uca                              0
+phan_bo_enum                     {"stopped":188,"running":771,"error":90,"maintenance":59}
+offline_null_hb                  21
+z_theo_tang_mau                  [{"cap":1,"z":0,"n":63},{"cap":1,"z":0,"n":39},{"cap":1,"z":0,"n":41},{"cap":2,"z":6000,"n":45},{"cap":2,"z":6000,"n":34},{"cap":1,"z":0,"n":40},{"cap":1,"z":0,"n":31},{"cap":2,"z":6000,"n":54},{"cap":2,"z":6000,"n":39},{"cap":1,"z":0,"n":68},{"cap":2,"z":6000,"n":40},{"cap":1,"z":0,"n":31},{"cap":1
+sim_fac_may                      42
+users                            10
+tong_factories                   5
+tong_corporates                  2
+Z may theo tang: [{"capSo":1,"z":"0.000","n":539},{"capSo":2,"z":"6000.000","n":569}]
+Mau 4 may tang 2: [{"id":4242,"code":"QATD-A-T1-X2-L1-M01","name":"AXI-01","machineType":"AXI","operationStatus":"running","lastHeartbeat":"2026-09-15 00:14:37.597574","x":"10800.000","y":"10000.000","z":"6000.000","r":"1600.000"},{"id":4243,"code":"QATD-A-T1-X2-L1-M02","name":"AOI-02","machineType":"AOI","operationStatus":"running","lastHeartbeat":"2026-09-15 00:14:37.597574","x":"13750.000","y":"10000.000","z":"6000.000","r":"1300.000"},{"id":4244,"code":"QATD-A-T1-X2-L1-M03","name":"STENCIL_PRINTER-03","machineType":"STENCIL_PRINTER","operationStatus":"running","lastHeartbeat":"2026-09-15 00:14:37.597574","x":"16650.000","y":"10000.000","z":"6000.000","r":"1500.000"},{"id":4245,"code":"QATD-A-T1-X2-L1-M04","name":"ICT_FUNC-04","machineType":"ICT_FUNC","operationStatus":"running","lastHeartbeat":"2026-09-15 00:14:37.597574","x":"19800.000","y":"10000.000","z":"6000.000","r":"1800.000"}]

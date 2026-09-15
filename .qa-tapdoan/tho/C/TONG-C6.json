@@ -1,0 +1,20 @@
+{
+ "luc": "2026-09-15T02:10:26.942Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "dem": {
+  "N/A": 1
+ },
+ "so": 1,
+ "ghi": [
+  {
+   "ca": "C6",
+   "vai": "—",
+   "pq": "N/A",
+   "vi": "0/102 line isActive có 0 máy (câu truy vấn ở khoá `truyVan`) ⇒ không dựng được ca này mà không GHI vào DB; đợt đo chỉ SELECT"
+  }
+ ]
+}

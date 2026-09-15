@@ -1,0 +1,1023 @@
+{
+  "ca": "F1b",
+  "base": "http://localhost:3064",
+  "luc": "2026-09-15T02:39:34.725Z",
+  "soWorker": 1,
+  "vp": "1600x900",
+  "luot": [
+    {
+      "ten": "twin-SIMFAC-41may",
+      "duong": "/twin?nm=1",
+      "tid": "man-twin-van-hanh",
+      "msGoto": 176,
+      "msAttached": 1291,
+      "msVisible": 1291,
+      "msKhungDau": 1329,
+      "dcl": 173,
+      "load": 175,
+      "ttfb": 5,
+      "soRes": 65,
+      "tongKb": 7160,
+      "resLon": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 47,
+          "t1": 61,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/vi-Bicj_yrr.json",
+          "t0": 168,
+          "t1": 178,
+          "kb": 994
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 46,
+          "t1": 59,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 173,
+          "t1": 181,
+          "kb": 719
+        },
+        {
+          "n": "/api/trpc/sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D",
+          "t0": 375,
+          "t1": 3246,
+          "kb": 474
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "t0": 266,
+          "t1": 287,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+          "t0": 353,
+          "t1": 379,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-vietnamese-wght-normal.woff2",
+          "t0": 705,
+          "t1": 725,
+          "kb": 361
+        }
+      ],
+      "viJson": {
+        "n": "/assets/vi-Bicj_yrr.json",
+        "t0": 168,
+        "t1": 178,
+        "kb": 994
+      },
+      "jsChinh": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 47,
+          "t1": 61,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 46,
+          "t1": 59,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 173,
+          "t1": 181,
+          "kb": 719
+        }
+      ],
+      "calls": 8,
+      "khoi": 42,
+      "soCanvas": 1,
+      "nong": {
+        "msGoto": 34,
+        "msVisible": 959,
+        "msKhungDau": 986
+      },
+      "luot": 1
+    },
+    {
+      "ten": "twin-QATD-68may",
+      "duong": "/twin?nm=38&toa=54&tang=88",
+      "tid": "man-twin-van-hanh",
+      "msGoto": 191,
+      "msAttached": 1259,
+      "msVisible": 1259,
+      "msKhungDau": 1271,
+      "dcl": 188,
+      "load": 190,
+      "ttfb": 8,
+      "soRes": 65,
+      "tongKb": 7480,
+      "resLon": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 47,
+          "t1": 67,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/vi-Bicj_yrr.json",
+          "t0": 185,
+          "t1": 192,
+          "kb": 994
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 47,
+          "t1": 60,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 188,
+          "t1": 197,
+          "kb": 719
+        },
+        {
+          "n": "/api/trpc/sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D",
+          "t0": 460,
+          "t1": 3330,
+          "kb": 474
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "t0": 305,
+          "t1": 349,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+          "t0": 440,
+          "t1": 467,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-vietnamese-wght-normal.woff2",
+          "t0": 793,
+          "t1": 809,
+          "kb": 361
+        }
+      ],
+      "viJson": {
+        "n": "/assets/vi-Bicj_yrr.json",
+        "t0": 185,
+        "t1": 192,
+        "kb": 994
+      },
+      "jsChinh": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 47,
+          "t1": 67,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 47,
+          "t1": 60,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 188,
+          "t1": 197,
+          "kb": 719
+        }
+      ],
+      "calls": 5,
+      "khoi": 68,
+      "soCanvas": 1,
+      "nong": {
+        "msGoto": 35,
+        "msVisible": 1121,
+        "msKhungDau": 1250
+      },
+      "luot": 1
+    },
+    {
+      "ten": "oee-dashboard-KHONG-3D",
+      "duong": "/oee-dashboard",
+      "tid": "h1",
+      "msGoto": 186,
+      "msVisible": 1156,
+      "msAttached": 1156,
+      "dcl": 183,
+      "load": 184,
+      "ttfb": 8,
+      "soRes": 115,
+      "tongKb": 11309,
+      "resLon": [
+        {
+          "n": "/api/trpc/machineStatus.listWithStatus,machine.list,mqttClient.getAllOEE,mqttClient.getScopeLabels,mqttClient.getDowntimeHistory?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%22factoryId%22%3Anull%2C%22lineId%22%3Anull%2C%22machineId%22%3Anull%7D%2C%22meta%22%3A%7B%22values%22%3A%7B%22factoryId%22%3A%5B%22undefined%22%5D%2C%22lineId%22%3A%5B%22undefined%22%5D%2C%22machineId%22%3A%5B%22undefined%22%5D%7D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3A%7B%22machineId%22%3Anull%2C%22lineId%22%3Anull%7D%2C%22meta%22%3A%7B%22values%22%3A%7B%22machineId%22%3A%5B%22undefined%22%5D%2C%22lineId%22%3A%5B%22undefined%22%5D%7D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3A%7B%7D%7D%7D",
+          "t0": 1010,
+          "t1": 1336,
+          "kb": 3926
+        },
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 51,
+          "t1": 69,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/vi-Bicj_yrr.json",
+          "t0": 180,
+          "t1": 188,
+          "kb": 994
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 51,
+          "t1": 63,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 183,
+          "t1": 191,
+          "kb": 719
+        },
+        {
+          "n": "/api/trpc/sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D",
+          "t0": 400,
+          "t1": 3074,
+          "kb": 474
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "t0": 282,
+          "t1": 302,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+          "t0": 378,
+          "t1": 403,
+          "kb": 361
+        }
+      ],
+      "viJson": {
+        "n": "/assets/vi-Bicj_yrr.json",
+        "t0": 180,
+        "t1": 188,
+        "kb": 994
+      },
+      "jsChinh": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 51,
+          "t1": 69,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 51,
+          "t1": 63,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 183,
+          "t1": 191,
+          "kb": 719
+        }
+      ],
+      "calls": null,
+      "khoi": null,
+      "soCanvas": null,
+      "luot": 1
+    },
+    {
+      "ten": "twin-SIMFAC-41may",
+      "duong": "/twin?nm=1",
+      "tid": "man-twin-van-hanh",
+      "msGoto": 181,
+      "msAttached": 1293,
+      "msVisible": 1293,
+      "msKhungDau": 1546,
+      "dcl": 178,
+      "load": 180,
+      "ttfb": 8,
+      "soRes": 65,
+      "tongKb": 7160,
+      "resLon": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 58,
+          "t1": 74,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/vi-Bicj_yrr.json",
+          "t0": 175,
+          "t1": 184,
+          "kb": 994
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 58,
+          "t1": 67,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 178,
+          "t1": 187,
+          "kb": 719
+        },
+        {
+          "n": "/api/trpc/sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D",
+          "t0": 401,
+          "t1": 3106,
+          "kb": 474
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "t0": 286,
+          "t1": 300,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+          "t0": 386,
+          "t1": 405,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-vietnamese-wght-normal.woff2",
+          "t0": 767,
+          "t1": 788,
+          "kb": 361
+        }
+      ],
+      "viJson": {
+        "n": "/assets/vi-Bicj_yrr.json",
+        "t0": 175,
+        "t1": 184,
+        "kb": 994
+      },
+      "jsChinh": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 58,
+          "t1": 74,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 58,
+          "t1": 67,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 178,
+          "t1": 187,
+          "kb": 719
+        }
+      ],
+      "calls": 8,
+      "khoi": 42,
+      "soCanvas": 1,
+      "nong": {
+        "msGoto": 34,
+        "msVisible": 1157,
+        "msKhungDau": 1286
+      },
+      "luot": 2
+    },
+    {
+      "ten": "twin-QATD-68may",
+      "duong": "/twin?nm=38&toa=54&tang=88",
+      "tid": "man-twin-van-hanh",
+      "msGoto": 178,
+      "msAttached": 1174,
+      "msVisible": 1175,
+      "msKhungDau": 1195,
+      "dcl": 176,
+      "load": 178,
+      "ttfb": 4,
+      "soRes": 65,
+      "tongKb": 7480,
+      "resLon": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 42,
+          "t1": 57,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/vi-Bicj_yrr.json",
+          "t0": 173,
+          "t1": 183,
+          "kb": 994
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 42,
+          "t1": 51,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 176,
+          "t1": 185,
+          "kb": 719
+        },
+        {
+          "n": "/api/trpc/sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D",
+          "t0": 388,
+          "t1": 3294,
+          "kb": 474
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "t0": 274,
+          "t1": 289,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+          "t0": 374,
+          "t1": 396,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-vietnamese-wght-normal.woff2",
+          "t0": 724,
+          "t1": 739,
+          "kb": 361
+        }
+      ],
+      "viJson": {
+        "n": "/assets/vi-Bicj_yrr.json",
+        "t0": 173,
+        "t1": 183,
+        "kb": 994
+      },
+      "jsChinh": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 42,
+          "t1": 57,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 42,
+          "t1": 51,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 176,
+          "t1": 185,
+          "kb": 719
+        }
+      ],
+      "calls": 5,
+      "khoi": 68,
+      "soCanvas": 1,
+      "nong": {
+        "msGoto": 45,
+        "msVisible": 629,
+        "msKhungDau": 1072
+      },
+      "luot": 2
+    },
+    {
+      "ten": "oee-dashboard-KHONG-3D",
+      "duong": "/oee-dashboard",
+      "tid": "h1",
+      "msGoto": 331,
+      "msVisible": 1418,
+      "msAttached": 1418,
+      "dcl": 326,
+      "load": 332,
+      "ttfb": 17,
+      "soRes": 115,
+      "tongKb": 11309,
+      "resLon": [
+        {
+          "n": "/api/trpc/machineStatus.listWithStatus,machine.list,mqttClient.getAllOEE,mqttClient.getScopeLabels,mqttClient.getDowntimeHistory?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%22factoryId%22%3Anull%2C%22lineId%22%3Anull%2C%22machineId%22%3Anull%7D%2C%22meta%22%3A%7B%22values%22%3A%7B%22factoryId%22%3A%5B%22undefined%22%5D%2C%22lineId%22%3A%5B%22undefined%22%5D%2C%22machineId%22%3A%5B%22undefined%22%5D%7D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3A%7B%22machineId%22%3Anull%2C%22lineId%22%3Anull%7D%2C%22meta%22%3A%7B%22values%22%3A%7B%22machineId%22%3A%5B%22undefined%22%5D%2C%22lineId%22%3A%5B%22undefined%22%5D%7D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3A%7B%7D%7D%7D",
+          "t0": 1354,
+          "t1": 1689,
+          "kb": 3926
+        },
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 98,
+          "t1": 132,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/vi-Bicj_yrr.json",
+          "t0": 320,
+          "t1": 343,
+          "kb": 994
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 97,
+          "t1": 122,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 325,
+          "t1": 344,
+          "kb": 719
+        },
+        {
+          "n": "/api/trpc/sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D",
+          "t0": 691,
+          "t1": 3270,
+          "kb": 474
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "t0": 509,
+          "t1": 555,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+          "t0": 723,
+          "t1": 764,
+          "kb": 361
+        }
+      ],
+      "viJson": {
+        "n": "/assets/vi-Bicj_yrr.json",
+        "t0": 320,
+        "t1": 343,
+        "kb": 994
+      },
+      "jsChinh": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 98,
+          "t1": 132,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 97,
+          "t1": 122,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 325,
+          "t1": 344,
+          "kb": 719
+        }
+      ],
+      "calls": null,
+      "khoi": null,
+      "soCanvas": null,
+      "luot": 2
+    },
+    {
+      "ten": "twin-SIMFAC-41may",
+      "duong": "/twin?nm=1",
+      "tid": "man-twin-van-hanh",
+      "msGoto": 158,
+      "msAttached": 1139,
+      "msVisible": 1139,
+      "msKhungDau": 1428,
+      "dcl": 155,
+      "load": 157,
+      "ttfb": 4,
+      "soRes": 65,
+      "tongKb": 7160,
+      "resLon": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 45,
+          "t1": 57,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/vi-Bicj_yrr.json",
+          "t0": 152,
+          "t1": 160,
+          "kb": 994
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 44,
+          "t1": 54,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 155,
+          "t1": 162,
+          "kb": 719
+        },
+        {
+          "n": "/api/trpc/sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D",
+          "t0": 345,
+          "t1": 2714,
+          "kb": 474
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "t0": 235,
+          "t1": 252,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+          "t0": 330,
+          "t1": 351,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-vietnamese-wght-normal.woff2",
+          "t0": 680,
+          "t1": 704,
+          "kb": 361
+        }
+      ],
+      "viJson": {
+        "n": "/assets/vi-Bicj_yrr.json",
+        "t0": 152,
+        "t1": 160,
+        "kb": 994
+      },
+      "jsChinh": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 45,
+          "t1": 57,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 44,
+          "t1": 54,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 155,
+          "t1": 162,
+          "kb": 719
+        }
+      ],
+      "calls": 8,
+      "khoi": 42,
+      "soCanvas": 1,
+      "nong": {
+        "msGoto": 53,
+        "msVisible": 1241,
+        "msKhungDau": 1385
+      },
+      "luot": 3
+    },
+    {
+      "ten": "twin-QATD-68may",
+      "duong": "/twin?nm=38&toa=54&tang=88",
+      "tid": "man-twin-van-hanh",
+      "msGoto": 212,
+      "msAttached": 1374,
+      "msVisible": 1374,
+      "msKhungDau": 1479,
+      "dcl": 210,
+      "load": 212,
+      "ttfb": 5,
+      "soRes": 65,
+      "tongKb": 7480,
+      "resLon": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 53,
+          "t1": 73,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/vi-Bicj_yrr.json",
+          "t0": 206,
+          "t1": 216,
+          "kb": 994
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 52,
+          "t1": 70,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 210,
+          "t1": 217,
+          "kb": 719
+        },
+        {
+          "n": "/api/trpc/sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D",
+          "t0": 501,
+          "t1": 3793,
+          "kb": 474
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "t0": 336,
+          "t1": 359,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+          "t0": 475,
+          "t1": 504,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-vietnamese-wght-normal.woff2",
+          "t0": 847,
+          "t1": 864,
+          "kb": 361
+        }
+      ],
+      "viJson": {
+        "n": "/assets/vi-Bicj_yrr.json",
+        "t0": 206,
+        "t1": 216,
+        "kb": 994
+      },
+      "jsChinh": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 53,
+          "t1": 73,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 52,
+          "t1": 70,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 210,
+          "t1": 217,
+          "kb": 719
+        }
+      ],
+      "calls": 5,
+      "khoi": 68,
+      "soCanvas": 1,
+      "nong": {
+        "msGoto": 61,
+        "msVisible": 1172,
+        "msKhungDau": 1318
+      },
+      "luot": 3
+    },
+    {
+      "ten": "oee-dashboard-KHONG-3D",
+      "duong": "/oee-dashboard",
+      "tid": "h1",
+      "msGoto": 221,
+      "msVisible": 1238,
+      "msAttached": 1238,
+      "dcl": 218,
+      "load": 221,
+      "ttfb": 11,
+      "soRes": 115,
+      "tongKb": 11309,
+      "resLon": [
+        {
+          "n": "/api/trpc/machineStatus.listWithStatus,machine.list,mqttClient.getAllOEE,mqttClient.getScopeLabels,mqttClient.getDowntimeHistory?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%22factoryId%22%3Anull%2C%22lineId%22%3Anull%2C%22machineId%22%3Anull%7D%2C%22meta%22%3A%7B%22values%22%3A%7B%22factoryId%22%3A%5B%22undefined%22%5D%2C%22lineId%22%3A%5B%22undefined%22%5D%2C%22machineId%22%3A%5B%22undefined%22%5D%7D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3A%7B%22machineId%22%3Anull%2C%22lineId%22%3Anull%7D%2C%22meta%22%3A%7B%22values%22%3A%7B%22machineId%22%3A%5B%22undefined%22%5D%2C%22lineId%22%3A%5B%22undefined%22%5D%7D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3A%7B%7D%7D%7D",
+          "t0": 1107,
+          "t1": 1402,
+          "kb": 3926
+        },
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 78,
+          "t1": 98,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/vi-Bicj_yrr.json",
+          "t0": 214,
+          "t1": 226,
+          "kb": 994
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 78,
+          "t1": 91,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 218,
+          "t1": 226,
+          "kb": 719
+        },
+        {
+          "n": "/api/trpc/sites.list,commandCenter.hierarchy,aiInbox.count,andon.active,license.systemState?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%221%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%222%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%223%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%2C%224%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D",
+          "t0": 495,
+          "t1": 3250,
+          "kb": 474
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "t0": 326,
+          "t1": 348,
+          "kb": 361
+        },
+        {
+          "n": "/assets/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2",
+          "t0": 470,
+          "t1": 497,
+          "kb": 361
+        }
+      ],
+      "viJson": {
+        "n": "/assets/vi-Bicj_yrr.json",
+        "t0": 214,
+        "t1": 226,
+        "kb": 994
+      },
+      "jsChinh": [
+        {
+          "n": "/assets/vendor-three-DRXgJLo_.js",
+          "t0": 78,
+          "t1": 98,
+          "kb": 1428
+        },
+        {
+          "n": "/assets/index-DxxtO34H.js",
+          "t0": 78,
+          "t1": 91,
+          "kb": 846
+        },
+        {
+          "n": "/assets/en-Cnt48ToD.js",
+          "t0": 218,
+          "t1": 226,
+          "kb": 719
+        }
+      ],
+      "calls": null,
+      "khoi": null,
+      "soCanvas": null,
+      "luot": 3
+    }
+  ],
+  "taiKhoan": "qatd_admin (thấy cả SIM-FAC 41 máy và QATD 1.108 máy — ablation cỡ dữ liệu trên CÙNG tài khoản)",
+  "tomTat": {
+    "twin-SIMFAC-41may": {
+      "msVisible": {
+        "so": [
+          1291,
+          1293,
+          1139
+        ],
+        "p50": 1291,
+        "p90": 1293,
+        "max": 1293
+      },
+      "msAttached": {
+        "so": [
+          1291,
+          1293,
+          1139
+        ],
+        "p50": 1291
+      },
+      "msKhungDau": {
+        "so": [
+          1329,
+          1546,
+          1428
+        ],
+        "p50": 1428
+      },
+      "nongVisible": {
+        "so": [
+          959,
+          1157,
+          1241
+        ],
+        "p50": 1157
+      },
+      "khoi": [
+        42,
+        42,
+        42
+      ],
+      "tongKb": [
+        7160,
+        7160,
+        7160
+      ]
+    },
+    "twin-QATD-68may": {
+      "msVisible": {
+        "so": [
+          1259,
+          1175,
+          1374
+        ],
+        "p50": 1259,
+        "p90": 1374,
+        "max": 1374
+      },
+      "msAttached": {
+        "so": [
+          1259,
+          1174,
+          1374
+        ],
+        "p50": 1259
+      },
+      "msKhungDau": {
+        "so": [
+          1271,
+          1195,
+          1479
+        ],
+        "p50": 1271
+      },
+      "nongVisible": {
+        "so": [
+          1121,
+          629,
+          1172
+        ],
+        "p50": 1121
+      },
+      "khoi": [
+        68,
+        68,
+        68
+      ],
+      "tongKb": [
+        7480,
+        7480,
+        7480
+      ]
+    },
+    "oee-dashboard-KHONG-3D": {
+      "msVisible": {
+        "so": [
+          1156,
+          1418,
+          1238
+        ],
+        "p50": 1238,
+        "p90": 1418,
+        "max": 1418
+      },
+      "msAttached": {
+        "so": [
+          1156,
+          1418,
+          1238
+        ],
+        "p50": 1238
+      },
+      "msKhungDau": {
+        "so": [
+          null,
+          null,
+          null
+        ],
+        "p50": null
+      },
+      "nongVisible": {
+        "so": [
+          null,
+          null,
+          null
+        ],
+        "p50": null
+      },
+      "khoi": [
+        null,
+        null,
+        null
+      ],
+      "tongKb": [
+        11309,
+        11309,
+        11309
+      ]
+    }
+  }
+}

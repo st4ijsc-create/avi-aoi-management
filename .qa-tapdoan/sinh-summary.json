@@ -1,0 +1,1056 @@
+{
+  "chayLuc": "2026-09-15T00:14:37.596Z",
+  "tienTo": "QATD",
+  "zMay": "caoDoMm(tang)",
+  "tapDoan": {
+    "id": 3,
+    "code": "QATD"
+  },
+  "congTys": [
+    {
+      "id": 38,
+      "code": "QATD-A",
+      "ten": "Công ty A",
+      "lineDauId": 217,
+      "mayDauId": 4197,
+      "lineDauMa": "QATD-A-T1-X1-L1",
+      "mayDauMa": "QATD-A-T1-X1-L1-M01",
+      "tongMay": 371,
+      "tongLine": 32,
+      "phanBoLoai": {
+        "ICT": 8,
+        "AUTOMATION": 16,
+        "WELDER": 15,
+        "FCT": 21,
+        "IOT_SENSOR": 15,
+        "WAVE_SOLDER": 15,
+        "MOUNTER": 12,
+        "REFLOW": 15,
+        "STENCIL_PRINTER": 20,
+        "CMM": 17,
+        "PACKAGING": 20,
+        "DISPENSING": 15,
+        "ICT_FUNC": 18,
+        "ROBOT_TEST": 17,
+        "AVI": 15,
+        "ROBOT": 14,
+        "AOI": 15,
+        "PALLETIZER": 16,
+        "SPI": 15,
+        "FEEDER": 17,
+        "SCREWDRIVE": 18,
+        "ASSEMBLY": 13,
+        "AXI": 13,
+        "IOT_GATEWAY": 11
+      },
+      "phanBoTrangThai": {
+        "idle": 58,
+        "running": 261,
+        "error": 25,
+        "offline": 7,
+        "maintenance": 20
+      }
+    },
+    {
+      "id": 39,
+      "code": "QATD-B",
+      "ten": "Công ty B",
+      "lineDauId": 249,
+      "mayDauId": 4568,
+      "lineDauMa": "QATD-B-T1-X1-L1",
+      "mayDauMa": "QATD-B-T1-X1-L1-M01",
+      "tongMay": 409,
+      "tongLine": 35,
+      "phanBoLoai": {
+        "WAVE_SOLDER": 10,
+        "ICT_FUNC": 18,
+        "PALLETIZER": 24,
+        "MOUNTER": 14,
+        "CMM": 20,
+        "ICT": 16,
+        "AXI": 21,
+        "DISPENSING": 13,
+        "ROBOT_TEST": 18,
+        "WELDER": 20,
+        "STENCIL_PRINTER": 18,
+        "ASSEMBLY": 21,
+        "AUTOMATION": 13,
+        "IOT_SENSOR": 15,
+        "IOT_GATEWAY": 13,
+        "AVI": 15,
+        "PACKAGING": 17,
+        "FCT": 19,
+        "ROBOT": 15,
+        "AOI": 15,
+        "SCREWDRIVE": 20,
+        "SPI": 19,
+        "REFLOW": 18,
+        "FEEDER": 17
+      },
+      "phanBoTrangThai": {
+        "running": 282,
+        "error": 40,
+        "idle": 59,
+        "offline": 8,
+        "maintenance": 20
+      }
+    },
+    {
+      "id": 40,
+      "code": "QATD-C",
+      "ten": "Công ty C",
+      "lineDauId": 284,
+      "mayDauId": 4977,
+      "lineDauMa": "QATD-C-T1-X1-L1",
+      "mayDauMa": "QATD-C-T1-X1-L1-M01",
+      "tongMay": 328,
+      "tongLine": 31,
+      "phanBoLoai": {
+        "FEEDER": 18,
+        "AOI": 16,
+        "SCREWDRIVE": 13,
+        "PACKAGING": 10,
+        "WAVE_SOLDER": 8,
+        "IOT_GATEWAY": 16,
+        "FCT": 13,
+        "IOT_SENSOR": 16,
+        "AXI": 20,
+        "AUTOMATION": 13,
+        "ASSEMBLY": 15,
+        "ICT_FUNC": 13,
+        "REFLOW": 15,
+        "PALLETIZER": 16,
+        "MOUNTER": 16,
+        "WELDER": 13,
+        "SPI": 12,
+        "AVI": 11,
+        "STENCIL_PRINTER": 10,
+        "DISPENSING": 12,
+        "ROBOT_TEST": 14,
+        "ROBOT": 16,
+        "CMM": 14,
+        "ICT": 8
+      },
+      "phanBoTrangThai": {
+        "running": 228,
+        "idle": 50,
+        "error": 25,
+        "maintenance": 19,
+        "offline": 6
+      }
+    }
+  ],
+  "toas": [
+    {
+      "id": 53,
+      "ma": "QATD-A-T1",
+      "factoryId": 38
+    },
+    {
+      "id": 54,
+      "ma": "QATD-A-T2",
+      "factoryId": 38
+    },
+    {
+      "id": 55,
+      "ma": "QATD-A-T3",
+      "factoryId": 38
+    },
+    {
+      "id": 56,
+      "ma": "QATD-A-T4",
+      "factoryId": 38
+    },
+    {
+      "id": 57,
+      "ma": "QATD-B-T1",
+      "factoryId": 39
+    },
+    {
+      "id": 58,
+      "ma": "QATD-B-T2",
+      "factoryId": 39
+    },
+    {
+      "id": 59,
+      "ma": "QATD-B-T3",
+      "factoryId": 39
+    },
+    {
+      "id": 60,
+      "ma": "QATD-B-T4",
+      "factoryId": 39
+    },
+    {
+      "id": 61,
+      "ma": "QATD-C-T1",
+      "factoryId": 40
+    },
+    {
+      "id": 62,
+      "ma": "QATD-C-T2",
+      "factoryId": 40
+    },
+    {
+      "id": 63,
+      "ma": "QATD-C-T3",
+      "factoryId": 40
+    },
+    {
+      "id": 64,
+      "ma": "QATD-C-T4",
+      "factoryId": 40
+    }
+  ],
+  "tangs": [
+    {
+      "id": 81,
+      "toaNhaId": 53,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 82,
+      "toaNhaId": 53,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 83,
+      "toaNhaId": 53,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 84,
+      "toaNhaId": 53,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 85,
+      "toaNhaId": 53,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 86,
+      "toaNhaId": 53,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 87,
+      "toaNhaId": 53,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 88,
+      "toaNhaId": 54,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 89,
+      "toaNhaId": 54,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 90,
+      "toaNhaId": 54,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 91,
+      "toaNhaId": 54,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 92,
+      "toaNhaId": 54,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 93,
+      "toaNhaId": 54,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 94,
+      "toaNhaId": 54,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 95,
+      "toaNhaId": 55,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 96,
+      "toaNhaId": 55,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 97,
+      "toaNhaId": 55,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 98,
+      "toaNhaId": 55,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 99,
+      "toaNhaId": 55,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 100,
+      "toaNhaId": 55,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 101,
+      "toaNhaId": 55,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 102,
+      "toaNhaId": 56,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 103,
+      "toaNhaId": 56,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 104,
+      "toaNhaId": 56,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 105,
+      "toaNhaId": 56,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 106,
+      "toaNhaId": 56,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 107,
+      "toaNhaId": 56,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 108,
+      "toaNhaId": 56,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 109,
+      "toaNhaId": 57,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 110,
+      "toaNhaId": 57,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 111,
+      "toaNhaId": 57,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 112,
+      "toaNhaId": 57,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 113,
+      "toaNhaId": 57,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 114,
+      "toaNhaId": 57,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 115,
+      "toaNhaId": 57,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 116,
+      "toaNhaId": 58,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 117,
+      "toaNhaId": 58,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 118,
+      "toaNhaId": 58,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 119,
+      "toaNhaId": 58,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 120,
+      "toaNhaId": 58,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 121,
+      "toaNhaId": 58,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 122,
+      "toaNhaId": 58,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 123,
+      "toaNhaId": 59,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 124,
+      "toaNhaId": 59,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 125,
+      "toaNhaId": 59,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 126,
+      "toaNhaId": 59,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 127,
+      "toaNhaId": 59,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 128,
+      "toaNhaId": 59,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 129,
+      "toaNhaId": 59,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 130,
+      "toaNhaId": 60,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 131,
+      "toaNhaId": 60,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 132,
+      "toaNhaId": 60,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 133,
+      "toaNhaId": 60,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 134,
+      "toaNhaId": 60,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 135,
+      "toaNhaId": 60,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 136,
+      "toaNhaId": 60,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 137,
+      "toaNhaId": 61,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 138,
+      "toaNhaId": 61,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 139,
+      "toaNhaId": 61,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 140,
+      "toaNhaId": 61,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 141,
+      "toaNhaId": 61,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 142,
+      "toaNhaId": 61,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 143,
+      "toaNhaId": 61,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 144,
+      "toaNhaId": 62,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 145,
+      "toaNhaId": 62,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 146,
+      "toaNhaId": 62,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 147,
+      "toaNhaId": 62,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 148,
+      "toaNhaId": 62,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 149,
+      "toaNhaId": 62,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 150,
+      "toaNhaId": 62,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 151,
+      "toaNhaId": 63,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 152,
+      "toaNhaId": 63,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 153,
+      "toaNhaId": 63,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 154,
+      "toaNhaId": 63,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 155,
+      "toaNhaId": 63,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 156,
+      "toaNhaId": 63,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 157,
+      "toaNhaId": 63,
+      "capSo": 7,
+      "caoDoMm": 36000
+    },
+    {
+      "id": 158,
+      "toaNhaId": 64,
+      "capSo": 1,
+      "caoDoMm": 0
+    },
+    {
+      "id": 159,
+      "toaNhaId": 64,
+      "capSo": 2,
+      "caoDoMm": 6000
+    },
+    {
+      "id": 160,
+      "toaNhaId": 64,
+      "capSo": 3,
+      "caoDoMm": 12000
+    },
+    {
+      "id": 161,
+      "toaNhaId": 64,
+      "capSo": 4,
+      "caoDoMm": 18000
+    },
+    {
+      "id": 162,
+      "toaNhaId": 64,
+      "capSo": 5,
+      "caoDoMm": 24000
+    },
+    {
+      "id": 163,
+      "toaNhaId": 64,
+      "capSo": 6,
+      "caoDoMm": 30000
+    },
+    {
+      "id": 164,
+      "toaNhaId": 64,
+      "capSo": 7,
+      "caoDoMm": 36000
+    }
+  ],
+  "xuongs": [
+    {
+      "id": 54,
+      "ma": "QATD-A-T1-X1",
+      "tangId": 81,
+      "factoryId": 38
+    },
+    {
+      "id": 55,
+      "ma": "QATD-A-T1-X2",
+      "tangId": 82,
+      "factoryId": 38
+    },
+    {
+      "id": 56,
+      "ma": "QATD-A-T2-X1",
+      "tangId": 88,
+      "factoryId": 38
+    },
+    {
+      "id": 57,
+      "ma": "QATD-A-T2-X2",
+      "tangId": 89,
+      "factoryId": 38
+    },
+    {
+      "id": 58,
+      "ma": "QATD-A-T3-X1",
+      "tangId": 95,
+      "factoryId": 38
+    },
+    {
+      "id": 59,
+      "ma": "QATD-A-T3-X2",
+      "tangId": 96,
+      "factoryId": 38
+    },
+    {
+      "id": 60,
+      "ma": "QATD-A-T4-X1",
+      "tangId": 102,
+      "factoryId": 38
+    },
+    {
+      "id": 61,
+      "ma": "QATD-A-T4-X2",
+      "tangId": 103,
+      "factoryId": 38
+    },
+    {
+      "id": 62,
+      "ma": "QATD-B-T1-X1",
+      "tangId": 109,
+      "factoryId": 39
+    },
+    {
+      "id": 63,
+      "ma": "QATD-B-T1-X2",
+      "tangId": 110,
+      "factoryId": 39
+    },
+    {
+      "id": 64,
+      "ma": "QATD-B-T2-X1",
+      "tangId": 116,
+      "factoryId": 39
+    },
+    {
+      "id": 65,
+      "ma": "QATD-B-T2-X2",
+      "tangId": 117,
+      "factoryId": 39
+    },
+    {
+      "id": 66,
+      "ma": "QATD-B-T3-X1",
+      "tangId": 123,
+      "factoryId": 39
+    },
+    {
+      "id": 67,
+      "ma": "QATD-B-T3-X2",
+      "tangId": 124,
+      "factoryId": 39
+    },
+    {
+      "id": 68,
+      "ma": "QATD-B-T4-X1",
+      "tangId": 130,
+      "factoryId": 39
+    },
+    {
+      "id": 69,
+      "ma": "QATD-B-T4-X2",
+      "tangId": 131,
+      "factoryId": 39
+    },
+    {
+      "id": 70,
+      "ma": "QATD-C-T1-X1",
+      "tangId": 137,
+      "factoryId": 40
+    },
+    {
+      "id": 71,
+      "ma": "QATD-C-T1-X2",
+      "tangId": 138,
+      "factoryId": 40
+    },
+    {
+      "id": 72,
+      "ma": "QATD-C-T2-X1",
+      "tangId": 144,
+      "factoryId": 40
+    },
+    {
+      "id": 73,
+      "ma": "QATD-C-T2-X2",
+      "tangId": 145,
+      "factoryId": 40
+    },
+    {
+      "id": 74,
+      "ma": "QATD-C-T3-X1",
+      "tangId": 151,
+      "factoryId": 40
+    },
+    {
+      "id": 75,
+      "ma": "QATD-C-T3-X2",
+      "tangId": 152,
+      "factoryId": 40
+    },
+    {
+      "id": 76,
+      "ma": "QATD-C-T4-X1",
+      "tangId": 158,
+      "factoryId": 40
+    },
+    {
+      "id": 77,
+      "ma": "QATD-C-T4-X2",
+      "tangId": 159,
+      "factoryId": 40
+    }
+  ],
+  "ghi": {
+    "corporates": 1,
+    "factories": 3,
+    "twin_toa_nha": 12,
+    "twin_tang": 84,
+    "twin_vat_the": 336,
+    "workshops": 24,
+    "production_lines": 98,
+    "stations": 1108,
+    "machines": 1108,
+    "twin_dat_cho": 2338,
+    "machine_health_history": 1108,
+    "wip_tracking": 5949,
+    "line_balance_metrics": 98,
+    "andon_events": 55,
+    "product_inspections": 6648
+  },
+  "cauChi": {
+    "corporates QATD": {
+      "thucTe": 1,
+      "kyVong": 1,
+      "dat": true
+    },
+    "factories corporateCode='QATD'": {
+      "thucTe": 3,
+      "kyVong": 3,
+      "dat": true
+    },
+    "twin_toa_nha cua 3 cong ty": {
+      "thucTe": 12,
+      "kyVong": 12,
+      "dat": true
+    },
+    "twin_tang cua 12 toa": {
+      "thucTe": 84,
+      "kyVong": 84,
+      "dat": true
+    },
+    "twin_tang capSo 1..7 moi toa (toa co du 7)": {
+      "thucTe": 12,
+      "kyVong": 12,
+      "dat": true
+    },
+    "twin_vat_the tuong (4/tang)": {
+      "thucTe": 336,
+      "kyVong": 336,
+      "dat": true
+    },
+    "workshops QATD": {
+      "thucTe": 24,
+      "kyVong": 24,
+      "dat": true
+    },
+    "workshops co tangId o tang capSo in (1,2)": {
+      "thucTe": 24,
+      "kyVong": 24,
+      "dat": true
+    },
+    "xuong co so line ngoai [3,5]": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "production_lines QATD = ke hoach": {
+      "thucTe": 98,
+      "kyVong": 98,
+      "dat": true
+    },
+    "line co so may ngoai [8,15]": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "line co loai may LAP (distinct<>count)": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "machines qua 4 chang = ke hoach (mo hinh 1 vs 2)": {
+      "thucTe": 1108,
+      "kyVong": 1108,
+      "dat": true
+    },
+    "machines code QATD- (dem theo ma) = ke hoach": {
+      "thucTe": 1108,
+      "kyVong": 1108,
+      "dat": true
+    },
+    "stations QATD = machines (1:1)": {
+      "thucTe": 1108,
+      "kyVong": 1108,
+      "dat": true
+    },
+    "may KHONG co dat_cho hoac co >1": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "dat_cho may co tangId <> tangId cua xuong": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "dat_cho may co viTriZMm <> caoDoMm cua tang": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "dat_cho may ngoai footprint tang": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "may heartbeat < 5 phut = may khong-offline": {
+      "thucTe": 1087,
+      "kyVong": 1087,
+      "dat": true
+    },
+    "may offline (lastHeartbeat NULL) = ke hoach": {
+      "thucTe": 21,
+      "kyVong": 21,
+      "dat": true
+    },
+    "machine_health_history: may co hang < 24h": {
+      "thucTe": 1108,
+      "kyVong": 1108,
+      "dat": true
+    },
+    "line KHONG co WIP mo (exitedAt IS NULL)": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "line KHONG co line_balance periodEnd < 8h": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "andon mo cua line QATD (>0)": {
+      "thucTe": 55,
+      "kyVong": ">0",
+      "dat": true
+    },
+    "product_inspections thieu factoryCode": {
+      "thucTe": 0,
+      "kyVong": 0,
+      "dat": true
+    },
+    "nen khong doi: maySimFac": {
+      "thucTe": 42,
+      "kyVong": 42,
+      "dat": true
+    },
+    "nen khong doi: nguoiDung": {
+      "thucTe": 10,
+      "kyVong": 10,
+      "dat": true
+    },
+    "nen khong doi: nhaMayKhac": {
+      "thucTe": 2,
+      "kyVong": 2,
+      "dat": true
+    },
+    "nen khong doi: tapDoanKhac": {
+      "thucTe": 1,
+      "kyVong": 1,
+      "dat": true
+    },
+    "nen khong doi: mayKhac": {
+      "thucTe": 43,
+      "kyVong": 43,
+      "dat": true
+    },
+    "nen khong doi: datChoKhac": {
+      "thucTe": 82,
+      "kyVong": 82,
+      "dat": true
+    }
+  },
+  "urlMau": [
+    {
+      "congTy": "QATD-A",
+      "twin": "/twin?nm=38",
+      "line": "/twin/line/217",
+      "may": "/twin/may/4197"
+    },
+    {
+      "congTy": "QATD-B",
+      "twin": "/twin?nm=39",
+      "line": "/twin/line/249",
+      "may": "/twin/may/4568"
+    },
+    {
+      "congTy": "QATD-C",
+      "twin": "/twin?nm=40",
+      "line": "/twin/line/284",
+      "may": "/twin/may/4977"
+    }
+  ]
+}

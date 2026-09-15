@@ -1,0 +1,36 @@
+{
+ "nutAck": {
+  "co": 1,
+  "chu": "Acknowledge",
+  "disabled": 1,
+  "opacity": "0.5",
+  "pointerEvents": "none",
+  "mauChu": "oklch(0.145 0.015 260)",
+  "mauNen": "oklch(0.72 0.14 185)",
+  "title": null,
+  "ariaDesc": null
+ },
+ "nutAnTam": {
+  "co": 1,
+  "chu": "Shelve",
+  "disabled": 1,
+  "opacity": "0.5",
+  "pointerEvents": "none",
+  "mauChu": "oklch(0.96 0.01 260)",
+  "mauNen": "rgba(0, 0, 0, 0)",
+  "title": null,
+  "ariaDesc": null
+ },
+ "nutTaoPhieu": {
+  "co": 1,
+  "chu": "Create work order",
+  "disabled": 0,
+  "opacity": "1",
+  "pointerEvents": "auto",
+  "mauChu": "oklch(0.96 0.01 260)",
+  "mauNen": "rgba(0, 0, 0, 0)",
+  "title": null,
+  "ariaDesc": null
+ },
+ "chuNhomCanhBao": "ALARMS (0) No open alarms. Acknowledge Shelve"
+}

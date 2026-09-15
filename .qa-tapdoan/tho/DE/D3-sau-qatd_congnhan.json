@@ -1,0 +1,163 @@
+{
+ "ca": "D3",
+ "moc": "sau",
+ "vai": "qatd_congnhan",
+ "cach": "cache",
+ "base": "http://localhost:3064",
+ "luc": "2026-09-15T02:11:32.785Z",
+ "may": {
+  "id": 4977,
+  "ma": "QATD-C-T1-X1-L1-M01",
+  "nm": 40
+ },
+ "tang": {
+  "toa": 61,
+  "tang": 137
+ },
+ "twin": {
+  "url": "/twin?nm=40&toa=61&tang=137&cam=78.83%2C27.43%2C74.7%2C32.21%2C28.08",
+  "lopCanhBao": {
+   "co": 1,
+   "soCon": 3,
+   "chu": "▲ QATD-C-T1-X1-L3-M05 ◆ QATD-C-T1-X1-L1-M05 ◆ QATD-C-T1-X1-L2-M05"
+  },
+  "daiCanhBao": {
+   "co": 1,
+   "chu": "Alarms (20) All20 Stop11 Call0 Warning9 Normal0 TODAY (20) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 08 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 08 (QATD) ◆ Ùn tắc tại trạm 06 (QATD) ◆ Ùn tắc tại trạm 07 (QATD) ◆ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 06 (QATD) ◆ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc "
+  },
+  "daiTrong": 0,
+  "daiChuaDo": 0,
+  "bangKpi": {
+   "co": 1,
+   "chu": "Metrics 328 machines Corporate · Công ty C · Floor Running 228 Down 25 Maintenance 19 Offline 6 Running rate 69.5% Average OEE — Machines w/ andon 20 PdM risk 0 OEE measured on 0/328 machines"
+  },
+  "demMay": "328",
+  "chuToanMan": "Skip to content Production (MES) Show advanced menu Simple C Công nhân Công ty C (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 20 Live 🇺🇸 English Production MES 3D Factory Corporate › Công ty C › Floor Factory Công ty C Building Toà 1 Toà 2 Toà 3 Toà 4 Floor Tầng 1 Tầng 2 Tầng 3 Tầng 4 Tầng 5 Tầng 6 Tầng 7 Export USD 3D 1 thing to know View Machines 328 Fresh data 0 Stale data 322 Unknown 6 Decommissioned 0 Alarms (20) All20 Stop11 Call0 Warning9 Normal0 TODAY (20) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 08 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 08 (QATD) ◆ Ùn tắc tại trạm 06 (QATD) ◆ Ùn tắc tại trạm 07 (QATD) ◆ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 06 (QATD) ◆ Ùn tắc tại trạm 05 (QATD) ◆ Ùn tắc tại trạm 08 (QATD) Machines Hierarchy QATD-C-T1-X1-L2-M07 Down/Stopped 1 min QATD-C-T1-X1-L4-M08 Down/Stopped 1 min QATD-C-T1-X2-L2-M11 Down/Stopped 1 min QATD-C-T2-X1-L2-M01 Down/Stopped 1 min QATD-C-T2-X1-L2-M04 Down/Stopped 1 min QATD-C-T2-X1-L3-M04 Down/Stopped 1 min QATD-C-T2-X2-L1-M10 Down/Stopped 1 min QATD-C-T2-X2-L2-M08 Down/Stopped 1 min QATD-C-T2-X2-L3-M06 Down/Stopped 1 min QATD-C-T2-X2-L4-M07 Down/Stopped 1 min QATD"
+ },
+ "may3d": {
+  "url": "/twin/may/4977",
+  "coNgan": 1,
+  "nganChu": "QATD-C-T1-X1-L1-M01 FEEDER-01 Running AOI RESULTS OK 6 NG 0 NTF 0 YIELD 100% Total inspected: 6 · FPY 100% ALARMS (0) No open alarms. Acknowledge OPEN MODULE Full cockpit Machine health",
+  "bocThu": null,
+  "bocLyDoThu": null,
+  "bocAn": 0,
+  "nutAck": {
+   "co": 1,
+   "chu": "Acknowledge",
+   "hien": true,
+   "tat": 1,
+   "bam": 0
+  },
+  "nutAnTam": {
+   "co": 0
+  },
+  "nutTaoPhieu": {
+   "co": 0
+  },
+  "nutGhiChu": {
+   "co": 0
+  },
+  "nhomCanhBao": {
+   "co": 1,
+   "chu": "ALARMS (0) No open alarms. Acknowledge",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "nhomTaoViec": {
+   "co": 0
+  },
+  "nhomMoChucNang": {
+   "co": 1,
+   "chu": "OPEN MODULE Full cockpit Machine health",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "nganChuaChon": {
+   "co": 0
+  },
+  "nganMaMay": {
+   "co": 1,
+   "chu": "QATD-C-T1-X1-L1-M01",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "nganTrangThai": {
+   "co": 1,
+   "chu": "Running",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "formTaoPhieu": {
+   "co": 0
+  },
+  "chonKyThuatVien": {
+   "co": 0
+  },
+  "soCanhBaoNgan": 0,
+  "canhBaoNgan": [],
+  "khongCanhBao": {
+   "co": 1,
+   "chu": "No open alarms.",
+   "hien": true,
+   "tat": 0,
+   "bam": 1
+  },
+  "nutTrongNgan": [
+   {
+    "tid": "nut-ack",
+    "chu": "Acknowledge",
+    "aria": null,
+    "tat": 1,
+    "hien": 1
+   },
+   {
+    "tid": "nut-dieu-huong-cockpit",
+    "chu": "Full cockpit",
+    "aria": null,
+    "tat": 0,
+    "hien": 1
+   },
+   {
+    "tid": "nut-dieu-huong-sucKhoeMay",
+    "chu": "Machine health",
+    "aria": null,
+    "tat": 0,
+    "hien": 1
+   }
+  ],
+  "nutDieuHuong": [
+   {
+    "tid": "nut-dieu-huong-cockpit",
+    "chu": "Full cockpit",
+    "taiCho": "0"
+   },
+   {
+    "tid": "nut-dieu-huong-sucKhoeMay",
+    "chu": "Machine health",
+    "taiCho": "0"
+   }
+  ],
+  "soCanvas": 1,
+  "canvasDom": 1,
+  "coMan": {
+   "man-twin-van-hanh": 0,
+   "man-twin-may": 1,
+   "man-twin-line": 0,
+   "man-twin-studio": 0
+  },
+  "biChan": 0,
+  "chuBiChan": null,
+  "tenMay": "FEEDER-01",
+  "mayDangTai": 0,
+  "mayKhongMoDuoc": {
+   "co": 0
+  },
+  "mayChuaDatCho": 0
+ },
+ "daBamAck": 0,
+ "lyDoKhongAck": "mốc này không bấm ack"
+}

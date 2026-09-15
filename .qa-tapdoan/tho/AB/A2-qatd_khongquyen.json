@@ -1,0 +1,17 @@
+{
+  "luc": "2026-09-15T02:11:00.202Z",
+  "base": "http://localhost:3064",
+  "id": "A2",
+  "vai": "qatd_khongquyen",
+  "moTa": "A2 · 0 QUYỀN · ô chọn nhà máy",
+  "deBai": "Đọc ô chọn nhà máy trên /twin",
+  "duKienDoc": {
+    "man-twin-van-hanh": false,
+    "bo-chon-nap": false,
+    "URL": "/twin?do=1"
+  },
+  "ketCuc": "màn bị chặn ở A1 ⇒ không có ô chọn để đọc",
+  "phanQuyet": "N/A",
+  "viSao": "Ca A2 chỉ có nghĩa khi vào được màn; vai này CHẶN-ĐÚNG ở A1.",
+  "anh": null
+}

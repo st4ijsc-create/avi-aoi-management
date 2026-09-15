@@ -1,0 +1,91 @@
+QA LẦN 11 · LÔ A + B — XONG
+===========================================================================
+Thời điểm: 2026-09-15T02:04:09Z → 02:13:02Z (UTC) = 09:04 → 09:20 (+07)
+Server đo:  http://localhost:3064 (PID 19136, bundle index-DxxtO34H.js, HEAD a147fc35) — CÒN SỐNG lúc kết thúc (GET /twin = 200)
+Nhịp tim:   .qa-tapdoan/nhip.sh vẫn chạy (nhịp #15 lúc 09:12:18+07) — TÔI KHÔNG TẮT
+Viewport:   1600×900 · 1 WORKER, tuần tự, 1 context mới cho MỖI vai (G147 — số worker là phần của phép đo)
+
+LỆNH CHẠY LẠI
+---------------------------------------------------------------------------
+  node .qa-tapdoan/do-AB.mjs                          # trọn lô A+B, 38 ca
+  node .qa-tapdoan/do-AB.mjs --ca=B4,B5               # chỉ vài ca
+  node .qa-tapdoan/do-AB.mjs --base=http://localhost:3064
+  node .qa-tapdoan/bang-AB.mjs                        # dựng lại BANG-AB.md + TONG.json từ thô
+
+ĐẦU RA
+---------------------------------------------------------------------------
+  .qa-tapdoan/tho/AB/<ca>-<vai>.json   38 tệp + TONG.json + chay.log + chay-B4B5.log
+  .qa-tapdoan/BANG-AB.md               bảng 7 cột + dòng tổng
+  .qa-tapdoan/anh/AB-*.png             25 ảnh
+  .qa-tapdoan/do-AB.mjs                harness (chỉ tệp trong .qa-tapdoan/ bị tạo/sửa)
+  .qa-tapdoan/bang-AB.mjs              bộ dựng bảng
+
+SỐ CA: 38   (A1×7 · A2×7 · A3×4 · B1×3 · B2×3 · B3×3 · B4×3 · B5×3 · B6×3 · B7×1 · B8×1)
+TỔNG:  ĐẠT 20 · SAI 16 · HỎNG 0 · CHẶN-ĐÚNG 1 · N/A 1 — ô không có phán quyết: 0
+
+MỘT GỐC RỄ LÀM ĐỎ 15/16 Ô SAI
+---------------------------------------------------------------------------
+`dem-may` (và `danh-sach-may`, và bảng KPI nổi) là số của CẢ NHÀ MÁY, không phải của TẦNG đang chọn.
+  TwinVanHanh.tsx:2924  dem-may = mayVanHanh.length
+   ← :910/:909         mayVanHanh = hopNhat(mayNen, kho)
+   ← :821              mayNen dựng từ `may = canhQ.data?.may`
+   ← server/routers/twinCanhRouter.ts:1003-1014  canhThietKe → traCayPhanCapNhaMay(factoryId)
+   ← server/db/twinCanh.ts:951-991               trả MỌI máy của nhà máy (tangIds chỉ lọc `datCho`/`vung`)
+Cảnh 3D thì lọc ĐÚNG theo tầng (TwinVanHanh.tsx:1008 `d.tangId !== tangId ⇒ continue`) và ĐO ĐƯỢC LÀ ĐÚNG
+ở 100 % các lượt: 45/40/0/0/68/40/41 (QATD-A) · 39/32/0/0/31/36/51 (QATD-C) · 63 (QATD-B tầng 109).
+⇒ Dữ liệu ĐÚNG, hình học ĐÚNG, bộ chọn ĐÚNG; sai ở **CHỖ ĐẾM/CHỖ GHI NHÃN**.
+
+THIẾT BỊ ĐO — HAI LẦN TỰ VÁ GIỮA ĐỢT (ghi lại để không ai tin bản đầu)
+---------------------------------------------------------------------------
+1. Bản đầu lọc câu giải thích tầng-trống bằng TỪ TIẾNG VIỆT (/máy|chỗ|tầng|xưởng/). Đo thật:
+   `document.documentElement.lang = "en"` cho MỌI tài khoản QATD, câu thật là
+   "371 machines are outside this load (other buildings were not queried) — whether they are
+   placed is not known yet" ⇒ bộ lọc trả [] ⇒ B4/B5 phán **SAI OAN** ở lượt đầu (`giảiThích=KHÔNG`).
+   Vá: mọi banner CÓ CHỮ = một câu giải thích, không lọc theo ngôn ngữ. Đã CHẠY LẠI B4/B5.
+   (Cùng lớp lỗi "thước đọc sai BỀ MẶT" mà QA lần 10 đã bắt — lần này thước của tôi mắc.)
+2. Thêm `bang-kpi-noi` (`kpi-pham-vi` + `kpi-mau-so`) vào phép đọc B4/B5: đây là bằng chứng
+   MẠNH HƠN `dem-may` cho câu "có khai số máy của tầng khác không", vì phạm vi được VIẾT RA
+   ngay cạnh số. Đã CHẠY LẠI B4/B5 lần hai.
+Cửa kiểm KHÔNG dùng cửa sổ thời gian cố định: chờ `__thongKeVe.calls>0` → `dem-may` thôi `—`
+→ BA lượt đọc GIỐNG NHAU (ổn định), không chờ một GIÁ TRỊ KỲ VỌNG nào (chờ kỳ vọng = tự thoả).
+
+ĐIỀU TÔI KHÔNG CHẮC
+---------------------------------------------------------------------------
+1. **`dem-may` là LỖI hay là THIẾT KẾ?** `cayVanHanh.ts:58-61` đã ghi thẳng rằng "ô đếm panel
+   trái (dem-may) khai câu thứ hai — G9, cùng chữ 'máy', hai mẫu số", tức tác giả BIẾT và CHỌN.
+   Tôi chấm SAI theo tiêu chí BRIEF viết ra ("dem-may khớp mayTheoTang") và theo L2 (nhãn người
+   dùng đọc được chỉ là "Máy", cạnh ô chọn Tầng, không có chữ nào nói "của cả nhà máy").
+   **Chủ đợt cần quyết**: đây là ô SAI của sản phẩm, hay là brief đặt sai kỳ vọng. Nếu là thứ
+   hai thì 15 ô SAI phải chuyển thành ĐẠT-kèm-ghi-chú và món cần mở là "thiếu MỘT con số nói
+   số máy của TẦNG" (hiện không có con số nào trên màn nói điều đó).
+2. **B7 tôi chấm SAI, nhưng màn KHÔNG nói dối.** `?pv=tapdoan` bị `phamViThuc()`
+   (boChonNap.ts:236-245) hạ xuống cấp nhà máy VÀ khai thẳng lý do (`banner-ha-cap`:
+   "Showing data for ONE factory (3 factories in the system)…"), breadcrumb ghi "Corporate ›
+   Công ty A" chứ không tự xưng Tập đoàn. Nghĩa là **§15 mục 26 CHƯA ĐẠT** (hạn chế hợp đồng
+   server: `canhThietKe` nhận ĐÚNG MỘT factoryId) nhưng KHÔNG phải hồi quy, và không phải nói
+   dối. Nếu chủ đợt muốn rổ riêng "CHƯA LÀM – CÓ KHAI" thì B7 thuộc rổ ấy.
+3. **`dem-tuoi` / `dem-cu` lật giữa các lượt đo** — A3 đọc tuoi=0/cu=364, B4 (1 phút sau) đọc
+   "Fresh 364 / Stale 0". Nguyên nhân là THIẾT BỊ: NGUONG_TUOI_MS = 60 s (mauTrangThai.ts:279)
+   còn `nhip.sh` làm tươi mỗi **120 s** ⇒ nửa chu kỳ mọi máy rơi sang "cũ". KHÔNG phải lỗi sản
+   phẩm. ⚠ Lô G (màu/độ tươi) sẽ SAI OAN nếu giữ nhịp 120 s — đề nghị hạ xuống ≤ 45 s trước khi đo G.
+4. **Ngôn ngữ giao diện của 7 tài khoản QATD là `en`**, không phải `vi`. Mọi lô sau phải đọc
+   theo nghĩa ở NGÔN NGỮ THẬT (hoặc đặt ngôn ngữ trước khi đo). Lô F6 (i18n) nên biết điều này.
+5. **A1 `qatd_khongquyen`** — màn chặn hiện `h1="Access denied"` (en.json `routeGuard.deniedTitle`)
+   và URL giữ nguyên `/twin?do=1`. Tôi kết luận đây là RouteGuard theo chuỗi i18n, KHÔNG đo bằng
+   cách chạm mã đang chạy; nếu chủ đợt cần chắc 100 % thì phải chứng minh bằng ablation (cấp
+   quyền → vào được → thu quyền → chặn lại).
+6. **`khonggan`**: màn `/twin` KHÔNG có `dem-may` (trả sớm bằng `EmptyState`), nên cửa chờ của
+   tôi hết hạn 90 s rồi mới đọc (ms=94.689). Không sai kết quả, nhưng ai chạy lại sẽ thấy vai này
+   chậm — đó là hành vi ĐÚNG của cửa fail-closed, không phải treo.
+7. **Tôi không đo `bang-tang`** vì testid ấy chỉ tồn tại ở màn Studio
+   (`client/src/components/twin3d/thiet-ke/DungNhaXuong.tsx:280`), KHÔNG có trên `/twin`. B1 đếm
+   tầng từ ô chọn `chon-tang`. Nếu brief thật sự muốn đếm trên `bang-tang` thì ca ấy thuộc lô E.
+8. Tôi chỉ đo **toà 1** cho B2–B5 và **toà 2/3/4 (tầng cấp 1)** cho B6. Các cặp (toà 2..4 × tầng
+   cấp 2..7) KHÔNG được đo — 24 tầng có máy thì tôi chạm 13. Không kết luận gì về 11 tầng còn lại.
+
+RÀNG BUỘC ĐÃ GIỮ
+---------------------------------------------------------------------------
+· Chỉ tạo/sửa tệp trong `.qa-tapdoan/` (do-AB.mjs, bang-AB.mjs, tho/AB/*, anh/AB-*.png, AB-XONG.txt, BANG-AB.md)
+· KHÔNG git · KHÔNG sửa .env · KHÔNG sửa mã sản phẩm · KHÔNG bật/tắt server nào · KHÔNG chạm 3000/3001/3008
+· KHÔNG tắt `nhip.sh` · KHÔNG sửa `.qa-dot59/do59.mjs` và `.qa-dot52/k8.mjs` (chỉ ĐỌC để lấy khuôn)
+· Ghi thô: tệp tạm `.tmp-*` rồi `rename` (G129/G130), không `>` đè trực tiếp

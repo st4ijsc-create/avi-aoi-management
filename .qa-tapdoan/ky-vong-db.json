@@ -1,0 +1,847 @@
+{
+ "mayTheoNhaMay": [
+  {
+   "id": 1,
+   "code": "SIM-FAC",
+   "corporateCode": "SIM",
+   "tong": 42,
+   "active": 41
+  },
+  {
+   "id": 18,
+   "code": "T12-SHOT-FA-mtlt8goc8429",
+   "corporateCode": null,
+   "tong": 1,
+   "active": 1
+  },
+  {
+   "id": 38,
+   "code": "QATD-A",
+   "corporateCode": "QATD",
+   "tong": 371,
+   "active": 371
+  },
+  {
+   "id": 39,
+   "code": "QATD-B",
+   "corporateCode": "QATD",
+   "tong": 409,
+   "active": 409
+  },
+  {
+   "id": 40,
+   "code": "QATD-C",
+   "corporateCode": "QATD",
+   "tong": 328,
+   "active": 328
+  }
+ ],
+ "tongMay": {
+  "n": 1151,
+  "a": 1150
+ },
+ "mayTheoTang": [
+  {
+   "tang_id": 81,
+   "capSo": 1,
+   "toa": "QATD-A-T1",
+   "nm": "QATD-A",
+   "may": 45
+  },
+  {
+   "tang_id": 82,
+   "capSo": 2,
+   "toa": "QATD-A-T1",
+   "nm": "QATD-A",
+   "may": 40
+  },
+  {
+   "tang_id": 83,
+   "capSo": 3,
+   "toa": "QATD-A-T1",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 84,
+   "capSo": 4,
+   "toa": "QATD-A-T1",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 85,
+   "capSo": 5,
+   "toa": "QATD-A-T1",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 86,
+   "capSo": 6,
+   "toa": "QATD-A-T1",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 87,
+   "capSo": 7,
+   "toa": "QATD-A-T1",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 88,
+   "capSo": 1,
+   "toa": "QATD-A-T2",
+   "nm": "QATD-A",
+   "may": 68
+  },
+  {
+   "tang_id": 89,
+   "capSo": 2,
+   "toa": "QATD-A-T2",
+   "nm": "QATD-A",
+   "may": 45
+  },
+  {
+   "tang_id": 90,
+   "capSo": 3,
+   "toa": "QATD-A-T2",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 91,
+   "capSo": 4,
+   "toa": "QATD-A-T2",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 92,
+   "capSo": 5,
+   "toa": "QATD-A-T2",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 93,
+   "capSo": 6,
+   "toa": "QATD-A-T2",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 94,
+   "capSo": 7,
+   "toa": "QATD-A-T2",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 95,
+   "capSo": 1,
+   "toa": "QATD-A-T3",
+   "nm": "QATD-A",
+   "may": 40
+  },
+  {
+   "tang_id": 96,
+   "capSo": 2,
+   "toa": "QATD-A-T3",
+   "nm": "QATD-A",
+   "may": 39
+  },
+  {
+   "tang_id": 97,
+   "capSo": 3,
+   "toa": "QATD-A-T3",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 98,
+   "capSo": 4,
+   "toa": "QATD-A-T3",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 99,
+   "capSo": 5,
+   "toa": "QATD-A-T3",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 100,
+   "capSo": 6,
+   "toa": "QATD-A-T3",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 101,
+   "capSo": 7,
+   "toa": "QATD-A-T3",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 102,
+   "capSo": 1,
+   "toa": "QATD-A-T4",
+   "nm": "QATD-A",
+   "may": 41
+  },
+  {
+   "tang_id": 103,
+   "capSo": 2,
+   "toa": "QATD-A-T4",
+   "nm": "QATD-A",
+   "may": 53
+  },
+  {
+   "tang_id": 104,
+   "capSo": 3,
+   "toa": "QATD-A-T4",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 105,
+   "capSo": 4,
+   "toa": "QATD-A-T4",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 106,
+   "capSo": 5,
+   "toa": "QATD-A-T4",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 107,
+   "capSo": 6,
+   "toa": "QATD-A-T4",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 108,
+   "capSo": 7,
+   "toa": "QATD-A-T4",
+   "nm": "QATD-A",
+   "may": 0
+  },
+  {
+   "tang_id": 109,
+   "capSo": 1,
+   "toa": "QATD-B-T1",
+   "nm": "QATD-B",
+   "may": 63
+  },
+  {
+   "tang_id": 110,
+   "capSo": 2,
+   "toa": "QATD-B-T1",
+   "nm": "QATD-B",
+   "may": 61
+  },
+  {
+   "tang_id": 111,
+   "capSo": 3,
+   "toa": "QATD-B-T1",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 112,
+   "capSo": 4,
+   "toa": "QATD-B-T1",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 113,
+   "capSo": 5,
+   "toa": "QATD-B-T1",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 114,
+   "capSo": 6,
+   "toa": "QATD-B-T1",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 115,
+   "capSo": 7,
+   "toa": "QATD-B-T1",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 116,
+   "capSo": 1,
+   "toa": "QATD-B-T2",
+   "nm": "QATD-B",
+   "may": 60
+  },
+  {
+   "tang_id": 117,
+   "capSo": 2,
+   "toa": "QATD-B-T2",
+   "nm": "QATD-B",
+   "may": 58
+  },
+  {
+   "tang_id": 118,
+   "capSo": 3,
+   "toa": "QATD-B-T2",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 119,
+   "capSo": 4,
+   "toa": "QATD-B-T2",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 120,
+   "capSo": 5,
+   "toa": "QATD-B-T2",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 121,
+   "capSo": 6,
+   "toa": "QATD-B-T2",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 122,
+   "capSo": 7,
+   "toa": "QATD-B-T2",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 123,
+   "capSo": 1,
+   "toa": "QATD-B-T3",
+   "nm": "QATD-B",
+   "may": 34
+  },
+  {
+   "tang_id": 124,
+   "capSo": 2,
+   "toa": "QATD-B-T3",
+   "nm": "QATD-B",
+   "may": 54
+  },
+  {
+   "tang_id": 125,
+   "capSo": 3,
+   "toa": "QATD-B-T3",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 126,
+   "capSo": 4,
+   "toa": "QATD-B-T3",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 127,
+   "capSo": 5,
+   "toa": "QATD-B-T3",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 128,
+   "capSo": 6,
+   "toa": "QATD-B-T3",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 129,
+   "capSo": 7,
+   "toa": "QATD-B-T3",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 130,
+   "capSo": 1,
+   "toa": "QATD-B-T4",
+   "nm": "QATD-B",
+   "may": 31
+  },
+  {
+   "tang_id": 131,
+   "capSo": 2,
+   "toa": "QATD-B-T4",
+   "nm": "QATD-B",
+   "may": 48
+  },
+  {
+   "tang_id": 132,
+   "capSo": 3,
+   "toa": "QATD-B-T4",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 133,
+   "capSo": 4,
+   "toa": "QATD-B-T4",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 134,
+   "capSo": 5,
+   "toa": "QATD-B-T4",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 135,
+   "capSo": 6,
+   "toa": "QATD-B-T4",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 136,
+   "capSo": 7,
+   "toa": "QATD-B-T4",
+   "nm": "QATD-B",
+   "may": 0
+  },
+  {
+   "tang_id": 137,
+   "capSo": 1,
+   "toa": "QATD-C-T1",
+   "nm": "QATD-C",
+   "may": 39
+  },
+  {
+   "tang_id": 138,
+   "capSo": 2,
+   "toa": "QATD-C-T1",
+   "nm": "QATD-C",
+   "may": 32
+  },
+  {
+   "tang_id": 139,
+   "capSo": 3,
+   "toa": "QATD-C-T1",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 140,
+   "capSo": 4,
+   "toa": "QATD-C-T1",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 141,
+   "capSo": 5,
+   "toa": "QATD-C-T1",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 142,
+   "capSo": 6,
+   "toa": "QATD-C-T1",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 143,
+   "capSo": 7,
+   "toa": "QATD-C-T1",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 144,
+   "capSo": 1,
+   "toa": "QATD-C-T2",
+   "nm": "QATD-C",
+   "may": 31
+  },
+  {
+   "tang_id": 145,
+   "capSo": 2,
+   "toa": "QATD-C-T2",
+   "nm": "QATD-C",
+   "may": 60
+  },
+  {
+   "tang_id": 146,
+   "capSo": 3,
+   "toa": "QATD-C-T2",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 147,
+   "capSo": 4,
+   "toa": "QATD-C-T2",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 148,
+   "capSo": 5,
+   "toa": "QATD-C-T2",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 149,
+   "capSo": 6,
+   "toa": "QATD-C-T2",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 150,
+   "capSo": 7,
+   "toa": "QATD-C-T2",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 151,
+   "capSo": 1,
+   "toa": "QATD-C-T3",
+   "nm": "QATD-C",
+   "may": 36
+  },
+  {
+   "tang_id": 152,
+   "capSo": 2,
+   "toa": "QATD-C-T3",
+   "nm": "QATD-C",
+   "may": 34
+  },
+  {
+   "tang_id": 153,
+   "capSo": 3,
+   "toa": "QATD-C-T3",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 154,
+   "capSo": 4,
+   "toa": "QATD-C-T3",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 155,
+   "capSo": 5,
+   "toa": "QATD-C-T3",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 156,
+   "capSo": 6,
+   "toa": "QATD-C-T3",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 157,
+   "capSo": 7,
+   "toa": "QATD-C-T3",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 158,
+   "capSo": 1,
+   "toa": "QATD-C-T4",
+   "nm": "QATD-C",
+   "may": 51
+  },
+  {
+   "tang_id": 159,
+   "capSo": 2,
+   "toa": "QATD-C-T4",
+   "nm": "QATD-C",
+   "may": 45
+  },
+  {
+   "tang_id": 160,
+   "capSo": 3,
+   "toa": "QATD-C-T4",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 161,
+   "capSo": 4,
+   "toa": "QATD-C-T4",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 162,
+   "capSo": 5,
+   "toa": "QATD-C-T4",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 163,
+   "capSo": 6,
+   "toa": "QATD-C-T4",
+   "nm": "QATD-C",
+   "may": 0
+  },
+  {
+   "tang_id": 164,
+   "capSo": 7,
+   "toa": "QATD-C-T4",
+   "nm": "QATD-C",
+   "may": 0
+  }
+ ],
+ "datChoTheoTang": [
+  {
+   "tangId": 81,
+   "n": 45
+  },
+  {
+   "tangId": 82,
+   "n": 40
+  },
+  {
+   "tangId": 88,
+   "n": 68
+  },
+  {
+   "tangId": 89,
+   "n": 45
+  },
+  {
+   "tangId": 95,
+   "n": 40
+  },
+  {
+   "tangId": 96,
+   "n": 39
+  },
+  {
+   "tangId": 102,
+   "n": 41
+  },
+  {
+   "tangId": 103,
+   "n": 53
+  },
+  {
+   "tangId": 109,
+   "n": 63
+  },
+  {
+   "tangId": 110,
+   "n": 61
+  },
+  {
+   "tangId": 116,
+   "n": 60
+  },
+  {
+   "tangId": 117,
+   "n": 58
+  },
+  {
+   "tangId": 123,
+   "n": 34
+  },
+  {
+   "tangId": 124,
+   "n": 54
+  },
+  {
+   "tangId": 130,
+   "n": 31
+  },
+  {
+   "tangId": 131,
+   "n": 48
+  },
+  {
+   "tangId": 137,
+   "n": 39
+  },
+  {
+   "tangId": 138,
+   "n": 32
+  },
+  {
+   "tangId": 144,
+   "n": 31
+  },
+  {
+   "tangId": 145,
+   "n": 60
+  },
+  {
+   "tangId": 151,
+   "n": 36
+  },
+  {
+   "tangId": 152,
+   "n": 34
+  },
+  {
+   "tangId": 158,
+   "n": 51
+  },
+  {
+   "tangId": 159,
+   "n": 45
+  }
+ ],
+ "lineDau": [
+  {
+   "id": 217,
+   "code": "QATD-A-T1-X1-L1",
+   "name": "Line 1",
+   "factoryId": 38,
+   "nm": "QATD-A",
+   "tangId": 81,
+   "tram": 12,
+   "may": 12
+  },
+  {
+   "id": 249,
+   "code": "QATD-B-T1-X1-L1",
+   "name": "Line 1",
+   "factoryId": 39,
+   "nm": "QATD-B",
+   "tangId": 109,
+   "tram": 15,
+   "may": 15
+  },
+  {
+   "id": 284,
+   "code": "QATD-C-T1-X1-L1",
+   "name": "Line 1",
+   "factoryId": 40,
+   "nm": "QATD-C",
+   "tangId": 137,
+   "tram": 8,
+   "may": 8
+  }
+ ],
+ "mayMau": [
+  {
+   "id": 4197,
+   "code": "QATD-A-T1-X1-L1-M01",
+   "name": "ICT-01",
+   "machineType": "ICT",
+   "operationStatus": "stopped",
+   "hb_null": false,
+   "lineId": 217,
+   "tangId": 81,
+   "nm": "QATD-A"
+  },
+  {
+   "id": 4568,
+   "code": "QATD-B-T1-X1-L1-M01",
+   "name": "WAVE_SOLDER-01",
+   "machineType": "WAVE_SOLDER",
+   "operationStatus": "running",
+   "hb_null": false,
+   "lineId": 249,
+   "tangId": 109,
+   "nm": "QATD-B"
+  },
+  {
+   "id": 4977,
+   "code": "QATD-C-T1-X1-L1-M01",
+   "name": "FEEDER-01",
+   "machineType": "FEEDER",
+   "operationStatus": "running",
+   "hb_null": false,
+   "lineId": 284,
+   "tangId": 137,
+   "nm": "QATD-C"
+  }
+ ],
+ "tuoiHeartbeat": {
+  "tuoi": 0,
+  "cu": 1087,
+  "khong_hb": 21
+ },
+ "ganNguoiDung": [
+  {
+   "username": "qatd_admin",
+   "role": "admin",
+   "nha_may": "-",
+   "tap_doan": "-"
+  },
+  {
+   "username": "qatd_congnhan",
+   "role": "operator",
+   "nha_may": "QATD-C",
+   "tap_doan": "-"
+  },
+  {
+   "username": "qatd_giamdoc",
+   "role": "supervisor",
+   "nha_may": "-",
+   "tap_doan": "QATD"
+  },
+  {
+   "username": "qatd_khonggan",
+   "role": "operator",
+   "nha_may": "-",
+   "tap_doan": "-"
+  },
+  {
+   "username": "qatd_khongquyen",
+   "role": "user",
+   "nha_may": "QATD-A",
+   "tap_doan": "-"
+  },
+  {
+   "username": "qatd_kythuat",
+   "role": "engineer",
+   "nha_may": "QATD-A,QATD-B",
+   "tap_doan": "-"
+  },
+  {
+   "username": "qatd_quanly",
+   "role": "supervisor",
+   "nha_may": "QATD-A",
+   "tap_doan": "-"
+  }
+ ]
+}

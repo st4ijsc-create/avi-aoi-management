@@ -1,0 +1,69 @@
+{
+ "luc": "2026-09-15T02:08:09.332Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "C2",
+ "vai": "qatd_congnhan",
+ "me": "cache",
+ "deBai": "mở /twin/may/4977 (QATD-C, FEEDER, running) ⇒ man-twin-may, ten-may/loai-may đúng DB, khoi-canh-may có canvas + __soCanvas=1, KHÔNG may-chua-dat-cho, suc-khoe-may có hạng",
+ "kyVongDb": {
+  "id": 4977,
+  "name": "FEEDER-01",
+  "code": "QATD-C-T1-X1-L1-M01",
+  "machineType": "FEEDER",
+  "operationStatus": "running",
+  "lastHeartbeat": "2026-09-14T19:00:14.859Z",
+  "isActive": true,
+  "stationId": 4776,
+  "stationName": "Trạm 01",
+  "lineId": 284,
+  "lineName": "Line 1",
+  "facCode": "QATD-C",
+  "facId": 40,
+  "toaMa": "QATD-C-T1",
+  "capSo": 1,
+  "tangId": 137,
+  "soDatCho": "1"
+ },
+ "msVe": 7604,
+ "thay": {
+  "url": "/twin/may/4977?do=1",
+  "trang": {
+   "man_van_hanh": 0,
+   "man_line": 0,
+   "man_may": 1
+  },
+  "line": null,
+  "may": {
+   "tenMay": "FEEDER-01",
+   "loaiMay": "FEEDER",
+   "sucKhoeChu": "Sức khoẻ 86 % · theo dõi",
+   "sucKhoeHang": "theo_doi",
+   "khoiCanhMay": 1,
+   "canvasTrongKhoiCanh": 1,
+   "chuaDatCho": 0,
+   "chuaDatChoChu": null,
+   "khongMoDuoc": 0,
+   "lyDo": null,
+   "khongMoChu": null,
+   "dangTai": 0,
+   "veManLine": 1,
+   "veManLineChu": "Line 1",
+   "veManLineHref": "/twin/line/284",
+   "veNhaMayHref": "/twin",
+   "canvasTrongMan": 1
+  },
+  "vanHanh": null,
+  "soCanvasKit": 1,
+  "canvasDom": 1,
+  "veCalls": 5,
+  "spin": 0,
+  "thanTrangDai": 1350
+ },
+ "anh": ".qa-tapdoan/anh/C-C2-qatd_congnhan-may4977.png",
+ "pq": "ĐẠT",
+ "vi": "URL = /twin/may/4977 ✓ · ten-may = \"FEEDER-01\" (DB) ✓ · loai-may chứa \"FEEDER\" (DB) ✓ · khoi-canh-may có canvas, __soCanvas=1 ✓ · KHÔNG may-chua-dat-cho ✓ · suc-khoe-may có hạng ✓"
+}

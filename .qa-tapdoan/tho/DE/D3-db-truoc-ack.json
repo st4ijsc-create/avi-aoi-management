@@ -1,0 +1,26 @@
+{
+ "lenh": "andon-tam",
+ "luc": "2026-09-15T02:12:40.452Z",
+ "truoc": {
+  "tong": 62,
+  "raised": 55,
+  "tam": []
+ },
+ "id": 261,
+ "title": "QATD-DE-RAISED-M4977",
+ "sau": {
+  "tong": 63,
+  "raised": 56,
+  "tam": [
+   {
+    "id": 261,
+    "machineId": 4977,
+    "status": "raised",
+    "title": "QATD-DE-RAISED-M4977",
+    "da_ack": false,
+    "acknowledgedBy": null,
+    "mttaSeconds": null
+   }
+  ]
+ }
+}

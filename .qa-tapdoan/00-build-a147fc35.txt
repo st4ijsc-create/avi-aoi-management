@@ -1,0 +1,12 @@
+build từ HEAD a147fc35 (a147fc35c75638778b223c934ba5fb166e7171b2) lúc 2026-09-15T06:59:37+07:00 · cây sạch ngoài nợ: 0 mục
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 52.19s
+
+Done in 177ms
+[copy-font-assets] 6 file(s) → D:\SOURCES\avi-aoi-management\.qa-tapdoan\dist-a147fc35\assets\fonts (21390337 bytes)
+md5 dòng: 903 · bundle: assets/index-DxxtO34H.js
+ký hiệu G141 trong dist đo: vien-tin-cay-may=1 hopManHinh=1 max-h-\[328px\]=1 do-tuoi-may=1 
+server bundle overview có scope: 5
+xong 2026-09-15T07:00:45+07:00

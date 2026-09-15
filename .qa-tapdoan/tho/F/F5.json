@@ -1,0 +1,564 @@
+{
+  "ca": "F5",
+  "base": "http://localhost:3064",
+  "luc": "2026-09-15T03:02:35.915Z",
+  "soWorker": 1,
+  "anh": [
+    ".qa-tapdoan/anh/F-F5-twin-tang-dong-68may-1600.png",
+    ".qa-tapdoan/anh/F-F5-twin-tang-dong-68may-1280.png",
+    ".qa-tapdoan/anh/F-F5-twin-pv-tapdoan-giamdoc-1600.png",
+    ".qa-tapdoan/anh/F-F5-twin-giamdoc-tang-dong-1600.png",
+    ".qa-tapdoan/anh/F-F5-line-217-1600.png",
+    ".qa-tapdoan/anh/F-F5-may-4197-1600.png",
+    ".qa-tapdoan/anh/F-F5-may-4197-1280.png",
+    ".qa-tapdoan/anh/F-F5-studio-1600.png"
+  ],
+  "ca5": [
+    {
+      "ten": "twin-tang-dong-68may-1600",
+      "tk": "qatd_kythuat",
+      "vp": "1600x900",
+      "duong": "/twin?nm=38&toa=54&tang=88",
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 1288,
+        "h": 669,
+        "phai": 1576,
+        "day": 876
+      },
+      "chips": [
+        {
+          "t": "chip-nhan-bi-an",
+          "chu": "abnormal names only · 67 other names hidden",
+          "soAn": "67",
+          "theoCS": "1",
+          "rect": {
+            "x": 807,
+            "y": 808,
+            "w": 250,
+            "h": 23,
+            "phai": 1057,
+            "day": 830
+          },
+          "trongCanvas": true
+        }
+      ],
+      "soChip": 1,
+      "chipNgoaiCanvas": 0,
+      "theoTT": {
+        "down": {
+          "so": 18,
+          "mau": "oklch(0.65 0.2 25)",
+          "opacity": "1",
+          "hoaTiet": false,
+          "chuTrangThai": "3s"
+        }
+      },
+      "soTT": 1,
+      "mauKhacNhau": 1,
+      "demNhan": {
+        "ve": 6,
+        "tong": 73,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 67,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 2,
+        "deKhoiKhacDoLai": 2,
+        "soHopKhoi": 68,
+        "soVungCam": 8,
+        "soLopPhuDom": 6,
+        "soHopBadge": 2,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "demBadge": {
+        "ve": 2,
+        "tong": 2,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 6,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "bang2dSucKhoe": [],
+      "hangTrenDom": [],
+      "breadcrumb": "Corporate › › › Công ty A › › › Floor",
+      "kpi": "Metrics | 371 machines | Corporate · Công ty A · Floor | Running | 261 | Down | 25 | Maintenance | 20 | Offline | 7 | Running rate | 70.4% | Average OEE | — | Machines w/ andon | 15 | PdM risk | 0 | OEE measured on 0/371 machines",
+      "demMay": "371",
+      "soCanvas": 1,
+      "calls": 5,
+      "tri": 15026,
+      "anh": ".qa-tapdoan/anh/F-F5-twin-tang-dong-68may-1600.png"
+    },
+    {
+      "ten": "twin-tang-dong-68may-1280",
+      "tk": "qatd_kythuat",
+      "vp": "1280x720",
+      "duong": "/twin?nm=38&toa=54&tang=88",
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 968,
+        "h": 489,
+        "phai": 1256,
+        "day": 696
+      },
+      "chips": [
+        {
+          "t": "chip-nhan-bi-an",
+          "chu": "abnormal names only · 69 other names hidden",
+          "soAn": "69",
+          "theoCS": "1",
+          "rect": {
+            "x": 647,
+            "y": 628,
+            "w": 250,
+            "h": 23,
+            "phai": 897,
+            "day": 650
+          },
+          "trongCanvas": true
+        }
+      ],
+      "soChip": 1,
+      "chipNgoaiCanvas": 0,
+      "theoTT": {
+        "down": {
+          "so": 14,
+          "mau": "oklch(0.65 0.2 25)",
+          "opacity": "1",
+          "hoaTiet": false,
+          "chuTrangThai": "13s"
+        }
+      },
+      "soTT": 1,
+      "mauKhacNhau": 1,
+      "demNhan": {
+        "ve": 4,
+        "tong": 73,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 69,
+        "vuotMep": 0,
+        "biChe": 2,
+        "deKhoiKhac": 1,
+        "deKhoiKhacDoLai": 1,
+        "soHopKhoi": 68,
+        "soVungCam": 8,
+        "soLopPhuDom": 6,
+        "soHopBadge": 2,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "demBadge": {
+        "ve": 2,
+        "tong": 2,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 6,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "bang2dSucKhoe": [],
+      "hangTrenDom": [],
+      "breadcrumb": "… › › › Công ty A › › › Floor",
+      "kpi": "Metrics | 371 machines | Corporate · Công ty A · Floor | Running | 261 | Down | 25 | Maintenance | 20 | Offline | 7 | Running rate | 70.4% | Average OEE | — | Machines w/ andon | 15 | PdM risk | 0 | OEE measured on 0/371 machines",
+      "demMay": "371",
+      "soCanvas": 1,
+      "calls": 5,
+      "tri": 15026,
+      "anh": ".qa-tapdoan/anh/F-F5-twin-tang-dong-68may-1280.png"
+    },
+    {
+      "ten": "twin-pv-tapdoan-giamdoc-1600",
+      "tk": "qatd_giamdoc",
+      "vp": "1600x900",
+      "duong": "/twin?pv=tapdoan",
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 1288,
+        "h": 669,
+        "phai": 1576,
+        "day": 876
+      },
+      "chips": [
+        {
+          "t": "chip-nhan-bi-an",
+          "chu": "abnormal names only · 45 other names hidden",
+          "soAn": "45",
+          "theoCS": "1",
+          "rect": {
+            "x": 807,
+            "y": 808,
+            "w": 250,
+            "h": 23,
+            "phai": 1057,
+            "day": 830
+          },
+          "trongCanvas": true
+        }
+      ],
+      "soChip": 1,
+      "chipNgoaiCanvas": 0,
+      "theoTT": {
+        "down": {
+          "so": 18,
+          "mau": "oklch(0.65 0.2 25)",
+          "opacity": "1",
+          "hoaTiet": false,
+          "chuTrangThai": "23s"
+        }
+      },
+      "soTT": 1,
+      "mauKhacNhau": 1,
+      "demNhan": {
+        "ve": 4,
+        "tong": 49,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 45,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 45,
+        "soVungCam": 7,
+        "soLopPhuDom": 6,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 6,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "bang2dSucKhoe": [],
+      "hangTrenDom": [],
+      "breadcrumb": "Corporate › › › Công ty A",
+      "kpi": "Metrics | 371 machines | Corporate · Công ty A | Running | 261 | Down | 25 | Maintenance | 20 | Offline | 7 | Running rate | 70.4% | Average OEE | — | Machines w/ andon | 15 | PdM risk | 0 | OEE measured on 0/371 machines",
+      "demMay": "371",
+      "soCanvas": 1,
+      "calls": 5,
+      "tri": 9998,
+      "anh": ".qa-tapdoan/anh/F-F5-twin-pv-tapdoan-giamdoc-1600.png"
+    },
+    {
+      "ten": "twin-giamdoc-tang-dong-1600",
+      "tk": "qatd_giamdoc",
+      "vp": "1600x900",
+      "duong": "/twin?nm=38&toa=54&tang=88",
+      "canvas": {
+        "x": 288,
+        "y": 207,
+        "w": 1288,
+        "h": 669,
+        "phai": 1576,
+        "day": 876
+      },
+      "chips": [
+        {
+          "t": "chip-nhan-bi-an",
+          "chu": "abnormal names only · 67 other names hidden",
+          "soAn": "67",
+          "theoCS": "1",
+          "rect": {
+            "x": 807,
+            "y": 808,
+            "w": 250,
+            "h": 23,
+            "phai": 1057,
+            "day": 830
+          },
+          "trongCanvas": true
+        }
+      ],
+      "soChip": 1,
+      "chipNgoaiCanvas": 0,
+      "theoTT": {
+        "down": {
+          "so": 18,
+          "mau": "oklch(0.65 0.2 25)",
+          "opacity": "1",
+          "hoaTiet": false,
+          "chuTrangThai": "33s"
+        }
+      },
+      "soTT": 1,
+      "mauKhacNhau": 1,
+      "demNhan": {
+        "ve": 6,
+        "tong": 73,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 67,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 2,
+        "deKhoiKhacDoLai": 2,
+        "soHopKhoi": 68,
+        "soVungCam": 8,
+        "soLopPhuDom": 6,
+        "soHopBadge": 2,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "demBadge": {
+        "ve": 2,
+        "tong": 2,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 6,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "bang2dSucKhoe": [],
+      "hangTrenDom": [],
+      "breadcrumb": "Corporate › › › Công ty A › › › Floor",
+      "kpi": "Metrics | 371 machines | Corporate · Công ty A · Floor | Running | 261 | Down | 25 | Maintenance | 20 | Offline | 7 | Running rate | 70.4% | Average OEE | — | Machines w/ andon | 15 | PdM risk | 0 | OEE measured on 0/371 machines",
+      "demMay": "371",
+      "soCanvas": 1,
+      "calls": 5,
+      "tri": 15026,
+      "anh": ".qa-tapdoan/anh/F-F5-twin-giamdoc-tang-dong-1600.png"
+    },
+    {
+      "ten": "line-217-1600",
+      "tk": "qatd_kythuat",
+      "vp": "1600x900",
+      "duong": "/twin/line/217",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1288,
+        "h": 659,
+        "phai": 1576,
+        "day": 784
+      },
+      "chips": [],
+      "soChip": 0,
+      "chipNgoaiCanvas": 0,
+      "theoTT": {},
+      "soTT": 0,
+      "mauKhacNhau": 0,
+      "demNhan": {
+        "ve": 12,
+        "tong": 12,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 12,
+        "soVungCam": 3,
+        "soLopPhuDom": 2,
+        "soHopBadge": 1,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "demBadge": {
+        "ve": 1,
+        "tong": 1,
+        "soAn": 0,
+        "soBiChongLap": 0,
+        "soVuotTran": 0,
+        "biChe": 0,
+        "doiCho": 0,
+        "soVungCam": 2,
+        "tran": 12,
+        "capConChong": 0
+      },
+      "bang2dSucKhoe": [],
+      "hangTrenDom": [],
+      "breadcrumb": null,
+      "kpi": "Metrics | 12 machines | Line 1 | Running | 7 | Down | 2 | Maintenance | 0 | Offline | 0 | Running rate | 58.3% | Average OEE | — | Machines w/ andon | 1 | PdM risk | 0 | OEE measured on 0/12 machines",
+      "demMay": null,
+      "soCanvas": 1,
+      "calls": 6,
+      "tri": 1202,
+      "anh": ".qa-tapdoan/anh/F-F5-line-217-1600.png"
+    },
+    {
+      "ten": "may-4197-1600",
+      "tk": "qatd_kythuat",
+      "vp": "1600x900",
+      "duong": "/twin/may/4197",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 1000,
+        "h": 324,
+        "phai": 1288,
+        "day": 449
+      },
+      "chips": [],
+      "soChip": 0,
+      "chipNgoaiCanvas": 0,
+      "theoTT": {},
+      "soTT": 0,
+      "mauKhacNhau": 0,
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 2,
+        "soVungCam": 1,
+        "soLopPhuDom": 1,
+        "soHopBadge": 0,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "demBadge": null,
+      "bang2dSucKhoe": [],
+      "hangTrenDom": [
+        {
+          "t": "suc-khoe-may",
+          "hang": "nguy_kich",
+          "chu": "Health 50 % · critical",
+          "color": "oklch(0.96 0.01 260)"
+        }
+      ],
+      "breadcrumb": null,
+      "kpi": null,
+      "demMay": null,
+      "soCanvas": 1,
+      "calls": 5,
+      "tri": 314,
+      "anh": ".qa-tapdoan/anh/F-F5-may-4197-1600.png"
+    },
+    {
+      "ten": "may-4197-1280",
+      "tk": "qatd_kythuat",
+      "vp": "1280x720",
+      "duong": "/twin/may/4197",
+      "canvas": {
+        "x": 288,
+        "y": 125,
+        "w": 680,
+        "h": 280,
+        "phai": 968,
+        "day": 405
+      },
+      "chips": [],
+      "soChip": 0,
+      "chipNgoaiCanvas": 0,
+      "theoTT": {},
+      "soTT": 0,
+      "mauKhacNhau": 0,
+      "demNhan": {
+        "ve": 1,
+        "tong": 1,
+        "ngoaiKhung": 0,
+        "chongLap": 0,
+        "vuotTran": 0,
+        "tran": 30,
+        "biGiau": 0,
+        "vuotMep": 0,
+        "biChe": 0,
+        "deKhoiKhac": 0,
+        "deKhoiKhacDoLai": 0,
+        "soHopKhoi": 2,
+        "soVungCam": 1,
+        "soLopPhuDom": 1,
+        "soHopBadge": 0,
+        "suCoNgoaiKhung": 0,
+        "capConChong": 0
+      },
+      "demBadge": null,
+      "bang2dSucKhoe": [],
+      "hangTrenDom": [
+        {
+          "t": "suc-khoe-may",
+          "hang": "nguy_kich",
+          "chu": "Health 50 % · critical",
+          "color": "oklch(0.96 0.01 260)"
+        }
+      ],
+      "breadcrumb": null,
+      "kpi": null,
+      "demMay": null,
+      "soCanvas": 1,
+      "calls": 5,
+      "tri": 314,
+      "anh": ".qa-tapdoan/anh/F-F5-may-4197-1280.png"
+    },
+    {
+      "ten": "studio-1600",
+      "tk": "qatd_kythuat",
+      "vp": "1600x900",
+      "duong": "/twin-studio",
+      "canvas": {
+        "x": 556,
+        "y": 350,
+        "w": 726,
+        "h": 419,
+        "phai": 1283,
+        "day": 769
+      },
+      "chips": [],
+      "soChip": 0,
+      "chipNgoaiCanvas": 0,
+      "theoTT": {},
+      "soTT": 0,
+      "mauKhacNhau": 0,
+      "demNhan": null,
+      "demBadge": null,
+      "bang2dSucKhoe": [
+        "dai-suc-khoe"
+      ],
+      "hangTrenDom": [],
+      "breadcrumb": null,
+      "kpi": null,
+      "demMay": null,
+      "soCanvas": 1,
+      "calls": 3,
+      "tri": 2702,
+      "anh": ".qa-tapdoan/anh/F-F5-studio-1600.png"
+    }
+  ],
+  "sucKhoeApi": {
+    "status": 200,
+    "so": null,
+    "mau": "{\"result\":{\"data\":{\"json\":{\"khai\":[{\"machineId\":4197,\"ma\":\"QATD-A-T1-X1-L1-M01\",\"diem\":50,\"nguyCo\":0,\"mucKhan\":\"LOW\",\"hanBaoTri\":null,\"mocMs\":1789416208155},{\"machineId\":4198,\"ma\":\"QATD-A-T1-X1-L1-M02\",\"diem\":87,\"nguyCo\":0,\"mucKhan\":\"LOW\",\"hanBaoTri\":null,\"mocMs\":1789416208155},{\"machineId\":4199,\"ma"
+  }
+}

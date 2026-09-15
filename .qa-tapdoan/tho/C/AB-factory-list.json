@@ -1,0 +1,79 @@
+{
+ "luc": "2026-09-15T02:15:54.138Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "AB",
+ "deBai": "cùng máy 4977 / line 284 (QATD-C), đổi VAI để đổi phần tử factory.list[0]",
+ "factoryList": {
+  "qatd_congnhan": [
+   {
+    "id": 40,
+    "code": "QATD-C",
+    "name": "Công ty C"
+   }
+  ],
+  "qatd_congnhan__phanTu0": "40 QATD-C \"Công ty C\"",
+  "qatd_giamdoc": [
+   {
+    "id": 38,
+    "code": "QATD-A",
+    "name": "Công ty A"
+   },
+   {
+    "id": 39,
+    "code": "QATD-B",
+    "name": "Công ty B"
+   },
+   {
+    "id": 40,
+    "code": "QATD-C",
+    "name": "Công ty C"
+   }
+  ],
+  "qatd_giamdoc__phanTu0": "38 QATD-A \"Công ty A\"",
+  "qatd_admin": [
+   {
+    "id": 38,
+    "code": "QATD-A",
+    "name": "Công ty A"
+   },
+   {
+    "id": 39,
+    "code": "QATD-B",
+    "name": "Công ty B"
+   },
+   {
+    "id": 40,
+    "code": "QATD-C",
+    "name": "Công ty C"
+   },
+   {
+    "id": 1,
+    "code": "SIM-FAC",
+    "name": "Nhà máy ảo (SIM)"
+   },
+   {
+    "id": 18,
+    "code": "T12-SHOT-FA-mtlt8goc8429",
+    "name": "Task 12 anh chup - factory"
+   }
+  ],
+  "qatd_admin__phanTu0": "38 QATD-A \"Công ty A\"",
+  "qatd_kythuat": [
+   {
+    "id": 38,
+    "code": "QATD-A",
+    "name": "Công ty A"
+   },
+   {
+    "id": 39,
+    "code": "QATD-B",
+    "name": "Công ty B"
+   }
+  ],
+  "qatd_kythuat__phanTu0": "38 QATD-A \"Công ty A\""
+ }
+}

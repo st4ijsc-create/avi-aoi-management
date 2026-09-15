@@ -1,0 +1,92 @@
+
+=== client/src/pages/TwinLine.tsx:352-356 ===
+  352 |    *   `EmptyState` phía dưới nói ra điều đó thay vì vẽ một chuyền sai. Ghi nợ ở
+  353 |    *   đây thay vì để người sau đoán.
+  354 |    */
+  355 |   const factoryId = factories[0]?.id ?? null;
+  356 | 
+
+=== client/src/pages/TwinLine.tsx:374-392 ===
+  374 |     () =>
+  375 |       ((toaNhaQ.data ?? []) as Array<{ id: number; rongMm: string | number; sauMm: string | number }>)[0] ??
+  376 |       null,
+  377 |     [toaNhaQ.data],
+  378 |   );
+  379 |   const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
+  380 |     { id: toaNhaDau?.id ?? 0 },
+  381 |     { enabled: toaNhaDau != null, retry: false },
+  382 |   );
+  383 |   const tangIdsHoi = useMemo(
+  384 |     () =>
+  385 |       ((chiTietQ.data?.tangs ?? []) as Array<{ id: number }>).map((s) => s.id).slice(0, 50),
+  386 |     [chiTietQ.data],
+  387 |   );
+  388 | 
+  389 |   /*
+  390 |    * ★★★ HỎI **MỌI TẦNG CỦA TOÀ**, KHÔNG CHỈ MỘT — F2, và ở màn Line lý do CÒN
+  391 |    *   MẠNH HƠN: một chuyền **không nhất thiết nằm gọn trong một tầng**. Màn
+  392 |    *   `/twin` có "tầng đang xem" từ URL để lọc; màn này **không có** khái niệm
+
+=== client/src/pages/TwinMay.tsx:270-275 ===
+  270 |   useTruDinhKhung(khungRef, "--twin-may-top");
+  271 | 
+  272 |   /* ── Nhà máy ─────────────────────────────────────────────────────────── */
+  273 |   const factoriesQ = trpc.factory.list.useQuery();
+  274 |   const factories = useMemo(
+  275 |     () => (factoriesQ.data ?? []) as Array<{ id: number; name?: string; code?: string }>,
+
+=== client/src/pages/TwinMay.tsx:292-310 ===
+  292 |   /* ── Hình học nhà xưởng ──────────────────────────────────────────────── */
+  293 |   const toaNhaQ = trpc.twinCanh.danhSachToaNha.useQuery(
+  294 |     { factoryId: factoryId ?? 0 },
+  295 |     { enabled: factoryId !== null, retry: false },
+  296 |   );
+  297 |   const toaNhaDau = useMemo(
+  298 |     () =>
+  299 |       ((toaNhaQ.data ?? []) as Array<{ id: number; rongMm: string | number; sauMm: string | number }>)[0] ??
+  300 |       null,
+  301 |     [toaNhaQ.data],
+  302 |   );
+  303 |   const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
+  304 |     { id: toaNhaDau?.id ?? 0 },
+  305 |     { enabled: toaNhaDau != null, retry: false },
+  306 |   );
+  307 |   const tangIdsHoi = useMemo(
+  308 |     () =>
+  309 |       ((chiTietQ.data?.tangs ?? []) as Array<{ id: number }>).map((s) => s.id).slice(0, 50),
+  310 |     [chiTietQ.data],
+
+=== server/db/hierarchy.ts:338-341 ===
+  338 |   // `col = ANY(${mảng})` — postgres.js gửi mảng JS thành `text[]` ⇒ 42809, đã cắn 10 chỗ).
+  339 |   if (pv.factoryIds !== null) dieuKien.push(factoryIdGate(factories.id, pv.factoryIds));
+  340 |   return db.select().from(factories).where(and(...dieuKien)).orderBy(factories.name);
+  341 | }
+
+=== server/db/twinCanh.ts:256-262 ===
+  256 |   return d
+  257 |     .select()
+  258 |     .from(twinToaNha)
+  259 |     .where(and(eq(twinToaNha.factoryId, factoryId), eq(twinToaNha.isActive, true)))
+  260 |     .orderBy(asc(twinToaNha.ma));
+  261 | }
+  262 | 
+
+=== client/src/components/twin3d/van-hanh/manLine.ts:410-428 ===
+  410 |  * ⚠ Từ chối thắng cả "đang tải": server đã nói KHÔNG thì không có gì để chờ.
+  411 |  */
+  412 | export type LyDoManLine = "mo" | "chuaGanNhaMay" | "thieuQuyen";
+  413 | 
+  414 | export interface CanhXetManLine {
+  415 |   factoriesDangTai: boolean;
+  416 |   factoriesLoi: boolean;
+  417 |   soNhaMay: number;
+  418 |   /** `true` khi một truy vấn nền của màn bị server TỪ CHỐI (`FORBIDDEN`) — thiếu quyền THẬT (Đợt 36). */
+  419 |   thieuQuyen?: boolean;
+  420 | }
+  421 | 
+  422 | export function lyDoMoManLine(c: CanhXetManLine): LyDoManLine {
+  423 |   if (c.thieuQuyen) return "thieuQuyen";
+  424 |   if (c.factoriesDangTai || c.factoriesLoi) return "mo";
+  425 |   return c.soNhaMay === 0 ? "chuaGanNhaMay" : "mo";
+  426 | }
+  427 | 

@@ -1,0 +1,11 @@
+
+==========================================================================
+  LAM TUOI NHIP TIM QATD (--chi-nhip)
+==========================================================================
+  Vai: aoi   CSDL: aoi_management   TimeZone phien: Etc/UTC
+  machines.lastHeartbeat=now()         1087 may (offline giu NULL)
+  wip_tracking.enteredAt truot         5949 hang (moc moi nhat cu 2026-09-14 23:19:37.597574)
+  line_balance_metrics.periodEnd       98 hang
+  machine_health_history (moi nhat)    1108 hang
+
+  Do lai: {"mayTuoi":1087,"mayOffline":21,"lineHetHanCanBang":0,"mayCoSucKhoe24h":1108}

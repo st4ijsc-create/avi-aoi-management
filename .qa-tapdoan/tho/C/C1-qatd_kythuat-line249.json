@@ -1,0 +1,168 @@
+{
+ "luc": "2026-09-15T02:05:13.918Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "C1",
+ "vai": "qatd_kythuat",
+ "me": "cache",
+ "deBai": "qua CÂY PHÂN CẤP trên /twin, bung tới line 249 (QATD-B toà T1 tầng 1 — nhà máy THỨ HAI của vai) rồi BẤM ⇒ /twin/line/249 với tên/đếm máy/đếm trạm đúng DB",
+ "kyVongDb": {
+  "lineId": 249,
+  "lineName": "Line 1",
+  "lineCode": "QATD-B-T1-X1-L1",
+  "lineActive": true,
+  "wsId": 62,
+  "wsName": "Xưởng T1 tầng 1",
+  "tangId": 109,
+  "tangDbId": 109,
+  "capSo": 1,
+  "toaNhaId": 57,
+  "toaMa": "QATD-B-T1",
+  "toaTen": "Toà 1",
+  "facId": 39,
+  "facCode": "QATD-B",
+  "facName": "Công ty B",
+  "soTram": "15",
+  "soMay": "15"
+ },
+ "duongBam": [
+  "goto /twin?do=1",
+  "selectOption chon-nha-may=39",
+  "selectOption chon-toa-nha=57",
+  "selectOption chon-tang=109",
+  "click mo-cay-phan-cap + bung mũi tên",
+  "click node-cay-line:249 (\"QATD-B-T1-X1-L1 — Line 1151\")"
+ ],
+ "truocChon": {
+  "oNhaMay": {
+   "soMuc": 2,
+   "value": "38",
+   "nhanDangChon": "Công ty A"
+  },
+  "oToaNha": {
+   "soMuc": 4,
+   "value": "53",
+   "nhanDangChon": "Toà 1"
+  },
+  "oTang": {
+   "soMuc": 7,
+   "value": "81",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "371",
+  "canvasTrongMan": 1
+ },
+ "sauChon": {
+  "oNhaMay": {
+   "soMuc": 2,
+   "value": "39",
+   "nhanDangChon": "Công ty B"
+  },
+  "oToaNha": {
+   "soMuc": 4,
+   "value": "57",
+   "nhanDangChon": "Toà 1"
+  },
+  "oTang": {
+   "soMuc": 7,
+   "value": "109",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "409",
+  "canvasTrongMan": 1
+ },
+ "anhTwin": ".qa-tapdoan/anh/C-C1-qatd_kythuat-line249-truoc-twin.png",
+ "soNode": 861,
+ "nodeLineCoTrongCay": [
+  "node-cay-line:249",
+  "node-cay-line:250",
+  "node-cay-line:251",
+  "node-cay-line:252",
+  "node-cay-line:253",
+  "node-cay-line:254",
+  "node-cay-line:255",
+  "node-cay-line:256",
+  "node-cay-line:257",
+  "node-cay-line:258",
+  "node-cay-line:259",
+  "node-cay-line:260",
+  "node-cay-line:261",
+  "node-cay-line:262",
+  "node-cay-line:263",
+  "node-cay-line:264",
+  "node-cay-line:265",
+  "node-cay-line:266",
+  "node-cay-line:267",
+  "node-cay-line:268",
+  "node-cay-line:269",
+  "node-cay-line:270",
+  "node-cay-line:271",
+  "node-cay-line:272",
+  "node-cay-line:273",
+  "node-cay-line:274",
+  "node-cay-line:275",
+  "node-cay-line:276",
+  "node-cay-line:277",
+  "node-cay-line:278",
+  "node-cay-line:279",
+  "node-cay-line:280",
+  "node-cay-line:281",
+  "node-cay-line:282",
+  "node-cay-line:283"
+ ],
+ "soNodeLine": 35,
+ "coNodeDich": true,
+ "chuNodeDich": "QATD-B-T1-X1-L1 — Line 1151",
+ "toiUrl": true,
+ "msVe": 4643,
+ "thay": {
+  "url": "/twin/line/249",
+  "trang": {
+   "man_van_hanh": 0,
+   "man_line": 1,
+   "man_may": 0
+  },
+  "line": {
+   "tenLine": "Chuyền 249",
+   "demMayChu": "Máy 0",
+   "demMaySo": 0,
+   "demTramChu": "Trạm 0",
+   "demTramSo": 0,
+   "wipChu": "WIP 0",
+   "wipSo": 0,
+   "lineRong": 1,
+   "lineRongChu": "Chuyền này chưa có máy nào trên bố cục Chuyền có thể chưa được xếp chỗ trong Twin Studio, hoặc thuộc một nhà máy khác.",
+   "khongMoDuoc": 0,
+   "lyDo": null,
+   "khongMoChu": null,
+   "idKhongHopLe": 0,
+   "idKhongHopLeChu": null,
+   "canvasTrongMan": 0,
+   "soNhanMay": 0,
+   "soOTram": 0,
+   "daiLine": 0,
+   "veNhaMayHref": "/twin?do=1&cam=87.28%2C31.76%2C88.33%2C32.95%2C34&nm=39&toa=57&tang=109"
+  },
+  "may": null,
+  "vanHanh": null,
+  "soCanvasKit": 0,
+  "canvasDom": 0,
+  "veCalls": 5,
+  "spin": 0,
+  "thanTrangDai": 391
+ },
+ "anh": ".qa-tapdoan/anh/C-C1-qatd_kythuat-line249.png",
+ "pq": "SAI",
+ "vi": "ten-line = \"Line 1\" (DB): thấy \"Chuyền 249\" · dem-may-line = 15 (DB): thấy \"Máy 0\" · dem-tram-line = 15 (DB): thấy \"Trạm 0\" · canvas 3D (1 kit): canvas 0 / __soCanvas 0 · khối máy VẼ trên cảnh (nhãn máy = 15 máy DB): nhãn máy trên cảnh 0 / DB 15 · ô trạm 0 · dải line 0 · KHÔNG line-rong / line-khong-mo-duoc: line-rong 1 · khong-mo-duoc 0 (lý do \"null\") chữ: \"Chuyền này chưa có máy nào trên bố cục Chuyền có thể chưa được xếp chỗ trong Twin Studio, hoặc thuộc một nhà máy khác.\"",
+ "sai": [
+  "ten-line = \"Line 1\" (DB)",
+  "dem-may-line = 15 (DB)",
+  "dem-tram-line = 15 (DB)",
+  "canvas 3D (1 kit)",
+  "khối máy VẼ trên cảnh (nhãn máy = 15 máy DB)",
+  "KHÔNG line-rong / line-khong-mo-duoc"
+ ]
+}

@@ -1,0 +1,100 @@
+{
+ "luc": "2026-09-15T02:09:51.759Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "ca": "C3",
+ "vai": "qatd_congnhan",
+ "me": "cache",
+ "deBai": "trên /twin (nm=40 toa=61 tang=137) bấm TÂM KHỐI ≥5 máy khác nhau ⇒ URL = /twin/may/<đúng id máy đó>",
+ "bam": [
+  {
+   "may": 4977,
+   "X": 909,
+   "Y": 460,
+   "hitMay": 4977,
+   "url": "/twin/may/4977",
+   "dich": 4977,
+   "dung": true,
+   "png": ".qa-tapdoan/anh/C-C3-qatd_congnhan-sau-bam-khoi-may4977.png"
+  },
+  {
+   "may": 4985,
+   "X": 833,
+   "Y": 479,
+   "hitMay": 4985,
+   "url": "/twin/may/4985",
+   "dich": 4985,
+   "dung": true,
+   "png": null
+  },
+  {
+   "may": 4994,
+   "X": 760,
+   "Y": 513,
+   "hitMay": 4994,
+   "url": "/twin/may/4994",
+   "dich": 4994,
+   "dung": true,
+   "png": null
+  },
+  {
+   "may": 5002,
+   "X": 641,
+   "Y": 544,
+   "hitMay": 5002,
+   "url": "/twin/may/5002",
+   "dich": 5002,
+   "dung": true,
+   "png": null
+  },
+  {
+   "may": 5010,
+   "X": 783,
+   "Y": 624,
+   "hitMay": 5010,
+   "url": "/twin/may/5010",
+   "dich": 5010,
+   "dung": true,
+   "png": null
+  }
+ ],
+ "oChon": {
+  "oNhaMay": {
+   "soMuc": 1,
+   "value": "40",
+   "nhanDangChon": "Công ty C"
+  },
+  "oToaNha": {
+   "soMuc": 4,
+   "value": "61",
+   "nhanDangChon": "Toà 1"
+  },
+  "oTang": {
+   "soMuc": 7,
+   "value": "137",
+   "nhanDangChon": "Tầng 1"
+  },
+  "demMay": "328",
+  "canvasTrongMan": 1
+ },
+ "census": {
+  "soTrongKhung": 39,
+  "soBamDuoc": 39,
+  "soNhanVe": 5,
+  "loai": []
+ },
+ "chon": [
+  4977,
+  4985,
+  4994,
+  5002,
+  5010
+ ],
+ "dung": 5,
+ "tong": 5,
+ "pq": "ĐẠT",
+ "vi": "5/5 cú bấm tới đúng máy ✓"
+}
