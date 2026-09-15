@@ -503,6 +503,22 @@ async function cheDoGhi() {
             ghi.twin_dat_cho += rS.count + rM.count;
 
             // ── LỚP VẬN HÀNH TỐI THIỂU ──────────────────────────────────────
+            /*
+             * ⚠ 2026-09-16 — T3 của đợt nghiệm thu đo được hai chỉ số rủi ro MÂU THUẪN trên
+             *   màn máy. Đã truy nguyên, và nguồn KHÔNG phải khối này:
+             *
+             *   · `machine_health_history` (ngay dưới) đặt `risk = 100 - health` ⇒ hai đại
+             *     lượng ở đây **đã phụ thuộc nhau đúng chiều**.
+             *   · `predictive_alerts` thì bộ sinh này **KHÔNG ghi dòng nào** — chúng do chính
+             *     máy chủ đang chạy bơm vào theo logic riêng, không nhìn `healthScore` mà bộ
+             *     sinh đặt. Đo được: tỉ lệ máy có cảnh báo mở theo hạng sức khoẻ là
+             *     53,5 / 49,6 / 49,7 / 55,8 % — phẳng, và hạng KHOẺ NHẤT lại cao nhất.
+             *
+             *   ⇒ Muốn dữ liệu thử nhất quán, phải sinh `predictive_alerts` phụ thuộc
+             *     `healthScore` **và** tắt đường bơm của máy chủ trong lúc sinh, hoặc chấp
+             *     nhận rằng hai nguồn độc lập là đặc tính của môi trường thử và nói ra điều
+             *     đó khi đọc số. Chưa làm — thuộc đợt vá PH-39.
+             */
             // Sức khoẻ: 1 hàng/máy; traSucKhoeMay đọc healthScore, predictedFailureRisk,
             // maintenanceUrgency, recommendedMaintenanceDate, createdAt (mới nhất).
             const sk = mays.map((m) => {

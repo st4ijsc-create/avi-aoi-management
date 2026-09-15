@@ -1288,6 +1288,15 @@ git commit -m "feat(twin3d): canh pham vi tap doan gop nhieu nha may (muc 26 spe
 
 ---
 
+## Quyết định chốt đợt 2 (2026-09-16)
+
+| việc | quyết định | hệ quả |
+|---|---|---|
+| Gộp nhiều nhà máy | **Mở rộng đầu vào nhận danh sách** | Task 18 và 19 chạy như viết. Cổng phạm vi đã vá trước nên ba nhà máy chỉ còn 28 câu truy vấn và 37 mili giây. Bắt buộc giữ ba bất biến hàng rào: lọc từng mã, im lặng bỏ mã ngoài phạm vi, toàn ngoài thì rỗng và không rò tên. |
+| Hai tiêu chí bố cục | **Cân lại tỉ lệ khung theo số đã đo** | Việc mới. Dùng hai con số thật 85 và 68 điểm ảnh cộng hằng 17 điểm ảnh của dòng tiền tố, chia lại chỗ giữa dải cảnh báo và danh sách máy, rồi đo lại bằng ảnh. |
+| Ba phát hiện mới | **Vá cả ba** | Dải cảnh báo đếm lệch danh sách, chỉ số rủi ro luôn bằng không, và bấm cảnh khi đang chọn nhiều. Riêng cái thứ ba phải đo để phân xử trước khi vá. |
+| Dữ liệu thử | **Gỡ hết, sinh lại khi cần** | Đã gỡ 2026-09-16: cơ sở dữ liệu về nền cũ (2 nhà máy, 43 máy, 10 người dùng, 82 hàng đặt chỗ). Bộ sinh tất định nên dựng lại được, nhưng **mã định danh sẽ khác** — mọi harness phải đọc lại từ tệp tóm tắt, không dùng số cũ. |
+
 ## Quyết định của chủ dự án (2026-09-15) — đã chốt, không còn treo
 
 | việc | quyết định | hệ quả trong kế hoạch |
