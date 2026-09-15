@@ -1,0 +1,113 @@
+{
+ "moc": "2026-09-15T10:42:39.557Z",
+ "ghiChu": "soTamGiacUocTinh = số hộp con × 12, đúng hàm `hinhHocKhoi` của sản phẩm. KHÔNG gồm sàn/tường/vùng/nhãn.",
+ "theoNhaMay": {
+  "QATD-A": {
+   "soMay": 371,
+   "tam": 22260,
+   "khoi": {
+    "ban_test": 81,
+    "tram_chung": 75,
+    "canh_tay_robot": 45,
+    "lo_nhiet": 30,
+    "may_gap_dat": 29,
+    "may_in_phun": 53,
+    "buong_kiem_quang": 58
+   }
+  },
+  "QATD-B": {
+   "soMay": 409,
+   "tam": 24540,
+   "khoi": {
+    "lo_nhiet": 28,
+    "ban_test": 91,
+    "canh_tay_robot": 59,
+    "may_gap_dat": 31,
+    "buong_kiem_quang": 70,
+    "may_in_phun": 51,
+    "tram_chung": 79
+   }
+  },
+  "QATD-C": {
+   "soMay": 328,
+   "tam": 19680,
+   "khoi": {
+    "may_gap_dat": 34,
+    "buong_kiem_quang": 59,
+    "may_in_phun": 35,
+    "tram_chung": 70,
+    "lo_nhiet": 23,
+    "ban_test": 62,
+    "canh_tay_robot": 45
+   }
+  }
+ },
+ "tongBaNhaMay": {
+  "soMayCoDatCho": 1108,
+  "tamGiacMay": 66480,
+  "soKhoiKhacNhau": 7,
+  "dsKhoi": [
+   "ban_test",
+   "tram_chung",
+   "canh_tay_robot",
+   "lo_nhiet",
+   "may_gap_dat",
+   "may_in_phun",
+   "buong_kiem_quang"
+  ]
+ },
+ "tangDongNhat": [
+  {
+   "tangId": 172,
+   "soMay": 68,
+   "tamGiacMay": 4080
+  },
+  {
+   "tangId": 193,
+   "soMay": 63,
+   "tamGiacMay": 3780
+  },
+  {
+   "tangId": 194,
+   "soMay": 61,
+   "tamGiacMay": 3660
+  }
+ ],
+ "tangItNhat": [
+  {
+   "tangId": 222,
+   "soMay": 32,
+   "tamGiacMay": 1920
+  },
+  {
+   "tangId": 214,
+   "soMay": 31,
+   "tamGiacMay": 1860
+  },
+  {
+   "tangId": 228,
+   "soMay": 31,
+   "tamGiacMay": 1860
+  }
+ ],
+ "soTangCoMay": 24,
+ "vatTheTheoNhaMay": [
+  {
+   "loai": "tuong",
+   "nm": "QATD-A",
+   "n": 112
+  },
+  {
+   "loai": "tuong",
+   "nm": "QATD-B",
+   "n": 112
+  },
+  {
+   "loai": "tuong",
+   "nm": "QATD-C",
+   "n": 112
+  }
+ ],
+ "soHangDatChoMay": 1108,
+ "soMayTrongCay": 1108
+}

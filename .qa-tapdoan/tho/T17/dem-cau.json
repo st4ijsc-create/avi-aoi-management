@@ -1,0 +1,264 @@
+{
+ "moc": "2026-09-15T10:41:08.129Z",
+ "soTang": {
+  "41": 28,
+  "42": 28,
+  "43": 28
+ },
+ "muc": [
+  {
+   "nhan": "cong RIENG: resolveTenantFactoryScope(giamdoc)",
+   "soCau": 1,
+   "ms": 2.3,
+   "byte": 100,
+   "co": {
+    "factoryIds": 3,
+    "labels": {
+     "scopeApplied": true,
+     "scopeEmptyReason": null,
+     "scopeMessage": null
+    }
+   }
+  },
+  {
+   "nhan": "cong RIENG: resolveTenantFactoryScope(admin/vang)",
+   "soCau": 0,
+   "ms": 0,
+   "byte": 95,
+   "co": {
+    "factoryIds": null,
+    "labels": {
+     "scopeApplied": false,
+     "scopeEmptyReason": null,
+     "scopeMessage": null
+    }
+   }
+  },
+  {
+   "nhan": "cay 1 nha may (41) · admin",
+   "soCau": 4,
+   "ms": 12.5,
+   "byte": 73900,
+   "co": {
+    "xuong": 8,
+    "chuyen": 32,
+    "tram": 371,
+    "may": 371
+   }
+  },
+  {
+   "nhan": "cay 3 nha may TUAN TU · admin",
+   "soCau": 12,
+   "ms": 30.1,
+   "byte": 220452,
+   "co": 3
+  },
+  {
+   "nhan": "cay 3 nha may SONG SONG · admin",
+   "soCau": 12,
+   "ms": 22.9,
+   "byte": 220452,
+   "co": 3
+  },
+  {
+   "nhan": "datCho 28 tang · admin",
+   "soCau": 57,
+   "ms": 81,
+   "byte": 235170,
+   "co": 782
+  },
+  {
+   "nhan": "datCho 50 tang (TRAN) · admin",
+   "soCau": 101,
+   "ms": 122.8,
+   "byte": 463727,
+   "co": 1542
+  },
+  {
+   "nhan": "datCho 84 tang · admin",
+   "soCau": 169,
+   "ms": 213.6,
+   "byte": 703292,
+   "co": 2338
+  },
+  {
+   "nhan": "vungAnToan 84 tang · admin",
+   "soCau": 86,
+   "ms": 113.2,
+   "byte": 2,
+   "co": 0
+  },
+  {
+   "nhan": "cay 1 nha may (41) · giamdoc",
+   "soCau": 6,
+   "ms": 13,
+   "byte": 73900,
+   "co": {
+    "xuong": 8,
+    "chuyen": 32,
+    "tram": 371,
+    "may": 371
+   }
+  },
+  {
+   "nhan": "cay 3 nha may TUAN TU · giamdoc",
+   "soCau": 18,
+   "ms": 50.3,
+   "byte": 220452,
+   "co": 3
+  },
+  {
+   "nhan": "cay 3 nha may SONG SONG · giamdoc",
+   "soCau": 18,
+   "ms": 17.1,
+   "byte": 220452,
+   "co": 3
+  },
+  {
+   "nhan": "datCho 28 tang · giamdoc",
+   "soCau": 113,
+   "ms": 132.3,
+   "byte": 235170,
+   "co": 782
+  },
+  {
+   "nhan": "datCho 50 tang (TRAN) · giamdoc",
+   "soCau": 201,
+   "ms": 256.1,
+   "byte": 463727,
+   "co": 1542
+  },
+  {
+   "nhan": "datCho 84 tang · giamdoc",
+   "soCau": 337,
+   "ms": 366.7,
+   "byte": 703292,
+   "co": 2338
+  },
+  {
+   "nhan": "vungAnToan 84 tang · giamdoc",
+   "soCau": 254,
+   "ms": 261.4,
+   "byte": 2,
+   "co": 0
+  },
+  {
+   "nhan": "cay 1 nha may (41) · quanly(1 nha may A)",
+   "soCau": 8,
+   "ms": 9.7,
+   "byte": 73900,
+   "co": {
+    "xuong": 8,
+    "chuyen": 32,
+    "tram": 371,
+    "may": 371
+   }
+  },
+  {
+   "nhan": "cay 3 nha may TUAN TU · quanly(1 nha may A)",
+   "soCau": 10,
+   "ms": 13.4,
+   "byte": 73990,
+   "co": 3
+  },
+  {
+   "nhan": "cay 3 nha may SONG SONG · quanly(1 nha may A)",
+   "soCau": 10,
+   "ms": 10.4,
+   "byte": 73990,
+   "co": 3
+  },
+  {
+   "nhan": "datCho 28 tang · quanly(1 nha may A)",
+   "soCau": 113,
+   "ms": 114.7,
+   "byte": 235170,
+   "co": 782
+  },
+  {
+   "nhan": "datCho 50 tang (TRAN) · quanly(1 nha may A)",
+   "soCau": 201,
+   "ms": 245.7,
+   "byte": 235170,
+   "co": 782
+  },
+  {
+   "nhan": "datCho 84 tang · quanly(1 nha may A)",
+   "soCau": 337,
+   "ms": 341.1,
+   "byte": 235170,
+   "co": 782
+  },
+  {
+   "nhan": "vungAnToan 84 tang · quanly(1 nha may A)",
+   "soCau": 254,
+   "ms": 251.7,
+   "byte": 2,
+   "co": 0
+  },
+  {
+   "nhan": "[AB] datCho 84 tang · CONG GOP · admin",
+   "soCau": 2,
+   "ms": 17.2,
+   "byte": 1160439,
+   "co": 2338
+  },
+  {
+   "nhan": "[AB] cay 3 nha may · MOT BO 4 CAU · admin",
+   "soCau": 4,
+   "ms": 6.5,
+   "byte": 237356,
+   "co": {
+    "xuong": 24,
+    "chuyen": 98,
+    "tram": 1108,
+    "may": 1108
+   }
+  },
+  {
+   "nhan": "[AB] datCho 84 tang · CONG GOP · giamdoc",
+   "soCau": 3,
+   "ms": 8.2,
+   "byte": 1160439,
+   "co": 2338
+  },
+  {
+   "nhan": "[AB] cay 3 nha may · MOT BO 4 CAU · giamdoc",
+   "soCau": 5,
+   "ms": 7.5,
+   "byte": 237356,
+   "co": {
+    "xuong": 24,
+    "chuyen": 98,
+    "tram": 1108,
+    "may": 1108
+   }
+  },
+  {
+   "nhan": "[AB] datCho 84 tang · CONG GOP · quanly(1 nha may A)",
+   "soCau": 3,
+   "ms": 4.9,
+   "byte": 388079,
+   "co": 782
+  },
+  {
+   "nhan": "[AB] cay 3 nha may · MOT BO 4 CAU · quanly(1 nha may A)",
+   "soCau": 5,
+   "ms": 5.2,
+   "byte": 79585,
+   "co": {
+    "xuong": 8,
+    "chuyen": 32,
+    "tram": 371,
+    "may": 371
+   }
+  }
+ ],
+ "doiChung": {
+  "sanPham_soHang": 782,
+  "ablation_soHang": 782,
+  "khopSoHang": true,
+  "sanPham_tangKhacNhau": 8,
+  "ablation_tangKhacNhau": 8
+ }
+}

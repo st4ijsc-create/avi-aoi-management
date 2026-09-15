@@ -1,0 +1,112 @@
+{
+ "moc": "2026-09-15T10:44:40.626Z",
+ "muc": [
+  {
+   "nhan": "SAN PHAM · 1 nha may · admin",
+   "soCau": 93,
+   "msTrungVi": 110.5,
+   "msMin": 100.2,
+   "msMax": 129.5,
+   "kbJson": 303.7,
+   "kbGzip": 18.8,
+   "soMay": 371,
+   "soDatCho": 782
+  },
+  {
+   "nhan": "SAN PHAM · 3 nha may · admin",
+   "soCau": 269,
+   "msTrungVi": 299.5,
+   "msMin": 287.2,
+   "msMax": 323.9,
+   "kbJson": 904,
+   "kbGzip": 53.5,
+   "soMay": 1108,
+   "soDatCho": 2338
+  },
+  {
+   "nhan": "[AB] CONG GOP · 3 nha may · admin",
+   "soCau": 9,
+   "msTrungVi": 15.8,
+   "msMin": 14.5,
+   "msMax": 22.8,
+   "kbJson": 1369.1,
+   "kbGzip": 59.1,
+   "soMay": 1108,
+   "soDatCho": 2338
+  },
+  {
+   "nhan": "SAN PHAM · 1 nha may · giamdoc(3 nha may)",
+   "soCau": 207,
+   "msTrungVi": 211.4,
+   "msMin": 206.2,
+   "msMax": 241.5,
+   "kbJson": 303.7,
+   "kbGzip": 18.8,
+   "soMay": 371,
+   "soDatCho": 782
+  },
+  {
+   "nhan": "SAN PHAM · 3 nha may · giamdoc(3 nha may)",
+   "soCau": 611,
+   "msTrungVi": 666.6,
+   "msMin": 585.8,
+   "msMax": 716.3,
+   "kbJson": 904,
+   "kbGzip": 53.5,
+   "soMay": 1108,
+   "soDatCho": 2338
+  },
+  {
+   "nhan": "[AB] CONG GOP · 3 nha may · giamdoc(3 nha may)",
+   "soCau": 10,
+   "msTrungVi": 25.2,
+   "msMin": 16.4,
+   "msMax": 34.7,
+   "kbJson": 1369.1,
+   "kbGzip": 59.1,
+   "soMay": 1108,
+   "soDatCho": 2338
+  },
+  {
+   "nhan": "SAN PHAM · 1 nha may · quanly(1 nha may A)",
+   "soCau": 207,
+   "msTrungVi": 267.5,
+   "msMin": 238.4,
+   "msMax": 636.9,
+   "kbJson": 303.7,
+   "kbGzip": 18.8,
+   "soMay": 371,
+   "soDatCho": 782
+  },
+  {
+   "nhan": "SAN PHAM · 3 nha may · quanly(1 nha may A)",
+   "soCau": 603,
+   "msTrungVi": 650.2,
+   "msMin": 582.6,
+   "msMax": 677.9,
+   "kbJson": 303.8,
+   "kbGzip": 18.8,
+   "soMay": 371,
+   "soDatCho": 782
+  },
+  {
+   "nhan": "[AB] CONG GOP · 3 nha may · quanly(1 nha may A)",
+   "soCau": 10,
+   "msTrungVi": 8.9,
+   "msMin": 8.7,
+   "msMax": 9.7,
+   "kbJson": 459.3,
+   "kbGzip": 21,
+   "soMay": 371,
+   "soDatCho": 782
+  }
+ ],
+ "doiChung": {
+  "sanPham_may": 371,
+  "ablation_may": 371,
+  "sanPham_datCho": 782,
+  "ablation_datCho": 782,
+  "khop": true,
+  "ablation_ro_ten_B_hay_C": false
+ }
+}
