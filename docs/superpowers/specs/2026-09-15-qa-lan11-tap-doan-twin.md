@@ -193,7 +193,49 @@ Tám ca đỏ. Một là **nợ đã biết từ trước** (`twin-dot31` ca A5 
 
 ---
 
-## 8. VIỆC TIẾP THEO
+## 8. VÒNG VÁ VÀ ĐO LẠI (chủ dự án ra lệnh "tắt, gỡ và vá sau đó đo lại")
+
+Đã tắt server đo, gỡ sạch dữ liệu kịch bản và tài khoản khỏi cơ sở dữ liệu phát triển (mọi bảng về 0 hàng, người dùng về đúng 10 như nền cũ), vá, rồi **sinh lại dữ liệu bằng chính bộ sinh tất định** và đo lại trên bản dựng mới. Commit `ef2a7a3d`.
+
+### 8.1 Sáu khuyết tật đã đóng
+
+| khuyết tật | trước vá | sau vá, đo sống |
+|---|---|---|
+| Màn Chuyền/Máy lấy cứng nhà máy đầu và toà đầu | 77,4–93,1 % chuyền không vẽ đủ | chuyền nhà máy thứ hai: 15 khối (trước "Máy 0 · Trạm 0"); chuyền ở toà 3: 10 khối (trước header đúng số mà 0 khối) |
+| Màn Chuyền không phân biệt ngoài-phạm-vi | một câu cho hai tình huống | hai câu khác hẳn, có mã lý do riêng |
+| Cây phân cấp không lọc phạm vi | 5 vai cùng một md5, 450.811 byte | **5 md5 khác nhau**; người 0 gán nhận **470 byte rỗng**; 1.768 ms → **24 ms** |
+| Mọi lượt tải vượt ngưỡng | 48/48 lượt > 2.500 ms | p50 **2.137 ms**, 6/6 dưới ngưỡng; admin 1.087 ms không hồi quy |
+| Studio chỉ thiết kế được tầng 1 toà 1 | 326/371 máy ngoài tầm | chọn được **4 toà × 7 tầng**, số máy khớp cơ sở dữ liệu từng tầng |
+| Nút tạo bật sai với người thiếu quyền tạo | bật sẵn, bấm mới báo lỗi | ẩn hẳn; nút lưu vẫn còn nên không vá quá tay |
+| Tự căn khung hình không chạy lúc mở màn | bbox 4,74 % khung nhìn | **19,72 %**, đúng bằng mức sau khi bấm căn; bấm căn sau đó lệch 0 px |
+
+Bản vá phạm vi còn tìm ra **một bề mặt song sinh cùng lỗ** ở trục khoá API và vá cùng khuôn.
+
+### 8.2 Một hồi quy do chính bản vá sinh ra, đã đóng
+
+Bản vá Studio khiến đổi tầng **vứt thay đổi chưa lưu trong im lặng**, không hỏi, không báo, quay lại không khôi phục. Đây là lỗi nặng hơn lỗi ban đầu nên phải đóng trước khi commit. Cách vá: chặn ý muốn đổi thay vì đụng vào cơ chế gắn lại thành phần, vì cơ chế đó đang ngăn một nguy cơ lớn hơn là ghi nhầm sang tầng đang chọn.
+
+Ca đo quyết định, có bằng chứng cơ sở dữ liệu: chọn "Lưu rồi chuyển" thì hàng được ghi vào **đúng tầng cũ** trong khi giao diện đã sang tầng mới, và số hàng không đổi nên là cập nhật chứ không phải chèn mới.
+
+### 8.3 Hàng rào giữ nguyên
+
+Năm đối chứng âm đều giữ: người ngoài phạm vi vẫn bị chặn ở cả giao diện lẫn API kể cả với thủ tục mới thêm; sinh bố cục tự động vẫn chặn đúng vai; người không quyền vẫn không vào được; phạm vi bảy vai vẫn khớp cơ sở dữ liệu. Một bản vá mở rộng quyền sẽ nguy hiểm hơn lỗi nó vá, nên đây là điều kiện bắt buộc.
+
+### 8.4 Cổng nền trước và sau
+
+| cổng | trước đợt | sau vá |
+|---|---|---|
+| kiểm kiểu | 0 lỗi | 0 lỗi |
+| kiểm đa ngữ | 0 | 0 |
+| lưới twin | 109 tệp / 2.539 ca | **113 tệp / 2.639 ca**, tất cả xanh |
+| lưới phạm vi | 17 tệp / 437 ca | 17 tệp / **441 ca** |
+| lưới trung tâm điều hành | 4 tệp / 80 ca | 5 tệp / **91 ca** |
+
+### 8.5 Còn mở sau đợt vá
+
+Đổi tab trong Studio vẫn vứt buffer im lặng, cùng lớp lỗi nhưng khác lối vào. Một lượt nạp lại nền có thể làm tầng đang chọn biến mất và rơi về tầng đầu không qua cổng hỏi. Nhánh ghi hỏng của "Lưu rồi chuyển" chưa đo sống. Buffer nhiều hàng và thay đổi kiểu kéo dời chưa đo. Cột nối xưởng với tầng có trong cơ sở dữ liệu nhưng vắng trong schema, cần khai lại hoặc bỏ hẳn.
+
+## 9. VIỆC TIẾP THEO
 
 **Vá ngay, bán kính lớn nhất trên công sức nhỏ nhất:**
 1. Suy nhà máy và toà từ chính chuyền/máy đang mở thay vì lấy phần tử đầu — 4 dòng ở 2 tệp; id đúng **đã có sẵn** trong đường dẫn về của chính trang. Nghiệm thu: mọi vai về 0 % chuyền hỏng, và ca đối chứng âm (máy của nhà máy không được gán) **vẫn phải bị chặn**.

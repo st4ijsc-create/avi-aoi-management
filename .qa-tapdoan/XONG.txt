@@ -22,6 +22,21 @@ HÀNG TẠM đã dọn: andon_events 62→62 · maintenance_work_orders 29→29 
   .qa-tapdoan/anh/**              134 ảnh PNG
   .qa-tapdoan/H-suite-e2e.txt     hồi quy suite có sẵn (79+5 đạt · 8 đỏ)
   .qa-tapdoan/K-cong-nen.txt      cổng nền
-  artifact: https://claude.ai/code/artifact/83a63b77-fe3e-4210-977e-b30aec9b7963
+  artifact: https://claude.ai/code/artifact/968d9967-fa4b-4edb-9888-36255aad151f
 
 CHẠY LẠI: xem đầu mỗi BANG-*.md và *-XONG.txt của từng lô.
+
+════════ VÒNG VÁ + ĐO LẠI (2026-09-15 chiều) ════════
+Commit vá: ef2a7a3d (145 tệp) — 6 khuyết tật đóng, xem docs §8 và PHAT-HIEN V-01..V-14.
+Bản dựng đo cuối: .qa-tapdoan/dist-sauva2 bundle index-CF-6v5eP.js (md5 903 dòng)
+Server đo 3064 PID 29128 ĐANG CHẠY · nhịp 45 s ĐANG CHẠY
+  tắt: sh .qa-tapdoan/server.sh stop · touch .qa-tapdoan/NHIP-DUNG
+
+DỮ LIỆU + TÀI KHOẢN ĐÃ SINH LẠI, VẪN TRONG DB DEV (id MỚI):
+  QATD-A=41 (371 máy) · QATD-B=42 (409) · QATD-C=43 (328) · 12 toà · 84 tầng · 98 line
+  tài khoản qatd_* (7 vai, Qatd!2026)
+  gỡ: node .qa-tapdoan/sinh-tap-doan.mjs --go && node .qa-tapdoan/tai-khoan.mjs xoa
+  vết còn lại: updatedAt của 1 hàng twin_dat_cho mang giờ đo (ca L4), 2 hàng audit_logs append-only
+
+CỔNG NỀN CUỐI: check 0 · i18n 0 · twin3d 113 tệp/2.639 xanh · phamVi 17/441 · commandCenter 5/91
+CHƯA CHẠY LẠI SAU VÁ: suite e2e twin (vòng 1: 79+5 đạt / 8 đỏ)
