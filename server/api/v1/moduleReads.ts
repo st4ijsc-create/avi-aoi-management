@@ -388,7 +388,23 @@ export function registerModuleReadRoutes(r: Router): void {
       const factoryId = optPosInt(req.query.factoryId, "factoryId");
       const corporateCode = typeof req.query.corporateCode === "string" ? req.query.corporateCode : undefined;
       const scope = factoryId != null || corporateCode ? { factoryId, corporateCode } : undefined;
-      const tree = await buildHierarchy(scope);
+
+      // ★★★ 2026-09-15 (QA lần 11, PH-23) — CÙNG lỗ, CÙNG bản vá như `commandCenter.hierarchy`
+      // ở tRPC, chỉ khác TRỤC: ở đây người gọi là một KHOÁ API, không phải một người dùng, nên
+      // phạm vi thật đến từ `req.apiPrincipal.tenantScope` (máy chủ tự tra từ `api_keys`) chứ
+      // không từ `?factoryId=`/`?corporateCode=` — hai thứ ấy là lời TỰ KHAI và chỉ lọc TRÌNH
+      // BÀY. Khuôn chép NGUYÊN của `/ecosystem/kpi` ngay bên dưới (đã vá 2026-08-18); khoá TOÀN
+      // CỤC tường minh ⇒ `undefined` = không lọc, khoá CHƯA KHAI ⇒ `[]` = cây RỖNG (fail-closed).
+      const { tenantCodeScopeOf } = await import("./apiKeyScope");
+      const tenantCodes = tenantCodeScopeOf(req.apiPrincipal?.tenantScope);
+      let tenant: { factoryIds: number[] | null } | undefined;
+      if (tenantCodes) {
+        const { resolveTenantCodeFactoryIds } = await import("../../db/reportAggregators");
+        const { factoryIds } = await resolveTenantCodeFactoryIds(tenantCodes);
+        tenant = { factoryIds };
+      }
+
+      const tree = await buildHierarchy(scope, tenant);
       sendOk(res, { ...tree, status: commandCenterStatus() });
     }),
   );

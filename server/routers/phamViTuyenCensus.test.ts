@@ -82,7 +82,13 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 // giữa `2cb1f771` và `34c4be3d` (đo: chuỗi mốc trong `index.ts` ở dòng 609 tại `2cb1f771`, dòng 606
 // tại `34c4be3d`/`d7a6a6c7`/HEAD). Không có tuyến tĩnh nào MỚI được mở ra web — điều mà ô ghim này
 // sinh ra để bắt. `git diff d7a6a6c7..HEAD -- server/` RỖNG ⇒ độ lệch có từ trước baseline.
-const GHIM = { A: 81, C: 38, D: 72, S: 17, U: 16, tong: 224 } as const;
+// ★★★ 2026-09-15 (QA lần 11, PH-23) — **A: 81 → 80 · S: 17 → 18.** `GET /ecosystem/hierarchy`
+// (`moduleReads.ts`) nay chiếu phạm vi của KHOÁ (`req.apiPrincipal.tenantScope` → trục ② của
+// `resolveTenantFactoryScope`) xuống `buildHierarchy`, đúng khuôn `GET /ecosystem/kpi` ngay bên
+// dưới nó. Đây là bề mặt SONG SINH của thủ tục tRPC `commandCenter.hierarchy`: cùng một hàm tổng
+// hợp, cùng một lỗ "phạm vi lấy từ lời tự khai của người gọi" — vá một bề mặt mà bỏ bề mặt kia
+// thì lỗ vẫn mở, chỉ đổi cổng vào. Đó là toàn bộ delta của lượt này: **A −1, S +1, tổng KHÔNG đổi.**
+const GHIM = { A: 80, C: 38, D: 72, S: 18, U: 16, tong: 224 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -277,6 +283,10 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       "server/api/export/exportRouter.ts#GET /^\\/(yield|oee|defect-pareto)\\.(csv|json|xlsx)$/",
       "server/api/export/exportRouter.ts#GET /^\\/inspections\\.(csv|json|xlsx|pdf)$/",
       "server/api/export/exportRouter.ts#GET /^\\/measurements\\.(csv|json|xlsx|pdf)$/",
+      // ★ 2026-09-15 (PH-23) — bề mặt SONG SINH của `/ecosystem/kpi`, và nó nằm ngay TRÊN kpi
+      //   trong cùng file mà bị bỏ quên suốt từ 2026-08-18: cùng `req.apiPrincipal.tenantScope`
+      //   → `resolveTenantCodeFactoryIds` → tham số `tenant` của `buildHierarchy`.
+      "server/api/v1/moduleReads.ts#GET /ecosystem/hierarchy",
       "server/api/v1/moduleReads.ts#GET /ecosystem/kpi",
       // ★ Đợt 42 — hai tuyến cockpit: `machineDetail(id, phamViCuaKhoa(req.apiPrincipal?.tenantScope))`.
       "server/api/v1/moduleReads.ts#GET /machines/:id/detail",

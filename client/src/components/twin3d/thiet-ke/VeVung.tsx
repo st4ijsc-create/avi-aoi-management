@@ -94,6 +94,13 @@ export interface VeVungProps {
   onChonVung: (khoa: string | null) => void;
   /** Gọi sau khi ghi/xoá thành công để người gọi `invalidate` truy vấn cảnh. */
   onDaGhi: () => void | Promise<void>;
+  /**
+   * ★★★ PH-15 — `twinCanh.luuVungAnToan` = `canEdit` nhưng `xoaVungAnToan` =
+   * `canDelete` (`twinCanhRouter.ts:1354-1355`, `:1393-1394`). HAI cổng, nên hai
+   * cờ: khối này hiện theo quyền SỬA (người gọi), còn nút `ve-vung-xoa` theo cờ
+   * này. Mặc định `false` — chỗ gọi chưa truyền thì không hiện nút xoá.
+   */
+  coTheXoa?: boolean;
 }
 
 export function VeVung({
@@ -105,6 +112,7 @@ export function VeVung({
   vungChon,
   onChonVung,
   onDaGhi,
+  coTheXoa = false,
 }: VeVungProps) {
   const { t } = useTranslation();
   const refSvg = useRef<SVGSVGElement | null>(null);
@@ -446,17 +454,20 @@ export function VeVung({
                 >
                   <Pencil className="h-3 w-3" />
                 </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 shrink-0 text-destructive"
-                  aria-label={t("twin3d.vung.xoa")}
-                  data-testid="ve-vung-xoa"
-                  disabled={xoaM.isPending}
-                  onClick={() => void xoa(h.id)}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+                {/* ★★★ PH-15 — cổng canDelete riêng, ẨN chứ không disable. */}
+                {coTheXoa ? (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 shrink-0 text-destructive"
+                    aria-label={t("twin3d.vung.xoa")}
+                    data-testid="ve-vung-xoa"
+                    disabled={xoaM.isPending}
+                    onClick={() => void xoa(h.id)}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                ) : null}
               </li>
             );
           })}

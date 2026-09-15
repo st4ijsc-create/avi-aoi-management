@@ -80,6 +80,8 @@ import {
   ghiDatChoHangLoat,
   goKhoiMatBang,
   traCayPhanCapNhaMay,
+  // ── PH-12 (QA lần 11) — nơi của một chuyền / một máy (nhà máy · toà · tầng) ──
+  traNoiCuaThucThe,
   traDatChoTheoTang,
   traKichThuocTheoLoai,
   // ── Đợt 6 (§6.3) — trạng thái hàng loạt cho vòng render `/twin` ──
@@ -1182,6 +1184,48 @@ export const twinCanhRouter = router({
    *   tệ hơn, "6/6". Trả cả hai ở đây thay vì để client tự trừ từ một truy vấn
    *   khác: hai nguồn cho hai nửa một câu là lớp lỗi đã cắn dự án này.
    */
+  /**
+   * ★★★ PH-12 (QA lần 11) — NƠI của một chuyền / một máy: nhà máy · toà · tầng.
+   *
+   * Màn `/twin/line/:id` và `/twin/may/:id` chỉ có MỘT id trên URL. Trước thủ tục
+   * này, hai trang đoán nhà máy bằng `factories[0]` (nhà máy đầu theo TÊN) và toà
+   * bằng `toaNha[0]` (toà đầu theo MÃ) — đo được 77,4–93,1 % chuyền không vẽ đủ,
+   * và admin/giám đốc bị màn TỪ CHỐI đúng cái máy mà `factoryCommand.machineDetail`
+   * trả dữ liệu cho họ. Xem docblock `traNoiCuaThucThe` + `noiThucTheTwin.ts`.
+   *
+   * ⚠ CỔNG QUYỀN `quyenVanHanh("canView")` (`analytics_oee` HOẶC `machine_status`),
+   *   KHÔNG `quyenDocHinhHoc`: (a) `congDocHinhHoc.unit.test.ts` ghim ĐÚNG BA tên
+   *   trên cổng ĐỌC-mở và bắt mọi thủ tục mới phải đứng trên cổng cũ — thêm tên thứ
+   *   tư vào đó là nới quyền âm thầm; (b) thủ tục này KHÔNG trả hình học (không toạ
+   *   độ, không kích thước) — chỉ ba id; (c) hai màn gọi nó đã BẮT BUỘC có
+   *   `machine_status` vì `factoryCommand.overview` đòi đúng quyền ấy
+   *   (`factoryCommandRouter.ts:51`), nên cổng này KHÔNG hẹp hơn thứ màn vốn cần.
+   *
+   * ⚠ Ngoài phạm vi ⇒ `NOT_FOUND`/`ENTITY_NOT_FOUND`, **không** `FORBIDDEN` (G82):
+   *   cùng hình dạng với "không tồn tại" nên phản hồi không xác nhận thực thể có
+   *   thật. Hàng rào tenant nằm trong `traNoiCuaThucThe` qua `phamViCua(ctx)`.
+   */
+  noiCuaThucThe: protectedProcedure
+    .use(quyenVanHanh("canView"))
+    .input(
+      z.object({
+        loai: z.enum(["line", "may"]),
+        id: z.number().int().positive(),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      const noi = await traNoiCuaThucThe(input.loai, input.id, phamViCua(ctx));
+      if (!noi) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: input.loai === "may" ? "machine" : "line" },
+          `${input.loai === "may" ? "Machine" : "Line"} ${input.id} not found`,
+        );
+      }
+      return noi;
+    }),
+
   sucKhoeMay: protectedProcedure
     .use(quyenVanHanh("canView"))
     .input(z.object({ factoryId: z.number().int().positive() }))

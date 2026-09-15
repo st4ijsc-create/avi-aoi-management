@@ -57,6 +57,7 @@ import {
   fovCua,
   tiLeKhungCua,
   veNgay,
+  type CanhDaNoi,
   type RefCanh,
 } from "./CauNoiCanh";
 
@@ -83,6 +84,35 @@ export interface ThanhCongCuCanhProps {
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * Nhịp của vòng chờ cảnh sẵn sàng (ms) — xem docblock H5 trong component.
+ *
+ * ★ Xuất ra để lưới `thanhCongCuCanh.dom.test.tsx` quay đồng hồ giả đúng nhịp
+ *   sản phẩm dùng, thay vì ngủ thật hoặc đoán một con số.
+ */
+export const NHIP_CHO_CANH_MS = 40;
+
+/** Số nhịp tối đa (≈ 2 s). Hết mà cảnh chưa sẵn sàng ⇒ thôi, không quay vô hạn. */
+const SO_NHIP_CHO_CANH = 50;
+
+/**
+ * Hai cặp (camera, tâm ngắm) có TRÙNG chỗ không — để biết người dùng đã dời chưa.
+ *
+ * ★ Dung sai 1 mm, KHÔNG phải bằng-hệt-bit. `OrbitControls` bật `enableDamping`
+ *   và `update()` mỗi khung dựng lại vị trí camera từ toạ độ cầu; vòng qua
+ *   spherical → cartesian để lại sai số float cỡ 1e-9 tương đối. Đòi bằng tuyệt
+ *   đối sẽ đọc sai số ấy thành "người dùng đã dời camera" và bỏ luôn lượt
+ *   auto-fit — tức tự tay dựng lại đúng khuyết tật H5.
+ *   Chiều ngược lại an toàn: một cú rê chuột dời camera hàng MÉT, không phải mm.
+ */
+const DO_LECH_COI_LA_DUNG_YEN_M = 1e-3;
+function cungCho(a: { c: DiemScene; n: DiemScene }, b: { c: DiemScene; n: DiemScene }): boolean {
+  const e = DO_LECH_COI_LA_DUNG_YEN_M;
+  const gan = (u: DiemScene, v: DiemScene) =>
+    Math.abs(u.x - v.x) < e && Math.abs(u.y - v.y) < e && Math.abs(u.z - v.z) < e;
+  return gan(a.c, b.c) && gan(a.n, b.n);
+}
+
 export function ThanhCongCuCanh({
   refCanh,
   refBoc,
@@ -100,6 +130,12 @@ export function ThanhCongCuCanh({
    *   Chỉ setState khi số đo đổi (không re-render vì rung nửa pixel). Chưa đo ⇒ 148.
    */
   const [canhPx, datCanhPx] = useState<number>(CANH_BAN_DO_PX);
+  /*
+   * ★ H5 — `refCanh` là một REF: nó đổi giá trị mà React không hề render lại.
+   *   Biến đếm này là cách vòng chờ (a) đánh thức hiệu ứng fit (b) khi cảnh vừa
+   *   sẵn sàng. Không có nó, ref đã có `.current` mà chẳng hiệu ứng nào chạy lại.
+   */
+  const [canhSanSang, datCanhSanSang] = useState(0);
   useEffect(() => {
     const el = refBoc.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -142,6 +178,101 @@ export function ThanhCongCuCanh({
     const kn = fitBBox(b, fovCua(canh), tiLeKhungCua(canh));
     if (!apKhungNhin(canh, kn)) toast.error(t("twin3d.canvasUi.fitKhongSan"));
   }, [refCanh, bboxMay, sanRongM, sanSauM, t]);
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-29 + H5 — FIT MỘT LẦN, VÀ CHẠY ĐƯỢC NGAY Ở LƯỢT MOUNT ĐẦU
+   * ════════════════════════════════════════════════════════════════════════
+   * QA lần 11 (`.qa-tapdoan/PHAT-HIEN.md` PH-29) đo ảnh Studio: *"sàn lưới ở rất
+   * xa, 45 máy co thành vệt mờ, mini-map CÓ chấm"* ⇒ camera KHÔNG khung hình lấy
+   * nội dung của chính nó. Mini-map có chấm là dữ kiện quan trọng: dữ liệu VỀ
+   * ĐỦ, chỉ camera đứng sai chỗ — nên đây là lỗi khung nhìn, không phải lỗi nạp.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ H5 — BẢN PH-29 CŨ CHỈ FIT Ở LƯỢT `bboxMay` ĐỔI **TIẾP THEO**
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo sống vòng 2 (`.qa-tapdoan/tho/V2/H5.json`): mở `/twin-studio` KHÔNG chạm
+   * gì ⇒ bbox tâm khối chỉ **4,74 %** khung nhìn (182×81 trên 726×431). Chỉ cần
+   * **bấm một khối** — tức ép thêm MỘT lượt render — là nhảy lên **19,72 %**, và
+   * bấm nút Fit sau đó cho **y hệt 19,72 %**. Tức phép fit vẫn đúng; thứ thiếu
+   * là một lượt chạy.
+   *
+   * Nguyên nhân là chính cái ngoại lệ mà bản cũ tự ghi: ở lượt render đầu
+   * `refCanh.current` còn `null` (`CauNoiCanh` ghi ref trong một `useEffect` nằm
+   * BÊN TRONG `<Canvas>` — cây R3F riêng), nên hiệu ứng thoát sớm và chỉ thử lại
+   * khi `may` đổi. Với một tầng nạp xong trước khi Canvas mount, `may` KHÔNG BAO
+   * GIỜ đổi nữa ⇒ không bao giờ fit.
+   *
+   * ⇒ Vá bằng một VÒNG CHỜ ngắn cho tới khi cảnh sẵn sàng, thay vì chờ một lượt
+   *   render tình cờ. `setTimeout` chứ không `requestAnimationFrame`: jsdom
+   *   không chạy rAF, và một nhịp đo được là điều kiện để lưới ghim được nó.
+   *
+   * ★ Dùng LẠI `fitTatCa` (`nut-fit-tat-ca`), không viết phép fit thứ hai: hai
+   *   phép fit là hai chỗ để nút bấm và lượt tự động cho hai khung hình khác nhau.
+   *
+   * ★ ĐÚNG MỘT LẦN, và chỉ khi CÓ NỘI DUNG THẬT (`bboxCoThuc`). Fit lại mỗi lần
+   *   `may` đổi sẽ giật camera về mỗi khi người dùng kéo một máy — tức biến một
+   *   tiện ích thành một thứ không dùng được.
+   *
+   * ★★★ VÀ KHÔNG CƯỚP CAMERA. Thứ tự thường gặp thứ hai là *Canvas xong TRƯỚC,
+   *   dữ liệu về SAU*; giữa hai mốc ấy người dùng đã xoay/kéo được rồi. Một lượt
+   *   fit ập vào lúc đó tệ hơn hẳn việc không fit. Nên lúc cảnh sẵn sàng ta chụp
+   *   một MỐC camera, và chỉ tự fit nếu camera vẫn ĐÚNG mốc ấy. Khác mốc ⇒ nhường
+   *   quyền cho người dùng (và nút Fit vẫn còn đó cho họ).
+   *
+   * ⚠ Suy biến an toàn: cảnh không bao giờ sẵn sàng ⇒ hết `SO_NHIP_CHO_CANH`
+   *   nhịp thì thôi, hành vi đúng bằng hành vi CŨ (người dùng bấm nút).
+   */
+  const daTuFit = useRef(false);
+  /** Mốc camera lúc cảnh vừa sẵn sàng; `null` = chưa kịp chụp. */
+  const mocCamera = useRef<{ c: DiemScene; n: DiemScene } | null>(null);
+
+  /** Đọc cặp (vị trí camera, tâm ngắm) — đủ để biết người dùng đã dời hay chưa. */
+  const chupMoc = useCallback((canh: CanhDaNoi): { c: DiemScene; n: DiemScene } => {
+    const p = canh.camera.position;
+    return { c: { x: p.x, y: p.y, z: p.z }, n: diemDangNgam(canh) ?? { x: 0, y: 0, z: 0 } };
+  }, []);
+
+  /* ── (a) chờ cảnh sẵn sàng rồi CHỤP MỐC — độc lập với việc đã có máy chưa ── */
+  useEffect(() => {
+    if (mocCamera.current) return;
+    if (refCanh.current) {
+      mocCamera.current = chupMoc(refCanh.current);
+      return;
+    }
+    let con = SO_NHIP_CHO_CANH;
+    let hen: ReturnType<typeof setTimeout> | null = null;
+    const nhip = () => {
+      const canh = refCanh.current;
+      if (canh) {
+        mocCamera.current = chupMoc(canh);
+        datCanhSanSang((n) => n + 1); // đánh thức (b) — ref đổi không tự re-render
+        return;
+      }
+      if (--con <= 0) return;
+      hen = setTimeout(nhip, NHIP_CHO_CANH_MS);
+    };
+    hen = setTimeout(nhip, NHIP_CHO_CANH_MS);
+    return () => {
+      if (hen) clearTimeout(hen);
+    };
+  }, [refCanh, chupMoc]);
+
+  /* ── (b) có mốc + có nội dung + người dùng chưa dời ⇒ fit ĐÚNG MỘT LẦN ───── */
+  useEffect(() => {
+    if (daTuFit.current) return;
+    if (!bboxCoThuc(bboxMay)) return;
+    const canh = refCanh.current;
+    if (!canh) return;
+    const moc = mocCamera.current;
+    if (moc && !cungCho(chupMoc(canh), moc)) {
+      // Người dùng đã tự dời camera sau khi cảnh mở ⇒ nhường quyền, thôi hẳn.
+      daTuFit.current = true;
+      return;
+    }
+    daTuFit.current = true;
+    fitTatCa();
+  }, [bboxMay, fitTatCa, refCanh, chupMoc, canhSanSang]);
 
   /* ── #58 Fullscreen ──────────────────────────────────────────────────── */
   const doiToanManHinh = useCallback(() => {

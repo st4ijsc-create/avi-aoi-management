@@ -100,6 +100,25 @@ export const NO_FACTORY_ASSIGNMENT_KPI_MESSAGE =
   "WIP, đội thiết bị và báo động thật của xưởng có thể đang khác 0 mà bạn không được phép " +
   "thấy. Liên hệ quản trị viên để được gán nhà máy.";
 
+/**
+ * ★★★ 2026-09-15 (QA lần 11, PH-23) — Câu "rỗng" TRUNG THỰC cho CÂY THIẾT BỊ
+ * (`commandCenter.hierarchy`).
+ *
+ * **Vì sao bề mặt thứ BA cần câu thứ BA.** Hai câu trên nói về "danh sách báo động" và "dải KPI
+ * toàn số 0". Cây thiết bị không có con số nào — nó có hoặc KHÔNG CÓ nút. Một cây rỗng đặt dưới
+ * câu của dải KPI đọc thành lời khai về SỐ ĐO; đặt dưới câu báo động thì nói về một bề mặt người
+ * dùng đang không nhìn. Cái phải nói ở đây là: **cây rỗng vì PHÂN QUYỀN, không phải vì xưởng
+ * không có thiết bị nào.** Mã máy-đọc-được vẫn là MỘT (`no_factory_assignment`).
+ *
+ * ⚠ Cấm cụm "không có máy nào" / "không có thiết bị" ở MỌI vế, kể cả phủ định — cùng lý lẽ đã ghi
+ * ở hai câu trên: người đọc lướt bắt được cụm từ chứ không bắt được vế phủ định.
+ */
+export const NO_FACTORY_ASSIGNMENT_HIERARCHY_MESSAGE =
+  "Tài khoản của bạn chưa được gán nhà máy nào, nên phạm vi xem của bạn đang RỖNG: cây thiết " +
+  "bị trống vì lý do PHÂN QUYỀN, chứ KHÔNG phải vì xưởng thiếu thiết bị. Xưởng có thể đang vận " +
+  "hành đầy đủ nhà máy, chuyền, trạm và máy mà bạn không được phép thấy. Liên hệ quản trị viên " +
+  "để được gán nhà máy.";
+
 /** Phạm vi báo động của một người xem. KHÔNG có ô `filter` — xem bẫy 1 ở đầu file. */
 export interface AlertScope {
   /** `null` = vai toàn quyền / lối đi KHÔNG mang danh tính ⇒ KHÔNG áp cổng nào. */
@@ -137,6 +156,20 @@ export async function resolveKpiScope(user?: {
   role?: string | null;
 } | null): Promise<AlertScope> {
   return resolveScopeWithMessage(user, NO_FACTORY_ASSIGNMENT_KPI_MESSAGE);
+}
+
+/**
+ * ★★★ 2026-09-15 (PH-23) — cùng phép phân giải, câu chữ của CÂY THIẾT BỊ.
+ *
+ * Bề mặt thứ BA, và vẫn KHÔNG phải nguồn thứ hai: `factoryIds` do `resolveScopeWithMessage` →
+ * `resolveTenantFactoryScope` quyết định y như hai bề mặt kia. Đúng lời dặn ở docblock
+ * `resolveKpiScope`: *"thêm một hằng số câu chữ chứ đừng thêm một bộ phân giải"*.
+ */
+export async function resolveHierarchyScope(user?: {
+  id?: number | null;
+  role?: string | null;
+} | null): Promise<AlertScope> {
+  return resolveScopeWithMessage(user, NO_FACTORY_ASSIGNMENT_HIERARCHY_MESSAGE);
 }
 
 /** Thân chung của hai bộ phân giải trên — luật phạm vi ở ĐÚNG MỘT chỗ, câu chữ là tham số. */

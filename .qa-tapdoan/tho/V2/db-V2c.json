@@ -1,0 +1,281 @@
+{
+ "may5676": [
+  {
+   "id": 5676,
+   "name": "WAVE_SOLDER-01",
+   "code": "QATD-B-T1-X1-L1-M01",
+   "machineType": "WAVE_SOLDER",
+   "operationStatus": "running",
+   "isActive": true,
+   "lastHeartbeat": "2026-09-15T00:56:43.723Z",
+   "stationId": 5475,
+   "stationName": "Trạm 01",
+   "lineId": 347,
+   "lineName": "Line 1",
+   "lineCode": "QATD-B-T1-X1-L1",
+   "facId": 42,
+   "facCode": "QATD-B",
+   "toaId": 69,
+   "toaMa": "QATD-B-T1",
+   "tangId": 193,
+   "capSo": 1,
+   "soDatCho": "1",
+   "datChoTangId": 193
+  }
+ ],
+ "mayLine397": [
+  {
+   "id": 6247,
+   "name": "SPI-01",
+   "code": "QATD-C-T3-X1-L1-M01",
+   "machineType": "SPI",
+   "isActive": true
+  },
+  {
+   "id": 6248,
+   "name": "AOI-02",
+   "code": "QATD-C-T3-X1-L1-M02",
+   "machineType": "AOI",
+   "isActive": true
+  },
+  {
+   "id": 6249,
+   "name": "AXI-03",
+   "code": "QATD-C-T3-X1-L1-M03",
+   "machineType": "AXI",
+   "isActive": true
+  },
+  {
+   "id": 6250,
+   "name": "CMM-04",
+   "code": "QATD-C-T3-X1-L1-M04",
+   "machineType": "CMM",
+   "isActive": true
+  },
+  {
+   "id": 6251,
+   "name": "PACKAGING-05",
+   "code": "QATD-C-T3-X1-L1-M05",
+   "machineType": "PACKAGING",
+   "isActive": true
+  },
+  {
+   "id": 6252,
+   "name": "FEEDER-06",
+   "code": "QATD-C-T3-X1-L1-M06",
+   "machineType": "FEEDER",
+   "isActive": true
+  },
+  {
+   "id": 6253,
+   "name": "DISPENSING-07",
+   "code": "QATD-C-T3-X1-L1-M07",
+   "machineType": "DISPENSING",
+   "isActive": true
+  },
+  {
+   "id": 6254,
+   "name": "STENCIL_PRINTER-08",
+   "code": "QATD-C-T3-X1-L1-M08",
+   "machineType": "STENCIL_PRINTER",
+   "isActive": true
+  },
+  {
+   "id": 6255,
+   "name": "AVI-09",
+   "code": "QATD-C-T3-X1-L1-M09",
+   "machineType": "AVI",
+   "isActive": true
+  },
+  {
+   "id": 6256,
+   "name": "ROBOT_TEST-10",
+   "code": "QATD-C-T3-X1-L1-M10",
+   "machineType": "ROBOT_TEST",
+   "isActive": true
+  }
+ ],
+ "mayLine347": [
+  {
+   "id": 5676,
+   "name": "WAVE_SOLDER-01",
+   "code": "QATD-B-T1-X1-L1-M01",
+   "machineType": "WAVE_SOLDER",
+   "isActive": true
+  },
+  {
+   "id": 5677,
+   "name": "ICT_FUNC-02",
+   "code": "QATD-B-T1-X1-L1-M02",
+   "machineType": "ICT_FUNC",
+   "isActive": true
+  },
+  {
+   "id": 5678,
+   "name": "PALLETIZER-03",
+   "code": "QATD-B-T1-X1-L1-M03",
+   "machineType": "PALLETIZER",
+   "isActive": true
+  },
+  {
+   "id": 5679,
+   "name": "MOUNTER-04",
+   "code": "QATD-B-T1-X1-L1-M04",
+   "machineType": "MOUNTER",
+   "isActive": true
+  },
+  {
+   "id": 5680,
+   "name": "CMM-05",
+   "code": "QATD-B-T1-X1-L1-M05",
+   "machineType": "CMM",
+   "isActive": true
+  },
+  {
+   "id": 5681,
+   "name": "ICT-06",
+   "code": "QATD-B-T1-X1-L1-M06",
+   "machineType": "ICT",
+   "isActive": true
+  },
+  {
+   "id": 5682,
+   "name": "AXI-07",
+   "code": "QATD-B-T1-X1-L1-M07",
+   "machineType": "AXI",
+   "isActive": true
+  },
+  {
+   "id": 5683,
+   "name": "DISPENSING-08",
+   "code": "QATD-B-T1-X1-L1-M08",
+   "machineType": "DISPENSING",
+   "isActive": true
+  },
+  {
+   "id": 5684,
+   "name": "ROBOT_TEST-09",
+   "code": "QATD-B-T1-X1-L1-M09",
+   "machineType": "ROBOT_TEST",
+   "isActive": true
+  },
+  {
+   "id": 5685,
+   "name": "WELDER-10",
+   "code": "QATD-B-T1-X1-L1-M10",
+   "machineType": "WELDER",
+   "isActive": true
+  },
+  {
+   "id": 5686,
+   "name": "STENCIL_PRINTER-11",
+   "code": "QATD-B-T1-X1-L1-M11",
+   "machineType": "STENCIL_PRINTER",
+   "isActive": true
+  },
+  {
+   "id": 5687,
+   "name": "ASSEMBLY-12",
+   "code": "QATD-B-T1-X1-L1-M12",
+   "machineType": "ASSEMBLY",
+   "isActive": true
+  },
+  {
+   "id": 5688,
+   "name": "AUTOMATION-13",
+   "code": "QATD-B-T1-X1-L1-M13",
+   "machineType": "AUTOMATION",
+   "isActive": true
+  },
+  {
+   "id": 5689,
+   "name": "IOT_SENSOR-14",
+   "code": "QATD-B-T1-X1-L1-M14",
+   "machineType": "IOT_SENSOR",
+   "isActive": true
+  },
+  {
+   "id": 5690,
+   "name": "IOT_GATEWAY-15",
+   "code": "QATD-B-T1-X1-L1-M15",
+   "machineType": "IOT_GATEWAY",
+   "isActive": true
+  }
+ ],
+ "chiTietMayC3": [
+  {
+   "id": 6247,
+   "name": "SPI-01",
+   "code": "QATD-C-T3-X1-L1-M01",
+   "machineType": "SPI",
+   "operationStatus": "running",
+   "isActive": true,
+   "lastHeartbeat": "2026-09-15T00:56:43.723Z",
+   "stationId": 6046,
+   "stationName": "Trạm 01",
+   "lineId": 397,
+   "lineName": "Line 1",
+   "lineCode": "QATD-C-T3-X1-L1",
+   "facId": 43,
+   "facCode": "QATD-C",
+   "toaId": 75,
+   "toaMa": "QATD-C-T3",
+   "tangId": 235,
+   "capSo": 1,
+   "soDatCho": "1",
+   "datChoTangId": 235
+  },
+  {
+   "id": 6248,
+   "name": "AOI-02",
+   "code": "QATD-C-T3-X1-L1-M02",
+   "machineType": "AOI",
+   "operationStatus": "running",
+   "isActive": true,
+   "lastHeartbeat": "2026-09-15T00:56:43.723Z",
+   "stationId": 6047,
+   "stationName": "Trạm 02",
+   "lineId": 397,
+   "lineName": "Line 1",
+   "lineCode": "QATD-C-T3-X1-L1",
+   "facId": 43,
+   "facCode": "QATD-C",
+   "toaId": 75,
+   "toaMa": "QATD-C-T3",
+   "tangId": 235,
+   "capSo": 1,
+   "soDatCho": "1",
+   "datChoTangId": 235
+  },
+  {
+   "id": 6249,
+   "name": "AXI-03",
+   "code": "QATD-C-T3-X1-L1-M03",
+   "machineType": "AXI",
+   "operationStatus": "running",
+   "isActive": true,
+   "lastHeartbeat": "2026-09-15T00:56:43.723Z",
+   "stationId": 6048,
+   "stationName": "Trạm 03",
+   "lineId": 397,
+   "lineName": "Line 1",
+   "lineCode": "QATD-C-T3-X1-L1",
+   "facId": 43,
+   "facCode": "QATD-C",
+   "toaId": 75,
+   "toaMa": "QATD-C-T3",
+   "tangId": 235,
+   "capSo": 1,
+   "soDatCho": "1",
+   "datChoTangId": 235
+  }
+ ],
+ "line11": [
+  {
+   "id": 11,
+   "name": "Task 12 anh chup - line",
+   "facId": 18,
+   "code": "T12-SHOT-FA-mtlt8goc8429"
+  }
+ ]
+}

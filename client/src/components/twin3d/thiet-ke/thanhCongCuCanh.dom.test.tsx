@@ -27,7 +27,7 @@
  *   giả: bên kia nó là WebGL thật, thứ jsdom không có.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 vi.mock("react-i18next", () => ({
@@ -58,7 +58,7 @@ vi.mock("@/components/ui/tooltip", () => ({
   TooltipContent: () => null,
 }));
 
-import { ThanhCongCuCanh, type MayTrenCanh } from "./ThanhCongCuCanh";
+import { NHIP_CHO_CANH_MS, ThanhCongCuCanh, type MayTrenCanh } from "./ThanhCongCuCanh";
 import type { CanhDaNoi } from "./CauNoiCanh";
 import { CANH_BAN_DO_PX, dungPhepChieu, sceneSangPx } from "./banDoNho";
 import { bboxNoiDung } from "./khungNhin";
@@ -147,6 +147,91 @@ function dungMan(
   return { refBoc };
 }
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐẨY CAMERA ĐI XA TRƯỚC KHI ĐO NÚT — BẮT BUỘC TỪ KHI CÓ PH-29
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản vá PH-29 cho `ThanhCongCuCanh` TỰ fit một lần khi cảnh có nội dung lần
+ * đầu. Hệ quả cho lưới này: ngay sau `dungMan(...)` camera đã Ở ĐÚNG chỗ fit,
+ * nên một cú bấm `nut-fit-tat-ca` không đổi gì — và mọi khẳng định kiểu "sau
+ * khi bấm, target = tâm bbox" sẽ XANH **kể cả khi `onClick` của nút bị gỡ**.
+ *
+ * Đó chính là lớp lỗi mà tệp này sinh ra để chống (G16: hàm đúng, 0 chỗ gọi).
+ * ⇒ Mọi ca đo NÚT phải đẩy camera + tâm quay ra một chỗ SAI đã biết trước rồi
+ *   mới bấm. Khi đó "quay về đúng chỗ" chỉ có thể đến từ cú bấm.
+ */
+function dayCameraDiXa(g: CanhGia): void {
+  g.canh.camera.position.set(-999, -999, -999);
+  g.canh.controls.current!.target.set(-999, -999, -999);
+}
+
+/** Như {@link dungMan} nhưng trả một hàm `rerender` đổi mảng `may` tại chỗ. */
+function dungManCoRerender(may: readonly MayTrenCanh[], canh: CanhDaNoi | null) {
+  const refCanh = { current: canh };
+  const refBoc = { current: document.createElement("div") };
+  const cay = (ds: readonly MayTrenCanh[]) => (
+    <ThanhCongCuCanh
+      refCanh={refCanh}
+      refBoc={refBoc}
+      may={ds}
+      sanRongM={38.4}
+      sanSauM={29.6}
+      nhanAnh="Tầng trệt"
+    />
+  );
+  const r = render(cay(may));
+  return { rerender: (ds: readonly MayTrenCanh[]) => r.rerender(cay(ds)) };
+}
+
+/**
+ * ============================================================================
+ * *** H5 - DUNG MAN THEO DUNG THU TU THAT: CANH SAN SANG **SAU** LUOT RENDER DAU
+ * ============================================================================
+ * `dungMan` o tren nhoi `refCanh.current` SAN ngay luc render dau - mot thu tu
+ * KHONG BAO GIO xay ra trong san pham: `CauNoiCanh` ghi `refCanh.current` trong
+ * mot `useEffect` nam **ben trong** `<Canvas>` (cay R3F rieng), nen o luot render
+ * dau cua `ThanhCongCuCanh` no con `null` (docblock `CauNoiCanh.tsx`).
+ *
+ * Chinh khoang lech do la khuyet tat H5 (`.qa-tapdoan/tho/V2/H5.json`): mo Studio
+ * khong cham gi => bbox tam khoi chiem **4,74 %** khung nhin; chi can bam mot khoi
+ * (mot luot render nua) la nhay len **19,72 %**.
+ *
+ * *** VA DAY LA DIEM SONG CON CUA LUOI NAY: `canhSanSang()` **KHONG** goi
+ *   `rerender`. No chi GHI REF roi cho dong ho chay - dung nhung gi `CauNoiCanh`
+ *   lam duoc. Mot helper tien tay goi `rerender` o day se tu tay cung cap thu ma
+ *   san pham con thieu, va ca do thanh xanh-gia.
+ */
+function dungManChamSanSang(may: readonly MayTrenCanh[], canh: CanhDaNoi) {
+  const refCanh: { current: CanhDaNoi | null } = { current: null };
+  const refBoc = { current: document.createElement("div") };
+  let dsHienTai = may;
+  const cay = (ds: readonly MayTrenCanh[]) => (
+    <ThanhCongCuCanh
+      refCanh={refCanh}
+      refBoc={refBoc}
+      may={ds}
+      sanRongM={38.4}
+      sanSauM={29.6}
+      nhanAnh="Tầng trệt"
+    />
+  );
+  const r = render(cay(dsHienTai));
+  return {
+    /** `CauNoiCanh` gắn xong: CHỈ ghi ref — không render, không sự kiện. */
+    canhSanSang: () => {
+      refCanh.current = canh;
+      act(() => {
+        vi.advanceTimersByTime(NHIP_CHO_CANH_MS * 3);
+      });
+    },
+    /** Dữ liệu máy về muộn (truy vấn xong sau khi Canvas đã mount). */
+    duLieuVe: (ds: readonly MayTrenCanh[]) => {
+      dsHienTai = ds;
+      r.rerender(cay(dsHienTai));
+    },
+  };
+}
+
 beforeEach(() => {
   toastGoi.length = 0;
 });
@@ -175,6 +260,7 @@ describe("#58 Fit — CAMERA THẬT SỰ DỜI TỚI BBOX THẬT (G5 + G16)", ()
   it("★★★ bấm Fit ⇒ `controls.target` = TÂM bbox của ĐÚNG hai máy đã truyền", () => {
     const g = dungCanhGia();
     dungMan(HAI_MAY, g.canh);
+    dayCameraDiXa(g); // ★ nếu không, PH-29 đã đặt sẵn và ca này đo số 0
     fireEvent.click(screen.getByTestId("nut-fit-tat-ca"));
 
     const tg = g.canh.controls.current!.target;
@@ -187,12 +273,14 @@ describe("#58 Fit — CAMERA THẬT SỰ DỜI TỚI BBOX THẬT (G5 + G16)", ()
   it("★★★ ĐỔI VỊ TRÍ MÁY ⇒ ĐỔI ĐÍCH FIT — chỉ báo không phải hằng số", () => {
     const g1 = dungCanhGia();
     dungMan(HAI_MAY, g1.canh);
+    dayCameraDiXa(g1);
     fireEvent.click(screen.getByTestId("nut-fit-tat-ca"));
     const x1 = g1.canh.controls.current!.target.x;
     cleanup();
 
     const g2 = dungCanhGia();
     dungMan([may("machine:1", 5, 5), may("machine:2", 235, 25)], g2.canh);
+    dayCameraDiXa(g2);
     fireEvent.click(screen.getByTestId("nut-fit-tat-ca"));
     const x2 = g2.canh.controls.current!.target.x;
 
@@ -202,6 +290,7 @@ describe("#58 Fit — CAMERA THẬT SỰ DỜI TỚI BBOX THẬT (G5 + G16)", ()
   it("camera đứng CÁCH tâm đúng bán kính fit, KHÔNG ở vị trí ban đầu", () => {
     const g = dungCanhGia();
     dungMan(HAI_MAY, g.canh);
+    dayCameraDiXa(g);
     const truoc = { ...g.canh.camera.position };
     fireEvent.click(screen.getByTestId("nut-fit-tat-ca"));
     const sau = g.canh.camera.position;
@@ -211,18 +300,53 @@ describe("#58 Fit — CAMERA THẬT SỰ DỜI TỚI BBOX THẬT (G5 + G16)", ()
     expect(sau.x > b.maxX || sau.z > b.maxZ || sau.y > b.maxY).toBe(true);
   });
 
+  /* ═════════════════════════════════════════════════════════════════════ */
+  /* ★★★ PH-29 — TỰ FIT MỘT LẦN KHI CẢNH CÓ NỘI DUNG LẦN ĐẦU                */
+  /* ═════════════════════════════════════════════════════════════════════ */
+
+  it("★★★ PH-29 — KHÔNG bấm nút nào: camera đã ngắm TÂM bbox nội dung", () => {
+    // QA lần 11 đo ảnh Studio: "sàn lưới ở rất xa, 45 máy co thành vệt mờ,
+    // mini-map CÓ chấm" ⇒ dữ liệu về đủ, chỉ camera đứng sai chỗ.
+    const g = dungCanhGia();
+    dungMan(HAI_MAY, g.canh);
+    const tg = g.canh.controls.current!.target;
+    expect(tg.x).toBeCloseTo(20, 5);
+    expect(tg.z).toBeCloseTo(15, 5);
+  });
+
+  it("★★★ PH-29 — ĐÚNG MỘT LẦN: người dùng rê đi rồi, dữ liệu đổi KHÔNG kéo camera về", () => {
+    // Fit lại mỗi lần `may` đổi sẽ giật camera mỗi khi người dùng kéo một máy —
+    // biến một tiện ích thành thứ không dùng được. Ca này ghim "một lần".
+    const g = dungCanhGia();
+    const { rerender } = dungManCoRerender(HAI_MAY, g.canh);
+    dayCameraDiXa(g);
+    rerender([may("machine:1", 5, 5), may("machine:2", 235, 25)]);
+    expect(g.canh.controls.current!.target.x).toBe(-999);
+  });
+
+  it("★ PH-29 — cảnh CHƯA SẴN SÀNG lúc mount thì KHÔNG fit (và không ném)", () => {
+    // `refCanh.current` còn null ở lượt render đầu là ca có thật (Canvas chưa
+    // mount xong). Hành vi đúng ở đây là suy biến về hành vi CŨ, không phải nổ.
+    expect(() => dungMan(HAI_MAY, null)).not.toThrow();
+  });
+
   it("★★★ RB-3 — Fit PHẢI gọi `invalidate()`; thiếu nó camera dời mà màn hình KHÔNG đổi", () => {
     const g = dungCanhGia();
     dungMan(HAI_MAY, g.canh);
+    dayCameraDiXa(g);
     const truoc = g.soInvalidate();
     fireEvent.click(screen.getByTestId("nut-fit-tat-ca"));
     expect(g.soInvalidate()).toBeGreaterThan(truoc);
   });
 
   it("★ nới `maxDistance` khi cần — nếu không, `controls.update()` KÉO camera lại", () => {
+    // ⚠ Hạ trần SAU `dungMan` và đẩy camera đi xa: lượt auto-fit lúc mount cũng
+    //   nới `maxDistance`, nên đặt trần TRƯỚC khi dựng thì ca này xanh kể cả khi
+    //   gỡ `onClick` của nút — đúng lớp lỗi mà `dayCameraDiXa` sinh ra để chống.
     const g = dungCanhGia();
-    g.canh.controls.current!.maxDistance = 1; // trần vô lý thấp
     dungMan(HAI_MAY, g.canh);
+    dayCameraDiXa(g);
+    g.canh.controls.current!.maxDistance = 1; // trần vô lý thấp
     fireEvent.click(screen.getByTestId("nut-fit-tat-ca"));
     expect(g.canh.controls.current!.maxDistance).toBeGreaterThan(10);
   });
@@ -230,6 +354,7 @@ describe("#58 Fit — CAMERA THẬT SỰ DỜI TỚI BBOX THẬT (G5 + G16)", ()
   it("★★★ G5 — CẢNH RỖNG lùi về MẶT SÀN (nhánh KHÁC), ngắm tâm sàn 38,4 × 29,6", () => {
     const g = dungCanhGia();
     dungMan([], g.canh);
+    dayCameraDiXa(g);
     fireEvent.click(screen.getByTestId("nut-fit-tat-ca"));
     const tg = g.canh.controls.current!.target;
     expect(tg.x).toBeCloseTo(19.2, 5);
@@ -240,6 +365,96 @@ describe("#58 Fit — CAMERA THẬT SỰ DỜI TỚI BBOX THẬT (G5 + G16)", ()
     dungMan(HAI_MAY, null);
     fireEvent.click(screen.getByTestId("nut-fit-tat-ca"));
     // `refCanh.current === null` ⇒ hàm thoát sớm, không nổ.
+    expect(screen.getByTestId("nut-fit-tat-ca")).toBeInTheDocument();
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ H5 — AUTO-FIT PHẢI CHẠY Ở CHÍNH LƯỢT MOUNT ĐẦU                          */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO KHỐI NÀY TỒN TẠI — LƯỚI CŨ XANH TRONG KHI SẢN PHẨM ĐỎ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ca "PH-29 — KHÔNG bấm nút nào" ở khối trên XANH, nhưng đo sống vòng 2
+ * (`.qa-tapdoan/tho/V2/H5.json`) thấy Studio mở ra vẫn **4,74 %** khung nhìn.
+ * Lý do: `dungMan` nhồi `refCanh.current` SẴN ở lượt render đầu, còn sản phẩm
+ * thì `null` (R3F mount Canvas ở cây riêng) — nên lưới cũ đo một thứ tự KHÔNG
+ * CÓ THẬT và không thể đỏ vì khuyết tật này.
+ *
+ * ⇒ Mọi ca dưới đây dựng bằng `dungManChamSanSang`: cảnh sẵn sàng SAU lượt
+ *   render đầu, đúng thứ tự người dùng gặp.
+ */
+describe("★★★ H5 — cảnh sẵn sàng SAU render đầu thì auto-fit vẫn phải chạy", () => {
+  // Vòng chờ cảnh dùng `setTimeout` ⇒ đồng hồ giả để ca đo tất định, không ngủ thật.
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("★★★ mount đầu ref còn `null` ⇒ khi cảnh sẵn sàng, camera ngắm TÂM bbox (không cần bấm gì)", () => {
+    const g = dungCanhGia();
+    const man = dungManChamSanSang(HAI_MAY, g.canh);
+    // Trước khi cảnh sẵn sàng: chưa fit được — và đó là trạng thái ĐÚNG, không phải lỗi.
+    expect(g.canh.controls.current!.target.x).toBe(0);
+    man.canhSanSang();
+    const tg = g.canh.controls.current!.target;
+    expect(tg.x).toBeCloseTo(20, 5);
+    expect(tg.z).toBeCloseTo(15, 5);
+    expect(tg.y).toBeCloseTo(0.9, 5);
+  });
+
+  it("★★★ ĐÚNG MỘT LẦN — fit xong, dữ liệu đổi tiếp KHÔNG kéo camera về nữa", () => {
+    const g = dungCanhGia();
+    const man = dungManChamSanSang(HAI_MAY, g.canh);
+    man.canhSanSang();
+    const soSauFit = g.soInvalidate();
+    expect(soSauFit).toBe(1); // đúng MỘT lượt áp khung nhìn
+    dayCameraDiXa(g);
+    man.duLieuVe([may("machine:1", 5, 5), may("machine:2", 235, 25)]);
+    expect(g.canh.controls.current!.target.x).toBe(-999);
+    expect(g.soInvalidate()).toBe(soSauFit);
+  });
+
+  it("★★★ DỮ LIỆU VỀ MUỘN (thứ tự thường gặp: Canvas xong trước truy vấn) ⇒ vẫn fit", () => {
+    const g = dungCanhGia();
+    const man = dungManChamSanSang([], g.canh);
+    man.canhSanSang(); // cảnh sẵn sàng nhưng CHƯA có máy nào
+    expect(g.canh.controls.current!.target.x).toBe(0);
+    man.duLieuVe(HAI_MAY); // 45 máy về sau — đúng cảnh Studio thật
+    expect(g.canh.controls.current!.target.x).toBeCloseTo(20, 5);
+    expect(g.canh.controls.current!.target.z).toBeCloseTo(15, 5);
+  });
+
+  it("★★★ NGƯỜI DÙNG ĐÃ TỰ DỜI CAMERA trước khi dữ liệu về ⇒ KHÔNG fit đè lên họ", () => {
+    // Đây là nửa còn lại của "chỉ fit một lần": một lượt fit tự động ập vào giữa
+    // lúc người dùng đang ngắm một góc họ chọn thì tệ hơn hẳn việc không fit.
+    const g = dungCanhGia();
+    const man = dungManChamSanSang([], g.canh);
+    man.canhSanSang();
+    dayCameraDiXa(g); // người dùng xoay/kéo tới một chỗ KHÁC mốc lúc cảnh mở
+    man.duLieuVe(HAI_MAY);
+    expect(g.canh.controls.current!.target.x).toBe(-999);
+    expect(g.canh.camera.position.x).toBe(-999);
+  });
+
+  it("★ nút Fit VẪN dùng được sau khi auto-fit đã tự nhường quyền cho người dùng", () => {
+    // Đối chứng của ca trên: "không fit đè" KHÔNG được biến thành "Fit hỏng".
+    const g = dungCanhGia();
+    const man = dungManChamSanSang([], g.canh);
+    man.canhSanSang();
+    dayCameraDiXa(g);
+    man.duLieuVe(HAI_MAY);
+    fireEvent.click(screen.getByTestId("nut-fit-tat-ca"));
+    expect(g.canh.controls.current!.target.x).toBeCloseTo(20, 5);
+  });
+
+  it("★ cảnh KHÔNG BAO GIỜ sẵn sàng ⇒ suy biến về hành vi cũ, không ném, nút vẫn còn", () => {
+    const g = dungCanhGia();
+    const man = dungManChamSanSang(HAI_MAY, g.canh);
+    expect(() => man.duLieuVe([may("machine:9", 9, 9)])).not.toThrow();
     expect(screen.getByTestId("nut-fit-tat-ca")).toBeInTheDocument();
   });
 });

@@ -176,3 +176,101 @@ Thô `.qa-tapdoan/tho/DE/D1-*.json`: `nutTrongNgan = []` trên `/twin` cho cả 
 
 ## PH-36 · CHƯA ĐO · Hai con số rủi ro ngược nhau cách 300 px trên cùng màn — 2026-09-15 12:05
 Ảnh `.qa-tapdoan/anh/DE-D1-kythuat.png`: chip twin in "Health 50 % · **critical**" trong khi ô cockpit 2D ngay dưới in "Failure risk **0 %**". Hai chỉ số cùng nói về nguy cơ của một máy, hai nguồn khác nhau, không câu nào giải thích. **Chưa đo** (cần đối chiếu nguồn `sucKhoeMay` vs nguồn `predictive_alerts`/PdM và xác định cái nào đúng) — ghi vào vòng sau.
+
+## PH-37 · SCHEMA DRIFT (xác nhận lần 2) · `workshops.tangId` CÓ trong DB nhưng VẮNG trong schema Drizzle — 2026-09-15 14:30
+Agent vá PH-12 báo "`workshops` **không có cột `tangId`**, nên đường xưởng→tầng không tồn tại". Tôi kiểm: **cột CÓ THẬT trong DB** (`information_schema`: `tangId integer nullable`; migration `drizzle/0350_twin_toa_nha_va_tang.sql:127` `ALTER TABLE workshops ADD COLUMN IF NOT EXISTS "tangId"`, `:135` FK → `twin_tang(id) ON DELETE SET NULL`), và bộ sinh dữ liệu của đợt này đã ghi vào nó (24/24 xưởng QATD có `tangId`, cầu chì xác nhận). Nhưng `grep tangId drizzle/schema/hierarchy.ts` = **0** ⇒ **schema drift**: mọi đường Drizzle mù với cột này, nên agent đọc schema và kết luận "không tồn tại" là hợp lý từ góc nhìn của họ.
+Hệ quả: (a) lời khai "đường JOIN không tồn tại" **sai về DB, đúng về Drizzle**; (b) `drizzle-kit generate` có thể sinh migration **DROP** cột này; (c) đường agent chọn thay thế (`twin_dat_cho.tangId → twin_tang.toaNhaId`) **vẫn đúng và chặt hơn**, vì hàng đặt chỗ mới là nguồn sự thật về "thực thể đứng ở tầng nào" — bản vá không bị ảnh hưởng.
+Việc cần làm (vòng sau, không thuộc đợt vá này): khai `tangId` vào `drizzle/schema/hierarchy.ts` để schema khớp DB, hoặc quyết bỏ hẳn cột nếu `twin_dat_cho` đã đủ.
+
+# ══════ VÒNG 2 — ĐO LẠI SAU VÁ (2026-09-15 14:50) ══════
+Bản dựng đo: `.qa-tapdoan/dist-sauva` bundle `index-65hzR42G.js`, md5 903 dòng; ký hiệu bản vá có trong bundle (`noiCuaThucThe` client 2/server 1 · `chon-toa-nha` 1 · `chon-tang` 1 · `ngoaiPhamVi` 6 · `resolveHierarchyScope` server 3) và ký hiệu cũ còn nguyên. Dữ liệu sinh lại: cầu chì **32/32**, id mới (QATD-A=41 line 315 máy 5305 · B=42/347/5676 · C=43/382/6085).
+
+## V-01 ★★★ ĐẠT · PH-23 ĐÓNG — cây phân cấp nay lọc đúng phạm vi từng vai
+Thô `.qa-tapdoan/tho/kiem-hierarchy-v2.json`. **5 vai → 5 md5 KHÁC NHAU** (vòng 1: 1 md5 duy nhất).
+| vai | vòng 1 | vòng 2 | tên lộ ra | thời gian |
+|---|---|---|---|---|
+| admin (5 nhà máy) | 450.811 B | 450.876 B | A,B,C,SIM-FAC,T12 | 2.668 ms |
+| giám đốc (3) | **cùng 450.811 B** | **434.894 B** | **chỉ A,B,C** | 2.163 ms |
+| kỹ thuật (2) | **cùng 450.811 B** | **305.943 B** | **chỉ A,B** | 1.508 ms |
+| công nhân (1) | **cùng 450.811 B** | **129.280 B** | **chỉ C** | 564 ms |
+| **0 gán** | **cùng 450.811 B** | **470 B** | **rỗng** | **24 ms** (vòng 1: 1.768 ms) |
+| 0 quyền | 403 | 403 | rỗng | 23 ms |
+Đối chứng dương: mỗi vai có gán vẫn thấy **đúng tập của mình**, tên lộ ra khớp bảng gán. Đối chứng âm: người 0 gán nhận cây rỗng. Chi phí nay **tỉ lệ với phạm vi người xem**, không với cả CSDL — đúng hướng PH-24.
+Bản vá còn tìm ra **bề mặt song sinh cùng lỗ**: `GET /ecosystem/hierarchy` (trục khoá API, `server/api/v1/moduleReads.ts:381-410`) — đã vá cùng khuôn.
+Ablation của agent (gỡ vá trên CSDL test 5.308 nhà máy): 8/11 ca đỏ lại, **người 0 gán thấy 26.822 nút**; thời gian 102.542 ms → 43 ms (vai hẹp) và 72.023 ms → 6 ms (0 gán); trước vá hai vai nhận **byte y hệt nhau** ⇒ tái hiện PH-23 trên một CSDL khác.
+
+## V-02 · Cổng nền sau vá
+`npm run check` **0 lỗi** · `i18n:check` **0/0/0/0** · `vitest twin3d` **112 tệp / 2.617 xanh** (nền 109/2.539 — tăng do lưới mới của hai bản vá) · `vitest phamVi` **17 tệp / 441 xanh** · `vitest commandCenter` **5 tệp / 91 xanh** · `vitest moduleReads` 34 xanh.
+Một ô census phải cập nhật GHIM `S 325→326 · tong 2267→2268`: bản vá PH-12 thêm đúng **một** thủ tục `twinCanh.noiCuaThucThe` vào nhóm **S** (đã lọc phạm vi). **Nhóm A giữ nguyên 341** (A = "đọc tenant KHÔNG lọc") và ô đột biến §7 vẫn xanh ⇒ thủ tục mới không phải nhóm rò. Lô PH-23 cố ý chừa phần ký này cho lô kia; hai lô nay cùng một đợt nên chủ đợt ký, có ghi lý do trong tệp.
+
+## V-03 · THIẾT BỊ ĐO (tôi) · `vite build --outDir` tương đối ghi vào `client/` vì `root: client/`
+Lượt dựng đầu của vòng 2 báo "✓ built in 36.17s" nhưng `dist-sauva/public/index.html` **không tồn tại** và md5 chỉ 2 dòng — output rơi vào `client/.qa-tapdoan/dist-sauva/public/`. Vòng 1 tôi dùng đường **tuyệt đối** nên không dính. Đã dọn `client/.qa-tapdoan/` và dựng lại bằng đường tuyệt đối (903 dòng md5). **Luật: `--outDir` của vite trong repo này PHẢI là đường tuyệt đối.**
+
+## V-04 ★★★ ĐẠT · PH-12 + PH-13 ĐÓNG — kết cục gốc chạy lại được trên dữ liệu nhiều toà
+Đo trên `dist-sauva`, id mới, ảnh `.qa-tapdoan/anh/V2-*.png`, thô `.qa-tapdoan/tho/V2/`:
+| ca | vòng 1 | vòng 2 |
+|---|---|---|
+| R1 kythuat → chuyền QATD-B (line 347) qua **cây phân cấp** | "Máy 0 · Trạm 0", cảnh trống | "Machines 15 · Stations 15 · WIP 65", **15 khối**, 15 nhãn, `__soCanvas`=1 |
+| R2 congnhan → chuyền QATD-C **toà 3** (line 397) | header đúng số, **0 khối** | "Machines 10 · Stations 10", **10 khối** + nhãn M01–M10 + dải trạm S01–S10 |
+| R3 kythuat → máy QATD-B (5676) | "không thuộc phạm vi đang xem" | mở được, `WAVE_SOLDER-01` khớp DB, 1 canvas |
+| R4 congnhan → máy QATD-C toà 3 (6247) | "chưa có chỗ trên bố cục 3D" | `SPI-01`, `may-chua-dat-cho` = **0** |
+| R5 về từ màn Máy | mất nút về chuyền | `ve-man-line` → `/twin/line/347`, đúng nhà máy 42 |
+| R6 chuyền ngoài phạm vi (PH-13) | cùng MỘT câu với "chưa xếp chỗ" | `data-ly-do="ngoaiPhamVi"`, **câu khác hẳn** |
+Bằng chứng thị giác mạnh nhất: chỗ vòng 1 chỉ có sàn trống với một cây cột đèn, vòng 2 có 10 khối máy đọc được tên.
+
+## V-05 ★★ ĐẠT · PH-14 + PH-15 ĐÓNG — Studio thiết kế được mọi toà/tầng, nút ghi gác đúng cổng
+R7 (`qatd_kythuat`): `chon-toa-nha` **4 mục**, `chon-tang` **7 mục**; toà 2/tầng 1 ⇒ **68 khối, "68 machines placed · 303 awaiting"**; toà 2/tầng 2 ⇒ **45, "45 placed · 326 awaiting"** — khớp DB từng tầng (vòng 1: chỉ tầng 1 toà 1, 326 máy ngoài tầm).
+R8 (`qatd_quanly`, có canEdit, **0 canCreate**): `nut-mo-sinh` **0 phần tử DOM**, tab "Add building" **0 phần tử**, chữ "Generate" không tồn tại, `khoi-anh-nen`/`nut-tai-model`/`nut-luu-ban-ghi`/`nut-go-khoi-mat-bang` đều 0 — **ẩn hẳn, không disable**. `nut-luu` **vẫn còn** ⇒ ẩn đúng cổng, không vá quá tay.
+
+## V-06 ★★★ ĐẠT · Hàng rào GIỮ NGUYÊN 5/5 — bản vá không nới phạm vi
+| đối chứng âm | kết quả |
+|---|---|
+| congnhan mở máy QATD-B qua UI | vẫn `ngoaiPhamVi`, 0 canvas, 0 lộ tên |
+| 3 lời gọi API ngoài phạm vi (machineDetail, danhSachToaNha, **noiCuaThucThe** — thủ tục MỚI) | 404 NOT_FOUND / `[]` / 404, **0 chuỗi QATD-B rò**; kèm **đối chứng dương cùng phiên**: `noiCuaThucThe` máy trong phạm vi ⇒ 200 `{43,75,235}` |
+| kythuat gọi `sinhTuDong` | vẫn **403** (ca dương `xemTruocSinh` 200) |
+| `qatd_khongquyen` vào `/twin` | vẫn Access denied |
+| phạm vi 7 vai qua `overview` | **7/7 khớp**: 1108 · 371 · 780 · 328 · 1150 · 0 · FORBIDDEN |
+Thủ tục mới `noiCuaThucThe` được đo cả hai chiều ngay từ ca đầu ⇒ không thêm bề mặt rò.
+
+## V-07 ★★ ĐẠT · PH-24 ĐÓNG theo hướng — thời gian tải về dưới ngưỡng
+`qatd_kythuat` p50 **2.137 ms**, max **2.193 ms**, **6/6 lượt dưới 2.500** (vòng 1: p50 2.615, **48/48 vượt**). Admin **1.087 ms** ≈ mốc QA10 1.182 ms ⇒ sàn khởi động không hồi quy, dù màn nay gọi thêm một lượt `noiCuaThucThe`. H2 `__soCanvas`=1 sau remount đổi tầng (RB-4 giữ). H3 header Studio **28,00 px** @1280, một hàng, 0 tràn ngang; đối chứng header `/twin` = **48,00 px** đúng bất biến cũ ⇒ chủ đợt chấp nhận 28 px cho Studio (48 px là bất biến của `/twin`, không phải của Studio).
+
+## V-08 ★★ SAI (CAO — MẤT DỮ LIỆU) · H1: đổi tầng ở Studio vứt thay đổi chưa lưu, KHÔNG báo
+**Hồi quy do CHÍNH bản vá PH-14 sinh ra.** Đo sống: bật Lock một khối ⇒ "1 unsaved changes"; đổi tầng ⇒ đếm về **0**, **0 hộp thoại, 0 toast**, quay lại tầng cũ **không khôi phục**. Nguyên nhân `<XuongThietKe key={tangId}>` (`TwinStudio.tsx`) remount làm rơi buffer. `key` là **cần thiết** (thiếu nó, hàng của tầng cũ còn trong buffer và một lần Lưu sẽ ghi nhầm sang tầng đang chọn — nguy hiểm hơn). Tác giả bản vá tự khai nợ ở `TwinStudio.tsx:371-377`; vòng 2 biến nó từ suy luận thành **phép đo**. **Đang vá.**
+
+## V-09 · SAI (THẤP) · H5: PH-29 auto-fit không chạy ở lượt mount đầu
+Mở Studio không chạm gì ⇒ bbox tâm khối **4,74 %** khung nhìn (182×81 / 726×431). Ablation: chỉ **bấm một khối** (không bấm Fit) ⇒ **19,72 %**; bấm Fit sau ⇒ **y hệt 19,72 %** ⇒ auto-fit chỉ chạy ở lần `bboxMay` đổi tiếp theo, không chạy ở mount đầu vì `refCanh.current` còn null (đúng ngoại lệ ghi ở `ThanhCongCuCanh.tsx:169-172`). **Đang vá.**
+
+# ══════ VÒNG 3 — ĐO SỐNG H1 + H5 (2026-09-15 16:17) ══════
+Bản dựng `.qa-tapdoan/dist-sauva2` bundle `index-CF-6v5eP.js` (md5 903 dòng), ký hiệu H1 có trong bundle (`nut-luu-roi-doi`/`nut-bo-thay-doi`/`nut-huy-doi` mỗi cái 1 tệp). **12/12 ô ĐẠT · 0 SAI · 0 HỎNG · 0 ô không phán quyết.** Thô `.qa-tapdoan/tho/V3/`, ảnh `V3-*.png` (17), bảng `BANG-V3.md`.
+
+## V-10 ★★★ ĐẠT · H1 ĐÓNG — và ca nguy hiểm nhất SẠCH
+| ca | kết quả |
+|---|---|
+| L1 đổi tầng khi còn thay đổi chưa lưu | hộp thoại hiện đủ 3 nút, đếm **chưa** về 0, tầng **chưa** đổi (vòng 2: mất im lặng) |
+| L2 "Ở lại tầng này" | tầng giữ, thay đổi **còn nguyên** |
+| L3 "Bỏ thay đổi" | đổi tầng, DB xác nhận hàng **không** bị ghi (`daKhoa` vẫn false, `updatedAt` không đổi) |
+| **L4 "Lưu rồi chuyển"** ★ | **ghi vào ĐÚNG TẦNG CŨ**: máy 5387 `tangId=166` giữ nguyên trong khi giao diện đã sang tầng 165; `luuHangLoat` → 200 `{daGhi:1,daCapNhat:1}`; đếm 2420/2338 **không đổi** (cập nhật, không chèn); vị trí không đổi |
+| L5 đổi **toà** và đổi **nhà máy** | cả hai cũng qua cổng, ô chưa đổi ⇒ gác cả ba lối, không chỉ ô tầng |
+| L6 không có thay đổi | đổi mượt, **0 hộp thoại** |
+Đây là ca quyết định: nếu bản vá ghi nhầm sang tầng mới thì nó nguy hiểm hơn lỗi nó vá. Bằng chứng DB cho thấy nó ghi đúng tầng cũ.
+
+## V-11 ★★ ĐẠT · H5 ĐÓNG — auto-fit chạy ngay ở mount đầu
+bbox tâm khối / khung nhìn: **4,74 % → 19,72 %** (337×183 trên 726×431), đúng bằng mức sau-Fit của vòng 2, cùng viewport/canvas/tầng/số máy. Đối chứng L8: bấm Fit sau đó lệch **0 px** ⇒ nút Fit thành no-op vì đã fit sẵn. Đối chứng L9: người dùng tự xoay camera trước khi cảnh dựng xong ⇒ auto-fit **không cướp** (khung người dùng 1,37 %, khác hẳn khung fit), bấm Fit mới về 19,71 %.
+
+## V-12 · ĐẠT · Hồi quy quanh vùng vá
+L10 `qatd_quanly` (0 canCreate) vẫn **không** thấy nút sinh/tạo toà (đối chứng dương `nut-luu`=1) · L11 `__soCanvas`=1 sau đổi tầng (RB-4 giữ) · L12 năm khoá i18n mới render đúng ở **en/vi/zh**, 0 khoá thô, 0 dấu tiếng Việt lọt vào en/zh.
+★ Agent tự chứng minh thiết bị đo không mù: **mỗi bộ dò đều có ca KÊU và ca IM trong chính lượt đo** (hộp thoại L1 vs L6 · ghi DB L4 vs L3 · bbox 19,72 % vs 1,37 % · DOM quyền 0 vs 1 · dấu Việt vi true vs en/zh false).
+Hàng tạm: `daKhoa` 0 → 1 → **0**, dọn bằng **đường sản phẩm** (`luuHangLoat` với giá trị gốc đã chụp trước), 2.420/2.338 không đổi. Vết duy nhất còn lại: `updatedAt` của đúng một hàng mang giờ lượt đo.
+
+## V-13 · CỔNG NỀN CUỐI (sau cả 6 khuyết tật)
+`npm run check` **0 lỗi** · `i18n:check` **0/0/0/0** · `vitest twin3d` **113 tệp / 2.639 xanh** (nền đầu đợt 109/2.539 — tăng 4 tệp, 100 ca lưới mới) · `vitest phamVi` **17 / 441 xanh** · `vitest commandCenter` **5 / 91 xanh**.
+
+## V-14 · CÒN MỞ sau đợt vá (agent tự khai, chưa đo)
+1. **Đổi TAB trong Studio vẫn vứt buffer im lặng** — Radix Tabs unmount nội dung tab không hoạt động; cùng lớp H1, khác lối vào. Brief giới hạn ở đổi tầng nên không mở rộng.
+2. Một lượt refetch nền làm tầng đang chọn biến mất khỏi danh sách ⇒ rơi về tầng đầu **không qua cổng** ⇒ vẫn mất im lặng. Hiếm nhưng có thật.
+3. Nhánh **ghi HỎNG** của "Lưu rồi chuyển" (server từ chối ⇒ giữ hộp thoại, giữ tầng) chưa đo sống.
+4. Buffer nhiều hàng và thay đổi kiểu kéo-dời chưa đo (mọi ca L1-L6 dùng đúng một thay đổi loại lật khoá).
+5. Dung sai 1 mm của H5 là **lập luận**, chưa đo drift thật của `OrbitControls` ở vài khung đầu.
+6. `chonNoiTheoDatCho` chọn toà giữ **đa số** ⇒ chuyền trải hai toà sẽ có toà không vẽ; chưa biết ca đó có tồn tại không.
+7. PH-37 schema drift `workshops.tangId` (có trong DB, vắng trong schema Drizzle) chưa xử lý.

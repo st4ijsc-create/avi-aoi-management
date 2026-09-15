@@ -181,6 +181,8 @@ import {
   tinhWipLine,
   tomTatLine,
 } from "@/components/twin3d/van-hanh/manLine";
+// ★ PH-12 (QA lần 11): nhà máy/toà của CHÍNH chuyền đang mở — không phải `[0]` của hai danh sách.
+import { nhaMayDangXem, toaNhaDangXem } from "@/components/twin3d/van-hanh/noiThucTheTwin";
 import type { MayTrongLo, NhanTheGioi } from "@/components/twin3d/loi";
 import type { CanhBaoTheGioi, MucCanhBao } from "@/components/twin3d/van-hanh/LopCanhBao";
 
@@ -342,17 +344,32 @@ export function ThanManLine({
     [factoriesQ.data],
   );
   /*
-   * ★ Nhà máy ĐẦU TIÊN — và đó là một GIỚI HẠN có chủ ý, không phải sơ suất.
-   *   `production_lines.id` là khoá toàn cục nên `:id` đã xác định duy nhất một
-   *   chuyền; nhưng `canhThietKe` nhận ĐÚNG MỘT `factoryId`
-   *   (`twinCanhRouter.ts:646-651`), nên trang phải chọn một. Trên CSDL này
-   *   (đo 2026-09-09: **2 nhà máy**, và **toàn bộ 82 hàng `twin_dat_cho` nằm ở
-   *   MỘT tầng** — `tangId=28` của toà 24) mọi chuyền đều thuộc nhà máy đầu.
-   *   ⇒ Nếu một ngày chuyền nằm ở nhà máy thứ hai, màn này sẽ hiện **rỗng**, và
-   *   `EmptyState` phía dưới nói ra điều đó thay vì vẽ một chuyền sai. Ghi nợ ở
-   *   đây thay vì để người sau đoán.
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-12 (QA lần 11) — NHÀ MÁY CỦA **CHUYỀN NÀY**, KHÔNG PHẢI `[0]`
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản trước viết `const factoryId = factories[0]?.id ?? null;` kèm một docblock
+   * TỰ KHAI giới hạn: *"đo 2026-09-09: 2 nhà máy, toàn bộ 82 hàng `twin_dat_cho`
+   * nằm ở MỘT tầng — mọi chuyền đều thuộc nhà máy đầu"*. Tiền đề ấy ĐÚNG lúc
+   * viết và **hết hạn** khi CSDL có 3 công ty · 12 toà · 2.338 hàng đặt chỗ
+   * (G148: lý do hoãn có HẠN SỬ DỤNG). Hậu quả đo được (`.qa-tapdoan/BANG-C.md`):
+   * chuyền 249 (QATD-B, nhà máy THỨ HAI theo tên) hiện `Máy 0 · Trạm 0`, 0 canvas,
+   * trong khi chuyền 217 của cùng vai — chỉ khác ở chỗ nhà máy của nó là phần tử
+   * `[0]` — vẽ đủ 12 khối. 89,6 % chuyền của vai `qatd_kythuat` hỏng vì dòng ấy.
+   *
+   * ★ `canhThietKe` vẫn nhận ĐÚNG MỘT `factoryId` (hợp đồng không đổi) — cái đổi
+   *   là **ai trả lời câu "nhà máy nào"**: nay là server, theo chuỗi có thật
+   *   `production_lines.workshopId → workshops.factoryId` (xem `traNoiCuaThucThe`).
+   *   Client KHÔNG suy được chuỗi ấy: nó không có bảng `workshops`.
+   *
+   * ⚠⚠⚠ `null` (ngoài phạm vi ⇒ `NOT_FOUND`, hoặc chưa hỏi xong) KHÔNG được rơi
+   *   về một nhà máy mặc định — đó chính là chỗ hàng rào tenant sẽ vỡ theo chiều
+   *   ngược. `nhaMayDangXem` làm điều ấy không diễn đạt được ở chỗ dùng.
    */
-  const factoryId = factories[0]?.id ?? null;
+  const noiQ = trpc.twinCanh.noiCuaThucThe.useQuery(
+    { loai: "line", id: lineId },
+    { retry: false },
+  );
+  const factoryId = nhaMayDangXem(noiQ.data);
 
   /* ── Realtime + nhịp thích nghi ──────────────────────────────────────── */
   /*
@@ -370,11 +387,22 @@ export function ThanManLine({
     { factoryId: factoryId ?? 0 },
     { enabled: factoryId !== null, retry: false },
   );
+  /*
+   * ★★★ PH-12, TRIỆU CHỨNG 2 — TOÀ **CHỨA CHUYỀN NÀY**, KHÔNG PHẢI TOÀ MÃ NHỎ NHẤT.
+   *   Bản trước lấy `(toaNhaQ.data ?? [])[0]` (server sắp theo `ma`) rồi chỉ hỏi
+   *   đặt chỗ của các tầng toà ấy. Chuyền 299 nằm ở toà T3: tiêu đề in đúng
+   *   "Máy 10 · Trạm 10" (số đếm đi đường `traCayPhanCapNhaMay`, không qua tầng)
+   *   mà cảnh 3D **0 khối** — một màn nói đúng số và vẽ sai sự thật.
+   *   `toaNhaDangXem` trả `null` ở ba ca (ngoài phạm vi · chưa xếp chỗ · toà đã
+   *   xoá mềm) và KHÔNG ca nào rơi về `[0]` — xem docblock của nó.
+   */
   const toaNhaDau = useMemo(
     () =>
-      ((toaNhaQ.data ?? []) as Array<{ id: number; rongMm: string | number; sauMm: string | number }>)[0] ??
-      null,
-    [toaNhaQ.data],
+      toaNhaDangXem(
+        (toaNhaQ.data ?? []) as Array<{ id: number; rongMm: string | number; sauMm: string | number }>,
+        noiQ.data,
+      ),
+    [toaNhaQ.data, noiQ.data],
   );
   const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
     { id: toaNhaDau?.id ?? 0 },
@@ -855,7 +883,13 @@ export function ThanManLine({
   const sanRongM = toaNhaDau ? Number(toaNhaDau.rongMm) / 1000 : 60;
   const sanSauM = toaNhaDau ? Number(toaNhaDau.sauMm) / 1000 : 40;
 
-  const dangTai = canhQ.isLoading || overviewQ.isLoading;
+  /*
+   * ★ PH-12 — `noiQ` đứng ĐẦU chuỗi (nơi → nhà máy → toà → tầng → cảnh): trong lúc
+   *   nó còn chạy, `factoryId` là `null` nên MỌI truy vấn nền TẮT và `isLoading`
+   *   của chúng là `false`. Thiếu ô này thì màn khai "chuyền rỗng"/"ngoài phạm vi"
+   *   đúng một nhịp về một chuyền hợp lệ — lớp NT-3.5 mà T10 đã trả giá để học.
+   */
+  const dangTai = noiQ.isLoading || canhQ.isLoading || overviewQ.isLoading;
   /*
    * ★★★ "CHƯA TẢI XONG" **KHÁC** "CHUYỀN NÀY KHÔNG CÓ MÁY" — NT-3.5 (đếm rỗng
    *   khác đếm bằng 0). Hiện `EmptyState` trong lúc truy vấn còn chạy sẽ khai
@@ -879,12 +913,27 @@ export function ThanManLine({
     (canhQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
     (toaNhaQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
     (chiTietQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
+    (noiQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
     (overviewQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN";
+  /*
+   * ★★★ PH-13 (QA lần 11 ca C4a) — "CHUYỀN CỦA NHÀ MÁY KHÁC" KHÁC "CHUYỀN CHƯA XẾP CHỖ".
+   *   Trước bản vá, hai tình huống ấy trả **trùng từng chữ** một câu duy nhất
+   *   ("Chuyền này chưa có máy nào trên bố cục — … hoặc thuộc một nhà máy khác"),
+   *   vì `LyDoManLine` không có `ngoaiPhamVi` trong khi màn Máy đã có (L-5).
+   *   Nay `noiCuaThucThe` trả `NOT_FOUND` cho chuyền ngoài phạm vi (cùng hình dạng
+   *   với "không tồn tại" — G82, KHÔNG rò sự tồn tại), và màn NÓI RA đúng điều đó.
+   * ⚠ Đọc `NOT_FOUND` chứ không đọc `!noiQ.data`: một lỗi mạng cũng cho `data`
+   *   rỗng, và bảo người mất mạng rằng "chuyền không thuộc phạm vi" là câu sai
+   *   bản chất — đúng lớp lỗi mà L-5 sinh ra để chặn.
+   */
+  const ngoaiPhamVi =
+    (noiQ.error?.data as { code?: string } | undefined)?.code === "NOT_FOUND";
   const lyDoLine = lyDoMoManLine({
     factoriesDangTai: factoriesQ.isLoading,
     factoriesLoi: factoriesQ.isError,
     soNhaMay: factories.length,
     thieuQuyen,
+    ngoaiPhamVi,
   });
   const chuaBiet = dangTai || lyDoLine !== "mo";
 

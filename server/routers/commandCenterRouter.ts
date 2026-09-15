@@ -19,8 +19,16 @@
  *                    can badge "live" vs "polling".
  *
  * RBAC: read-only; every procedure requires machine_monitoring/canView (mirrors
- * twinRouter / fleetRouter / safetyRouter). Tenant scope is honored via the optional
- * `scope.corporateCode` / `scope.factoryId` filter. NO control path, NO writes.
+ * twinRouter / fleetRouter / safetyRouter). NO control path, NO writes.
+ *
+ * ★★★ PHẠM VI TENANT — câu cũ ở đây ("Tenant scope is honored via the optional
+ * `scope.corporateCode` / `scope.factoryId` filter") là LỜI KHAI SAI, và nó đứng nguyên suốt
+ * trong khi `hierarchy` rò cả cây cho mọi vai (QA lần 11, PH-23). `input.scope` là lời TỰ KHAI
+ * của client ⇒ nó **không bao giờ** là hàng rào tenant, chỉ là bộ lọc TRÌNH BÀY. Hàng rào của
+ * cả ba thủ tục đọc dữ liệu (`hierarchy` · `kpiSummary` · `recentAlerts`) đến từ `ctx.user` qua
+ * `resolveHierarchyScope` / `resolveKpiScope` / `resolveAlertScope` — cùng MỘT luật phạm vi
+ * (`resolveTenantFactoryScope`), ba câu chữ cho ba bề mặt. `status` không đọc dữ liệu tenant
+ * nào (chỉ một cờ môi trường) nên không có phạm vi để áp.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
@@ -32,7 +40,11 @@ import {
   buildRecentAlerts,
   commandCenterStatus,
 } from "../services/ecosystem/commandCenterService";
-import { resolveAlertScope, resolveKpiScope } from "../services/ecosystem/commandCenterScope";
+import {
+  resolveAlertScope,
+  resolveHierarchyScope,
+  resolveKpiScope,
+} from "../services/ecosystem/commandCenterScope";
 
 const scopeInput = z
   .object({
@@ -51,9 +63,28 @@ export const commandCenterRouter = router({
   hierarchy: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ scope: scopeInput }).optional())
-    .query(async ({ input }) => {
-      const tree = await buildHierarchy(input?.scope ?? undefined);
-      return { ...tree, status: commandCenterStatus() };
+    .query(async ({ input, ctx }) => {
+      // ★★★ 2026-09-15 (QA lần 11, PH-23) — ĐÂY là thủ tục đã rò, và nó rò suốt trong khi bản
+      // vá đúng nằm ngay BÊN DƯỚI trong cùng file (`kpiSummary`, docblock kế tiếp). Trước dòng
+      // này phạm vi chỉ đến từ `input` — lời TỰ KHAI của client — nên 5 vai nhận CÙNG 450.811
+      // byte, CÙNG md5, kể cả tài khoản 0 gán nhà máy (mà cùng phiên ấy `factory.list` trả 0 và
+      // `factoryCommand.overview` trả 0 máy cho chính người đó). Cùng lớp lỗi G113 đã vá cho
+      // `factoryCommand.overview` ngày 2026-09-10 (`e7b6afd1`) — sót đúng thủ tục NẶNG NHẤT.
+      //
+      // ⚠ `input.scope` KHÔNG bị bỏ đi: nó vẫn là bộ lọc TRÌNH BÀY và đi vào bằng tham số THỨ
+      // NHẤT, còn hàng rào đi vào bằng tham số THỨ HAI. `buildHierarchy` AND hai trục trong một
+      // mệnh đề `where`, nên một `scope` khai nhà máy NGOÀI phạm vi chỉ có thể làm cây RỖNG
+      // hơn — không bao giờ rộng hơn.
+      //
+      // ⚠ `resolveHierarchyScope` chứ không phải `resolveKpiScope`/`resolveAlertScope`: cùng
+      // MỘT luật phạm vi, chỉ khác câu chữ cho bề mặt này (cây thiết bị không có con số nào để
+      // "bằng 0", nó chỉ có hoặc không có nút).
+      const tenant = await resolveHierarchyScope({ id: ctx.user.id, role: String(ctx.user.role) });
+      const tree = await buildHierarchy(input?.scope ?? undefined, { factoryIds: tenant.factoryIds });
+      // Ba ô nhãn để màn hình KHÔNG được phép trình bày một cây rỗng thành "xưởng chưa có
+      // thiết bị nào". ⚠ Trải `tenant.labels`, TUYỆT ĐỐI không trải `tenant`/`resolveDataScope`
+      // (ô `filter` là SQL drizzle có tham chiếu vòng ⇒ superjson chết) — xem `kpiSummary`.
+      return { ...tree, status: commandCenterStatus(), ...tenant.labels };
     }),
 
   /** The KPI command strip — each field sourced from an existing service (honest nulls). */

@@ -409,7 +409,31 @@ export function bboxKemCotWip(
  *   nào tạo được ca này (5/5 non-admin đều có `machine_status`) ⇒ đo bằng user TẠM (G96).
  * ⚠ Từ chối thắng cả "đang tải": server đã nói KHÔNG thì không có gì để chờ.
  */
-export type LyDoManLine = "mo" | "chuaGanNhaMay" | "thieuQuyen";
+/**
+ * ★★★ PH-13 (QA lần 11, ca C4a) — `ngoaiPhamVi` THÊM VÀO, và nó KHÔNG phải chuyện sạch sẽ.
+ *
+ * Trước bản vá, kiểu này chỉ có ba giá trị, nên màn Line trả **trùng từng chữ**
+ * một câu cho HAI thế giới khác hẳn nhau:
+ *   · chuyền của một nhà máy KHÔNG thuộc phạm vi người xem (C4a — chặn ĐÚNG), và
+ *   · chuyền của chính họ nhưng trang hỏi sai nhà máy (C1.1 — lỗi PH-12).
+ * Cùng câu *"Chuyền này chưa có máy nào trên bố cục — … hoặc thuộc một nhà máy
+ * khác"*. Người dùng không phân biệt được "không phải của bạn" với "hệ đang
+ * hỏng", nên họ đi tìm lỗi ở chỗ không có lỗi (đúng thứ NT-3 cấm). Màn Máy đã có
+ * `ngoaiPhamVi` từ Đợt 34 (`LyDoManMay`); đây là nửa còn thiếu của cùng luật.
+ *
+ * ★ Câu hiển thị DÙNG LẠI `cauChoLyDoManMay("ngoaiPhamVi")` → `cauChoLyDoNgan`
+ *   (i18n `twin3d.vanHanh.nhung.ngoaiPhamVi` đã có ở cả ba locale) — không khai
+ *   câu thứ hai cho cùng một sự việc (G12), và câu ấy **không xác nhận chuyền có
+ *   thật** ("không thuộc phạm vi đang xem *hoặc không còn tồn tại*") — cùng hình
+ *   dạng với `NOT_FOUND` của server (G82), nên nó không rò sự tồn tại.
+ *
+ * ⚠⚠ THỨ TỰ — `chuaGanNhaMay` xét TRƯỚC `ngoaiPhamVi`, bê nguyên luật đã ghi ở
+ *   `lyDoNganNhung` (`nhungTaiCho.ts`): phạm vi RỖNG làm MỌI chuyền "ngoài phạm
+ *   vi", và bảo một người chưa được gán nhà máy rằng "chuyền này không thuộc
+ *   phạm vi đang xem" là gửi họ sai cửa (họ cần xin GÁN, không phải đổi nhà máy).
+ * ⚠ `thieuQuyen` vẫn thắng tất cả: server đã nói KHÔNG thì không có gì để chờ.
+ */
+export type LyDoManLine = "mo" | "chuaGanNhaMay" | "thieuQuyen" | "ngoaiPhamVi";
 
 export interface CanhXetManLine {
   factoriesDangTai: boolean;
@@ -417,10 +441,16 @@ export interface CanhXetManLine {
   soNhaMay: number;
   /** `true` khi một truy vấn nền của màn bị server TỪ CHỐI (`FORBIDDEN`) — thiếu quyền THẬT (Đợt 36). */
   thieuQuyen?: boolean;
+  /**
+   * `true` khi server trả `NOT_FOUND` cho CHÍNH chuyền này (`twinCanh.noiCuaThucThe`) —
+   * ngoài phạm vi được gán, hoặc không còn tồn tại. Hai ca ấy cố ý KHÔNG phân biệt (G82).
+   */
+  ngoaiPhamVi?: boolean;
 }
 
 export function lyDoMoManLine(c: CanhXetManLine): LyDoManLine {
   if (c.thieuQuyen) return "thieuQuyen";
   if (c.factoriesDangTai || c.factoriesLoi) return "mo";
-  return c.soNhaMay === 0 ? "chuaGanNhaMay" : "mo";
+  if (c.soNhaMay === 0) return "chuaGanNhaMay";
+  return c.ngoaiPhamVi ? "ngoaiPhamVi" : "mo";
 }

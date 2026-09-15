@@ -1,0 +1,40 @@
+{
+ "mayDaCham": [
+  5333,
+  5387
+ ],
+ "tong": 2420,
+ "qatd": 2338,
+ "qatdDaKhoa": 0,
+ "toanBoDaKhoa": 0,
+ "hangMayDaCham": [
+  {
+   "id": 12274,
+   "tangId": 165,
+   "thucTheId": 5333,
+   "daKhoa": false,
+   "nguon": "sinh",
+   "viTriXMm": "32500.000",
+   "viTriYMm": "34000.000",
+   "viTriZMm": "0.000",
+   "updatedAt": "2026-09-15T07:50:39.046Z"
+  },
+  {
+   "id": 12386,
+   "tangId": 166,
+   "thucTheId": 5387,
+   "daKhoa": false,
+   "nguon": "sinh",
+   "viTriXMm": "44570.000",
+   "viTriYMm": "34000.000",
+   "viTriZMm": "6000.000",
+   "updatedAt": "2026-09-15T09:38:50.992Z"
+  }
+ ],
+ "mocDauVong3": {
+  "tong": 2420,
+  "qatd": 2338,
+  "qatdDaKhoa": 0
+ },
+ "sach": true
+}

@@ -39,9 +39,28 @@
  *   cả bố cục rồi mới biết. `mayDangChon={null}` gỡ hẳn gizmo khỏi cảnh.
  *
  * ★ QUYỀN đọc ở đây khớp ĐÚNG cổng của router (`quyenThietKe`): `settings_factory`
- *   **HOẶC** `machine_control`, canEdit. Hai bên lệch nhau là lớp lỗi Khối D
+ *   **HOẶC** `machine_control`. Hai bên lệch nhau là lớp lỗi Khối D
  *   ("một lối vào rồi TỪ CHỐI") — chỉ đổi chỗ xảy ra từ giữa hai màn sang giữa
  *   UI và API.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ PH-15 (QA lần 11, ô E6) — MỘT CỜ KHÔNG ĐỦ: BỐN CỔNG, BỐN CỜ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản trước CHẶN-2 dựng đúng khái niệm chỉ-đọc nhưng chỉ có MỘT cờ
+ * `coQuyenSua = canEdit(settings_factory ∥ machine_control)` gác tất cả. QA đo
+ * bằng `qatd_quanly` (có `machine_control` V+E, **canCreate = false**, không
+ * admin): `nut-mo-sinh` "Generate" **render + enabled**, và tab "Add building"
+ * đi hết ba bước tới "Create building" **render + enabled** ⇒ 403 SAU khi bấm.
+ *
+ * Server gác bằng BỐN mức, và mức chặt nhất KHÔNG phải canEdit:
+ *   · `luuHangLoat` `luuVungAnToan` `xuatBanBanGhi`   → `canEdit`
+ *   · `taiAnhNen` `taiModelMay` `luuBanGhi` `dungNhaXuong` → **`canCreate`**
+ *   · `goKhoiMatBang` `xoaVungAnToan` `xoaBanGhi`      → `canDelete`
+ *   · `danhSachBanGhi` `chiTietBanGhi`                 → `canView`
+ *   · `sinhTuDong`                                     → **`adminProcedure`**
+ *
+ * ⇒ `quyenXuong.ts` giữ bảng NÚT × THỦ TỤC × CỔNG, và lưới của nó ĐỌC
+ *   `twinCanhRouter.ts` trên đĩa để bảng không thể trôi khỏi server.
  *
  * ⚠ Đây là cưỡng chế TRÌNH BÀY, KHÔNG thay thế cổng server (phòng thủ nhiều
  *   lớp). Router vẫn kiểm từng mutation; phần này chỉ để người không có quyền
@@ -57,6 +76,7 @@ import { useTranslation } from "react-i18next";
 import { Eye, Redo2, Save, Sparkles, Undo2 } from "lucide-react";
 
 import { useCanWrite } from "@/components/PermissionGate";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { EmptyState } from "@/components/EmptyState";
 import { isScopeEmpty } from "@/lib/scopeEmpty";
 import { Button } from "@/components/ui/button";
@@ -128,6 +148,7 @@ import {
   type TapChon,
 } from "./trangThaiThietKe";
 import { dungLopMa, soMaySeDoi, tongKetSinh, type HopMa } from "./xemTruocSinh";
+import { tinhQuyenXuong } from "./quyenXuong";
 
 export interface XuongThietKeProps {
   factoryId: number;
@@ -146,6 +167,25 @@ export interface XuongThietKeProps {
   daHieuChuan?: boolean;
   /** Gọi sau khi ghi ảnh nền/tỉ lệ, để `TwinStudio` tải lại `chiTietToaNha`. */
   onDaGhiTang?: () => void;
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ H1 — BÁO LÊN "CÒN N THAY ĐỔI CHƯA LƯU", KÈM CÁCH LƯU CHÚNG
+   * ════════════════════════════════════════════════════════════════════════
+   * Buffer `datChoSua` thuộc về component NÀY, còn ba ô chọn nhà máy/toà/tầng
+   * thuộc về `TwinStudio`. Đổi tầng ⇒ `key` đổi ⇒ component này remount ⇒
+   * buffer bị vứt **trong im lặng** (đo sống vòng 2). Chỉ `TwinStudio` chặn
+   * được lượt đổi ấy, và nó chỉ chặn được nếu BIẾT còn bao nhiêu thay đổi.
+   *
+   * ★ Trả kèm `luu` chứ không chỉ con số: người dùng chọn "Lưu rồi chuyển"
+   *   thì lượt ghi phải chạy KHI component này còn mounted với `tangId` CŨ —
+   *   đó là điều giữ cho bản vá không đẻ ra lỗi ghi nhầm tầng (xem `key=`
+   *   trong `TwinStudio.tsx`).
+   *
+   * ★ `luu` trả `boolean`: ghi hỏng thì `TwinStudio` phải GIỮ NGUYÊN tầng.
+   *   Một `Promise<void>` nuốt lỗi sẽ khiến "Lưu rồi chuyển" vẫn chuyển sau
+   *   một lượt ghi thất bại — tức vẫn là mất dữ liệu, chỉ chậm hơn một nhịp.
+   */
+  onThayDoiChuaLuu?: (trangThai: { so: number; luu: () => Promise<boolean> }) => void;
 }
 
 export function XuongThietKe({
@@ -157,21 +197,36 @@ export function XuongThietKe({
   tiLeMmMoiPx,
   daHieuChuan,
   onDaGhiTang,
+  onThayDoiChuaLuu,
 }: XuongThietKeProps) {
   const { t } = useTranslation();
   const tienIch = trpc.useUtils();
 
   /**
-   * ★★★ CHẶN-2 — quyền SỬA bố cục. Xem docblock đầu tệp.
+   * ★★★ CHẶN-2 + PH-15 — QUYỀN TÁCH THEO ĐÚNG CỔNG SERVER. Xem docblock đầu tệp
+   * và bảng `quyenXuong.ts`.
    *
-   * `canEdit` trên `settings_factory` HOẶC `machine_control` — phép HOẶC là cố
-   * ý và khớp `quyenThietKe()` của `twinCanhRouter`. Viết thành AND sẽ chặn đúng
-   * những người mà §6.4 muốn cho vào.
+   * `canView/canCreate/canEdit/canDelete` trên `settings_factory` **HOẶC**
+   * `machine_control` (phép HOẶC theo TỪNG hành động, khớp `quyenThietKe()`),
+   * cộng cờ `isAdmin` riêng cho `sinhTuDong` (`adminProcedure`).
+   *
+   * ⚠ `coQuyenSua` (một cờ cho tất cả) ĐÃ BỊ GỠ: QA lần 11 ô E6 đo được nó mở
+   *   nút "Generate" và đường "Create building" cho vai chỉ có `canEdit`.
    */
-  const quyenSettings = useCanWrite("settings_factory");
-  const quyenMayMoc = useCanWrite("machine_control");
-  const coQuyenSua = quyenSettings.canEdit || quyenMayMoc.canEdit;
-  const chiDoc = !coQuyenSua;
+  /* ⚠ `useCanWrite` KHÔNG trả `canView` (nó chỉ nói về ba cờ GHI). `canView` là
+     cổng thật của `danhSachBanGhi`/`chiTietBanGhi`/`danhSachModel`, nên phải đọc
+     thêm từ `usePermissions().hasPermission` — cùng nguồn mà `useCanWrite` dùng
+     bên trong, nên không sinh nguồn sự thật thứ hai. */
+  const { hasPermission, isAdmin } = usePermissions();
+  const ghiSettings = useCanWrite("settings_factory");
+  const ghiMayMoc = useCanWrite("machine_control");
+  const quyen = tinhQuyenXuong({
+    settingsFactory: { ...ghiSettings, canView: hasPermission("settings_factory", "canView") },
+    machineControl: { ...ghiMayMoc, canView: hasPermission("machine_control", "canView") },
+    laAdmin: isAdmin,
+  });
+  /** Chỉ-đọc = không sửa được bố cục. Huy hiệu "Chỉ xem" và Inspector đọc cờ này. */
+  const chiDoc = !quyen.sua;
 
   // ── Dữ liệu ──────────────────────────────────────────────────────────────
   const canhQ = trpc.twinCanh.canhThietKe.useQuery(
@@ -514,8 +569,16 @@ export function XuongThietKe({
   const thayDoi = useMemo(() => gomThayDoi(datChoGoc, datChoSua), [datChoGoc, datChoSua]);
   const luuM = trpc.twinCanh.luuHangLoat.useMutation();
 
-  const luu = useCallback(async () => {
-    if (thayDoi.length === 0) return;
+  /**
+   * ★★★ H1 — TRẢ `boolean`, KHÔNG PHẢI `void`.
+   *   Bản trước nuốt lỗi vào một `toast.error` rồi trả `undefined`, nên người
+   *   gọi không phân biệt được "đã ghi xong" với "ghi hỏng". `TwinStudio` cần
+   *   đúng phân biệt ấy: "Lưu rồi chuyển" mà ghi hỏng thì PHẢI ở lại tầng cũ,
+   *   nếu không thì buffer vẫn mất — chỉ chậm hơn một nhịp.
+   *   `true` khi không có gì để lưu: không có gì để mất thì không có gì để chặn.
+   */
+  const luu = useCallback(async (): Promise<boolean> => {
+    if (thayDoi.length === 0) return true;
     try {
       for (const lo of chiaLo(thayDoi)) {
         // ★ NT-4 — hàng đi qua đường NÀY là do NGƯỜI kéo/gõ ⇒ nguon='tay',
@@ -524,12 +587,25 @@ export function XuongThietKe({
       }
       await tienIch.twinCanh.canhThietKe.invalidate();
       toast.success(t("twin3d.studioUi.daLuu"));
+      return true;
     } catch (e) {
       toast.error(
         t("twin3d.studioUi.loiLuu", { loi: e instanceof Error ? e.message : String(e) }),
       );
+      return false;
     }
   }, [thayDoi, luuM, tienIch, toast, t]);
+
+  /*
+   * ★★★ H1 — ĐẨY SỐ THAY ĐỔI CHƯA LƯU LÊN `TwinStudio` (xem docblock prop).
+   *   Con số là `thayDoi.length` — CÙNG con số badge `dem-chua-luu` hiện, nên
+   *   không có đường nào để hộp thoại nói một đằng và màn hình nói một nẻo.
+   *   Dọn về 0 khi rời đi: một bản dựng đã tháo không được để lại lời khai cũ.
+   */
+  useEffect(() => {
+    onThayDoiChuaLuu?.({ so: thayDoi.length, luu });
+    return () => onThayDoiChuaLuu?.({ so: 0, luu: async () => true });
+  }, [thayDoi.length, luu, onThayDoiChuaLuu]);
 
   // ★ §7.3 — chặn rời trang khi còn thay đổi chưa lưu.
   useEffect(() => {
@@ -766,10 +842,12 @@ export function XuongThietKe({
     <div className="flex h-full min-h-0 flex-col" data-testid="xuong-thiet-ke">
       {/* ── Thanh công cụ trên cùng ─────────────────────────────────────── */}
       {/*
-        ★★★ CHẶN-2 — mọi công cụ GHI dưới đây nằm sau `coQuyenSua`, và cách gỡ là
-        KHÔNG RENDER (`&&` / `? :`), không phải `disabled`. Kiểm nghiệm thu là
-        `expect(queryByTestId(...)).toBeNull()` — một nút `disabled` vẫn ở trong
-        DOM nên phép đo đó phân biệt được hai cách làm.
+        ★★★ CHẶN-2 + PH-15 — mỗi công cụ GHI dưới đây nằm sau ĐÚNG CỜ CỦA CỔNG
+        SERVER MÀ NÓ GỌI (`quyen.sua` / `quyen.tao` / `quyen.xoa` / `quyen.sinh` —
+        bảng ở `quyenXuong.ts`), và cách gỡ là KHÔNG RENDER (`&&` / `? :`), không
+        phải `disabled`. Kiểm nghiệm thu là `expect(queryByTestId(...)).toBeNull()`
+        — một nút `disabled` vẫn ở trong DOM nên phép đo đó phân biệt được hai
+        cách làm.
 
         Công tắc LƯỚI và nút ĐO khoảng cách CỐ Ý ở lại: chúng không ghi gì, chỉ
         đổi cách nhìn. Ẩn chúng sẽ biến "chỉ đọc" thành "xem được ít hơn", trong
@@ -782,7 +860,7 @@ export function XuongThietKe({
             {t("common.viewOnly", "Chỉ xem")}
           </Badge>
         ) : null}
-        {coQuyenSua ? (
+        {quyen.sua ? (
         <div className="flex items-center gap-1">
           {/* ★ G67 — chỉ hai chế độ. Nút "Co giãn" đã gỡ: nó KHÔNG ghi gì (tiLe
               bị bỏ ở 4 tầng) và nối vào cũng sai nghiệp vụ — kích thước máy sửa
@@ -802,7 +880,7 @@ export function XuongThietKe({
         </div>
         ) : null}
 
-        {coQuyenSua ? (
+        {quyen.sua ? (
         <div className="flex items-center gap-1.5">
           <Switch
             checked={snapBat}
@@ -817,7 +895,7 @@ export function XuongThietKe({
           <Label className="text-[11px]">{t("twin3d.studioUi.luoi")}</Label>
         </div>
 
-        {coQuyenSua ? (
+        {quyen.sua ? (
           <>
             <Button
               size="icon"
@@ -850,29 +928,46 @@ export function XuongThietKe({
               {t("twin3d.studioUi.chuaLuu", { n: thayDoi.length })}
             </Badge>
           ) : null}
-          {coQuyenSua ? (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1.5 text-[11px]"
-                data-testid="nut-mo-sinh"
-                onClick={() => setMoSinh(true)}
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                {t("twin3d.studioUi.sinhTuDong")}
-              </Button>
-              <Button
-                size="sm"
-                className="h-7 gap-1.5 text-[11px]"
-                disabled={thayDoi.length === 0 || luuM.isPending}
-                data-testid="nut-luu"
-                onClick={() => void luu()}
-              >
-                <Save className="h-3.5 w-3.5" />
-                {luuM.isPending ? t("twin3d.studioUi.dangLuu") : t("twin3d.studioUi.luu")}
-              </Button>
-            </>
+          {/*
+            ★★★ PH-15 — HAI NÚT NÀY CÓ HAI CỔNG KHÁC NHAU, KHÔNG PHẢI MỘT.
+              `nut-mo-sinh` → `twinCanh.sinhTuDong` = **`adminProcedure`**
+              (`twinCanhRouter.ts:1617`), còn `nut-luu` → `twinCanh.luuHangLoat`
+              = `quyenThietKe("canEdit")` (`:1253-1254`). Bản cũ gác cả hai bằng
+              MỘT cờ `coQuyenSua` ⇒ QA đo được `qatd_quanly` (canEdit, 0 canCreate,
+              không admin) thấy "Generate" render + enabled và chỉ nhận 403 SAU
+              khi bấm.
+
+              Vì sao `sinhTuDong` phải chặt hơn phần còn lại của màn: kéo-thả một
+              máy sửa MỘT hàng và người làm thấy ngay kết quả; `sinhTuDong` ghi đè
+              TOÀN BỘ bố cục trong một lượt (đo được: 81 hàng). Xem docblock của
+              chính thủ tục ấy.
+          */}
+          {quyen.sinh ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-[11px]"
+              data-testid="nut-mo-sinh"
+              onClick={() => setMoSinh(true)}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {t("twin3d.studioUi.sinhTuDong")}
+            </Button>
+          ) : null}
+          {quyen.sua ? (
+            <Button
+              size="sm"
+              className="h-7 gap-1.5 text-[11px]"
+              /* ⚠ `disabled` ở đây là TRẠNG THÁI TẠM ("chưa có gì để lưu"), KHÔNG
+                 phải quyền — người dùng đổi được nó. Quyền thì ẨN (điều kiện bao
+                 ngoài). Trộn hai thứ là lý do bản cũ khó đọc. */
+              disabled={thayDoi.length === 0 || luuM.isPending}
+              data-testid="nut-luu"
+              onClick={() => void luu()}
+            >
+              <Save className="h-3.5 w-3.5" />
+              {luuM.isPending ? t("twin3d.studioUi.dangLuu") : t("twin3d.studioUi.luu")}
+            </Button>
           ) : null}
         </div>
       </div>
@@ -881,7 +976,7 @@ export function XuongThietKe({
       <DaiSucKhoe sucKhoe={sucKhoe} />
 
       {/* ★ CHẶN-2 — thanh căn chỉnh là 9 công cụ GHI (căn/dàn/nhân bản). Ẩn hẳn. */}
-      {coQuyenSua ? (
+      {quyen.sua ? (
       <ThanhCanChinh
         soDangChon={chon.length}
         onCanh={(huong: HuongCanh) => apKetQuaDich(canhTheoBien(dsBboxDangChon, huong), "canh")}
@@ -972,7 +1067,7 @@ export function XuongThietKe({
                 người dùng kéo xong cả bố cục rồi mới biết mình không có quyền. */}
             <CanhThietKe
               may={mayVe}
-              mayDangChon={coQuyenSua ? machineIdChon : null}
+              mayDangChon={quyen.sua ? machineIdChon : null}
               mayDaKhoa={datChoDangChon?.daKhoa ?? false}
               cheDo={cheDo}
               snapBat={snapBat}
@@ -1043,6 +1138,10 @@ export function XuongThietKe({
               soDangChon={chon.length}
               buocGocDo={BUOC_GOC_MAC_DINH_DO}
               chiDoc={chiDoc}
+              /* ★★★ PH-15 — `nut-go-khoi-mat-bang` gọi `twinCanh.goKhoiMatBang`
+                 = `quyenThietKe("canDelete")` (`twinCanhRouter.ts:1306-1307`),
+                 KHÔNG phải canEdit. Bản cũ cho mọi người sửa được thấy nó. */
+              coTheXoa={quyen.xoa}
               onSua={(khoa, sua) => apSua(khoa, sua, "keo")}
               onGoKhoiMatBang={(khoa) => void goKhoi(khoa)}
             />
@@ -1054,10 +1153,12 @@ export function XuongThietKe({
                 rời nhau cho `factory_zones`/`safety_zones` = 0 hàng ⇒ lý do hoãn
                 "mất tính năng thật" đã hết hạn. Đây nay là đường DUY NHẤT.
 
-                ★ CHẶN-2 — đây là đường GHI ⇒ chỉ dựng khi `coQuyenSua`. Không
-                  `disabled`: một công cụ vẽ bị xám vẫn nói "chức năng này thuộc
-                  về bạn". */}
-            {coQuyenSua && tangId !== null ? (
+                ★ CHẶN-2 + PH-15 — `luuVungAnToan` = `canEdit`, `xoaVungAnToan`
+                  = `canDelete` (`twinCanhRouter.ts:1354-1355`, `:1393-1394`):
+                  VẼ theo `quyen.sua`, XOÁ theo `quyen.xoa` — hai cổng, hai cờ.
+                  Không `disabled`: một công cụ vẽ bị xám vẫn nói "chức năng này
+                  thuộc về bạn". */}
+            {quyen.sua && tangId !== null ? (
               <div className="border-t p-2" data-testid="khoi-vung-an-toan">
                 <p className="mb-1.5 text-[11px] font-medium text-text-2">
                   {t("twin3d.vung.tieuDe")}
@@ -1070,6 +1171,7 @@ export function XuongThietKe({
                   mayNen={mayNenVung}
                   vungChon={vungChon}
                   onChonVung={setVungChon}
+                  coTheXoa={quyen.xoa}
                   onDaGhi={() => tienIch.twinCanh.canhThietKe.invalidate()}
                 />
               </div>
@@ -1083,8 +1185,11 @@ export function XuongThietKe({
                 `twinCanh.*`, KHÔNG qua `factory.uploadFloorPlan`/`updateFloorDims`
                 của đường cũ — hai thủ tục ấy nay **còn trên server nhưng 0 UI**.
 
-                ★ CHẶN-2 — đường GHI ⇒ chỉ dựng khi `coQuyenSua`. */}
-            {coQuyenSua && tangId !== null ? (
+                ★★★ PH-15 — `twinCanh.taiAnhNen` = `quyenThietKe("**canCreate**")`
+                  (`twinCanhRouter.ts:479-480`), KHÔNG phải canEdit. Bản cũ mở
+                  khối này cho mọi vai có canEdit ⇒ họ chọn được ảnh, đặt được tỉ
+                  lệ, rồi ăn 403 ở lượt gửi. */}
+            {quyen.tao && tangId !== null ? (
               <AnhNenTang
                 tangId={tangId}
                 sanRongMm={sanRongMm}
@@ -1101,10 +1206,15 @@ export function XuongThietKe({
                 tầng (db · router · UI) đóng cùng một lượt — thiếu tầng nào thì
                 hai tầng kia lại thành một lớp L-3 mới ở chỗ khác.
 
-                ★ CHẶN-2 — đường GHI ⇒ chỉ dựng khi `coQuyenSua`. */}
-            {coQuyenSua && tangId !== null ? (
+                ★★★ PH-15 — KHỐI NÀY MỘT MÌNH CHẠM BỐN CỔNG SERVER KHÁC NHAU:
+                  `danhSachBanGhi`/`chiTietBanGhi` = canView · `luuBanGhi` =
+                  **canCreate** · `xuatBanBanGhi` = canEdit · `xoaBanGhi` =
+                  canDelete. Nên khối HIỆN theo `quyen.xem` và từng nút bên trong
+                  tự gác — gộp cả bốn vào một cờ là đúng thứ bản cũ làm. */}
+            {quyen.xem && tangId !== null ? (
               <BanGhiBoCuc
                 tangId={tangId}
+                quyen={quyen}
                 layAnhChup={layAnhChup}
                 onKhoiPhuc={khoiPhucAnhChup}
               />
@@ -1127,20 +1237,22 @@ export function XuongThietKe({
           • `mayDangChon`  — đích của nút "Gán cho máy này". Dùng `machineIdChon`,
                              CÙNG biến mà gizmo và Inspector đọc, nên "máy này"
                              luôn là máy người dùng đang nhìn.
-          • `coQuyenSua`   — CHẶN-2: tải lên là đường GHI.
+          • `coQuyenTao`   — PH-15: `twinCanh.taiModelMay` = `canCreate`
+                             (`twinCanhRouter.ts:639-640`), không phải canEdit.
           • `onDaGanModel` — nạp lại bảng model để cảnh đổi hình ngay, không
                              phải reload trang.
       */}
       <ThuVienAsset
         may={mayChoThuVien}
         mayDangChon={machineIdChon}
-        coQuyenSua={coQuyenSua}
+        coQuyenTao={quyen.tao}
         onDaGanModel={() => void modelQ.refetch()}
       />
 
-      {/* ★ CHẶN-2 — hộp thoại Sinh tự động: nút mở đã ẩn, nhưng không dựng luôn
-          hộp thoại thì `moSinh` không thể bị bật bằng đường nào khác. */}
-      {coQuyenSua ? (
+      {/* ★ CHẶN-2 + PH-15 — hộp thoại Sinh tự động đi theo ĐÚNG cờ của nút mở
+          (`quyen.sinh` = admin). Nút mở đã ẩn, nhưng không dựng luôn hộp thoại
+          thì `moSinh` không thể bị bật bằng đường nào khác. */}
+      {quyen.sinh ? (
       <HopThoaiSinh
         mo={moSinh}
         onDoiMo={(v) => {

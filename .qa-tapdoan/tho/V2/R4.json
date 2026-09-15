@@ -1,0 +1,93 @@
+{
+ "luc": "2026-09-15T08:07:46.539Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "soWorker": 1,
+ "ca": "R4",
+ "vai": "qatd_congnhan",
+ "me": "cache",
+ "mayId": 6247,
+ "kyVongDb": {
+  "id": 6247,
+  "name": "SPI-01",
+  "code": "QATD-C-T3-X1-L1-M01",
+  "machineType": "SPI",
+  "operationStatus": "running",
+  "isActive": true,
+  "lastHeartbeat": "2026-09-15T00:56:43.723Z",
+  "stationId": 6046,
+  "stationName": "Trạm 01",
+  "lineId": 397,
+  "lineName": "Line 1",
+  "lineCode": "QATD-C-T3-X1-L1",
+  "facId": 43,
+  "facCode": "QATD-C",
+  "toaId": 75,
+  "toaMa": "QATD-C-T3",
+  "tangId": 235,
+  "capSo": 1,
+  "soDatCho": "1",
+  "datChoTangId": 235
+ },
+ "deBai": "qatd_congnhan mo /twin/may/6247 (QATD-C toa T3, DB co 1 hang twin_dat_cho tang 235) => mo duoc, ten-may/loai-may khop DB, __soCanvas=1, KHONG \"khong thuoc pham vi\", KHONG \"chua co cho\"",
+ "thay": {
+  "url": "/twin/may/6247?do=1",
+  "trang": {
+   "man_van_hanh": 0,
+   "man_line": 0,
+   "man_may": 1,
+   "man_studio": 0
+  },
+  "khoiCanh": {
+   "tong": 10,
+   "trongKhung": 10,
+   "hop": {
+    "rongPx": 67,
+    "caoPx": 28,
+    "canvasRong": 1000,
+    "canvasCao": 324,
+    "tiLeDienTich": 0.0059
+   }
+  },
+  "line": null,
+  "may": {
+   "tenMay": "SPI-01",
+   "loaiMay": "SPI",
+   "sucKhoeChu": "Health 60 % · warning",
+   "sucKhoeHang": "canh",
+   "khoiCanhMay": 1,
+   "canvasTrongKhoiCanh": 1,
+   "chuaDatCho": 0,
+   "chuaDatChoChu": null,
+   "khongMoDuoc": 0,
+   "lyDo": null,
+   "khongMoChu": null,
+   "dangTai": 0,
+   "veManLine": 1,
+   "veManLineChu": "Line 1",
+   "veManLineHref": "/twin/line/397",
+   "veNhaMayHref": "/twin",
+   "canvasTrongMan": 1
+  },
+  "vanHanh": null,
+  "studio": null,
+  "demNhan": {
+   "tongUngVien": 1,
+   "ve": 1,
+   "soHopKhoi": 10,
+   "biGiau": 0
+  },
+  "soCanvasKit": 1,
+  "canvasDom": 1,
+  "veCalls": 5,
+  "spin": 0,
+  "thanTrangDai": 1410,
+  "thanTrang": "Skip to content Production (MES) Show advanced menu Simple C Công nhân Công ty C (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 20 Live 🇺🇸 English Factory › Line 1 › SPI-01 QATD-C-T3-X1-L1-M01 · Running SPI Health 60 % · warning Updated 27s ago SPI-01 QATD-C-T3-X1-L1-M01 · SPI · Công ty C · Line 1 ONLINE Refresh Overview Health / PdM Telemetry Process results OEE Alarms Recipes IR programs Genealogy 3D model Maintenance Actions — OEE 0% Failure risk 0 Active alarms Connected Connection Identity Code QATD-C-T3-X1-L1-M01 Type SPI Model — Manufacturer — Station QATD-C-T3-X1-L1-S01 Line Line 1 Factory Công ty C Corporate QATD Active active "
+ },
+ "anh": ".qa-tapdoan/anh/V2-R4-qatd_congnhan-may6247.png",
+ "pq": "ĐẠT",
+ "vi": "URL = /twin/may/6247 OK · ten-may = \"SPI-01\" (DB) OK · loai-may chua \"SPI\" (DB) OK · khoi-canh-may co canvas, __soCanvas = 1 OK · KHONG may-chua-dat-cho OK · suc-khoe-may co hang OK"
+}

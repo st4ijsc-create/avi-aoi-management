@@ -383,7 +383,34 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   Vế sau SAI: `GHIM.A` là dân số nhóm A do bộ quét ĐẾM trên mã, còn sổ nợ là danh sách miễn trừ;
 //   ba mục ấy đã rời nhóm A từ trước (§5 đỏ vì thế), nên xoá chúng khỏi sổ **không đổi A**. Đo:
 //   A = 342 trước và sau khi xoá. Hạ A xuống 339 mới đúng là "sửa cho xanh".
-const GHIM = { A: 342, B: 8, C: 474, D: 1119, S: 324, tong: 2267 } as const;
+//
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-09-15 (QA lần 11, PH-23) — **A: 342 → 341 · S: 324 → 325.** Lời khai kèm số liệu:
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// `commandCenterRouter.hierarchy` đã được thu hẹp theo `ctx.user` (`resolveHierarchyScope`) và
+// **đã rời sổ nợ**. Nó rơi vào nhóm **S** (danh tính RỜI TAY handler), không phải B. Đó là toàn
+// bộ delta của lượt này: **A −1, S +1, tổng KHÔNG đổi.**
+//
+// ⚠⚠ CÁI KHÔNG PHẢI CỦA LƯỢT NÀY — đọc trước khi sửa tiếp con số. Lúc chốt, cây làm việc DÙNG
+// CHUNG còn mang sửa đổi CHƯA COMMIT của một phiên khác (`server/routers/twinCanhRouter.ts` +
+// `server/db/twinCanh.ts`, thủ tục mới `twinCanhRouter.noiCuaThucThe`). Trên cây ấy bộ quét cho
+// `S 326 · tong 2268`. Con số ghim ở đây CỐ Ý không gánh +1 đó: nó là nợ của lô kia, và ký hộ
+// thì lô kia không còn gì để ký.
+//
+// Phép đo (KHÔNG phải phép cộng tay — xem mục 2 ở trên), cùng một bộ quét, hai đầu vào:
+//   · bản sao cây HEAD + CHỈ bản vá PH-23        → `A 341 · B 8 · C 474 · D 1119 · S 325 · 2267`  ← GHIM
+//   · ĐỐI CHỨNG: cùng bản sao + 2 tệp của phiên kia → `A 341 · B 8 · C 474 · D 1119 · S 326 · 2268`
+//   (đầu thứ hai trùng khít số đo trên cây làm việc chung ⇒ thiết bị đo biết phân biệt hai lô.)
+// ⇒ Nếu ô này ĐỎ ở `S`/`tong` với đúng +1: đó là lô `twinCanh` chưa ký, KHÔNG phải lô PH-23.
+//
+// ★ CHỦ ĐỢT QA lần 11 KÝ PHẦN CÒN LẠI (2026-09-15): hai lô nay CÙNG một đợt vá và cùng một
+// commit, nên chỗ "ký hộ" mà lô PH-23 cố ý chừa lại đã có chủ. Lô `twinCanh` thêm ĐÚNG MỘT thủ
+// tục `twinCanh.noiCuaThucThe` (vá PH-12 — màn Line/Máy hết lấy cứng `factories[0]`), và nó vào
+// nhóm **S** vì có `trongPhamVi("machine"|"line", id, phamViCua(ctx))` đặt TRƯỚC mọi lượt đọc.
+// Bằng chứng nó không phải nhóm rò: **A giữ nguyên 341** (A là nhóm "đọc tenant KHÔNG lọc"), và
+// §7 — ô đột biến "router rò MỚI ⇒ nhóm A + không trong sổ nợ" — vẫn XANH.
+// ⇒ GHIM = số đo được trên cây sau CẢ HAI lô: `S 326 · tong 2268`.
+const GHIM = { A: 341, B: 8, C: 474, D: 1119, S: 326, tong: 2268 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

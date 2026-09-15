@@ -123,7 +123,14 @@ export interface ThuVienAssetProps {
   /** machineId đang chọn ở cây/cảnh — đích của nút "Gán cho máy này". */
   mayDangChon?: number | null;
   /** ★ CHẶN-2 — dải này chỉ mở đường GHI khi người dùng có quyền sửa. */
-  coQuyenSua?: boolean;
+  /**
+   * ★★★ PH-15 — ĐỔI TÊN TỪ `coQuyenSua`, VÀ ĐỔI CẢ NGHĨA.
+   *
+   * Tải model gọi `twinCanh.taiModelMay` = `quyenThietKe("**canCreate**")`
+   * (`twinCanhRouter.ts:639-640`), KHÔNG phải canEdit. Giữ tên cũ mà đổ vào đó
+   * một giá trị khác là để lại một cái bẫy đọc-nhầm cho người sau.
+   */
+  coQuyenTao?: boolean;
   /** Gọi sau khi đăng ký xong, để cảnh nạp lại bảng model. */
   onDaGanModel?: () => void;
 }
@@ -156,7 +163,7 @@ function docBase64(tep: File): Promise<{ base64: string; buffer: ArrayBuffer }> 
 export function ThuVienAsset({
   may = [],
   mayDangChon = null,
-  coQuyenSua = false,
+  coQuyenTao = false,
   onDaGanModel,
 }: ThuVienAssetProps = {}) {
   const { t } = useTranslation();
@@ -358,9 +365,12 @@ export function ThuVienAsset({
           data-testid="loc-thu-vien"
         />
 
-        {/* ★★★ CHẶN-2 — nút tải lên là đường GHI: ẩn hẳn khi chỉ đọc, không
-            `disabled`. Một nút xám vẫn nói "chức năng này thuộc về bạn". */}
-        {coQuyenSua ? (
+        {/* ★★★ CHẶN-2 + PH-15 — nút tải lên là đường TẠO (`canCreate`): ẩn hẳn
+            khi không có quyền, không `disabled`. Một nút xám vẫn nói "chức năng
+            này thuộc về bạn". Hai nút "Gán…" nằm trong khối `soDo` — khối ấy chỉ
+            xuất hiện SAU khi chọn được tệp qua chính nút này, nên chúng đã nằm
+            sau cùng một cổng. */}
+        {coQuyenTao ? (
           <>
             <input
               ref={oTep}

@@ -74,9 +74,30 @@ export interface BanGhiBoCucProps {
   layAnhChup: () => DatChoAnhChup[];
   /** Nạp một ảnh chụp vào trạng thái đang sửa (KHÔNG ghi DB — xem docblock). */
   onKhoiPhuc: (datCho: DatChoAnhChup[]) => void;
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-15 — KHỐI NÀY MỘT MÌNH CHẠM BỐN CỔNG SERVER KHÁC NHAU
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản trước nằm sau MỘT cờ `coQuyenSua` (canEdit) ở `XuongThietKe`. Nhưng
+   * (`server/routers/twinCanhRouter.ts`):
+   *   · `danhSachBanGhi` `chiTietBanGhi` → `quyenThietKe("canView")`
+   *   · `luuBanGhi`                      → `quyenThietKe("**canCreate**")`
+   *   · `xuatBanBanGhi`                  → `quyenThietKe("canEdit")`
+   *   · `xoaBanGhi`                      → `quyenThietKe("canDelete")`
+   *
+   * ⇒ Một vai có canEdit mà 0 canCreate thấy ô nhập + nút "Lưu" đầy đủ và chỉ
+   *   nhận 403 sau khi gõ xong tên. Ba cờ dưới đây gác đúng ba đường GHI.
+   *
+   * ⚠ `nut-khoi-phuc` LÀ ngoại lệ đáng ghi: lượt ĐỌC của nó là `chiTietBanGhi`
+   *   (canView), nhưng thứ nó làm là nạp một bố cục khác vào bộ đệm đang sửa —
+   *   và bộ đệm ấy chỉ xuống được DB qua `luuHangLoat` (`canEdit`). Nên cổng
+   *   đúng của NÚT là cổng của đường GHI: gác bằng canView sẽ cho người chỉ-xem
+   *   dựng lên một bố cục họ không bao giờ lưu được.
+   */
+  quyen: { tao: boolean; sua: boolean; xoa: boolean };
 }
 
-export function BanGhiBoCuc({ tangId, layAnhChup, onKhoiPhuc }: BanGhiBoCucProps) {
+export function BanGhiBoCuc({ tangId, quyen, layAnhChup, onKhoiPhuc }: BanGhiBoCucProps) {
   const { t } = useTranslation();
   const [nhan, setNhan] = useState("");
   const [dangKhoiPhuc, setDangKhoiPhuc] = useState<number | null>(null);
@@ -171,31 +192,36 @@ export function BanGhiBoCuc({ tangId, layAnhChup, onKhoiPhuc }: BanGhiBoCucProps
         {t("twin3d.banGhi.tieuDe")}
       </p>
 
-      <div className="flex items-center gap-1.5">
-        <Input
-          className="h-7 flex-1 text-xs"
-          value={nhan}
-          onChange={(e) => setNhan(e.target.value)}
-          placeholder={t("twin3d.banGhi.nhan")}
-          maxLength={255}
-          data-testid="o-nhan-ban-ghi"
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1 text-[11px]"
-          data-testid="nut-luu-ban-ghi"
-          disabled={nhan.trim() === "" || luuM.isPending}
-          onClick={() => void luu()}
-        >
-          {luuM.isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Save className="h-3 w-3" />
-          )}
-          {t("twin3d.banGhi.luu")}
-        </Button>
-      </div>
+      {/* ★★★ PH-15 — LƯU BẢN GHI = `canCreate`. Ẩn CẢ Ô NHẬP cùng nút: gõ xong
+          một cái tên rồi mới biết mình không lưu được là đúng thứ QA đo ở ô E6. */}
+      {quyen.tao ? (
+        <div className="flex items-center gap-1.5">
+          <Input
+            className="h-7 flex-1 text-xs"
+            value={nhan}
+            onChange={(e) => setNhan(e.target.value)}
+            placeholder={t("twin3d.banGhi.nhan")}
+            maxLength={255}
+            data-testid="o-nhan-ban-ghi"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 text-[11px]"
+            data-testid="nut-luu-ban-ghi"
+            /* ⚠ `disabled` = trạng thái tạm (chưa gõ tên); quyền thì ẨN. */
+            disabled={nhan.trim() === "" || luuM.isPending}
+            onClick={() => void luu()}
+          >
+            {luuM.isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Save className="h-3 w-3" />
+            )}
+            {t("twin3d.banGhi.luu")}
+          </Button>
+        </div>
+      ) : null}
 
       {/* ★ NT-3.5 — "đếm rỗng khác đếm bằng 0": đang tải hiện "—", không hiện
           "chưa có bản ghi nào". Hai câu đó nói về hai thế giới khác nhau. */}
@@ -231,23 +257,27 @@ export function BanGhiBoCuc({ tangId, layAnhChup, onKhoiPhuc }: BanGhiBoCucProps
               ) : null}
 
               <div className="ml-auto flex items-center gap-0.5">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6"
-                  data-testid={`nut-khoi-phuc-${b.id}`}
-                  aria-label={t("twin3d.banGhi.khoiPhuc")}
-                  title={t("twin3d.banGhi.khoiPhuc")}
-                  disabled={dangKhoiPhuc !== null}
-                  onClick={() => void khoiPhuc(b.id)}
-                >
-                  {dangKhoiPhuc === b.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <History className="h-3 w-3" />
-                  )}
-                </Button>
-                {!b.daXuatBan ? (
+                {/* Khôi phục ⇒ bộ đệm đang sửa ⇒ `luuHangLoat` (canEdit). */}
+                {quyen.sua ? (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    data-testid={`nut-khoi-phuc-${b.id}`}
+                    aria-label={t("twin3d.banGhi.khoiPhuc")}
+                    title={t("twin3d.banGhi.khoiPhuc")}
+                    disabled={dangKhoiPhuc !== null}
+                    onClick={() => void khoiPhuc(b.id)}
+                  >
+                    {dangKhoiPhuc === b.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <History className="h-3 w-3" />
+                    )}
+                  </Button>
+                ) : null}
+                {/* `xuatBanBanGhi` = canEdit. */}
+                {quyen.sua && !b.daXuatBan ? (
                   <Button
                     size="icon"
                     variant="ghost"
@@ -261,18 +291,21 @@ export function BanGhiBoCuc({ tangId, layAnhChup, onKhoiPhuc }: BanGhiBoCucProps
                     <Upload className="h-3 w-3" />
                   </Button>
                 ) : null}
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6"
-                  data-testid={`nut-xoa-ban-ghi-${b.id}`}
-                  aria-label={t("twin3d.banGhi.xoa")}
-                  title={t("twin3d.banGhi.xoa")}
-                  disabled={xoaM.isPending}
-                  onClick={() => void xoa(b.id)}
-                >
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </Button>
+                {/* `xoaBanGhi` = canDelete. */}
+                {quyen.xoa ? (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    data-testid={`nut-xoa-ban-ghi-${b.id}`}
+                    aria-label={t("twin3d.banGhi.xoa")}
+                    title={t("twin3d.banGhi.xoa")}
+                    disabled={xoaM.isPending}
+                    onClick={() => void xoa(b.id)}
+                  >
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  </Button>
+                ) : null}
               </div>
             </li>
           ))}

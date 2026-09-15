@@ -1,0 +1,162 @@
+{
+ "luc": "2026-09-15T08:20:35.715Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "soWorker": 1,
+ "ca": "N-2",
+ "vai": "qatd_congnhan",
+ "me": "cache",
+ "deBai": "3 loi goi API bang cookie congnhan cho thuc the cua QATD-B => NOT_FOUND / [] / null, 0 ro",
+ "api": {
+  "factoryCommand.machineDetail(5676)": {
+   "http": 404,
+   "data": null,
+   "ma": "NOT_FOUND",
+   "loi": "Machine 5676 not found",
+   "byte": 274
+  },
+  "twinCanh.danhSachToaNha({factoryId:42})": {
+   "http": 200,
+   "data": [],
+   "ma": null,
+   "loi": null,
+   "byte": 31
+  },
+  "twinCanh.noiCuaThucThe({loai:\"may\",id:5676})": {
+   "http": 404,
+   "data": null,
+   "ma": "NOT_FOUND",
+   "loi": "Machine 5676 not found",
+   "byte": 268
+  },
+  "twinCanh.noiCuaThucThe({loai:\"line\",id:347})": {
+   "http": 404,
+   "data": null,
+   "ma": "NOT_FOUND",
+   "loi": "Line 347 not found",
+   "byte": 261
+  },
+  "twinCanh.noiCuaThucThe({loai:\"machine\",id:5676}) — chu brief, zod chi nhan \"may\"": {
+   "http": 400,
+   "data": null,
+   "ma": "BAD_REQUEST",
+   "loi": "[\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"line\",\n      \"may\"\n    ],\n    \"path\": [\n      \"loai\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"line\\\"|\\\"may\\\"\"\n  }\n]",
+   "byte": 413
+  }
+ },
+ "doiChungDuong": {
+  "noiCuaThucThe({loai:\"may\",id:6247}) — may cua QATD-C (TRONG pham vi)": {
+   "http": 200,
+   "data": {
+    "factoryId": 43,
+    "toaNhaId": 75,
+    "tangId": 235
+   },
+   "ma": null,
+   "loi": null,
+   "byte": 72
+  },
+  "twinCanh.danhSachToaNha({factoryId:43})": {
+   "http": 200,
+   "data": [
+    {
+     "id": 73,
+     "factoryId": 43,
+     "ma": "QATD-C-T1",
+     "ten": "Toà 1",
+     "viTriXMm": "2000000.000",
+     "viTriYMm": "0.000",
+     "viTriZMm": "0.000",
+     "rongMm": "110000.000",
+     "sauMm": "80000.000",
+     "caoMm": "42000.000",
+     "quatX": "0.000000000",
+     "quatY": "0.000000000",
+     "quatZ": "0.000000000",
+     "quatW": "1.000000000",
+     "modelVoId": null,
+     "donViNguon": null,
+     "nguon": "sinh",
+     "isActive": true,
+     "createdAt": "2026-09-15T07:50:39.046Z",
+     "updatedAt": "2026-09-15T07:50:39.046Z"
+    },
+    {
+     "id": 74,
+     "factoryId": 43,
+     "ma": "QATD-C-T2",
+     "ten": "Toà 2",
+     "viTriXMm": "2130000.000",
+     "viTriYMm": "0.000",
+     "viTriZMm": "0.000",
+     "rongMm": "110000.000",
+     "sauMm": "80000.000",
+     "caoMm": "42000.000",
+     "quatX": "0.000000000",
+     "quatY": "0.000000000",
+     "quatZ": "0.000000000",
+     "quatW": "1.000000000",
+     "modelVoId": null,
+     "donViNguon": null,
+     "nguon": "sinh",
+     "isActive": true,
+     "createdAt": "2026-09-15T07:50:39.046Z",
+     "updatedAt": "2026-09-15T07:50:39.046Z"
+    },
+    {
+     "id": 75,
+     "factoryId": 43,
+     "ma": "QATD-C-T3",
+     "ten": "Toà 3",
+     "viTriXMm": "2000000.000",
+     "viTriYMm": "100000.000",
+     "viTriZMm": "0.000",
+     "rongMm": "110000.000",
+     "sauMm": "80000.000",
+     "caoMm": "42000.000",
+     "quatX": "0.000000000",
+     "quatY": "0.000000000",
+     "quatZ": "0.000000000",
+     "quatW": "1.000000000",
+     "modelVoId": null,
+     "donViNguon": null,
+     "nguon": "sinh",
+     "isActive": true,
+     "createdAt": "2026-09-15T07:50:39.046Z",
+     "updatedAt": "2026-09-15T07:50:39.046Z"
+    },
+    {
+     "id": 76,
+     "factoryId": 43,
+     "ma": "QATD-C-T4",
+     "ten": "Toà 4",
+     "viTriXMm": "2130000.000",
+     "viTriYMm": "100000.000",
+     "viTriZMm": "0.000",
+     "rongMm": "110000.000",
+     "sauMm": "80000.000",
+     "caoMm": "42000.000",
+     "quatX": "0.000000000",
+     "quatY": "0.000000000",
+     "quatZ": "0.000000000",
+     "quatW": "1.000000000",
+     "modelVoId": null,
+     "donViNguon": null,
+     "nguon": "sinh",
+     "isActive": true,
+     "createdAt": "2026-09-15T07:50:39.046Z",
+     "updatedAt": "2026-09-15T07:50:39.046Z"
+    }
+   ],
+   "ma": null,
+   "loi": null,
+   "byte": 1896
+  }
+ },
+ "roTen": [],
+ "pq": "CHẶN-ĐÚNG",
+ "vi": "machineDetail(5676) khong tra du lieu OK · danhSachToaNha(42) = [] (khong ro toa cua QATD-B) OK · noiCuaThucThe(may 5676) = NOT_FOUND OK · noiCuaThucThe(line 347) = NOT_FOUND OK · 0 ten cua QATD-B ro ra trong ca 5 phan hoi OK · DOI CHUNG DUONG: thuc the TRONG pham vi VAN tra du lieu (khong va qua tay) OK"
+}

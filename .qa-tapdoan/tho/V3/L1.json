@@ -1,0 +1,41 @@
+{
+ "luc": "2026-09-15T09:34:47.745Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "soWorker": 1,
+ "ca": "L1",
+ "vai": "qatd_kythuat",
+ "deBai": "1 thay doi chua luu + doi TANG => hop thoai HIEN, dem CHUA ve 0, tang CHUA doi",
+ "cachTaoThayDoi": "bam TAM khoi may 5333 tren canh roi lat cong-tac-khoa (doi daKhoa) — KHONG ghi DB",
+ "truoc": {
+  "mayId": 5333,
+  "demChuaLuu": 1,
+  "chu": "1 unsaved changes"
+ },
+ "anhTruoc": ".qa-tapdoan/anh/V3-L1-truoc-doi-tang.png",
+ "ketCuc": "hop-thoai",
+ "thay": {
+  "hopThoai": {
+   "co": 1,
+   "chu": "Unsaved changes 1 change(s) on this floor will be LOST if you switch. Save them first? Stay on this floor Discard changes Save and switch",
+   "moTa": "1 change(s) on this floor will be LOST if you switch. Save them first?",
+   "nutLuuRoiDoi": "Save and switch",
+   "nutBoThayDoi": "Discard changes",
+   "nutHuyDoi": "Stay on this floor",
+   "demNut": {
+    "luuRoiDoi": 1,
+    "boThayDoi": 1,
+    "huyDoi": 1
+   }
+  },
+  "tangId": 165,
+  "demChuaLuu": 1,
+  "khoi": 45
+ },
+ "anh": ".qa-tapdoan/anh/V3-L1-hop-thoai-hien.png",
+ "pq": "ĐẠT",
+ "vi": "hop thoai HIEN RA OK · du ba nut nut-luu-roi-doi / nut-bo-thay-doi / nut-huy-doi OK · dem thay doi CHUA ve 0 OK · tang CHUA doi (van 165) OK · canh van la canh tang cu OK"
+}

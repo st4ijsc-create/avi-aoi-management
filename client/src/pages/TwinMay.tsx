@@ -168,6 +168,8 @@ import {
   phamViCuaManMay,
   tomTatMay,
 } from "@/components/twin3d/van-hanh/manMay";
+// ★ PH-12 (QA lần 11): nhà máy/toà của CHÍNH máy đang mở — không phải `[0]` của hai danh sách.
+import { nhaMayDangXem, toaNhaDangXem } from "@/components/twin3d/van-hanh/noiThucTheTwin";
 import type { MayTrongLo, NhanTheGioi } from "@/components/twin3d/loi";
 import type { CanhBaoTheGioi, MucCanhBao } from "@/components/twin3d/van-hanh/LopCanhBao";
 
@@ -276,12 +278,32 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
     [factoriesQ.data],
   );
   /*
-   * ★ Nhà máy ĐẦU TIÊN — cùng giới hạn có chủ ý với màn Line: `canhThietKe`
-   *   nhận ĐÚNG MỘT `factoryId`; trên CSDL này mọi máy có chỗ đều ở nhà máy
-   *   đầu (82/82 hàng `twin_dat_cho` ở `tangId=28`). Máy ở nhà máy thứ hai sẽ
-   *   ra `ngoaiPhamVi` và màn NÓI RA (L-5) thay vì vẽ sai.
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-12 (QA lần 11) — NHÀ MÁY CỦA **MÁY NÀY**, KHÔNG PHẢI `[0]`
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản trước viết `const factoryId = factories[0]?.id ?? null;` với lý do
+   * "trên CSDL này mọi máy có chỗ đều ở nhà máy đầu". Tiền đề ấy hết hạn, và
+   * hậu quả nặng hơn hẳn màn Line vì nó đi thẳng vào `lyDoMoManMay`: máy của
+   * nhà máy thứ hai không lọt vào `idTrongTam` ⇒ màn khai `ngoaiPhamVi`.
+   *
+   * ★★★ Ba đường đo độc lập của QA lần 11 loại trừ hết mọi nguyên nhân khác:
+   *     API `factoryCommand.machineDetail(4977)` — admin và giám đốc: CÓ DỮ LIỆU
+   *     Giao diện cùng máy đó              — admin và giám đốc: "không thuộc phạm vi"
+   *     Công nhân (quyền HẸP NHẤT, 1 nhà máy)       — MỞ ĐƯỢC cùng máy ấy
+   *     `maintenance.createWorkOrder(4568)` bằng cookie bị màn chặn — HTTP 200
+   *   Quyền, phạm vi tenant và dữ liệu đều bị loại ⇒ chỉ còn vị trí `[0]`.
+   *   Đây là lớp "một lối vào rồi TỪ CHỐI" (G149) ở dạng nặng nhất: màn từ chối
+   *   đúng thứ mà API cho phép, nên người dùng tin là mình không có quyền.
+   *
+   * ⚠⚠⚠ `null` ⇒ mọi truy vấn nền TẮT ⇒ `idTrongTam` rỗng ⇒ `lyDoMoManMay` trả
+   *   `ngoaiPhamVi`. Đó là hành vi ĐÚNG cho máy thật sự ngoài phạm vi (ca C4b
+   *   giữ nguyên CHẶN-ĐÚNG) — và là lý do `nhaMayDangXem` không được "đỡ" `null`.
    */
-  const factoryId = factories[0]?.id ?? null;
+  const noiQ = trpc.twinCanh.noiCuaThucThe.useQuery(
+    { loai: "may", id: machineId },
+    { retry: false },
+  );
+  const factoryId = nhaMayDangXem(noiQ.data);
 
   /* ── Realtime + nhịp thích nghi (đứng TRƯỚC mọi useQuery, có chủ ý) ──── */
   const { kho, ketNoi } = useKhoTrangThai(factoryId, bayGioThat);
@@ -294,11 +316,22 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
     { factoryId: factoryId ?? 0 },
     { enabled: factoryId !== null, retry: false },
   );
+  /*
+   * ★★★ PH-12, TRIỆU CHỨNG 2 — TOÀ **CHỨA MÁY NÀY**, KHÔNG PHẢI TOÀ MÃ NHỎ NHẤT.
+   *   Ca C2.4: máy 5139 (QATD-C, toà T3) có ĐÚNG MỘT hàng `twin_dat_cho` trong
+   *   CSDL, nhưng trang chỉ hỏi đặt chỗ của toà `[0]` ⇒ `mucTieu === null` ⇒ màn
+   *   khai *"Máy này chưa có chỗ trên bố cục 3D"* — một lời khai SAI SỰ THẬT về
+   *   dữ liệu, kèm mất luôn `loai-may` và `suc-khoe-may`.
+   *   `toaNhaDangXem` trả `null` khi máy THẬT SỰ chưa xếp chỗ, và khi đó câu ấy
+   *   đúng — hai ca cùng hình dạng trên màn nhưng nay đến từ hai sự thật khác nhau.
+   */
   const toaNhaDau = useMemo(
     () =>
-      ((toaNhaQ.data ?? []) as Array<{ id: number; rongMm: string | number; sauMm: string | number }>)[0] ??
-      null,
-    [toaNhaQ.data],
+      toaNhaDangXem(
+        (toaNhaQ.data ?? []) as Array<{ id: number; rongMm: string | number; sauMm: string | number }>,
+        noiQ.data,
+      ),
+    [toaNhaQ.data, noiQ.data],
   );
   const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
     { id: toaNhaDau?.id ?? 0 },
@@ -594,6 +627,11 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
    */
   const dangTai =
     factoriesQ.isLoading ||
+    /* ★ PH-12 — `noiQ` là mắt ĐẦU của chuỗi (nơi → nhà máy → toà → tầng → cảnh);
+       trong lúc nó chạy, `factoryId` là `null` nên bốn truy vấn dưới đều TẮT và
+       `isLoading` của chúng là `false`. Thiếu ô này thì mọi máy hợp lệ nháy câu
+       "ngoài phạm vi" đúng một nhịp — lớp NT-3.5 mà Đợt 34 đã trả giá. */
+    noiQ.isLoading ||
     toaNhaQ.isLoading ||
     chiTietQ.isLoading ||
     canhQ.isLoading ||
@@ -614,6 +652,7 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
   const thieuQuyen =
     (canhQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
     (toaNhaQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
+    (noiQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ||
     (overviewQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN";
   const lyDo = lyDoMoManMay(machineId, { idTrongTam, phamViRong, dangTai, thieuQuyen });
 

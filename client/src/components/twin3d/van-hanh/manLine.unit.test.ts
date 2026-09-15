@@ -397,3 +397,52 @@ describe("★★★ Đợt 36 — lyDoMoManLine với `thieuQuyen` (server FORBI
     expect(cauChoLyDoManMay("thieuQuyen").khoa).toBe("twin3d.vanHanh.nhung.thieuQuyen");
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ PH-13 (QA lần 11 ca C4a) — `ngoaiPhamVi`: "của nhà máy khác" ≠ "chưa xếp chỗ" */
+/* ══════════════════════════════════════════════════════════════════════════ */
+describe("★★★ PH-13 — lyDoMoManLine với `ngoaiPhamVi` (server NOT_FOUND cho chính chuyền ấy)", () => {
+  it("★★★ ca C4a đo được: `qatd_congnhan` mở `/twin/line/249` (QATD-B, ngoài phạm vi) ⇒ `ngoaiPhamVi`, KHÔNG `mo`", async () => {
+    /*
+     * Trước bản vá, ca này trả `mo` ⇒ trang rơi xuống `line-rong` và in câu
+     * *"Chuyền này chưa có máy nào trên bố cục — … hoặc thuộc một nhà máy khác"* —
+     * TRÙNG TỪNG CHỮ với câu của chuyền hợp lệ bị lỗi PH-12 (ca C1.1). Người dùng
+     * không phân biệt được "không phải của bạn" với "hệ đang hỏng".
+     */
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 1, ngoaiPhamVi: true })).toBe("ngoaiPhamVi");
+  });
+
+  it("★★★ THỨ TỰ — 0 nhà máy THẮNG `ngoaiPhamVi`: phạm vi rỗng làm MỌI chuyền 'ngoài phạm vi', và bảo họ đổi nhà máy là sai cửa", async () => {
+    // Bê nguyên luật đã ghi ở `lyDoNganNhung` (`nhungTaiCho.ts`) — một luật, một thứ tự.
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 0, ngoaiPhamVi: true })).toBe("chuaGanNhaMay");
+  });
+
+  it("★ `thieuQuyen` vẫn thắng `ngoaiPhamVi` — server đã nói KHÔNG thì không còn gì để chờ", async () => {
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 1, thieuQuyen: true, ngoaiPhamVi: true })).toBe("thieuQuyen");
+  });
+
+  it("★ đang tải / lỗi mạng ⇒ `mo` — không khai 'ngoài phạm vi' về thứ chưa hỏi xong (NT-3.5)", async () => {
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: true, factoriesLoi: false, soNhaMay: 1, ngoaiPhamVi: true })).toBe("mo");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: true, soNhaMay: 1, ngoaiPhamVi: true })).toBe("mo");
+  });
+
+  it("★ ĐỐI CHỨNG — `ngoaiPhamVi` vắng/false ⇒ hợp đồng Đợt 35/36 giữ NGUYÊN", async () => {
+    const { lyDoMoManLine } = await import("./manLine");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 1, ngoaiPhamVi: false })).toBe("mo");
+    expect(lyDoMoManLine({ factoriesDangTai: false, factoriesLoi: false, soNhaMay: 1 })).toBe("mo");
+  });
+
+  it("★★★ câu DÙNG LẠI `cauChoLyDoManMay(\"ngoaiPhamVi\")` của màn Máy, và câu ấy KHÔNG xác nhận chuyền có thật (G82)", async () => {
+    const { cauChoLyDoManMay } = await import("./manMay");
+    const cau = cauChoLyDoManMay("ngoaiPhamVi");
+    expect(cau.khoa).toBe("twin3d.vanHanh.nhung.ngoaiPhamVi");
+    // "… (hoặc không còn tồn tại)" — cùng hình dạng với `NOT_FOUND` của server.
+    expect(cau.duPhong).toContain("không còn tồn tại");
+    // ★ Và nó KHÁC hẳn câu của `chuaGanNhaMay` — hai tình huống, hai câu (PH-13).
+    expect(cau.khoa).not.toBe(cauChoLyDoManMay("chuaGanNhaMay").khoa);
+  });
+});

@@ -1,0 +1,96 @@
+VÒNG 3 — ĐO SỐNG HAI BẢN VÁ H1 + H5 · XONG 2026-09-15
+════════════════════════════════════════════════════════════════════════════════
+
+MÔI TRƯỜNG (không dựng lại, không bật/tắt gì)
+  server 3064 PID 29128, bundle assets/index-CF-6v5eP.js, cây .qa-tapdoan/dist-sauva2
+  BUILD-INFO: commit=f94c95ff3244668a4190983ca210c92ff54cab70+5va, built 2026-09-15T16:16:41+07:00
+  nhịp heartbeat 45 s chạy nền suốt lượt đo — KHÔNG tắt
+  KHÔNG chạm 3000/8080 · KHÔNG git · KHÔNG sửa .env · KHÔNG sửa mã sản phẩm
+  KHÔNG gọi twinCanh.sinhTuDong
+  ghi mới CHỈ trong .qa-tapdoan/: do-vong3.mjs, db-V3.mjs, db-V3-don.mjs,
+    tho/V3/*, anh/V3-*.png, BANG-V3.md, V3-XONG.txt
+
+THIẾT BỊ ĐO
+  Playwright chromium, args --use-angle=default --enable-gpu --ignore-gpu-blocklist
+  SỐ WORKER = 1 (tuần tự; mỗi khối ca một browserContext riêng)
+  viewport 1600×900 (canvas Studio 726×431 — TRÙNG vòng 2 ⇒ so được trực tiếp)
+  chờ cảnh bằng __thongKeVe.calls / __demTuongTac.dsMay() / "khung nhìn đứng yên 3 nhịp"
+    ⇒ 0 waitForTimeout cố định trong đường phán quyết
+  DB: postgres CHỈ SELECT dựng kỳ vọng rời (tho/V3/db-V3.json, don-cuoi.json)
+  mọi lượt GHI đi qua ĐƯỜNG SẢN PHẨM (UI, hoặc POST twinCanh.luuHangLoat khi dọn)
+
+MỐC DỮ LIỆU (tự SELECT)
+  QATD-A 41 · QATD-B 42 · QATD-C 43 · toà A 65/66/67/68
+  Studio qatd_kythuat mở mặc định: nhà máy 41 / toà 65 / tầng 165 (cấp 1, 45 máy xếp chỗ)
+  tầng đối chiếu 166 (cấp 2, 40 máy)
+  máy dùng: 5333 (L1/L2/L3/L5 — KHÔNG bao giờ ghi) · 5387 (L4 — có ghi, đã dọn)
+  twin_dat_cho lúc bắt đầu: 2.420 toàn hệ · 2.338 QATD · 0 hàng daKhoa=true
+
+KẾT QUẢ 12 Ô — ô không có phán quyết: 0
+  H1  L1 ĐẠT · L2 ĐẠT · L3 ĐẠT · L4 ĐẠT · L5 ĐẠT · L6 ĐẠT        (6/6)
+  H5  L7 ĐẠT · L8 ĐẠT · L9 ĐẠT                                   (3/3)
+  HỒI QUY  L10 ĐẠT · L11 ĐẠT · L12 ĐẠT                           (3/3)
+  TỔNG: ĐẠT 12 · SAI 0 · HỎNG 0 · CHẶN-ĐÚNG 0 · N/A 0
+
+HAI BẢN VÁ
+  H1 (V-08, CAO — MẤT DỮ LIỆU)  ĐÓNG trên màn sống.
+      cổng xinDoiNap hiện hộp thoại 3 nút ở CẢ BA ô (tầng/toà/nhà máy);
+      huỷ ⇒ giữ nguyên · bỏ ⇒ bỏ thật (DB xác nhận không ghi lén) ·
+      "Lưu rồi chuyển" ⇒ GHI VÀO ĐÚNG TẦNG CŨ rồi mới đổi;
+      không có thay đổi ⇒ đổi tầng mượt, 0 hộp thoại.
+  H5 (V-09, THẤP)               ĐÓNG trên màn sống.
+      mount đầu, không chạm gì: 4,74 % (vòng 2) → 19,72 % (nay);
+      bấm Fit sau đó lệch 0 px / 0 px ⇒ auto-fit đã fit sẵn;
+      người dùng xoay trước ⇒ auto-fit NHƯỜNG camera (1,37 %), nút Fit vẫn dùng được.
+
+★ L4 — BẰNG CHỨNG DB (ca nguy hiểm nhất, và nó SẠCH)
+  máy 5387, đang sửa ở TẦNG 166, xin đổi sang TẦNG 165:
+    trước  tangId=166  daKhoa=false  nguon=sinh  updatedAt=2026-09-15T07:50:39.046Z
+    sau    tangId=166  daKhoa=true   nguon=tay   updatedAt=2026-09-15T09:36:50.573Z
+           viTri 44570.000 / 34000.000 / 6000.000 — KHÔNG đổi
+    mạng   POST twinCanh.luuHangLoat?batch=1 → 200 {daGhi:1,daTao:0,daCapNhat:1}
+    đếm    2420/2338 KHÔNG đổi (cập nhật, không chèn) · daKhoa 0 → 1 (đúng một hàng)
+  tangId Ở NGUYÊN TẦNG CŨ trong khi giao diện đã sang tầng mới ⇒ bản vá KHÔNG nguy
+  hiểm hơn lỗi nó vá.
+
+DỌN HÀNG TẠM — SẠCH
+  trước 2.420 / 2.338 / daKhoa 0
+  sau L4 2.420 / 2.338 / daKhoa 1
+  sau dọn 2.420 / 2.338 / daKhoa 0   (toàn hệ 0 hàng daKhoa=true)
+  dọn bằng ĐƯỜNG SẢN PHẨM với đúng giá trị gốc đã chụp trước khi ghi; kiểm lại:
+  5387 về tangId=166 / daKhoa=false / nguon=sinh, toạ độ khớp từng chữ số.
+  VẾT DUY NHẤT: updatedAt của đúng một hàng (id 12386) mang giờ lượt đo —
+  luuHangLoat luôn đặt updatedAt, không có đường ghi nào giữ lại giá trị cũ.
+  Máy 5333 chưa bao giờ bị ghi (updatedAt vẫn 07:50:39 của lượt sinh dữ liệu).
+
+PHÉP ĐO CỦA TÔI CÓ BIẾT KÊU KHÔNG (đối chứng âm TRONG CHÍNH lượt này)
+  hộp thoại          KÊU L1/L5×2/L3/L4/L12×3   IM L6 (co=0, "doi-that")
+  hàng DB bị ghi     KÊU L4 (false→true)       IM L3 (máy 5333 vẫn false)
+  tỉ lệ bbox         KÊU L7/L8 19,72 %         IM L9 1,37 %
+  DOM theo quyền     nut-mo-sinh 0 (L10)       nut-luu 1 (L10, đối chứng dương)
+  dò dấu tiếng Việt  KÊU L12 vi (true)         IM L12 en/zh (false)
+
+LỖ / GIỚI HẠN CỦA CHÍNH LƯỢT ĐO NÀY (xem "ĐIỀU TÔI KHÔNG CHẮC" trong BANG-V3.md)
+  1) Ablation của H5 là CHÉO BẢN DỰNG (4,74 % lấy từ sổ vòng 2 trên dist-sauva),
+     không phải trong cùng phiên — tôi không được bật server thứ hai để đo bản chưa vá.
+  2) L9 dựng bằng cách LÀM CHẬM truy vấn canhThietKe 3,5 s (page.route) — thứ tự
+     "Canvas trước, dữ liệu sau" là do tôi ép ra, không phải quan sát tự nhiên.
+  3) Thay đổi chưa lưu luôn là ĐÚNG MỘT và luôn cùng loại (lật daKhoa). Chưa đo:
+     buffer nhiều hàng, thay đổi kiểu KÉO-DỜI (đổi toạ độ), và nhánh "ghi HỎNG ⇒
+     giữ hộp thoại, giữ tầng" (TwinStudio.tsx luuRoiDoi: if (!daGhiXong) return).
+  4) Chỉ đo tầng 165↔166 của toà 65; L5 huỷ ngay sau khi hộp thoại hiện nên chưa đo
+     "bỏ thay đổi rồi đổi NHÀ MÁY" đi tới cùng.
+
+GHI LẠI CHO LƯỢT SAU
+  · <select> của BoChonNapUI là CONTROLLED ⇒ cổng chặn thì React trả DOM value về cũ;
+    phải chờ phân định bằng waitForFunction("hộp thoại hiện" || "ô đã đổi thật").
+  · Chờ auto-fit bằng "khung nhìn đứng yên 3 nhịp", không bằng đồng hồ — auto-fit đổi
+    camera CHẬM HƠN lượt dựng khối.
+  · postgres.js: `= any(${sql.array(ids)})` ném "op ANY/ALL (array) requires array on
+    right side"; dạng chạy được là `in ${sql(ids)}`. Luôn sql.end() trong finally —
+    một lượt reject không đóng kết nối làm tiến trình treo tới hết hạn.
+
+TỆP RA
+  .qa-tapdoan/tho/V3/{L1..L12}.json · H1-CHUNG.json · db-V3.json · don-cuoi.json · _TOM-TAT.json
+  .qa-tapdoan/anh/V3-*.png (12 ảnh)
+  .qa-tapdoan/BANG-V3.md · .qa-tapdoan/V3-XONG.txt

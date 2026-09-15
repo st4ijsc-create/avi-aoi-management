@@ -1,0 +1,228 @@
+{
+ "luc": "2026-09-15T08:27:40.151Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "soWorker": 1,
+ "ca": "R2",
+ "vai": "qatd_congnhan",
+ "me": "cache",
+ "deBai": "qua CÂY PHÂN CẤP trên /twin (nm=43 toà=75 tầng=235) bấm node chuyền 397 (QATD-C toa T3 tang 1) => /twin/line/397: tên/đếm máy/đếm trạm khớp DB VÀ cảnh vẽ đủ KHỐI máy",
+ "kyVongDb": {
+  "lineId": 397,
+  "lineName": "Line 1",
+  "lineCode": "QATD-C-T3-X1-L1",
+  "isActive": true,
+  "wsId": 98,
+  "wsName": "Xưởng T3 tầng 1",
+  "wsTangId": 235,
+  "tangDbId": 235,
+  "capSo": 1,
+  "toaNhaId": 75,
+  "toaMa": "QATD-C-T3",
+  "facId": 43,
+  "facCode": "QATD-C",
+  "soTram": "10",
+  "soMay": "10",
+  "soMayDatCho": "10",
+  "tangDatCho": "235"
+ },
+ "duongBam": [
+  "goto /twin?do=1",
+  "chon-nha-may=43",
+  "chon-toa-nha=75",
+  "chon-tang=235",
+  "mo cay + bung",
+  "click node-cay-line:397 (\"QATD-C-T3-X1-L1 — Line 1101\")"
+ ],
+ "truocBam": {
+  "url": "/twin?do=1&nm=43&toa=75&tang=235",
+  "trang": {
+   "man_van_hanh": 1,
+   "man_line": 0,
+   "man_may": 0,
+   "man_studio": 0
+  },
+  "khoiCanh": {
+   "tong": 0,
+   "trongKhung": 0,
+   "hop": null
+  },
+  "line": null,
+  "may": null,
+  "vanHanh": {
+   "oNhaMay": {
+    "co": 1,
+    "soMuc": 1,
+    "value": "43",
+    "disabled": false,
+    "nhanDangChon": "Công ty C",
+    "muc": [
+     "43:Công ty C"
+    ]
+   },
+   "oToaNha": {
+    "co": 1,
+    "soMuc": 4,
+    "value": "75",
+    "disabled": false,
+    "nhanDangChon": "Toà 3",
+    "muc": [
+     "73:Toà 1",
+     "74:Toà 2",
+     "75:Toà 3",
+     "76:Toà 4"
+    ]
+   },
+   "oTang": {
+    "co": 1,
+    "soMuc": 7,
+    "value": "235",
+    "disabled": false,
+    "nhanDangChon": "Tầng 1",
+    "muc": [
+     "235:Tầng 1",
+     "236:Tầng 2",
+     "237:Tầng 3",
+     "238:Tầng 4",
+     "239:Tầng 5",
+     "240:Tầng 6",
+     "241:Tầng 7"
+    ]
+   },
+   "demMay": "328",
+   "canvasTrongMan": 1
+  },
+  "studio": null,
+  "demNhan": {
+   "tongUngVien": 43,
+   "ve": 5,
+   "soHopKhoi": 39,
+   "biGiau": 38
+  },
+  "soCanvasKit": 1,
+  "canvasDom": 1,
+  "veCalls": 2,
+  "spin": 0,
+  "thanTrangDai": 2224,
+  "thanTrang": "Skip to content Production (MES) Show advanced menu Simple C Công nhân Công ty C (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 20 Live 🇺🇸 English Production MES 3D Factory Corporate › Công ty C › Floor Factory Công ty C Building Toà 1 Toà 2 Toà 3 Toà 4 Floor Tầng 1 Tầng 2 Tầng 3 Tầng 4 Tầng 5 Tầng 6 Tầng 7 Export USD 3D 1 thing to know View Machines 328 Fresh data 322 Stale data 0 Unknown 6 Decommissioned 0 Alarms (20) All20 Stop11 Call0 Warning9 Normal0 TODAY (20) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 05 (QATD) ▲ Ùn tắc tại trạm 07 (QATD) ▲ Ùn tắc tại trạm 06 (QATD) ▲ Ùn "
+ },
+ "anhTruoc": ".qa-tapdoan/anh/V2-R2-qatd_congnhan-truoc-line397.png",
+ "soNode": 695,
+ "coNodeDich": true,
+ "chuNodeDich": "QATD-C-T3-X1-L1 — Line 1101",
+ "toiUrl": true,
+ "thay": {
+  "url": "/twin/line/397",
+  "trang": {
+   "man_van_hanh": 0,
+   "man_line": 1,
+   "man_may": 0,
+   "man_studio": 0
+  },
+  "khoiCanh": {
+   "tong": 10,
+   "trongKhung": 6,
+   "hop": {
+    "rongPx": 323,
+    "caoPx": 182,
+    "canvasRong": 1288,
+    "canvasCao": 659,
+    "tiLeDienTich": 0.0693
+   }
+  },
+  "line": {
+   "tenLine": "Line 1",
+   "demMayChu": "Machines 10",
+   "demMaySo": 10,
+   "demTramChu": "Stations 10",
+   "demTramSo": 10,
+   "wipChu": "WIP 56",
+   "wipSo": 56,
+   "lineRong": 0,
+   "lineRongChu": null,
+   "khongMoDuoc": 0,
+   "lyDo": null,
+   "khongMoChu": null,
+   "canvasTrongMan": 1,
+   "soNhanMay": 9,
+   "soOTram": 10,
+   "veNhaMayHref": "/twin?do=1&nm=43&toa=75&tang=235&cam=61.88%2C22.45%2C65.78%2C24.1%2C28"
+  },
+  "may": null,
+  "vanHanh": null,
+  "studio": null,
+  "demNhan": {
+   "tongUngVien": 10,
+   "ve": 9,
+   "soHopKhoi": 10,
+   "biGiau": 1
+  },
+  "soCanvasKit": 1,
+  "canvasDom": 1,
+  "veCalls": 6,
+  "spin": 0,
+  "thanTrangDai": 955,
+  "thanTrang": "Skip to content Production (MES) Show advanced menu Simple C Công nhân Công ty C (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 20 Live 🇺🇸 English Factory › Line 1 Machines 10 Stations 10 WIP 56 ▲ QATD-C-T3-X1-L1-M06 1 more names hidden M06 · Running M10 · Running M09 · Running M08 · Running M07 · Running M05 · Idle M04 · Maintenance M03 · Running M02 · Running Metrics 10 machines Line 1 Running 8 Down 0 Maintenance 1 Offline 0 Running rate 80% Average OEE — Machines w/ andon 1 PdM risk 0 OEE measured on 0/10 machines Simulation LINE STRIP 10 stations Prefix: QATD-C-T3-X1-L1- Takt: 12.0s WIP: 56 S01 1 machine 2 WIP #7 → S02 1 machine 5 "
+ },
+ "anh": ".qa-tapdoan/anh/V2-R2-qatd_congnhan-line397.png",
+ "napLaiKemDo": {
+  "url": "/twin/line/397?do=1",
+  "trang": {
+   "man_van_hanh": 0,
+   "man_line": 1,
+   "man_may": 0,
+   "man_studio": 0
+  },
+  "khoiCanh": {
+   "tong": 10,
+   "trongKhung": 6,
+   "hop": {
+    "rongPx": 323,
+    "caoPx": 182,
+    "canvasRong": 1288,
+    "canvasCao": 659,
+    "tiLeDienTich": 0.0693
+   }
+  },
+  "line": {
+   "tenLine": "Line 1",
+   "demMayChu": "Machines 10",
+   "demMaySo": 10,
+   "demTramChu": "Stations 10",
+   "demTramSo": 10,
+   "wipChu": "WIP 56",
+   "wipSo": 56,
+   "lineRong": 0,
+   "lineRongChu": null,
+   "khongMoDuoc": 0,
+   "lyDo": null,
+   "khongMoChu": null,
+   "canvasTrongMan": 1,
+   "soNhanMay": 5,
+   "soOTram": 10,
+   "veNhaMayHref": "/twin"
+  },
+  "may": null,
+  "vanHanh": null,
+  "studio": null,
+  "demNhan": {
+   "tongUngVien": 10,
+   "ve": 6,
+   "soHopKhoi": 10,
+   "biGiau": 4
+  },
+  "soCanvasKit": 1,
+  "canvasDom": 1,
+  "veCalls": 6,
+  "spin": 0,
+  "thanTrangDai": 922,
+  "thanTrang": "Skip to content Production (MES) Show advanced menu Simple C Công nhân Công ty C (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 20 Live 🇺🇸 English Factory › Line 1 Machines 10 Stations 10 WIP 56 ▲ QATD-C-T3-X1-L1-M06 ➤ 1 alarms out of view 5 more names hidden M05 · Idle M04 · Maintenance M03 · Running M02 · Running M01 · Running Metrics 10 machines Line 1 Running 8 Down 0 Maintenance 1 Offline 0 Running rate 80% Average OEE — Machines w/ andon 1 PdM risk 0 OEE measured on 0/10 machines Simulation LINE STRIP 10 stations Prefix: QATD-C-T3-X1-L1- Takt: 12.0s WIP: 56 S01 1 machine 2 WIP #7 → S02 1 machine 5 WIP #2 → S03 1 machine 4 WIP #5 →"
+ },
+ "anhDo": ".qa-tapdoan/anh/V2-R2-qatd_congnhan-line397-che-do-do.png",
+ "ghiChuDoKhoi": "khối máy đếm ở lượt nạp LẠI cùng URL kèm ?do=1 (cây không giữ query); đối chiếu __demNhan của lượt tới-bằng-cây",
+ "pq": "ĐẠT",
+ "vi": "URL = /twin/line/397 OK · ten-line = \"Line 1\" (DB) OK · dem-may-line = 10 (DB) OK · dem-tram-line = 10 (DB) OK · KHOI MAY ve trong canh = 10 (DB) OK · doi chung doc lap: __demNhan.tong (ung vien nhan = so may vao canh) = 10 ngay o luot toi bang CAY OK · canvas 3D (1 kit) OK · KHONG line-rong / line-khong-mo-duoc OK"
+}

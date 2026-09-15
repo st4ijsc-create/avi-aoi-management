@@ -1,0 +1,41 @@
+{
+ "luc": "2026-09-15T08:09:45.881Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "soWorker": 1,
+ "ca": "R6",
+ "deBai": "PH-13: cau cho \"chuyen cua nha may KHAC\" phai KHAC cau cho \"chuyen chua xep cho\". Ghi NGUYEN VAN ca hai.",
+ "ngoaiPhamVi": {
+  "vai": "qatd_congnhan",
+  "lineId": 347,
+  "ghiChu": "chuyen cua QATD-B — NGOAI pham vi cua congnhan (QATD-C)",
+  "testid": "line-khong-mo-duoc",
+  "lyDo": "ngoaiPhamVi",
+  "nguyenVan": "Cannot open line #347 This item is not in the scope you are viewing (or no longer exists). Switch factory/floor and open it again. Factory",
+  "canvas": 0,
+  "demMayChu": "Machines —",
+  "anh": ".qa-tapdoan/anh/V2-R6-congnhan-line347-ngoai-pham-vi.png"
+ },
+ "thuDungCaSong": {
+  "vai": "qatd_admin",
+  "lineId": 11,
+  "ghiChu": "chuyen 11 (T12-SHOT) TRONG pham vi admin, 0 hang twin_dat_cho — NHUNG van ve duoc 1 may",
+  "testid": "(khong nhanh nao — man mo binh thuong)",
+  "demMayChu": "Machines 1",
+  "canvas": 1,
+  "anh": ".qa-tapdoan/anh/V2-R6-admin-line11-thu-chua-xep-cho.png",
+  "ketLuan": "khong dung duoc ca line-rong song tren CSDL nay"
+ },
+ "chuaXepCho": {
+  "nguon": "catalogue i18n tren dia (client/src/i18n/locales/en.json) — chinh chuoi ma nhanh `line-rong` in ra; doi chieu voi phep do SONG cua VONG 1 o C4a",
+  "khoa": "twin3d.line.rong + twin3d.line.rongMo",
+  "nguyenVan": "This line has no machines on the layout yet The line may not have been placed in Twin Studio yet, or it belongs to another factory.",
+  "nguyenVanVi": "Chuyền này chưa có máy nào trên bố cục — Chuyền có thể chưa được xếp chỗ trong Twin Studio, hoặc thuộc một nhà máy khác.",
+  "vong1DoSong": "Chuyền này chưa có máy nào trên bố cục — Chuyền có thể chưa được xếp chỗ trong Twin Studio, hoặc thuộc một nhà máy khác. (BANG-C.md o C4a, do song 2026-09-15)"
+ },
+ "pq": "ĐẠT",
+ "vi": "ca ngoai pham vi dung nhanh line-khong-mo-duoc OK · data-ly-do = \"ngoaiPhamVi\" OK · HAI CAU KHAC NHAU tung chu OK · ca ngoai pham vi KHONG canvas OK"
+}

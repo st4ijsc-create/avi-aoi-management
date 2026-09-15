@@ -23,25 +23,34 @@
  *   một thời điểm; chỗ đó thuộc về khung cảnh chính của Đợt 4). Xem trước của Đợt 3
  *   là SVG đúng tỉ lệ — đủ để thấy tầng chồng nhau và đối chiếu hình người 1,7 m.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Building2, FileUp, LayoutGrid } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { EmptyState } from "@/components/EmptyState";
+import { useCanWrite } from "@/components/PermissionGate";
 import { isScopeEmpty } from "@/lib/scopeEmpty";
 import DungNhaXuong from "@/components/twin3d/thiet-ke/DungNhaXuong";
 import NhapBanVe from "@/components/twin3d/thiet-ke/NhapBanVe";
 import XuongThietKe from "@/components/twin3d/thiet-ke/XuongThietKe";
+import { HopThoaiChuaLuu } from "@/components/twin3d/thiet-ke/HopThoaiChuaLuu";
+import { giaiNapThietKe } from "@/components/twin3d/thiet-ke/napStudio";
+import { tinhQuyenXuong } from "@/components/twin3d/thiet-ke/quyenXuong";
+import { BoChonNapUI } from "@/components/twin3d/van-hanh/BoChonNapUI";
 import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
+
+/**
+ * Một Ý MUỐN đổi lượt nạp — thứ `xinDoiNap` giữ lại trong lúc hỏi người dùng.
+ *
+ * ★ Ba nhánh, không phải một `tangId`: đổi nhà máy/toà cũng KÉO THEO đổi tầng
+ *   (id cũ không còn trong danh sách ⇒ `giaiNapThietKe` rơi về phần tử đầu),
+ *   nên cả ba đều làm mất buffer y như nhau.
+ */
+type YDinhDoiNap =
+  | { loai: "nha-may"; id: number }
+  | { loai: "toa-nha"; id: number }
+  | { loai: "tang"; id: number };
 
 export default function TwinStudio() {
   const { t } = useTranslation();
@@ -53,16 +62,154 @@ export default function TwinStudio() {
    */
   const khungRef = useRef<HTMLDivElement | null>(null);
   useTruDinhKhung(khungRef, "--twin-studio-top");
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-15 — QUYỀN TÁCH THEO ĐÚNG CỔNG SERVER, KHÔNG PHẢI MỘT CỜ
+   * ════════════════════════════════════════════════════════════════════════
+   * Tab "Thêm toà nhà" gọi `twinCanh.dungNhaXuong` = `quyenThietKe("canCreate")`
+   * (`twinCanhRouter.ts:839-840`). QA lần 11 ô E6 đo được: vai có `canEdit` mà
+   * **0 `canCreate`** vẫn đi hết ba bước tới nút "Create building" render +
+   * enabled, và chỉ nhận 403 SAU khi bấm — đúng lớp "một lối vào rồi TỪ CHỐI".
+   *
+   * ★ ẨN cả tab, không disable nút cuối: người dùng không có quyền tạo thì ba
+   *   bước nhập liệu kia cũng vô nghĩa với họ. Bảng nút × cổng ở `quyenXuong.ts`.
+   */
+  const ghiSettings = useCanWrite("settings_factory");
+  const ghiMayMoc = useCanWrite("machine_control");
+  const quyen = tinhQuyenXuong({
+    /* ⚠ `canView` ở màn này không gác gì (mọi người vào được đều xem được ba tab);
+       khai `false` để KHÔNG dựng một cổng giả — `TwinStudio` chỉ đọc `quyen.tao`. */
+    settingsFactory: { ...ghiSettings, canView: false },
+    machineControl: { ...ghiMayMoc, canView: false },
+    // `usePermissions` bypass cho admin ⇒ `useCanWrite` đã trả true hết; màn này
+    // không cần cờ admin riêng (chỉ `sinhTuDong` trong `XuongThietKe` mới cần).
+    laAdmin: false,
+  });
+
   const factoriesQ = trpc.factory.list.useQuery();
   const factories = useMemo(
     () => (factoriesQ.data ?? []) as Array<{ id: number; name?: string; code?: string }>,
     [factoriesQ.data],
   );
-  const [factoryId, setFactoryId] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (factoryId === null && factories.length > 0) setFactoryId(factories[0].id);
-  }, [factories, factoryId]);
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-14 — BA Ô CHỌN, KHÔNG CÒN HAI CHỈ SỐ `[0]` VIẾT CỨNG
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản trước: `factoryId` trong state + `toaNhaQ.data[0]` + `tangs[0]` ⇒ với
+   * kịch bản 4 toà × 7 tầng, **326/371 máy (88 %) không thể xếp chỗ bằng màn
+   * này** (`.qa-tapdoan/BANG-DE.md` ô 22). Luật phân giải và bộ ba `<select>`
+   * đều TÁI DÙNG của màn xem (`van-hanh/boChonNap.ts` + `BoChonNapUI.tsx`) —
+   * xem docblock `thiet-ke/napStudio.ts` về cái gì tái dùng và cái gì KHÔNG.
+   *
+   * ★ Ba `useState` giữ Ý MUỐN của người dùng, không phải kết quả: `giaiNapThietKe`
+   *   phân giải ý muốn ấy trên tập CÓ THẬT ở mỗi lượt render. Nhờ vậy đổi nhà
+   *   máy tự động rơi về toà đầu của nhà máy mới (id toà cũ không còn trong
+   *   danh sách) mà không cần một `useEffect` đồng bộ nào — và không có
+   *   `useEffect` nghĩa là không có khoảnh khắc hai ô nói hai chuyện.
+   */
+  const [nhaMayMuon, setNhaMayMuon] = useState<number | null>(null);
+  const [toaNhaMuon, setToaNhaMuon] = useState<number | null>(null);
+  const [tangMuon, setTangMuon] = useState<number | null>(null);
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ H1 — ĐỔI TẦNG KHI CÒN THAY ĐỔI CHƯA LƯU KHÔNG ĐƯỢC MẤT TRONG IM LẶNG
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo sống vòng 2: bật Lock một khối ⇒ *"1 unsaved changes"*; đổi tầng ⇒ đếm
+   * về 0, KHÔNG hộp thoại, KHÔNG toast, quay lại tầng cũ KHÔNG khôi phục.
+   * `<XuongThietKe key={tangDangChon.tangId}>` remount ⇒ buffer bị vứt.
+   *
+   * ★★★ VÌ SAO CHẶN Ý MUỐN, KHÔNG PHẢI GỠ `key` — `key` là thứ giữ cho một cú
+   *   "Lưu" không ghi hàng của tầng CŨ xuống tầng ĐANG CHỌN (xem docblock cạnh
+   *   `key=` bên dưới). Gỡ nó là đổi một lỗi mất-buffer lấy một lỗi GHI SAI BẢN
+   *   GHI — tệ hơn hẳn. Nên bản vá này không đụng tới `key`: nó chặn ở chỗ ý
+   *   muốn đổi mới SINH RA, tức TRƯỚC khi có bất kỳ lượt remount nào. Hệ quả
+   *   đo được: `luu()` của "Lưu rồi chuyển" luôn chạy khi xưởng còn mounted với
+   *   `tangId` CŨ — đúng tầng của những hàng trong buffer.
+   *
+   * ★ `useRef` chứ không `useState` cho số thay đổi: nó là thứ ta HỎI lúc người
+   *   dùng bấm ô chọn, không phải thứ vẽ ra màn hình mỗi nhịp. Đưa vào state sẽ
+   *   bắt cả cây `/twin-studio` render lại mỗi lần kéo một máy.
+   */
+  const refChuaLuu = useRef<{ so: number; luu: () => Promise<boolean> }>({
+    so: 0,
+    luu: async () => true,
+  });
+  const baoThayDoiChuaLuu = useCallback(
+    (trangThai: { so: number; luu: () => Promise<boolean> }) => {
+      refChuaLuu.current = trangThai;
+    },
+    [],
+  );
+  const [yDinhDoi, setYDinhDoi] = useState<YDinhDoiNap | null>(null);
+  const [dangLuuRoiDoi, setDangLuuRoiDoi] = useState(false);
+
+  /** Thi hành một ý muốn đổi — ĐÚNG những `setState` mà ba ô chọn vẫn làm. */
+  const apDoiNap = useCallback((y: YDinhDoiNap) => {
+    if (y.loai === "nha-may") {
+      setNhaMayMuon(y.id);
+      // Ý muốn cũ ở hai cấp dưới đã hết nghĩa: giữ lại chỉ làm
+      // `phanGiaiNap` phải bỏ qua chúng mỗi lượt render.
+      setToaNhaMuon(null);
+      setTangMuon(null);
+      return;
+    }
+    if (y.loai === "toa-nha") {
+      setToaNhaMuon(y.id);
+      setTangMuon(null);
+      return;
+    }
+    setTangMuon(y.id);
+  }, []);
+
+  /**
+   * Cổng DUY NHẤT của ba ô chọn. Cả ba đều đổi TẦNG ĐANG MỞ (đổi nhà máy/toà
+   * kéo theo tầng đầu của nhánh mới), nên cả ba phải đi qua đây — gác mỗi ô
+   * `chon-tang` sẽ để nguyên hai lối vào còn lại cho đúng lớp lỗi ấy.
+   */
+  const xinDoiNap = useCallback(
+    (y: YDinhDoiNap) => {
+      if (refChuaLuu.current.so > 0) {
+        setYDinhDoi(y);
+        return;
+      }
+      apDoiNap(y);
+    },
+    [apDoiNap],
+  );
+
+  const luuRoiDoi = useCallback(async () => {
+    const y = yDinhDoi;
+    if (!y) return;
+    setDangLuuRoiDoi(true);
+    let daGhiXong = false;
+    try {
+      daGhiXong = await refChuaLuu.current.luu();
+    } finally {
+      setDangLuuRoiDoi(false);
+    }
+    // ★ Ghi hỏng ⇒ GIỮ hộp thoại và GIỮ tầng. Đổi tầng sau một lượt ghi thất
+    //   bại là lại mất dữ liệu trong im lặng — đúng thứ bản vá này đang chữa.
+    if (!daGhiXong) return;
+    setYDinhDoi(null);
+    apDoiNap(y);
+  }, [yDinhDoi, apDoiNap]);
+
+  const boThayDoiRoiDoi = useCallback(() => {
+    const y = yDinhDoi;
+    setYDinhDoi(null);
+    if (y) apDoiNap(y);
+  }, [yDinhDoi, apDoiNap]);
+
+  const factoryId = useMemo(
+    () =>
+      giaiNapThietKe(
+        { nhaMayId: nhaMayMuon, toaNhaId: null, tangId: null },
+        { nhaMay: factories, toaNha: [], tang: [] },
+      ).nhaMayId,
+    [nhaMayMuon, factories],
+  );
 
   const toaNhaQ = trpc.twinCanh.danhSachToaNha.useQuery(
     { factoryId: factoryId ?? 0 },
@@ -97,52 +244,72 @@ export default function TwinStudio() {
   );
 
   /**
-   * ĐỢT 4 — toà nhà đầu tiên của nhà máy, để lấy TẦNG và KÍCH THƯỚC SÀN.
+   * ĐỢT 4 — toà nhà ĐANG CHỌN, để lấy TẦNG và KÍCH THƯỚC SÀN.
    *
-   * ★ `numeric(14,3)` về từ drizzle là **string**; `Number(...)` tường minh ở
-   *   đây là bắt buộc. Cộng thẳng hai giá trị string sẽ NỐI CHUỖI
+   * ★★★ PH-14: "đang chọn", KHÔNG còn "đầu tiên". `giaiNapThietKe` phân giải
+   *   ý muốn của người dùng trên danh sách có thật; id không tồn tại (link cũ,
+   *   vừa đổi nhà máy) rơi về phần tử đầu — khác `[0]` viết cứng ở chỗ **có một
+   *   ô chọn để đi chỗ khác**.
+   *
+   * ★ `numeric(14,3)` về từ drizzle là **string**; `Number(...)` tường minh nằm
+   *   trong `sanCuaTang()`. Cộng thẳng hai giá trị string sẽ NỐI CHUỖI
    *   ("38400"+"0" = "384000") — không throw, và nhà xưởng to gấp 10 lần.
    */
-  const toaNhaDau = (toaNhaQ.data ?? [])[0] as
-    | { id: number; rongMm: string | number; sauMm: string | number }
-    | undefined;
-  const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
-    { id: toaNhaDau?.id ?? 0 },
-    { enabled: toaNhaDau !== undefined },
+  const dsToaNha = useMemo(
+    () =>
+      (toaNhaQ.data ?? []) as Array<{
+        id: number;
+        ma?: string | null;
+        ten?: string | null;
+        rongMm: string | number;
+        sauMm: string | number;
+      }>,
+    [toaNhaQ.data],
   );
-  const tangDau = useMemo(() => {
-    /*
-     * ★ #43 — TẦNG MANG THEO CẢ TRẠNG THÁI ẢNH NỀN.
-     *   `traToaNhaKemTang` đã trả `anhNenUrl`/`tiLeMmMoiPx`/`daHieuChuan` (nó
-     *   spread nguyên hàng `twin_tang`), nên không cần truy vấn thứ hai. Gọi
-     *   thêm một truy vấn cho cùng dữ liệu là mở đường cho hai chỗ hiện hai
-     *   trạng thái hiệu chuẩn khác nhau — và người dùng không biết tin cái nào.
-     *
-     * ⚠ `tiLeMmMoiPx` là `numeric` ⇒ về từ drizzle là STRING (hoặc null sau khi
-     *   `chuoiRaSo` quy đổi ở tầng db). `Number(...)` tường minh, xem cảnh báo
-     *   nối-chuỗi ở docblock `toaNhaDau` phía trên.
-     */
-    const tang = (chiTietQ.data?.tangs ?? [])[0] as
-      | {
-          id: number;
-          anhNenUrl?: string | null;
-          tiLeMmMoiPx?: number | string | null;
-          daHieuChuan?: boolean | null;
-        }
-      | undefined;
-    if (!toaNhaDau || !tang) return null;
-    return {
-      tangId: tang.id,
-      rongMm: Number(toaNhaDau.rongMm),
-      sauMm: Number(toaNhaDau.sauMm),
-      anhNenUrl: tang.anhNenUrl ?? null,
-      tiLeMmMoiPx:
-        tang.tiLeMmMoiPx === null || tang.tiLeMmMoiPx === undefined
-          ? null
-          : Number(tang.tiLeMmMoiPx),
-      daHieuChuan: tang.daHieuChuan === true,
-    };
-  }, [toaNhaDau, chiTietQ.data]);
+  const toaNhaId = useMemo(
+    () =>
+      giaiNapThietKe(
+        { nhaMayId: null, toaNhaId: toaNhaMuon, tangId: null },
+        { nhaMay: [], toaNha: dsToaNha, tang: [] },
+      ).toaNhaId,
+    [toaNhaMuon, dsToaNha],
+  );
+
+  const chiTietQ = trpc.twinCanh.chiTietToaNha.useQuery(
+    { id: toaNhaId ?? 0 },
+    { enabled: toaNhaId !== null },
+  );
+
+  /*
+   * ★ #43 — TẦNG MANG THEO CẢ TRẠNG THÁI ẢNH NỀN.
+   *   `traToaNhaKemTang` đã trả `anhNenUrl`/`tiLeMmMoiPx`/`daHieuChuan` (nó
+   *   spread nguyên hàng `twin_tang`), nên không cần truy vấn thứ hai. Gọi thêm
+   *   một truy vấn cho cùng dữ liệu là mở đường cho hai chỗ hiện hai trạng thái
+   *   hiệu chuẩn khác nhau — và người dùng không biết tin cái nào.
+   */
+  const dsTang = useMemo(
+    () =>
+      (chiTietQ.data?.tangs ?? []) as Array<{
+        id: number;
+        capSo?: number | null;
+        ten?: string | null;
+        anhNenUrl?: string | null;
+        tiLeMmMoiPx?: number | string | null;
+        daHieuChuan?: boolean | null;
+      }>,
+    [chiTietQ.data],
+  );
+
+  /** Lượt nạp ĐÃ PHÂN GIẢI — ba id + ba danh sách cho ô chọn + hình sàn. */
+  const nap = useMemo(
+    () =>
+      giaiNapThietKe(
+        { nhaMayId: nhaMayMuon, toaNhaId: toaNhaMuon, tangId: tangMuon },
+        { nhaMay: factories, toaNha: dsToaNha, tang: dsTang },
+      ),
+    [nhaMayMuon, toaNhaMuon, tangMuon, factories, dsToaNha, dsTang],
+  );
+  const tangDangChon = nap.san;
 
   return (
     <div
@@ -171,33 +338,60 @@ export default function TwinStudio() {
             {t("twin3d.studio.moTa")}
           </p>
         </div>
+        {/*
+          ★★★ PH-14 — BA Ô CHỌN, TÁI DÙNG NGUYÊN KIT CỦA MÀN XEM.
+            `BoChonNapUI` là chỗ gọi thứ HAI của cùng component mà `/twin` dùng
+            (`chon-nha-may` / `chon-toa-nha` / `chon-tang`, bọc trong `bo-chon-nap`).
+            Viết lại ba `<select>` ở đây sẽ là bản sao thứ hai của cùng một luật
+            a11y + "ô ≤1 mục vẫn phải hiện" — và bản sao thứ hai là chỗ để lỗi
+            `[0]` quay lại mà không ai thấy.
+
+          ★ Đổi bất kỳ ô nào cũng chỉ ghi Ý MUỐN; `giaiNapThietKe` phân giải lại
+            toàn bộ dây chuyền ở lượt render kế. Đổi nhà máy ⇒ id toà/tầng cũ
+            không còn trong danh sách ⇒ tự rơi về phần tử đầu của nhà máy mới.
+        */}
         <div className="flex shrink-0 items-center gap-2">
-          <Label className="text-xs text-text-2">{t("common.factory")}</Label>
-          <Select
-            value={factoryId === null ? "" : String(factoryId)}
-            onValueChange={(v) => setFactoryId(Number(v))}
-          >
-            <SelectTrigger className="h-8 min-w-48" data-testid="chon-nha-may">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {factories.map((f) => (
-                <SelectItem key={f.id} value={String(f.id)}>
-                  {f.name ?? f.code ?? `#${f.id}`}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <BoChonNapUI
+            nhaMay={nap.mucNhaMay}
+            toaNha={nap.mucToaNha}
+            tang={nap.mucTang}
+            nhaMayId={nap.nhaMayId}
+            toaNhaId={nap.toaNhaId}
+            tangId={nap.tangId}
+            /* ★★★ H1 — cả ba ô đi qua `xinDoiNap`: nó hỏi trước khi vứt việc
+               chưa lưu của người dùng (xem docblock `refChuaLuu`). */
+            onDoiNhaMay={(id) => xinDoiNap({ loai: "nha-may", id })}
+            onDoiToaNha={(id) => xinDoiNap({ loai: "toa-nha", id })}
+            onDoiTang={(id) => xinDoiNap({ loai: "tang", id })}
+            dangTai={factoriesQ.isLoading || toaNhaQ.isLoading || chiTietQ.isLoading}
+          />
         </div>
       </header>
 
       <Tabs defaultValue="thiet-ke" className="flex min-h-0 flex-1 flex-col">
         <div className="flex shrink-0 flex-wrap items-center gap-3">
           <TabsList className="h-9">
-            <TabsTrigger value="dien-kich-thuoc" data-testid="tab-con-duong-b">
-              <Building2 className="mr-1.5 h-4 w-4" />
-              {t("twin3d.toaNha.themMoi")}
-            </TabsTrigger>
+            {/*
+              ★★★ PH-15 — CON ĐƯỜNG B GỌI `dungNhaXuong` = `canCreate`. ẨN, KHÔNG
+                DISABLE (§6.4; khuôn đúng ở `van-hanh/nganXuLyLogic.ts:102-111`).
+                Ẩn CẢ TAB chứ không riêng nút "Tạo" ở bước 3: ba bước nhập kích
+                thước chỉ để đi tới lượt ghi ấy, nên với người không bao giờ tạo
+                được thì cả ba bước là một lối đi cụt — đúng thứ QA đo ở ô E6.
+            */}
+            {quyen.tao ? (
+              <TabsTrigger value="dien-kich-thuoc" data-testid="tab-con-duong-b">
+                <Building2 className="mr-1.5 h-4 w-4" />
+                {t("twin3d.toaNha.themMoi")}
+              </TabsTrigger>
+            ) : null}
+            {/*
+              ⚠ CON ĐƯỜNG A **KHÔNG** gác theo `canCreate`, và đó là kết luận từ
+                phép đo chứ không phải bỏ sót: `NhapBanVe.tsx` có **0 `trpc.*`**,
+                0 mutation — nó đọc tệp CAD và vẽ xem trước tại chỗ, chưa nối vào
+                `twin_vat_the` (§10A.1, còn nợ). Gác một màn không ghi gì bằng
+                quyền GHI là bịa ra ràng buộc mà phép đo đã bác bỏ.
+                ⇒ Ai nối con đường A vào đường ghi: thêm cổng ở ĐÚNG lượt đó.
+            */}
             <TabsTrigger value="nhap-ban-ve" data-testid="tab-con-duong-a">
               <FileUp className="mr-1.5 h-4 w-4" />
               {t("twin3d.banVe.chonTep")}
@@ -220,8 +414,19 @@ export default function TwinStudio() {
         </div>
 
         <TabsContent value="dien-kich-thuoc" className="mt-4">
-          {factoryId !== null && (
-            <DungNhaXuong factoryId={factoryId} onXongTao={() => void toaNhaQ.refetch()} />
+          {/* ★ Nửa thứ hai của cổng PH-15: tab đã ẩn thì thân cũng không dựng —
+              `defaultValue` hay một `?tab=` tương lai không được là cửa sau. */}
+          {quyen.tao && factoryId !== null && (
+            <DungNhaXuong
+              factoryId={factoryId}
+              onXongTao={(ket) => {
+                void toaNhaQ.refetch();
+                // ★ Toà vừa dựng là thứ người dùng muốn thiết kế NGAY. Không
+                //   nhảy tới nó thì họ vừa tạo xong lại phải đi tìm trong ô chọn.
+                setToaNhaMuon(ket.toaNhaId);
+                setTangMuon(ket.tangIds[0] ?? null);
+              }}
+            />
           )}
         </TabsContent>
 
@@ -246,24 +451,50 @@ export default function TwinStudio() {
                 {t("twin3d.studioUi.chuaCoNhaMay", "Chưa có nhà máy nào để thiết kế.")}
               </p>
             )
-          ) : tangDau === null ? (
+          ) : tangDangChon === null ? (
             <p className="p-4 text-sm text-muted-foreground" data-testid="chua-co-tang">
               {t("twin3d.studioUi.chuaCoTang")}
             </p>
           ) : (
             <XuongThietKe
+              /* ★★★ PH-14 — `key` ép dựng LẠI xưởng khi đổi tầng: `datChoSua`,
+                 lịch sử hoàn tác và tập đang chọn đều thuộc về MỘT mặt sàn.
+                 `DatChoDauVao` có mang `tangId`, nên KHÔNG giữ `key` thì sau một
+                 lượt đổi tầng, ô "N thay đổi chưa lưu" vẫn đếm các hàng của tầng
+                 CŨ và một cú "Lưu" sẽ ghi chúng xuống tầng CŨ trong khi người
+                 dùng đang nhìn tầng MỚI — một lượt ghi không ai thấy.
+
+                 ★★★ H1 — NỢ TRÊN ĐÃ TRẢ (đợt này): đổi tầng lúc CÒN thay đổi
+                 chưa lưu trước đây VỨT chúng đi mà không hỏi. `beforeunload`
+                 (§7.3) chỉ chặn lượt rời TRANG. Nay `onThayDoiChuaLuu` đưa
+                 `thayDoi.length` lên đây và `xinDoiNap` chặn ý muốn đổi TRƯỚC
+                 khi `key` kịp đổi — nên `key` vẫn còn nguyên và lượt "Lưu rồi
+                 chuyển" vẫn ghi xuống ĐÚNG tầng cũ. */
+              key={tangDangChon.tangId}
               factoryId={factoryId}
-              tangId={tangDau.tangId}
-              sanRongMm={tangDau.rongMm}
-              sanSauMm={tangDau.sauMm}
-              anhNenUrl={tangDau.anhNenUrl}
-              tiLeMmMoiPx={tangDau.tiLeMmMoiPx}
-              daHieuChuan={tangDau.daHieuChuan}
+              tangId={tangDangChon.tangId}
+              sanRongMm={tangDangChon.rongMm}
+              sanSauMm={tangDangChon.sauMm}
+              anhNenUrl={tangDangChon.anhNenUrl}
+              tiLeMmMoiPx={tangDangChon.tiLeMmMoiPx}
+              daHieuChuan={tangDangChon.daHieuChuan}
               onDaGhiTang={() => void chiTietQ.refetch()}
+              onThayDoiChuaLuu={baoThayDoiChuaLuu}
             />
           )}
         </TabsContent>
       </Tabs>
+
+      {/* ★★★ H1 — cửa chặn lượt đổi tầng. Nó đứng ở đây (không trong
+          `XuongThietKe`) vì chỉ màn này biết CẢ ý muốn đổi lẫn số thay đổi. */}
+      <HopThoaiChuaLuu
+        mo={yDinhDoi !== null}
+        soThayDoi={refChuaLuu.current.so}
+        dangLuu={dangLuuRoiDoi}
+        onLuuRoiDoi={() => void luuRoiDoi()}
+        onBoThayDoi={boThayDoiRoiDoi}
+        onHuy={() => setYDinhDoi(null)}
+      />
     </div>
   );
 }

@@ -28,7 +28,7 @@
  * tồn tại" với "có thật nhưng của tenant khác" — một câu riêng cho ca sau là một
  * oracle rò rỉ tồn-tại.
  */
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { appError } from "../_core/appError";
@@ -50,6 +50,17 @@ import {
   robotTelemetry,
 } from "../../drizzle/schema";
 import { trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
+/*
+ * ★ PH-12 — phép chọn toà/tầng từ các hàng đặt chỗ là MODULE THUẦN nằm ở
+ *   `client/src/components/twin3d/van-hanh/` và server import THẲNG nó, đúng
+ *   tiền lệ `sinhBoCuc` (`twinCanhRouter.ts:110`). Chép luật ấy sang đây là dựng
+ *   bản thứ hai của một phép chọn ĐÃ CÓ TEST (G12) — và bản không-test sẽ là bản
+ *   quyết định người dùng thấy gì.
+ */
+import {
+  chonNoiTheoDatCho,
+  type NoiThucThe,
+} from "../../client/src/components/twin3d/van-hanh/noiThucTheTwin";
 // Đợt 6 — cùng bộ bóc hàng thô mà `db/machine.ts` dùng (một quy ước, không hai).
 import { executeRows } from "../utils/kpi";
 // ★ Đợt 38 (Pareto #2 QA Đợt 37) — MỘT từ điển trạng thái (`CommandMachineStatus`) cho kho twin, replay VÀ fleet:
@@ -989,6 +1000,146 @@ export async function traCayPhanCapNhaMay(factoryId: number, scope?: PhamViNguoi
     .where(inArray(machines.stationId, tramIds));
 
   return { xuong, chuyen, tram, may };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ PH-12 (QA lần 11) — **NƠI** CỦA MỘT CHUYỀN / MỘT MÁY                    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Hai loại thực thể có màn riêng: `/twin/line/:id` và `/twin/may/:id`. */
+export type LoaiNoiTwin = "line" | "may";
+
+/**
+ * Nhà máy · toà · tầng của ĐÚNG chuyền/máy được hỏi.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO THỦ TỤC NÀY PHẢI Ở SERVER
+ * ════════════════════════════════════════════════════════════════════════════
+ * Màn Line và màn Máy chỉ có MỘT id trên URL, và client **không có đường nào**
+ * suy ra nhà máy/toà từ id ấy: `machines` không mang `factoryId` (nó suy qua
+ * `stations → production_lines → workshops`), còn `twin_toa_nha`/`twin_tang` chỉ
+ * nối được với chuyền/máy qua hàng `twin_dat_cho`. Trước bản vá, hai trang đoán
+ * bằng `factories[0]` + `toaNha[0]` — xem docblock `noiThucTheTwin.ts` để biết
+ * hai triệu chứng và bán kính 77,4–93,1 % đã đo được.
+ *
+ * ⚠ `workshops` **KHÔNG có cột `tangId`** (đo `drizzle/schema/hierarchy.ts:109`
+ *   2026-09-15) ⇒ không tồn tại đường "xưởng → tầng". Hàng đặt chỗ là nguồn DUY
+ *   NHẤT nói một thực thể đứng ở tầng nào; ghi ra đây vì một đường JOIN không
+ *   tồn tại thì không lỗi biên dịch nào nổ, nó chỉ trả ít hàng hơn.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ HÀNG RÀO TENANT — `NOT_FOUND`, KHÔNG `FORBIDDEN` (G82)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Cổng đặt trên CHÍNH thực thể (`trongPhamVi("machine"|"line", id, scope)`),
+ * không trên nhà máy suy ra sau: hỏi "máy này có thuộc phạm vi anh không" là câu
+ * hỏi đúng, còn "nhà máy mà máy này khai có thuộc phạm vi anh không" là đi vòng
+ * qua một giá trị vừa đọc từ hàng của chính nó. `trongPhamVi` chiếu qua ĐÚNG
+ * `resolveTenantFactoryScope` mà mọi đường dữ liệu twin đang dùng — không có bộ
+ * luật thứ hai. Ngoài phạm vi ⇒ `null` ⇒ router ném `NOT_FOUND`, **cùng hình
+ * dạng với "không tồn tại"**, nên phản hồi không xác nhận thực thể có thật.
+ *
+ * ★ `scope` `undefined`/vai toàn quyền ⇒ `trongPhamVi` trả `true` và KHÔNG thêm
+ *   mệnh đề nào — chiều DƯƠNG chống "vá quá tay thành chặn tất cả".
+ *
+ * ⚠ Hàng đặt chỗ còn bị chặn thêm bằng `twin_toa_nha.factoryId = factoryId`: một
+ *   hàng trỏ sang tầng của nhà máy KHÁC (xếp nhầm, hoặc dữ liệu cũ) không được
+ *   phép kéo màn sang nhà máy ấy. Toà/tầng đã xoá mềm cũng bị loại — chúng không
+ *   có trong `danhSachToaNha` nên trả về sẽ thành một id trang không tra được.
+ *
+ * @returns `null` = không tồn tại HOẶC ngoài phạm vi (cố ý không phân biệt).
+ *          `toaNhaId`/`tangId` `null` = có thật, trong phạm vi, **chưa xếp chỗ**.
+ */
+export async function traNoiCuaThucThe(
+  loai: LoaiNoiTwin,
+  id: number,
+  scope?: PhamViNguoiXem,
+): Promise<NoiThucThe | null> {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  // ① Cổng phạm vi — TRƯỚC mọi lượt đọc, trên chính thực thể được hỏi.
+  if (!(await trongPhamVi(loai === "may" ? "machine" : "line", id, scope))) return null;
+
+  // ② Nhà máy theo CHUỖI PHÂN CẤP (không theo lời khai của hàng đặt chỗ).
+  let lineId = id;
+  let mayIds: number[] = [];
+  if (loai === "may") {
+    const [may] = await d
+      .select({ stationId: machines.stationId })
+      .from(machines)
+      .where(eq(machines.id, id))
+      .limit(1);
+    if (!may) return null;
+    const [tram] = await d
+      .select({ lineId: stations.lineId })
+      .from(stations)
+      .where(eq(stations.id, may.stationId))
+      .limit(1);
+    if (!tram) return null;
+    lineId = tram.lineId;
+    mayIds = [id];
+  }
+
+  const [chuyen] = await d
+    .select({ workshopId: productionLines.workshopId })
+    .from(productionLines)
+    .where(eq(productionLines.id, lineId))
+    .limit(1);
+  if (!chuyen) return null;
+  const [xuong] = await d
+    .select({ factoryId: workshops.factoryId })
+    .from(workshops)
+    .where(eq(workshops.id, chuyen.workshopId))
+    .limit(1);
+  if (!xuong) return null;
+  const factoryId = xuong.factoryId;
+
+  /*
+   * ③ Tập khoá đặt chỗ. Ở cấp Line ta nhận CẢ BA loại (chuyền, trạm, máy) vì
+   *    `sinhBoCuc` xếp chỗ theo máy còn người dùng có thể kéo tay ở cấp chuyền —
+   *    hỏi một loại thôi là để một cách xếp chỗ hợp lệ trả về "chưa có chỗ".
+   */
+  let tramIds: number[] = [];
+  if (loai === "line") {
+    const tram = await d.select({ id: stations.id }).from(stations).where(eq(stations.lineId, lineId));
+    tramIds = tram.map((t) => t.id);
+    if (tramIds.length > 0) {
+      const may = await d
+        .select({ id: machines.id })
+        .from(machines)
+        .where(inArray(machines.stationId, tramIds));
+      mayIds = may.map((m) => m.id);
+    }
+  }
+
+  const dieuKien = [];
+  if (loai === "line") {
+    dieuKien.push(and(eq(twinDatCho.loaiThucThe, "line"), eq(twinDatCho.thucTheId, lineId)));
+  }
+  if (tramIds.length > 0) {
+    dieuKien.push(and(eq(twinDatCho.loaiThucThe, "station"), inArray(twinDatCho.thucTheId, tramIds)));
+  }
+  if (mayIds.length > 0) {
+    dieuKien.push(and(eq(twinDatCho.loaiThucThe, "machine"), inArray(twinDatCho.thucTheId, mayIds)));
+  }
+  if (dieuKien.length === 0) return { factoryId, toaNhaId: null, tangId: null };
+
+  const hang = await d
+    .select({ tangId: twinDatCho.tangId, toaNhaId: twinTang.toaNhaId })
+    .from(twinDatCho)
+    .innerJoin(twinTang, eq(twinTang.id, twinDatCho.tangId))
+    .innerJoin(twinToaNha, eq(twinToaNha.id, twinTang.toaNhaId))
+    .where(
+      and(
+        or(...dieuKien),
+        eq(twinTang.isActive, true),
+        eq(twinToaNha.isActive, true),
+        eq(twinToaNha.factoryId, factoryId),
+      ),
+    );
+
+  const noi = chonNoiTheoDatCho(hang);
+  return { factoryId, toaNhaId: noi?.toaNhaId ?? null, tangId: noi?.tangId ?? null };
 }
 
 /** Bảng kích thước mặc định theo loại máy (§5.3 bậc 2 của chuỗi dự phòng). */

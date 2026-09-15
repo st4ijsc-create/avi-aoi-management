@@ -54,6 +54,17 @@ export interface BangThuocTinhProps {
    *   không đổi hành vi của chỗ gọi nào chưa truyền.
    */
   chiDoc?: boolean;
+  /**
+   * ★★★ PH-15 — CỔNG RIÊNG CHO `nut-go-khoi-mat-bang`.
+   *
+   * Nút ấy gọi `twinCanh.goKhoiMatBang` = `quyenThietKe("**canDelete**")`
+   * (`twinCanhRouter.ts:1306-1307`), KHÔNG phải canEdit. Bản trước gác nó chung
+   * với ô nhập bằng `chiDoc` (canEdit) ⇒ một vai sửa-được-mà-không-xoá-được vẫn
+   * thấy nút, bấm xong mới nhận 403.
+   *
+   * Mặc định `false`: chỗ gọi nào chưa truyền thì KHÔNG hiện nút — phía an toàn.
+   */
+  coTheXoa?: boolean;
 }
 
 /** mm → mét để HIỆN. Làm tròn 3 chữ số: `numeric(14,3)` không giữ hơn thế. */
@@ -123,6 +134,7 @@ export function BangThuocTinh({
   onSua,
   onGoKhoiMatBang,
   chiDoc = false,
+  coTheXoa = false,
 }: BangThuocTinhProps) {
   const { t } = useTranslation();
 
@@ -340,21 +352,24 @@ export function BangThuocTinh({
             {t(datCho.nguon === "tay" ? "twin3d.nguon.tay" : "twin3d.nguon.sinh")}
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 text-[11px] text-destructive"
-            data-testid="nut-go-khoi-mat-bang"
-            onClick={() => {
-              // ★ Câu xác nhận nói RÕ điều mã thật sự làm: xoá vị trí, GIỮ máy.
-              if (window.confirm(t("twin3d.thuocTinh.goXacNhan", { ten: node.nhan }))) {
-                onGoKhoiMatBang(node.khoa);
-              }
-            }}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t("twin3d.thuocTinh.goKhoiMatBang")}
-          </Button>
+          {/* ★★★ PH-15 — cổng canDelete, ẨN chứ không disable. */}
+          {coTheXoa ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 text-[11px] text-destructive"
+              data-testid="nut-go-khoi-mat-bang"
+              onClick={() => {
+                // ★ Câu xác nhận nói RÕ điều mã thật sự làm: xoá vị trí, GIỮ máy.
+                if (window.confirm(t("twin3d.thuocTinh.goXacNhan", { ten: node.nhan }))) {
+                  onGoKhoiMatBang(node.khoa);
+                }
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t("twin3d.thuocTinh.goKhoiMatBang")}
+            </Button>
+          ) : null}
         </>
       )}
     </div>

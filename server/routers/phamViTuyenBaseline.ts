@@ -104,12 +104,15 @@ export const NO_PHAM_VI_TUYEN: readonly string[] = [
   "server/api/v1/lines.ts#GET /lines/:id/state",
   // ── server/api/v1/metricsApi.ts (1) ────────────────────────────────────────────────────────────
   "server/api/v1/metricsApi.ts#GET /metrics/:metric",
-  // ── server/api/v1/moduleReads.ts (14) ──────────────────────────────────────────────────────────
+  // ── server/api/v1/moduleReads.ts (13) ──────────────────────────────────────────────────────────
   // ★ Đợt 42 — `GET /machines/:id/detail` + `GET /robots/:id/detail` RỜI sổ: phạm vi của khoá
   //   (`req.apiPrincipal.tenantScope`, trục ②) nay đi vào `machineDetail`/`robotDetail` (đo trước vá:
   //   khoá SIM-FAC đọc identity máy 257 của NM18 — `.qa-dot41/api-vai/http-v1.json`).
+  // ★ 2026-09-15 (QA lần 11, PH-23) — `GET /ecosystem/hierarchy` RỜI sổ: CÙNG lỗ với thủ tục tRPC
+  //   `commandCenter.hierarchy`, chỉ khác trục (khoá API thay vì người dùng). Nay chiếu
+  //   `req.apiPrincipal.tenantScope` → `resolveTenantCodeFactoryIds` → `buildHierarchy(scope, tenant)`,
+  //   đúng khuôn `GET /ecosystem/kpi` đã vá 2026-08-18 ngay bên dưới nó trong cùng file.
   "server/api/v1/moduleReads.ts#GET /anomaly/events",
-  "server/api/v1/moduleReads.ts#GET /ecosystem/hierarchy",
   "server/api/v1/moduleReads.ts#GET /fleet/tasks",
   "server/api/v1/moduleReads.ts#GET /fleet/zones",
   "server/api/v1/moduleReads.ts#GET /pdm/risk",

@@ -1,0 +1,19 @@
+{
+ "luc": "2026-09-15T09:32:47.204Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "soWorker": 1,
+ "ca": "L11",
+ "vai": "qatd_kythuat",
+ "deBai": "RB-4: __soCanvas = 1 o /twin-studio SAU khi doi tang",
+ "thay": {
+  "soCanvas": 1,
+  "canvasDom": 1,
+  "canvasTrongMan": 1
+ },
+ "pq": "ĐẠT",
+ "vi": "__soCanvas = 1 sau khi doi tang OK · DOM co dung 1 canvas trong man Studio OK"
+}

@@ -131,6 +131,23 @@ export interface CommandCenterStatus {
   mode: "live" | "polling";
 }
 
+/**
+ * ★★★ 2026-09-15 (QA lần 11, PH-23) — TRỤC PHẠM VI của CÂY THIẾT BỊ.
+ *
+ * Tách hẳn khỏi `HierarchyScope`, và tách ở mức KIỂU, vì hai thứ này KHÔNG cùng loại:
+ *   • `HierarchyScope` = lời **TỰ KHAI** của người gọi (`input.scope`) ⇒ bộ lọc TRÌNH BÀY.
+ *   • `HierarchyTenant` = phạm vi do **máy chủ tự phân giải** từ `ctx.user`
+ *     (`resolveHierarchyScope`) ⇒ hàng rào. Nó chỉ đi vào bằng tham số THỨ HAI nên một lời gọi
+ *     `buildHierarchy(input.scope)` cũ không thể vô tình biến lời tự khai thành hàng rào.
+ *
+ * `null`/bỏ trống = KHÔNG lọc (admin · lối đi không mang danh tính). `[]` = phạm vi RỖNG ⇒ cây
+ * RỖNG — và KHÔNG được phép trôi thành "không lọc"; đó là đúng lớp lỗi `or()!` đã cho 4 tài khoản
+ * 0-gán đọc trọn CSDL.
+ */
+export interface HierarchyTenant {
+  factoryIds: number[] | null;
+}
+
 export interface HierarchyScope {
   factoryId?: number | null;
   corporateCode?: string | null;
@@ -377,21 +394,52 @@ export function commandCenterStatus(): CommandCenterStatus {
  * exists honestly). The LOCAL site's factories are expanded in full; REMOTE sites are
  * shown as leaf roll-up nodes (no cross-site drill yet — U5). When federation is
  * absent/single-site we emit ONE synthetic "local" site wrapping the local factories.
+ *
+ * ★★★ 2026-09-15 (QA lần 11, PH-23) — `tenant` là HÀNG RÀO, `scope` là bộ lọc TRÌNH BÀY.
+ *
+ * Trước bản vá này hàm chỉ có `scope`, và nơi gọi tRPC truyền thẳng `input.scope` vào — tức
+ * **lời tự khai của client là trục phạm vi DUY NHẤT**. Đo sống 2026-09-15: 5 vai nhận CÙNG
+ * 450.811 byte, CÙNG md5, kể cả tài khoản 0 gán nhà máy.
+ *
+ * Hai trục nay được **AND** với nhau trong MỘT mệnh đề `where`, nên `scope` chỉ có thể THU HẸP
+ * `tenant`, không bao giờ nới nó. Và phép lọc nằm TRONG `where` chứ không phải sau khi đã tải cả
+ * cây: nửa lợi ích của bản vá là chi phí — mỗi nhà máy lọt qua cổng tốn MỘT `buildSceneGraph`,
+ * nên lọc sau khi dựng cây là trả đúng cái giá mình đang đi xoá (PH-24).
  */
-export async function buildHierarchy(scope?: HierarchyScope): Promise<{ sites: HierarchyNode[] }> {
+export async function buildHierarchy(
+  scope?: HierarchyScope,
+  tenant?: HierarchyTenant,
+): Promise<{ sites: HierarchyNode[] }> {
   const db = await getDb();
   if (!db) return { sites: [] };
 
-  // ── local factories (optionally scoped) ──
-  const factoryRows = await db.select().from(factories).where(eq(factories.isActive, true));
-  const scopedFactories = factoryRows.filter((f) => {
-    if (scope?.factoryId != null && f.id !== scope.factoryId) return false;
-    if (scope?.corporateCode && f.corporateCode !== scope.corporateCode) return false;
-    return true;
-  });
+  const phamVi = tenant?.factoryIds ?? null;
+  // Phạm vi RỖNG ⇒ cây RỖNG, và thoát TRƯỚC mọi truy vấn: `inArray(col, [])` là một hình dạng
+  // dễ trôi thành "không lọc" ở tầng SQL, còn ở đây không có gì để trôi.
+  if (phamVi !== null && phamVi.length === 0) return { sites: [] };
+
+  // ── local factories (hàng rào tenant AND bộ lọc trình bày, cả hai TRONG `where`) ──
+  const factoryConds: SQL[] = [eq(factories.isActive, true)];
+  if (phamVi !== null) factoryConds.push(inArray(factories.id, phamVi));
+  if (scope?.factoryId != null) factoryConds.push(eq(factories.id, scope.factoryId));
+  if (scope?.corporateCode) factoryConds.push(eq(factories.corporateCode, scope.corporateCode));
+  const scopedFactories = await db.select().from(factories).where(and(...factoryConds));
+
+  // Người xem BỊ THU HẸP mà không còn nhà máy nào ⇒ cây RỖNG, không phải một site rỗng mang
+  // tên site. Lối đi KHÔNG mang danh tính giữ NGUYÊN hành vi cũ (site tổng hợp, 0 con) — đổi
+  // nó ở đây là đổi một hợp đồng chẳng liên quan gì tới lỗ này.
+  if (phamVi !== null && scopedFactories.length === 0) return { sites: [] };
 
   // machineType map for registry device-type resolution (ONE select for the estate,
   // hoisted out of the factory loop). Active alarm counts likewise (ONE pass).
+  //
+  // ⚠ 2026-09-15 (PH-23) — hai bảng tra này CỐ Ý không bị thu hẹp, và đó KHÔNG phải một lỗ:
+  // chúng là `Map` tra theo `machines.id`, chỉ được HỎI cho những máy đã có mặt trong các
+  // sceneGraph đã lọt cổng ở trên. Không khoá nào của chúng rời khỏi hàm này. Thu hẹp chúng
+  // bằng một truy vấn phụ station→line→workshop→factory sẽ dựng một đường phân giải THỨ HAI
+  // cho cùng câu hỏi "máy này thuộc nhà máy nào" — và hai bộ luật canh cùng một tập là cách
+  // một trong hai lặng lẽ sai. Chi phí trội của `hierarchy` nằm ở vòng `buildSceneGraph`
+  // dưới đây (một lượt/nhà máy), không ở hai lượt `select` này.
   const machineTypeByRefId = new Map<number, string>();
   const mRows = await db.select({ id: machinesTable.id, machineType: machinesTable.machineType }).from(machinesTable);
   for (const m of mRows) machineTypeByRefId.set(m.id, String(m.machineType));
@@ -427,7 +475,18 @@ export async function buildHierarchy(scope?: HierarchyScope): Promise<{ sites: H
   }
 
   // Federation present: expand the local site's factories; remote sites → roll-up leaf.
-  const scopedSites = scope?.corporateCode ? siteRows.filter((s) => s.corporateCode === scope.corporateCode) : siteRows;
+  //
+  // ★ 2026-09-15 (PH-23) — người xem BỊ THU HẸP chỉ được thấy site LOCAL. Một site từ xa là
+  // một hàng roll-up: nó KHÔNG phân giải được về `factories.id` nào (cùng lý do `kpiSummary`
+  // để ô `sites` fail-closed cho người bị thu hẹp — xem `SITES_UNRESOLVABLE_SOURCE`), nên
+  // không có phép đo nào nói được nó có nằm trong phạm vi của người ấy hay không. Trả nó ra
+  // là trả TÊN + MÃ của một site mà ta không chứng minh được quyền xem ⇒ fail-closed.
+  // Admin và lối đi không mang danh tính (`phamVi === null`) giữ nguyên hành vi cũ.
+  const scopedSites = siteRows.filter((s) => {
+    if (phamVi !== null && !s.isLocal) return false;
+    if (scope?.corporateCode && s.corporateCode !== scope.corporateCode) return false;
+    return true;
+  });
   const snaps = await db
     .select()
     .from(siteKpiRollup)

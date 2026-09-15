@@ -153,8 +153,11 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/bomRouter.ts#bomRouter.listFeeders",
   "server/routers/bomRouter.ts#bomRouter.traceForward",
   "server/routers/bomRouter.ts#bomRouter.traceReverse",
-  // ── server/routers/commandCenterRouter.ts (1) ──────────────────────────────────────────────
-  "server/routers/commandCenterRouter.ts#commandCenterRouter.hierarchy",
+  // ── server/routers/commandCenterRouter.ts — ĐÃ TRẢ 2026-09-15 (QA lần 11, PH-23) ───────────
+  //    `commandCenterRouter.hierarchy` rời sổ: nay phân giải phạm vi từ `ctx.user` qua
+  //    `resolveHierarchyScope` (nhóm A → S). Đo được TRƯỚC khi vá: 5 vai nhận CÙNG 450.811
+  //    byte, CÙNG md5, kể cả tài khoản 0 gán nhà máy. Lưới hai chiều:
+  //    `server/routers/commandCenterHierarchyScope.db.test.ts`.
   // ── server/routers/commandLogRouter.ts (4) ─────────────────────────────────────────────────
   "server/routers/commandLogRouter.ts#commandLogRouter.avgDurations",
   "server/routers/commandLogRouter.ts#commandLogRouter.get",

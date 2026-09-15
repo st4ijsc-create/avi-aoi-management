@@ -1,0 +1,59 @@
+VÒNG 2 — ĐO LẠI SAU BA BẢN VÁ · XONG 2026-09-15
+════════════════════════════════════════════════════════════════════════════════
+
+MÔI TRƯỜNG (không dựng lại, không bật/tắt gì)
+  server 3064 PID 13348, bundle assets/index-65hzR42G.js, cây .qa-tapdoan/dist-sauva
+  nhịp heartbeat 45 s chạy nền suốt lượt đo (.qa-tapdoan/nhip.sh) — KHÔNG tắt
+  KHÔNG chạm 3000/8080 · KHÔNG git · KHÔNG sửa .env · KHÔNG sửa mã sản phẩm
+  ghi mới CHỈ trong .qa-tapdoan/: do-vong2.mjs, db-V2*.mjs, tho/V2/*, anh/V2-*.png,
+  BANG-V2.md, V2-XONG.txt
+
+THIẾT BỊ ĐO
+  Playwright chromium, args --use-angle=default --enable-gpu --ignore-gpu-blocklist (PH-25)
+  SỐ WORKER = 1 (mọi ca tuần tự, mỗi ca một browserContext riêng, H4 một context/lượt)
+  viewport 1600×900 (H3: 1280×720)
+  chờ cảnh bằng waitForFunction __thongKeVe.calls (KHÔNG timeout cố định)
+  kỳ vọng dựng RỜI từ DB bằng postgres CHỈ SELECT (tho/V2/db-V2.json, db-V2c.json)
+
+ID DÙNG TRONG VÒNG 2 (tự SELECT, khác vòng 1)
+  QATD-A 41 · QATD-B 42 · QATD-C 43
+  toà: A 65/66/67/68 · B 69/70/71/72 · C 73/74/75/76
+  R1 line 347 (QATD-B toà 69 tầng 193, 15 máy/15 trạm)
+  R2 line 397 (QATD-C TOÀ 3 = 75, tầng 235, 10 máy/10 trạm)
+  R3/R5/N-1/N-2 máy 5676 WAVE_SOLDER-01 (QATD-B, 1 hàng twin_dat_cho tầng 193)
+  R4 máy 6247 SPI-01 (QATD-C TOÀ 3, 1 hàng twin_dat_cho tầng 235)
+  R7 toà 66 (QATD-A-T2): tầng 172 = 68 đặt chỗ · tầng 173 = 45 đặt chỗ
+  N-3 tầng 167 (QATD-A-T1 cấp 3, 0 đặt chỗ — chọn cho an toàn)
+
+KẾT QUẢ 18 Ô — ô không có phán quyết: 0
+  NHÓM 1  R1 ĐẠT · R2 ĐẠT · R3 ĐẠT · R4 ĐẠT · R5 ĐẠT · R6 ĐẠT · R7 ĐẠT · R8 ĐẠT   (8/8)
+  NHÓM 2  N-1 CHẶN-ĐÚNG · N-2 CHẶN-ĐÚNG · N-3 CHẶN-ĐÚNG · N-4 CHẶN-ĐÚNG · N-5 ĐẠT (5/5 giữ nguyên)
+  NHÓM 3  H1 SAI · H2 ĐẠT · H3 ĐẠT · H4 ĐẠT · H5 SAI                              (3 ĐẠT / 2 SAI)
+  TỔNG: ĐẠT 12 · CHẶN-ĐÚNG 4 · SAI 2 · HỎNG 0 · N/A 0
+
+BA BẢN VÁ
+  PH-12  ĐÓNG      R1–R5 chuyển SAI→ĐẠT; N-1/N-2 chứng minh hàng rào KHÔNG bị nới
+                   (kèm đối chứng DƯƠNG cùng phiên: noiCuaThucThe cho máy trong phạm vi vẫn 200)
+  PH-13  ĐÓNG      R6: nhánh line-khong-mo-duoc + data-ly-do="ngoaiPhamVi" + câu riêng,
+                   không xác nhận chuyền có thật (G82)
+  PH-14  ĐÓNG      R7: chon-toa-nha 4 mục / chon-tang 7 mục; dải sức khoẻ đếm theo ĐÚNG tầng
+                   (68 ở tầng 172, 45+326 ở tầng 173 — khớp DB)
+  PH-15  ĐÓNG      R8: nut-mo-sinh 0 phần tử, tab tạo toà nhà 0 phần tử (ẨN, không disable),
+                   trong khi nut-luu (canEdit) vẫn còn ⇒ không vá quá tay
+  PH-29  CHƯA ĐÓNG H5: auto-fit KHÔNG chạy ở lượt mount đầu (4,74 % → 19,72 % chỉ sau
+                   một cú bấm vào khối; bấm Fit sau đó KHÔNG đổi gì thêm)
+
+KHUYẾT TẬT MỚI DO CHÍNH BẢN VÁ SINH RA (đo sống, không còn là suy luận)
+  H1  đổi tầng ở Studio khi còn "1 unsaved changes" ⇒ mất SẠCH, 0 hộp thoại, 0 toast,
+      quay lại tầng cũ cũng KHÔNG khôi phục. Đúng nợ mà TwinStudio.tsx:371-377 tự khai.
+
+LỖ THIẾT BỊ ĐO CỦA CHÍNH TÔI (đã vá trong lượt đo, ghi lại để không lặp)
+  1) Điều kiện chờ "cảnh xong" chứa `ds.length === 0` ⇒ THOẢ NGAY ở khung đầu (lúc lô máy
+     chưa dựng) ⇒ R5 lượt đầu ghi "0 khối" cho một cảnh có 15 khối. Đã đổi sang chờ tới khi
+     CÓ máy (hai cửa sổ độc lập __demNhan / __demTuongTac), có hạn.
+  2) Bộ tách số đọc chữ số CUỐI câu; giao diện tiếng Anh để số ở ĐẦU ("45 machines placed")
+     ⇒ HỎNG giả ở R7. Đã đổi sang số ĐẦU TIÊN (đúng cho cả "Machines 15").
+  3) Đọc dải sức khoẻ NGAY sau selectOption bắt được khoảnh khắc GIỮA hai lần mount
+     (key={tangId}) ⇒ số 0 không có thật. Đã thêm choStudioXong().
+  4) Cây phân cấp điều hướng tới /twin/line/:id KHÔNG mang ?do=1 ⇒ __demTuongTac tắt.
+     Đếm khối bằng __demNhan (không bị gác) ở lượt tới-bằng-cây + nạp lại cùng URL kèm ?do=1.

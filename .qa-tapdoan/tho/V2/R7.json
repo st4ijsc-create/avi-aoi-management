@@ -1,0 +1,275 @@
+{
+ "luc": "2026-09-15T08:20:05.959Z",
+ "base": "http://localhost:3064",
+ "vp": {
+  "width": 1600,
+  "height": 900
+ },
+ "soWorker": 1,
+ "ca": "R7",
+ "vai": "qatd_kythuat",
+ "me": "cache",
+ "deBai": "Studio co chon-toa-nha + chon-tang; chon toa 2 roi tang 2 => dai suc khoe dem theo DUNG tang do (so DB), canh dung lai",
+ "buoc": [
+  "chon-toa-nha=66 (QATD-A-T2)",
+  "chon-tang=173 (cap 2)"
+ ],
+ "mocDau": {
+  "oNhaMay": {
+   "co": 1,
+   "soMuc": 2,
+   "value": "41",
+   "disabled": false,
+   "nhanDangChon": "Công ty A",
+   "muc": [
+    "41:Công ty A",
+    "42:Công ty B"
+   ]
+  },
+  "oToaNha": {
+   "co": 1,
+   "soMuc": 4,
+   "value": "65",
+   "disabled": false,
+   "nhanDangChon": "Toà 1",
+   "muc": [
+    "65:Toà 1",
+    "66:Toà 2",
+    "67:Toà 3",
+    "68:Toà 4"
+   ]
+  },
+  "oTang": {
+   "co": 1,
+   "soMuc": 7,
+   "value": "165",
+   "disabled": false,
+   "nhanDangChon": "Tầng 1",
+   "muc": [
+    "165:Tầng 1",
+    "166:Tầng 2",
+    "167:Tầng 3",
+    "168:Tầng 4",
+    "169:Tầng 5",
+    "170:Tầng 6",
+    "171:Tầng 7"
+   ]
+  },
+  "boChonNap": 1,
+  "demToaNha": "Building: 4",
+  "xuong": 1,
+  "vungCanvas": 1,
+  "daiSucKhoe": "Data health: 45 machines placed · 326 awaiting placement · 45 dimensions not measured",
+  "skDaXepCho": "45 machines placed",
+  "skChoXepCho": "326 awaiting placement",
+  "skChuaDo": "45 dimensions not measured",
+  "skChuaTai": 0,
+  "skDaXepChoSo": 45,
+  "skChoXepChoSo": 326,
+  "tabConDuongA": 1,
+  "tabConDuongB": 1,
+  "tabThietKe": 1,
+  "nutMoSinh": 0,
+  "nutLuu": 1,
+  "nutHoanTac": 1,
+  "nutCheDoTranslate": 1,
+  "congTacBatDinh": 1,
+  "thanhCanChinh": 1,
+  "khoiAnhNen": 1,
+  "nutTaiModel": 1,
+  "nutLuuBanGhi": 1,
+  "nutGoKhoiMatBang": 0,
+  "khoiBanGhi": 1,
+  "huyHieuChiXem": 0,
+  "chiXemChu": null,
+  "demChuaLuu": 0,
+  "demChuaLuuChu": null,
+  "nutFit": 1,
+  "miniMapCham": 45,
+  "chuaCoTang": 0,
+  "chuaCoNhaMay": 0,
+  "daiPhamViRong": 0,
+  "bangThuocTinh": 1,
+  "congTacKhoa": 0,
+  "headerCao": 28,
+  "canvasTrongMan": 1,
+  "soNodeCay": 334
+ },
+ "anhDau": ".qa-tapdoan/anh/V2-R7-kythuat-studio-mac-dinh.png",
+ "khoiDau": {
+  "tong": 45,
+  "trongKhung": 45,
+  "hop": {
+   "rongPx": 182,
+   "caoPx": 81,
+   "canvasRong": 726,
+   "canvasCao": 431,
+   "tiLeDienTich": 0.0474
+  }
+ },
+ "nhaMayDangChon": {
+  "id": 41,
+  "nhan": "Công ty A"
+ },
+ "toaTrongDb": [
+  "65:QATD-A-T1",
+  "66:QATD-A-T2",
+  "67:QATD-A-T3",
+  "68:QATD-A-T4"
+ ],
+ "tangTrongDb": [
+  "172:cap1:datChoMay=68",
+  "173:cap2:datChoMay=45",
+  "174:cap3:datChoMay=0",
+  "175:cap4:datChoMay=0",
+  "176:cap5:datChoMay=0",
+  "177:cap6:datChoMay=0",
+  "178:cap7:datChoMay=0"
+ ],
+ "toa2Tang1": {
+  "tangId": 172,
+  "kyVongDatCho": 68,
+  "skDaXepCho": "68 machines placed",
+  "skDaXepChoSo": 68,
+  "skChoXepCho": "303 awaiting placement",
+  "khoi": {
+   "tong": 68,
+   "trongKhung": 68,
+   "hop": {
+    "rongPx": 303,
+    "caoPx": 191,
+    "canvasRong": 726,
+    "canvasCao": 431,
+    "tiLeDienTich": 0.1853
+   }
+  },
+  "soCanvas": 1
+ },
+ "anhToa2Tang1": ".qa-tapdoan/anh/V2-R7-kythuat-studio-toa2-tang1.png",
+ "thay": {
+  "url": "/twin-studio?do=1",
+  "trang": {
+   "man_van_hanh": 0,
+   "man_line": 0,
+   "man_may": 0,
+   "man_studio": 1
+  },
+  "khoiCanh": {
+   "tong": 45,
+   "trongKhung": 45,
+   "hop": {
+    "rongPx": 282,
+    "caoPx": 190,
+    "canvasRong": 726,
+    "canvasCao": 431,
+    "tiLeDienTich": 0.1712
+   }
+  },
+  "line": null,
+  "may": null,
+  "vanHanh": null,
+  "studio": {
+   "oNhaMay": {
+    "co": 1,
+    "soMuc": 2,
+    "value": "41",
+    "disabled": false,
+    "nhanDangChon": "Công ty A",
+    "muc": [
+     "41:Công ty A",
+     "42:Công ty B"
+    ]
+   },
+   "oToaNha": {
+    "co": 1,
+    "soMuc": 4,
+    "value": "66",
+    "disabled": false,
+    "nhanDangChon": "Toà 2",
+    "muc": [
+     "65:Toà 1",
+     "66:Toà 2",
+     "67:Toà 3",
+     "68:Toà 4"
+    ]
+   },
+   "oTang": {
+    "co": 1,
+    "soMuc": 7,
+    "value": "173",
+    "disabled": false,
+    "nhanDangChon": "Tầng 2",
+    "muc": [
+     "172:Tầng 1",
+     "173:Tầng 2",
+     "174:Tầng 3",
+     "175:Tầng 4",
+     "176:Tầng 5",
+     "177:Tầng 6",
+     "178:Tầng 7"
+    ]
+   },
+   "boChonNap": 1,
+   "demToaNha": "Building: 4",
+   "xuong": 1,
+   "vungCanvas": 1,
+   "daiSucKhoe": "Data health: 45 machines placed · 326 awaiting placement · 45 dimensions not measured",
+   "skDaXepCho": "45 machines placed",
+   "skChoXepCho": "326 awaiting placement",
+   "skChuaDo": "45 dimensions not measured",
+   "skChuaTai": 0,
+   "skDaXepChoSo": 45,
+   "skChoXepChoSo": 326,
+   "tabConDuongA": 1,
+   "tabConDuongB": 1,
+   "tabThietKe": 1,
+   "nutMoSinh": 0,
+   "nutLuu": 1,
+   "nutHoanTac": 1,
+   "nutCheDoTranslate": 1,
+   "congTacBatDinh": 1,
+   "thanhCanChinh": 1,
+   "khoiAnhNen": 1,
+   "nutTaiModel": 1,
+   "nutLuuBanGhi": 1,
+   "nutGoKhoiMatBang": 0,
+   "khoiBanGhi": 1,
+   "huyHieuChiXem": 0,
+   "chiXemChu": null,
+   "demChuaLuu": 0,
+   "demChuaLuuChu": null,
+   "nutFit": 1,
+   "miniMapCham": 45,
+   "chuaCoTang": 0,
+   "chuaCoNhaMay": 0,
+   "daiPhamViRong": 0,
+   "bangThuocTinh": 1,
+   "congTacKhoa": 0,
+   "headerCao": 28,
+   "canvasTrongMan": 1,
+   "soNodeCay": 334
+  },
+  "demNhan": null,
+  "soCanvasKit": 1,
+  "canvasDom": 1,
+  "veCalls": 2,
+  "spin": 0,
+  "thanTrangDai": 12427,
+  "thanTrang": "Skip to content Production (MES) Simple menu Advanced K Kỹ sư thiết bị A+B (QA) - Toggle Sidebar Production (MES) All sites Search pages, commands… ⌘K Factory › Line › Machine 9+ 35 Live 🇺🇸 English Production MES 3D Factory Design 3D Factory — Design Build buildings and floors, import engineering drawings, place machines, and publish a version for operations. Factory Công ty A Công ty B Building Toà 1 Toà 2 Toà 3 Toà 4 Floor Tầng 1 Tầng 2 Tầng 3 Tầng 4 Tầng 5 Tầng 6 Tầng 7 Add building Choose drawing file Design Building: 4 Move Rotate Snap Grid Save Data health: 45 machines placed · 326 awaiting placement · 45 dimensions not measured Distribute horizontally Distribute vertically Linear ar"
+ },
+ "anh": ".qa-tapdoan/anh/V2-R7-kythuat-studio-toa2-tang2.png",
+ "kyVong": {
+  "tangId": 173,
+  "capSo": 2,
+  "datChoMayTrongDb": 45,
+  "tongMayNhaMay": 371,
+  "choXepChoKyVong": 326
+ },
+ "pq": "ĐẠT",
+ "vi": "co o chon-toa-nha OK · co o chon-tang OK · o toa nha dang chon = 66 (QATD-A-T2) — toa THU HAI OK · o tang dang chon = 173 (cap 2) — tang THU HAI OK · sk-da-xep-cho = 45 (so hang twin_dat_cho loai machine cua tang 173) OK · sk-cho-xep-cho = 326 (= 371 may nha may − 45) OK · canh dung lai theo tang: khoi may = 45 OK · buoc GIUA phan biet duoc: toa2/tang1 (tang 172) = 68 khoi + dai suc khoe cung so OK · __soCanvas = 1 sau khi doi tang (H2) OK",
+ "H2": {
+  "soCanvasSauDoiTang": 1,
+  "canvasDom": 1,
+  "pq": "ĐẠT"
+ }
+}

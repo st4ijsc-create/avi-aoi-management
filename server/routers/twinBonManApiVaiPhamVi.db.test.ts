@@ -94,8 +94,12 @@ function quetThuTuc(): Map<string, Set<string>> {
   return tap;
 }
 
-/** ★ GHIM — đo 2026-09-11 trên `6eec818f` (`.qa-dot42/grep-thu-tuc.mjs`: 115 tệp, 42 đường dẫn). */
-const SO_THU_TUC_GHIM = 42;
+/**
+ * ★ GHIM — đo 2026-09-11 trên `6eec818f` (`.qa-dot42/grep-thu-tuc.mjs`: 115 tệp, 42 đường dẫn).
+ * ★ 2026-09-15 (PH-12) — **43**: `twinCanh.noiCuaThucThe` thêm vào ở `TwinLine.tsx` + `TwinMay.tsx`
+ *   (nhà máy/toà của CHÍNH chuyền/máy đang mở, thay cho `factories[0]`/`toaNha[0]`). Có ca ở `CA_DOC`.
+ */
+const SO_THU_TUC_GHIM = 43;
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // Fixture
@@ -153,6 +157,15 @@ async function taoNhaMay(nhan: "TRONG" | "NGOAI"): Promise<NhaMay> {
     INSERT INTO twin_toa_nha ("factoryId", ma, ten, nguon) VALUES (${factoryId}, ${toaNhaMa}, ${`${ma} toa nha`}, 'tay') RETURNING id`);
   const tangId = id(await sql`
     INSERT INTO twin_tang ("toaNhaId", "capSo", ten, nguon) VALUES (${toaNhaId}, 1, ${`${ma} tang 1`}, 'tay') RETURNING id`);
+  /*
+   * ★ PH-12 — MỘT hàng đặt chỗ cho chính cái máy ấy: đó là mắt xích DUY NHẤT nối
+   *   `machines` với `twin_tang`/`twin_toa_nha` (`workshops` KHÔNG có cột `tangId`).
+   *   Thiếu nó thì đối chứng dương của `twinCanh.noiCuaThucThe` chỉ đo được `factoryId`,
+   *   và nửa "đúng TOÀ" — nửa đã gây ca C1.4/C2.4 — không có gì canh.
+   */
+  await sql`
+    INSERT INTO twin_dat_cho ("tangId", "loaiThucThe", "thucTheId", nguon)
+    VALUES (${tangId}, 'machine', ${mayId}, 'tay')`;
   const banGhiId = id(await sql`
     INSERT INTO twin_ban_ghi ("tangId", nhan, "anhChup")
     VALUES (${tangId}, ${`${ma}-BANGHI`}, ${sql.json({ phienBan: 1, ghiLuc: new Date().toISOString(), datCho: [] })}) RETURNING id`);
@@ -187,6 +200,8 @@ async function xoaNhaMay(nm: NhaMay): Promise<void> {
   await sql`DELETE FROM machine_sensor_readings WHERE id = ANY(${nm.sensorIds})`;
   await sql`DELETE FROM line_balance_metrics WHERE id = ANY(${nm.lineBalanceIds})`;
   await sql`DELETE FROM twin_ban_ghi WHERE id = ${nm.banGhiId}`;
+  // ★ PH-12 — hàng đặt chỗ xoá TRƯỚC tầng (đừng dựa vào CASCADE để dọn dấu vết của lưới).
+  await sql`DELETE FROM twin_dat_cho WHERE "tangId" = ${nm.tangId}`;
   await sql`DELETE FROM twin_tang WHERE id = ${nm.tangId}`;
   await sql`DELETE FROM twin_toa_nha WHERE id = ${nm.toaNhaId}`;
   await sql`DELETE FROM machines WHERE id = ${nm.mayId}`;
@@ -330,6 +345,15 @@ const CA_DOC: CaDoc[] = [
     chan: (k) => k.ok, duong: (d) => d != null, ghi: "bảng `equipment_3d_models` cấp chủng loại — chỉ đo 'không có mã'" },
   { duongDan: "twinCanh.danhSachToaNha", goi: (c, nm) => c.twinCanh.danhSachToaNha({ factoryId: nm.factoryId }),
     chan: notFoundHoacRong, duong: (d, nm) => Array.isArray(d) && d.some((t: { ma: string }) => t.ma === nm.toaNhaMa) },
+  /*
+   * ★★★ PH-12 (QA lần 11) — thủ tục MỚI. Đây là thủ tục quyết định hai màn hỏi dữ liệu của nhà máy
+   *   nào, nên hàng rào của nó là hàng rào của CẢ HAI MÀN: ngoài phạm vi phải `NOT_FOUND` (G82 —
+   *   cùng hình dạng với "không tồn tại", không xác nhận chuyền/máy có thật), KHÔNG `FORBIDDEN`.
+   *   Đối chứng dương đo bằng `factoryId` trả về đúng nhà máy của fixture — mạnh hơn "không ném".
+   */
+  { duongDan: "twinCanh.noiCuaThucThe", goi: (c, nm) => c.twinCanh.noiCuaThucThe({ loai: "may", id: nm.mayId }),
+    chan: laNotFound, duong: (d, nm) => d?.factoryId === nm.factoryId && d?.toaNhaId === nm.toaNhaId,
+    ghi: "fixture xếp chỗ máy ở đúng 1 tầng ⇒ đối chứng dương ghim CẢ `factoryId` LẪN `toaNhaId`" },
   { duongDan: "twinCanh.sucKhoeMay", goi: (c, nm) => c.twinCanh.sucKhoeMay({ factoryId: nm.factoryId }),
     chan: (k) => k.ok && rong((k.data as { khai?: unknown[] })?.khai) && (k.data as { tongMayTrongPhamVi?: number })?.tongMayTrongPhamVi === 0,
     duong: (d) => d?.tongMayTrongPhamVi === 1, ghi: "`tongMayTrongPhamVi` đếm máy trong phạm vi — 1 cho người gán A, 0 khi ngoài" },
