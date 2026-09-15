@@ -111,7 +111,11 @@ function createAnonymousContext(): TrpcContext {
 
 describe("Factory Router", () => {
   it("should list factories for authenticated user", async () => {
-    const ctx = createUserContext();
+    // ★ Task 13 (PH-03) — factory.list nay có cổng quyền "giữ ≥1 quyền còn hiệu lực"
+    // (`requireBatKyQuyenNao`). `createUserContext()` dựng user id=1 KHÔNG có hàng nào trong bảng
+    // `permissions` của CSDL test, tức đúng lớp mà cổng mới chặn. Ca này đo đường DỮ LIỆU
+    // (getFactories đã mock), không đo quyền ⇒ dùng vai admin để giữ nguyên ý định của nó.
+    const ctx = createUserContext("admin");
     const caller = appRouter.createCaller(ctx);
 
     const result = await caller.factory.list();

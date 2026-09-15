@@ -96,6 +96,16 @@ describe.skipIf(!DB_URL)("phạm vi ĐỌC — ba ca chuẩn, âm ĐỐI XỨNG 
     await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${ids.uA}, ${FAC_A})`;
     await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${ids.uB}, ${FAC_B})`;
 
+    // ★ Task 13 (PH-03) — `factory.list` nay có cổng quyền "giữ ≥1 quyền còn hiệu lực"
+    // (`requireBatKyQuyenNao`, `hierarchyRouters.ts`). Lưới NÀY đo **phạm vi**, không đo **quyền**:
+    // cấp mỗi tài khoản một hàng `dashboard_view` (module không liên quan gì tới nhà máy) để biến
+    // số duy nhất vẫn là phạm vi. `uAdmin` không cần — admin short-circuit ở `checkPermission`.
+    for (const u of [ids.uA, ids.uB, ids.uNone]) {
+      await sql`
+        INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit", "canDelete", "canExport")
+        VALUES (${u}, 'dashboard'::permissioncategoryenum, 'dashboard_view', true, false, false, false, false)`;
+    }
+
     // ⚠ `getUserAssignmentCodes` có bộ nhớ đệm 30 giây theo `userId`. Bốn tài khoản vừa tạo chưa
     // từng được hỏi nên đệm rỗng — nhưng xoá tường minh để lưới không phụ thuộc vào điều đó.
     const { clearAssignmentCache } = await import("../_core/accessControl");
@@ -105,6 +115,7 @@ describe.skipIf(!DB_URL)("phạm vi ĐỌC — ba ca chuẩn, âm ĐỐI XỨNG 
   afterAll(async () => {
     try {
       const users = [ids.uAdmin, ids.uA, ids.uB, ids.uNone].filter(Boolean);
+      if (users.length) await safe(() => sql`DELETE FROM permissions WHERE "userId" IN ${sql(users)}`);
       if (users.length) await safe(() => sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(users)}`);
       for (const d of [ids.dtA, ids.dtB]) if (d) await safe(() => sql`DELETE FROM downtime_events WHERE id = ${d}`);
       for (const m of [ids.mcA, ids.mcB]) if (m) {

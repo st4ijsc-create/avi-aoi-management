@@ -149,12 +149,117 @@ function commissionGovernanceWarning(machineType: string): string | undefined {
   return undefined;
 }
 
+/**
+ * ★★★ Task 13 (PH-03) — "người gọi giữ ÍT NHẤT MỘT quyền còn hiệu lực".
+ *
+ * Trả `true` nếu `userId` có ≥1 hàng `permissions` **thật sự cấp** một hành động nào đó và **chưa
+ * hết hạn**. Một hàng toàn `false` (hoặc đã quá `expiresAt`) KHÔNG phải quyền — `checkPermission`
+ * cũng đọc `expiresAt` đúng như vậy (`_core/accessControl.ts`), nên hai đường không lệch nhau.
+ *
+ * Nhập ĐỘNG theo đúng lệ của tệp này (xem `machine.regenerateApiKey`): `server/db/hierarchy.ts`
+ * đã ghi rõ nhập TĨNH từ tầng dữ liệu vào `_core/accessControl` tạo vòng router → db → trpc.
+ * Đọc thẳng `../db/connection` (KHÔNG qua `* as db`) vì đó là cùng một handle mà
+ * `checkPermission` dùng — cổng quyền và bộ lọc phạm vi phải nhìn cùng một CSDL.
+ */
+async function coItNhatMotQuyenConHieuLuc(userId: number): Promise<boolean> {
+  const { getDb } = await import("../db/connection");
+  const conn = await getDb();
+  // CSDL không mở được ⇒ FAIL-CLOSED cho vai không-admin, đúng nếp `checkPermission`
+  // (`if (!db) return isAdmin;`). Ở nhánh này `getFactories` cũng trả `[]` nên không mất gì.
+  if (!conn) return false;
+  const { permissions } = await import("../../drizzle/schema");
+  const { and, eq, gt, isNull, or } = await import("drizzle-orm");
+  const hang = await conn
+    .select({ id: permissions.id })
+    .from(permissions)
+    .where(
+      and(
+        eq(permissions.userId, userId),
+        or(
+          eq(permissions.canView, true),
+          eq(permissions.canCreate, true),
+          eq(permissions.canEdit, true),
+          eq(permissions.canDelete, true),
+          eq(permissions.canExport, true),
+        ),
+        or(isNull(permissions.expiresAt), gt(permissions.expiresAt, new Date())),
+      ),
+    )
+    .limit(1);
+  return hang.length > 0;
+}
+
+/**
+ * ★★★ Task 13 (PH-03) — **CỔNG QUYỀN cho `factory.list`.**
+ *
+ * ── Lỗ đã đo (QA lần 11) ──────────────────────────────────────────────────────────────────────
+ * Tài khoản **0 hàng quyền** vẫn nhận về danh sách nhà máy mình được gán, trong khi
+ * `factoryCommand.overview` và `twinCanh.danhSachToaNha` của **cùng phiên ấy** trả về từ chối.
+ * `protectedProcedure` chỉ hỏi "đã đăng nhập chưa"; bộ lọc phạm vi chỉ hỏi "được gán nhà máy
+ * nào" — **không ai hỏi "có quyền không"**. Rò tên + mã nhà máy được gán.
+ *
+ * ── ⚠⚠⚠ VÌ SAO KHÔNG DÙNG `requirePermission("machine_status","canView")` ─────────────────────
+ * Kế hoạch đề xuất khoá ấy *"vì màn twin vốn đã đòi nó nên không thu hẹp ai"*. **Đo lại thì đề
+ * xuất ấy THU HẸP người đang dùng được**, theo hai hướng:
+ *
+ *  (A) `factory.list` KHÔNG phải thủ tục của riêng màn twin. Đếm `trpc.factory.list.useQuery`
+ *      ở client: 36 lượt khớp / 36 tệp, trừ 2 lượt KHÔNG phải nơi gọi thật (`pages/ApiDocs.tsx`
+ *      in chuỗi mẫu trong `<CodeBlock>`; `twin3d/van-hanh/tang1KhongTachDuoc.unit.test.ts` là
+ *      lưới) ⇒ **34 nơi gọi thật** — Báo cáo (`Reports`/`PdfReports`/`PowerPointExport`/
+ *      `ReportTemplates`/`ScheduledReports`), Phân tích (`ParetoAnalysis`/`CategoryAnalytics`/
+ *      `RootCauseAnalysisPage`/`DataComparison`/`DrillDownDashboard`), MQTT, Cài đặt, Sản xuất,
+ *      bốn màn twin, và `components/patterns/EntityPicker.tsx` — một bộ chọn DÙNG CHUNG nhúng
+ *      được vào bất kỳ màn nào. Không danh sách khoá hữu hạn nào bao nổi tập ấy một cách bền vững.
+ *
+ *  (B) Vai `quality_inspector` **không có** `machine_status`, cũng **không có** `analytics_oee`
+ *      (đọc `DEFAULT_ROLE_PERMISSIONS`, `permissionsRouter.ts`: 24 module, vắng cả hai). Vai ấy
+ *      sống trên Báo cáo/Phân tích và đang gọi `factory.list` mỗi lần mở bộ lọc nhà máy. Khoá
+ *      `machine_status` sẽ cắt đúng vai đó — **vá một lỗ, mở một lỗ khác**.
+ *
+ * ⇒ Khoá đã chọn là **phần bù ĐÚNG BẰNG lớp rò**: ai có dù chỉ MỘT ô tick quyền còn hiệu lực đều
+ * đi qua; chỉ tài khoản 0 quyền — đúng lớp mà QA đo được — bị chặn. Nên nó **không thu hẹp một
+ * ai**: không `quality_inspector`, không vai tuỳ biến chủ dự án tự nhân bản, không màn nào chưa
+ * ai nghĩ tới. `server/routers/factoryListCongQuyen.db.test.ts` neo cả hai chiều: ca ① ② chặn
+ * lớp rò, ca ③ ④ ⑤ ⑥ ĐỎ ngay nếu ai đó siết cổng về một module cụ thể.
+ *
+ * ── Hàng rào phạm vi KHÔNG bị nới ─────────────────────────────────────────────────────────────
+ * Cổng này CỘNG THÊM, không thay thế. Người có quyền nhưng 0 gán vẫn nhận `[]` (ca ⑦), người của
+ * A vẫn không thấy nhà máy B — `db.getFactories({userId,userRole})` giữ nguyên từng byte.
+ *
+ * ── Vai `admin` ───────────────────────────────────────────────────────────────────────────────
+ * Đi thẳng qua, đúng nếp `checkPermission` (`if (isAdmin && !scopedAdminEnabled()) return true`).
+ * "Bất kỳ quyền nào" không có module để `RBAC_SCOPED_ADMIN` siết, và một admin chưa được seed
+ * hàng quyền nào KHÔNG được phép mất bộ chọn nhà máy.
+ *
+ * Hình dạng lỗi trùng khít `requirePermission` (FORBIDDEN / PERMISSION_DENIED / `{action}`) để
+ * `readAppErrorMeta` và từ điển i18n `errors.action.*` phía client đọc được như mọi cổng khác.
+ */
+function requireBatKyQuyenNao() {
+  return async (opts: { ctx: any; next: any }) => {
+    const user = opts.ctx.user;
+    if (user?.role === "admin") return opts.next({ ctx: opts.ctx });
+    if (typeof user?.id === "number" && (await coItNhatMotQuyenConHieuLuc(user.id))) {
+      return opts.next({ ctx: opts.ctx });
+    }
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "canView" },
+      "Tài khoản chưa được cấp quyền nào nên không xem được danh sách nhà máy",
+    );
+  };
+}
+
 // ============ FACTORY ROUTER ============
 export const factoryRouter = router({
   // ★ NHÓM A #1 — trước bản vá: `async () => db.getFactories()`, KHÔNG nhận `ctx`, không lọc ⇒ ai
   // đăng nhập cũng liệt kê được MỌI nhà máy (tên, mã, địa chỉ) của mọi tenant. `ctx.user` là
   // nguồn danh tính DUY NHẤT được phép ở đây — xem `PhamViNguoiXem` ở `server/db/hierarchy.ts`.
-  list: protectedProcedure.query(async ({ ctx }) => {
+  // ★ Task 13 (PH-03) — `protectedProcedure` + lọc phạm vi vẫn CHƯA đủ: nó trả lời "đã đăng nhập
+  // chưa" và "được gán nhà máy nào", chứ không hỏi "có quyền không". Xem docblock
+  // `requireBatKyQuyenNao` ở trên để biết vì sao khoá là "bất kỳ quyền nào" chứ không phải
+  // `machine_status` (khoá ấy cắt mất vai `quality_inspector`).
+  list: protectedProcedure.use(requireBatKyQuyenNao()).query(async ({ ctx }) => {
     return db.getFactories({ userId: ctx.user?.id, userRole: ctx.user?.role });
   }),
 

@@ -161,7 +161,14 @@
         </div>
         <div class="form-group">
           <label>API Key:</label>
-          <input type="text" id="apiKey" value="avi_2642fa98f019d20aacac728270556d11204ebb7aaca2fdd6" placeholder="avi_xxx...">
+          <!-- Task 14 (PH-01): NO default key here. This file lives in client/public/ so Vite
+               copies it verbatim into dist/ and it is served at the site ROOT, with no session,
+               no RouteGuard and no tRPC in front of it: anything typed into `value` is readable
+               by view-source to every visitor. Paste your own key at run time; the placeholder
+               keeps showing the expected shape. Guarded by
+               server/api/khongLoKhoaTrongTepCong.test.ts, which fails the build if any file
+               under client/public/ carries a key-shaped string again. -->
+          <input type="text" id="apiKey" value="" placeholder="avi_xxx... (paste your own key)">
         </div>
         <div class="form-group">
           <label>Machine Code:</label>
