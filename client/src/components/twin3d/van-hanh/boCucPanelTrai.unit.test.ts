@@ -33,8 +33,30 @@ function theMo(ma: string, testId: string): string {
 }
 
 /* ── Hằng bố cục, ĐO THẬT (px) ───────────────────────────────────────────────── */
+/*
+ * ⚠⚠⚠ MỘT HẰNG Ở ĐÂY ĐÃ LẠC THỰC TẾ — ĐỌC TRƯỚC KHI TIN BẤT KỲ SỐ NÀO DƯỚI ĐÂY.
+ *
+ * Mọi hằng dưới đây là số **viết tay** chép lại từ một lượt đo trình duyệt cũ. Tệp này
+ * KHÔNG đo DOM (jsdom không có bộ dựng bố cục — `getBoundingClientRect` trả 0), nên khi
+ * giao diện thật đổi chiều cao thì các ca ở đây **vẫn xanh trong khi mô hình đã sai**.
+ * Đó chính là lớp lỗi "thiết bị đo không biết kêu", và nó vừa xảy ra:
+ *
+ *   2026-09-15, Task 12 thêm bảng xếp hạng sức khoẻ vào `khoi-tong-quan`. Ước tính của
+ *   agent thực thi: khối ấy cao thêm ~28 px (2 dòng chữ 10 px, không viền, không lề,
+ *   tiêu đề chỉ còn ở nhãn trợ năng) ⇒ `KHOI_TONG_QUAN` thật khoảng **69**, không phải 41.
+ *   Hệ quả mô hình: @1280×720 nhóm tồn đọng 3 → 2 hàng; @1600×900 `danh-sach-may` 9 → 8
+ *   hàng (nhóm tồn đọng giữ 5 vì đã chạm trần 328 px).
+ *
+ * ⛔ KHÔNG sửa số 41 thành 69 ở đây. 69 là **ước lượng chưa đo**, và ghi một số chưa đo
+ *    vào chỗ ghi "ĐO THẬT" là cách nhanh nhất để người sau tin nhầm nó.
+ * ✅ Việc đúng: đo lại bằng ảnh trên bản dựng thật ở đợt nghiệm thu (Task 15 của kế hoạch
+ *    `docs/superpowers/plans/2026-09-15-hoan-thien-twin-sau-qa11.md`) — mở `/twin` ở
+ *    1280×720 và 1600×900, đọc `getBoundingClientRect().height` của `khoi-tong-quan`,
+ *    rồi cập nhật hằng kèm ngày đo. Chỉ khi đó mới quyết được có cần cân lại tỉ lệ 7:5
+ *    và trần 328 px (hai quyết định của Đợt 57/59) hay không.
+ */
 const CAO_NGOAI_PANEL = 231; // vp.height − panel.height (header app + breadcrumb + thanh dưới)
-const KHOI_TONG_QUAN = 41; //   hàng số gộp của mục 13 bước 1
+const KHOI_TONG_QUAN = 41; //   ⚠ LẠC THỰC TẾ từ 2026-09-15 — xem khối cảnh báo ngay trên
 const DAI_CHUYEN_CHE_DO = 30; // "Máy | Cây phân cấp"
 const KHUNG_DAI_CANH_BAO = 91; // tiêu đề "Cảnh báo (N)" + hàng chip lọc (349−258 = 244−153)
 const TIEU_DE_NHOM = 24; //     "TỒN ĐỌNG >24H (7)" dính đầu ô cuộn

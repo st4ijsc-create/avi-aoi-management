@@ -56,13 +56,14 @@
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, ClipboardPlus, Clock, ExternalLink, Maximize2, Megaphone, X } from "lucide-react";
+import { AlertTriangle, Check, ClipboardPlus, Clock, ExternalLink, Maximize2, Megaphone, MessageSquarePlus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -556,6 +557,23 @@ export function NganXuLy(props: NganXuLyProps) {
         {tra("anTam").duocPhep ? <AnTamAlarm chan={tra("anTam").lyDoChan !== null} /> : null}
 
         {/*
+          ★★★ ĐỢT 25 VIỆC 2 — GHI CHÚ XỬ LÝ. Cùng luật ẩn/disable với ba nút trên:
+            thiếu `andon`/canEdit ⇒ KHÔNG render; có quyền mà chưa có cảnh báo ⇒
+            render và disable kèm lý do.
+          ★ Ghi chú gắn vào cảnh báo ĐẦU danh sách — cùng quy tắc "cái đang cần xử
+            lý trước" mà nút Xác nhận dùng. Tiêu đề cảnh báo ấy được in ra trong
+            form nên không có chuyện người dùng ghi nhầm chỗ mà không biết.
+        */}
+        {tra("ghiChu").duocPhep ? (
+          <GhiChu
+            andonId={canhBao[0]?.id ?? null}
+            tieuDeCanhBao={canhBao[0]?.tieuDe ?? ""}
+            chan={tra("ghiChu").lyDoChan !== null}
+            onXong={onDaXuLy}
+          />
+        ) : null}
+
+        {/*
           ★★★ TASK 9 — BÁO SỰ CỐ. Đặt CUỐI nhóm cảnh báo, không đầu: thứ tự đọc
             của nhóm này là "xử lý cái đang có" rồi mới tới "báo cái mới". Nút
             `destructive` vì nó là thao tác DỪNG CHUYỀN tiềm năng — mã hoá dư
@@ -897,6 +915,167 @@ function BaoSuCo({
               }
             >
               {t("twin3d.vanHanh.guiBaoSuCo", "Gửi")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setMo(false)}>
+              {t("common.cancel", "Huỷ")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * ★★★ ĐỢT 25 VIỆC 2 — GHI CHÚ XỬ LÝ CHO MỘT CẢNH BÁO.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO KHÔNG NỐI VÀO `andon.resolve` (thủ tục DUY NHẤT nhận `notes`)
+ * ════════════════════════════════════════════════════════════════════════════
+ * `resolve` nhận `notes`, nên nó trông như chỗ để nối. Nhưng
+ * `server/services/andon/andonService.ts:276` đặt
+ *
+ *     status='resolved', resolvedAt=now(), …, message: notes ?? current.message
+ *
+ * ⇒ một cú "ghi chú" qua `resolve` sẽ vừa **ĐÓNG** sự cố vừa **XOÁ mô tả gốc của
+ *   người báo**. Chủ dự án chốt: cột riêng + thủ tục riêng, KHÔNG đóng cảnh báo.
+ *   Bản cài đặt: bảng `andon_notes` (migration `0357`) + `andon.ghiChu` /
+ *   `andon.danhSachGhiChu`. Lý lẽ đầy đủ về hình dạng dữ liệu (một hàng mỗi ghi
+ *   chú, không phải một cột `text`) nằm ở `drizzle/schema/andon.ts`.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỌC ĐI KÈM GHI — KHÔNG CÓ Ô "GHI VÀO HƯ KHÔNG"
+ * ════════════════════════════════════════════════════════════════════════════
+ * Nghiệp vụ là "nhiều người cùng xử lý một sự cố". Một nút chỉ-ghi thì người thứ
+ * hai không bao giờ thấy người thứ nhất đã thử gì — tức tính năng KHÔNG giao được
+ * đúng thứ nó sinh ra để giao. Nên form mở ra là hiện luôn các ghi chú đã có, mỗi
+ * dòng kèm TÊN người ghi và THỜI ĐIỂM.
+ *
+ * ★ `useQuery` chỉ bật khi form MỞ (`enabled`): ngăn này sống trên mọi màn vận
+ *   hành, một truy vấn chạy nền cho mọi người xem là chi phí không ai xin.
+ * ★ Component RIÊNG, đúng khuôn `BaoSuCo`/`AnTamAlarm`: hai hook (`useQuery` +
+ *   `useMutation`) chỉ tồn tại với người THẬT SỰ có quyền, vì tầng trên chỉ render
+ *   nó khi `duocPhep`.
+ * ★ NT-3 — form NÓI RA rằng ghi chú không đóng cảnh báo, và nói ra khi chưa có ghi
+ *   chú nào (một danh sách rỗng không được trông giống một danh sách chưa tải).
+ */
+function GhiChu({
+  andonId,
+  tieuDeCanhBao,
+  chan,
+  onXong,
+}: {
+  andonId: number | null;
+  tieuDeCanhBao: string;
+  chan: boolean;
+  onXong: () => void;
+}) {
+  const { t } = useTranslation();
+  const [mo, setMo] = useState(false);
+  const [noiDung, setNoiDung] = useState("");
+
+  const dsQ = trpc.andon.danhSachGhiChu.useQuery(
+    { id: andonId ?? 0 },
+    { enabled: mo && andonId != null },
+  );
+  const ds = (dsQ.data ?? []) as Array<{
+    id: number;
+    note: string;
+    createdAt: string | Date;
+    tenNguoiGhi: string | null;
+  }>;
+
+  const guiM = trpc.andon.ghiChu.useMutation({
+    onSuccess: () => {
+      toast.success(t("twin3d.vanHanh.daGhiChu", "Đã lưu ghi chú"));
+      setNoiDung("");
+      void dsQ.refetch?.();
+      onXong();
+    },
+    onError: (e) => toastTrpcError(e),
+  });
+
+  return (
+    <div className="mt-1.5">
+      <Button
+        size="sm"
+        variant="outline"
+        className="w-full"
+        data-testid="nut-ghi-chu"
+        disabled={chan}
+        onClick={() => setMo((v) => !v)}
+      >
+        <MessageSquarePlus className="mr-1.5 h-3.5 w-3.5" />
+        {t("twin3d.vanHanh.ghiChu", "Ghi chú")}
+      </Button>
+      {mo && andonId !== null ? (
+        <div className="mt-1.5 space-y-1.5" data-testid="form-ghi-chu">
+          <p className="text-[10px] text-text-2" data-testid="ghi-chu-cho">
+            {t("twin3d.vanHanh.ghiChuCho", "Ghi chú cho cảnh báo: {{tieuDe}}", {
+              tieuDe: tieuDeCanhBao,
+            })}
+          </p>
+
+          {/* ── Ghi chú ĐÃ CÓ — phần làm cho "nhiều người một sự cố" thành thật ── */}
+          {ds.length === 0 ? (
+            <p className="text-[11px] text-text-2" data-testid="ghi-chu-trong">
+              {t("twin3d.vanHanh.chuaCoGhiChu", "Chưa có ghi chú nào cho cảnh báo này.")}
+            </p>
+          ) : (
+            <ul className="max-h-40 space-y-1 overflow-y-auto">
+              {ds.map((g) => (
+                <li
+                  key={g.id}
+                  className="rounded border px-2 py-1 text-[11px]"
+                  data-testid={`ghi-chu-${g.id}`}
+                >
+                  <p className="whitespace-pre-wrap">{g.note}</p>
+                  <p className="mt-0.5 text-[10px] text-text-2">
+                    {/* ⚠ TÊN, không phải id. Người đọc hồ sơ sự cố hỏi "AI đã thử gì". */}
+                    {g.tenNguoiGhi ?? t("twin3d.vanHanh.ghiChuKhuyetDanh", "(không rõ người ghi)")}
+                    {" · "}
+                    {new Date(g.createdAt).toLocaleString()}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <Label className="text-xs" htmlFor="twin-o-ghi-chu">
+            {t("twin3d.vanHanh.noiDungGhiChu", "Nội dung ghi chú")}
+          </Label>
+          <Textarea
+            id="twin-o-ghi-chu"
+            data-testid="o-ghi-chu"
+            rows={3}
+            value={noiDung}
+            onChange={(e) => setNoiDung(e.target.value)}
+            placeholder={t(
+              "twin3d.vanHanh.viDuGhiChu",
+              "Ví dụ: đã kiểm cảm biến vào, chưa thấy lỗi",
+            )}
+          />
+          <p className="text-[10px] text-amber-700 dark:text-amber-400" data-testid="ghi-chu-khong-dong">
+            {t(
+              "twin3d.vanHanh.ghiChuKhongDong",
+              "Ghi chú KHÔNG đóng cảnh báo — nó chỉ ghi lại việc đang xử lý.",
+            )}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1"
+              data-testid="nut-gui-ghi-chu"
+              disabled={guiM.isPending}
+              onClick={() => {
+                // ⚠ Nói CÙNG một câu với `z.string().trim().min(1)` của server: một ô
+                //   toàn dấu cách là một ghi chú rỗng, không phải một ghi chú.
+                const sach = noiDung.trim();
+                if (!sach) return;
+                guiM.mutate({ id: andonId, note: sach });
+              }}
+            >
+              {t("twin3d.vanHanh.luuGhiChu", "Lưu ghi chú")}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setMo(false)}>
               {t("common.cancel", "Huỷ")}

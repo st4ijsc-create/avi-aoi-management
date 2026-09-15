@@ -75,6 +75,16 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
  */
 const guiSuCo = vi.fn();
 const guiAck = vi.fn();
+/**
+ * ★ ĐỢT 25 VIỆC 2 — điểm trpc MỚI của ghi chú.
+ *
+ * `danhSachGhiChu` là một `useQuery`, nên bản mock phải trả dữ liệu ĐỔI ĐƯỢC theo
+ * từng ca (rỗng / hai dòng). Giữ nó trong một **hộp** thay vì một `let` trần: thân
+ * hàm chỉ đọc `kho.dsGhiChu` lúc render, nên không có chuyện đọc phải giá trị của
+ * ca trước hay vướng thứ tự khởi tạo của `vi.mock`.
+ */
+const guiGhiChu = vi.fn();
+const kho: { dsGhiChu: unknown[] } = { dsGhiChu: [] };
 vi.mock("@/lib/trpc", () => {
   const truyVan = (data: unknown) => () => ({
     data,
@@ -87,6 +97,10 @@ vi.mock("@/lib/trpc", () => {
       andon: {
         acknowledge: { useMutation: () => ({ mutate: guiAck, isPending: false }) },
         quickReport: { useMutation: () => ({ mutate: guiSuCo, isPending: false }) },
+        ghiChu: { useMutation: () => ({ mutate: guiGhiChu, isPending: false }) },
+        danhSachGhiChu: {
+          useQuery: () => ({ data: kho.dsGhiChu, isLoading: false, isError: false, error: null }),
+        },
       },
       maintenance: { createWorkOrder: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) } },
       equipmentStandards: { shelveMasterAlarm: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) } },
@@ -102,6 +116,8 @@ afterEach(() => {
   cleanup();
   guiSuCo.mockClear();
   guiAck.mockClear();
+  guiGhiChu.mockClear();
+  kho.dsGhiChu = [];
 });
 
 const GOC = resolve(__dirname, "../../../..");
@@ -242,6 +258,130 @@ describe("★★★ T9 — công nhân báo sự cố ngay trên Twin", () => {
     expect(i).toBeGreaterThan(-1);
     const khoi = TRANG.slice(i, TRANG.indexOf("};", i));
     expect(khoi).toContain('baoSuCo: hasPermission("andon", "canCreate")');
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ĐỢT 25 VIỆC 2 — GHI CHÚ XỬ LÝ                                               */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*
+ * `nganXuLyLogic.ts` khai hành động `ghiChu` từ Task 9 và **chưa nối vào đâu**:
+ * grep `NganXuLy.tsx` trước đợt này cho 0 kết quả `ghi-chu`. Máy chủ cũng chưa có
+ * đường — thủ tục duy nhất nhận ghi chú là `andon.resolve`, và nó ĐÓNG cảnh báo
+ * kèm GHI ĐÈ mô tả gốc (`andonService.ts:276`). Đợt này mở
+ * `andon.ghiChu` + `andon.danhSachGhiChu` (bảng `andon_notes`, migration 0357).
+ *
+ * ⚠ Ô "ĐỐI CHỨNG MÁY CHỦ" đọc `andonRouter.ts` từ ĐĨA (G24): một nút client nối
+ *   vào thủ tục sai cổng là đúng lớp lỗi "một lối vào rồi TỪ CHỐI" của Khối D.
+ */
+
+/** Một cảnh báo ĐANG MỞ cho ngăn xử lý (khác `CanhBaoDai` của dải cảnh báo). */
+function cbMo(sua: Record<string, unknown> = {}) {
+  return {
+    id: 77,
+    mucDo: "red",
+    trangThai: "raised",
+    tieuDe: "Kẹt phôi băng tải",
+    raisedAt: BAY_GIO - 60_000,
+    machineId: 42,
+    ...sua,
+  } as NganXuLyProps["canhBao"][number];
+}
+
+describe("★★★ ĐỢT 25 VIỆC 2 — ghi chú xử lý, KHÔNG đóng cảnh báo", () => {
+  it("★ ĐỐI CHỨNG MÁY CHỦ — `ghiChu` CÓ THẬT và gác `andon`/canEdit (đọc từ đĩa)", () => {
+    expect(ROUTER_ANDON).toContain("ghiChu: protectedProcedure");
+    const i = ROUTER_ANDON.indexOf("ghiChu: protectedProcedure");
+    expect(ROUTER_ANDON.slice(i, i + 200)).toContain('requirePermission("andon", "canEdit")');
+  });
+
+  it("★ ĐỐI CHỨNG MÁY CHỦ — `danhSachGhiChu` gác `andon`/canView (xem ≠ sửa)", () => {
+    const i = ROUTER_ANDON.indexOf("danhSachGhiChu: protectedProcedure");
+    expect(i).toBeGreaterThan(-1);
+    expect(ROUTER_ANDON.slice(i, i + 200)).toContain('requirePermission("andon", "canView")');
+  });
+
+  it("★★★ ĐỐI CHỨNG MÁY CHỦ — `ghiChu` ghi vào `andonNotes`, KHÔNG gọi `resolveAndon`", () => {
+    // Đây là cả lý do tồn tại của thủ tục mới. Nếu ai đó "đơn giản hoá" nó thành
+    // một lời gọi `resolveAndon(id, user, note)` thì cảnh báo bị đóng và mô tả gốc
+    // của người báo bị xoá — ô này phải ĐỎ ngay lúc đó.
+    const i = ROUTER_ANDON.indexOf("ghiChu: protectedProcedure");
+    const than = ROUTER_ANDON.slice(i, ROUTER_ANDON.indexOf("danhSachGhiChu: protectedProcedure", i));
+    expect(than).toContain("insert(andonNotes)");
+    expect(than).not.toContain("resolveAndon");
+    expect(than).not.toContain("acknowledgeAndon");
+  });
+
+  it("★★★ bảng hành động: `ghiChu` theo quyền `andon`/canEdit, và cần CÓ cảnh báo", () => {
+    const co = hanhDongChoVatThe({ quyen: QUYEN_DU, machineId: 7, canhBao: [cbMo()] });
+    expect(co.find((h) => h.ma === "ghiChu")?.duocPhep).toBe(true);
+    expect(co.find((h) => h.ma === "ghiChu")?.lyDoChan).toBeNull();
+
+    const khong = hanhDongChoVatThe({ quyen: QUYEN_DU, machineId: 7, canhBao: [] });
+    expect(khong.find((h) => h.ma === "ghiChu")?.lyDoChan).toBe("khong_co_canh_bao");
+  });
+
+  it("★★★ HÀNH VI — có quyền + có cảnh báo ⇒ nút hiện; bấm ⇒ mở ô; gửi ⇒ `ghiChu` đúng `id` cảnh báo", async () => {
+    const nd = userEvent.setup();
+    render(<NganXuLy {...dungProps({ canhBao: [cbMo({ id: 77 })] })} />);
+    await nd.click(screen.getByTestId("nut-ghi-chu"));
+    await nd.type(screen.getByTestId("o-ghi-chu"), "Đã kiểm cảm biến vào");
+    await nd.click(screen.getByTestId("nut-gui-ghi-chu"));
+    expect(guiGhiChu).toHaveBeenCalledTimes(1);
+    expect(guiGhiChu.mock.calls[0][0]).toMatchObject({ id: 77, note: "Đã kiểm cảm biến vào" });
+  });
+
+  it("★★★ ô RỖNG ⇒ KHÔNG gọi mutation (client nói cùng câu với zod `min(1)` của server)", async () => {
+    const nd = userEvent.setup();
+    render(<NganXuLy {...dungProps({ canhBao: [cbMo()] })} />);
+    await nd.click(screen.getByTestId("nut-ghi-chu"));
+    await nd.type(screen.getByTestId("o-ghi-chu"), "   ");
+    await nd.click(screen.getByTestId("nut-gui-ghi-chu"));
+    expect(guiGhiChu).not.toHaveBeenCalled();
+  });
+
+  it("★★★ NHIỀU NGƯỜI MỘT SỰ CỐ — mở ô ⇒ thấy ghi chú CÓ SẴN, mỗi dòng kèm TÊN người ghi", async () => {
+    // Đây là nghiệp vụ mà cả Việc 2 phục vụ. Một nút chỉ-ghi-không-đọc thì người
+    // thứ hai không bao giờ thấy người thứ nhất đã thử gì.
+    kho.dsGhiChu = [
+      { id: 2, note: "Ca sau: đã thay dây curoa", createdBy: 9, createdAt: new Date(BAY_GIO - 60_000).toISOString(), tenNguoiGhi: "Trần B" },
+      { id: 1, note: "Đã kiểm cảm biến vào", createdBy: 8, createdAt: new Date(BAY_GIO - 600_000).toISOString(), tenNguoiGhi: "Nguyễn A" },
+    ];
+    const nd = userEvent.setup();
+    render(<NganXuLy {...dungProps({ canhBao: [cbMo()] })} />);
+    await nd.click(screen.getByTestId("nut-ghi-chu"));
+    const dong = screen.getAllByTestId(/^ghi-chu-\d+$/);
+    expect(dong).toHaveLength(2);
+    // ⚠ Đọc CHỮ người dùng nhìn thấy, không đọc testid.
+    expect(dong[0]).toHaveTextContent("Ca sau: đã thay dây curoa");
+    expect(dong[0]).toHaveTextContent("Trần B");
+    expect(dong[1]).toHaveTextContent("Đã kiểm cảm biến vào");
+    expect(dong[1]).toHaveTextContent("Nguyễn A");
+  });
+
+  it("★ ĐỐI CHỨNG BIẾT KÊU — danh sách RỖNG ⇒ 0 dòng và một câu nói ra sự rỗng (NT-3)", async () => {
+    const nd = userEvent.setup();
+    render(<NganXuLy {...dungProps({ canhBao: [cbMo()] })} />);
+    await nd.click(screen.getByTestId("nut-ghi-chu"));
+    expect(screen.queryAllByTestId(/^ghi-chu-\d+$/)).toHaveLength(0);
+    expect(screen.getByTestId("ghi-chu-trong")).toBeInTheDocument();
+  });
+
+  it("★★★ NÓI RA rằng ghi chú KHÔNG đóng cảnh báo (cùng luật trung thực với `AnTamAlarm`)", async () => {
+    const nd = userEvent.setup();
+    render(<NganXuLy {...dungProps({ canhBao: [cbMo()] })} />);
+    await nd.click(screen.getByTestId("nut-ghi-chu"));
+    expect(screen.getByTestId("ghi-chu-khong-dong")).toHaveTextContent(/không đóng/i);
+  });
+
+  it("★★★ ĐỐI CHỨNG BIẾT KÊU — KHÔNG có `andon`/canEdit ⇒ 0 nút ghi chú trong DOM (ẨN, không disable)", () => {
+    render(<NganXuLy {...dungProps({ canhBao: [cbMo()], quyen: { ...QUYEN_DU, ackAlarm: false } })} />);
+    expect(screen.queryByTestId("nut-ghi-chu")).toBeNull();
+  });
+
+  it("★ có quyền nhưng KHÔNG có cảnh báo ⇒ nút HIỆN mà DISABLE (tình huống tạm, khác thiếu quyền)", () => {
+    render(<NganXuLy {...dungProps({ canhBao: [] })} />);
+    expect(screen.getByTestId("nut-ghi-chu")).toBeDisabled();
   });
 });
 

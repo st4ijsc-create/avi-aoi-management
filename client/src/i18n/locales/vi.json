@@ -19945,8 +19945,18 @@
       "guiBaoSuCo": "Gửi",
       "daBaoSuCo": "Đã báo sự cố",
       "daBaoSuCoTho": "Đã báo sự cố — chưa phân loại được, cần người xem lại",
+      "ghiChu": "Ghi chú",
+      "ghiChuCho": "Ghi chú cho cảnh báo: {{tieuDe}}",
+      "chuaCoGhiChu": "Chưa có ghi chú nào cho cảnh báo này.",
+      "ghiChuKhuyetDanh": "(không rõ người ghi)",
+      "noiDungGhiChu": "Nội dung ghi chú",
+      "viDuGhiChu": "Ví dụ: đã kiểm cảm biến vào, chưa thấy lỗi",
+      "ghiChuKhongDong": "Ghi chú KHÔNG đóng cảnh báo — nó chỉ ghi lại việc đang xử lý.",
+      "luuGhiChu": "Lưu ghi chú",
+      "daGhiChu": "Đã lưu ghi chú",
       "dongNgan": "Đóng ngăn xử lý",
-      "demTheoNhaMay": "(đếm theo toàn nhà máy)"
+      "demTheoNhaMay": "(đếm theo toàn nhà máy)",
+      "bangSucKhoe": "Sức khoẻ máy"
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",

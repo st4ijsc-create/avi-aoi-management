@@ -73,10 +73,10 @@ import { and, eq, gte, desc, sql, isNull } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
-import { andonEvents } from "../../drizzle/schema";
+import { andonEvents, andonNotes, users } from "../../drizzle/schema";
 import { raiseAndon, acknowledgeAndon, resolveAndon } from "../services/andon/andonService";
 import { classifyIssue } from "../services/aiIssueClassifier";
-import { getMachineByCode, idsTrongPhamVi } from "../db/hierarchy";
+import { getMachineByCode, idsTrongPhamVi, trongPhamVi } from "../db/hierarchy";
 import { factoryIdGate } from "../db/reportAggregators";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { phamViCua } from "./_phamViNguoiXem";
@@ -126,6 +126,74 @@ async function congPhamViAndon(id: number, ctx: unknown) {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
   }
   return row;
+}
+
+/**
+ * ★★★ ĐỢT 25 VIỆC 1 — CỔNG PHẠM VI CHO ĐƯỜNG **BẬT** CẢNH BÁO (`raise` /
+ * `quickReport`).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★★★ LÔ R VÁ `acknowledge`/`resolve`, ĐỢT 24 VÁ ĐƯỜNG ĐỌC. HAI THỦ TỤC BẬT
+ *     CẢNH BÁO CÒN NGUYÊN SUỐT CẢ HAI ĐỢT.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Đo trên mã trước bản vá này: `raise` (:199) và `quickReport` (:239) đều khai
+ * `async ({ input, ctx })` và **có** `ctx` — nhưng chỉ để đóng dấu `raisedBy`.
+ * Đúng cái bẫy mà docblock đầu tệp đã đặt tên:  **có `ctx` ≠ có kiểm phạm vi.**
+ *
+ * `input.machineId` / `stationId` / `lineId` / `machineCode` đều do client TỰ
+ * KHAI ⇒ một tài khoản `andon/canCreate` ở nhà máy A bật được đèn đỏ trên máy
+ * của nhà máy B bằng cách đoán một số nguyên. Đó không phải một lỗi hiển thị:
+ * hàng ghi xuống hiện trên bảng Andon của B, dập MTTA của B, và với `state:red`
+ * kích cả đường thông báo của B.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO **VÀ TRÊN CÁC TRỤC ĐÃ KHAI**, TRONG KHI `congPhamViAndon` LÀ HOẶC
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Hai hàm gác hai chiều khác nhau, nên phép ghép của chúng phải khác nhau — đây
+ * KHÔNG phải hai bản cài đặt của một luật (G12), mà hai luật cho hai chiều:
+ *
+ *   ĐỌC  (`congPhamViAndon`): hàng ĐÃ CÓ, ba trục là THUỘC TÍNH của nó. Một hàng
+ *     khai `machineId` của A và `stationId` NULL vẫn là hàng của A ⇒ **HOẶC**.
+ *   GHI  (hàm này): ba trục là ĐÍCH người gọi TỰ KHAI. Ghép bằng HOẶC sẽ mở lại
+ *     đúng cánh cửa vừa đóng — gửi `machineId` của A **kèm** `lineId` của B thì
+ *     vế A làm cả câu đúng, hàng ghi xuống mang `lineId` của B, và vì cổng ĐỌC
+ *     là HOẶC nên nó hiện ngay trên bảng của B ⇒ **VÀ trên các trục ĐÃ KHAI**.
+ *
+ * Khuôn tái dùng ở đây là `maintenance.createWorkOrder`
+ * (`maintenanceRouter.ts:195`) — `trongPhamVi(cap, id, phamViCua(ctx))` cho ĐÍCH
+ * tự khai, `NOT_FOUND` khi trượt — chỉ nhân lên ba trục. `trongPhamVi` trả
+ * `true` khi phạm vi là `null` (vai toàn quyền / lối không mang danh tính), nên
+ * admin KHÔNG bị thu hẹp.
+ *
+ * ⚠⚠ **KHÔNG khai trục nào ⇒ KHÔNG chặn, và đó là một QUYẾT ĐỊNH, không phải
+ *   một chỗ quên.** `client/src/pages/OperatorHome.tsx:193` ("Gọi bảo trì") gọi
+ *   `andon.raise` với đúng `state`/`reason`/`title` và **không** máy/trạm/chuyền.
+ *   Bắt nó fail-closed như hàng mồ côi ở đường ĐỌC sẽ giết một nút đang chạy
+ *   thật của mọi vai không-admin — "vá quá tay thành chặn tất cả". Và nó KHÔNG
+ *   để lại lỗ: hàng vô chủ ấy không gắn vào máy/trạm/chuyền của ai, còn cổng ĐỌC
+ *   fail-CLOSED đã giấu nó khỏi mọi người bị thu hẹp (đo bằng một ô riêng ở
+ *   `maintenanceAndonPhamVi.db.test.ts`, không suy đoán).
+ *
+ * ⚠ Ngoài phạm vi ⇒ **`NOT_FOUND`** với `entity` là TRỤC TRƯỢT, cùng mã với
+ *   "không tồn tại" — cùng quy ước lô Q1/lô R.
+ */
+async function congPhamViDichAndon(
+  dich: { machineId?: number | null; stationId?: number | null; lineId?: number | null },
+  ctx: unknown,
+): Promise<void> {
+  const pv = phamViCua(ctx as Parameters<typeof phamViCua>[0]);
+  const truc: Array<["machine" | "station" | "line", number | null | undefined]> = [
+    ["machine", dich.machineId],
+    ["station", dich.stationId],
+    ["line", dich.lineId],
+  ];
+  for (const [cap, id] of truc) {
+    // Trục KHÔNG khai ⇒ không có đích nào để soát (xem ⚠⚠ ở trên).
+    if (id == null) continue;
+    if (!(await trongPhamVi(cap, id, pv))) {
+      throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: cap }, `${cap} ${id} not found`);
+    }
+  }
 }
 
 /**
@@ -208,6 +276,9 @@ export const andonRouter = router({
       machineId: z.number().int().positive().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      // ★★★ ĐỢT 25 — cổng phạm vi cho ĐÍCH TỰ KHAI. Đây là dòng mà bản gốc
+      //   KHÔNG có; `ctx` bên dưới chỉ đóng dấu `raisedBy`, nó không chặn gì.
+      await congPhamViDichAndon(input, ctx);
       return raiseAndon(
         {
           state: input.state,
@@ -257,6 +328,18 @@ export const andonRouter = router({
           machineCode = m.code;
         }
       }
+
+      // ★★★ ĐỢT 25 — cổng phạm vi ĐẶT SAU phép tra mã, TRƯỚC mọi thứ khác.
+      //   · SAU tra mã: `machineCode` là một đích tự khai y hệt `machineId`; gác
+      //     trước khi nó thành id là gác một trục còn để ngỏ trục kia.
+      //   · TRƯỚC `classifyIssue`: một lời gọi bị chặn không được tiêu một lượt
+      //     suy diễn của model, và không được để lại vết nào.
+      //   ⚠ `getMachineByCode` ở trên gọi KHÔNG kèm phạm vi — cố ý. Truyền phạm
+      //     vi vào đó sẽ biến "máy của tenant khác" thành `undefined`, tức thành
+      //     "không có mã ấy", và lời báo sự cố lặng lẽ rơi xuống một andon vô
+      //     chủ: người báo thấy THÀNH CÔNG mà cảnh báo không tới máy nào. Chặn
+      //     to bằng `NOT_FOUND` trung thực hơn một cú ghi trượt im lặng.
+      await congPhamViDichAndon({ machineId, stationId: input.stationId, lineId: input.lineId }, ctx);
 
       // FAST-model classification (never throws — returns a safe default if degraded).
       const classified = await classifyIssue({
@@ -310,6 +393,99 @@ export const andonRouter = router({
       const row = await resolveAndon(input.id, ctx.user.id, input.notes, { id: ctx.user.id, name: ctx.user.name ?? null });
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
       return row;
+    }),
+
+  /**
+   * ★★★ ĐỢT 25 VIỆC 2 — **GHI CHÚ XỬ LÝ**, KHÔNG PHẢI ĐÓNG CẢNH BÁO.
+   *
+   * ════════════════════════════════════════════════════════════════════════════
+   * ★★★ VÌ SAO MỘT THỦ TỤC MỚI, KHÔNG PHẢI NỐI NÚT VÀO `resolve`
+   * ════════════════════════════════════════════════════════════════════════════
+   * `resolve` NHẬN `notes`, nên nó trông như chỗ để nối. Nhưng
+   * `andonService.ts:276` đặt
+   *
+   *     status='resolved', resolvedAt=now(), …, message: notes ?? current.message
+   *
+   * ⇒ một cú "ghi chú" qua `resolve` vừa **ĐÓNG** sự cố vừa **XOÁ mô tả gốc của
+   *   người báo**. Ghi chú là việc ĐANG xử lý; đóng là một quyết định riêng của
+   *   người có thẩm quyền. Trộn hai việc vào một nút là làm mất cả hai.
+   *
+   * ⚠ Thủ tục này **KHÔNG chạm một cột nào** của `andon_events` — có một ô lưới
+   *   riêng đọc lại `status`/`message`/`resolvedAt` sau khi ghi chú
+   *   (`andonGhiChuPhamVi.db.test.ts` §1).
+   *
+   * ★ Hình dạng dữ liệu (MỘT HÀNG MỖI GHI CHÚ, không phải một cột `text` trên
+   *   hàng cảnh báo) và lý lẽ đầy đủ: `drizzle/schema/andon.ts` +
+   *   `drizzle/0357_andon_ghi_chu.sql`. Tóm tắt: nghiệp vụ là "nhiều người cùng
+   *   xử lý một sự cố", nên mỗi dòng phải mang TÁC GIẢ + THỜI ĐIỂM, và hai người
+   *   ghi cùng lúc không được đè nhau (INSERT thuần, không đọc-sửa-ghi).
+   *
+   * ⚠ Cổng RBAC là `andon/canEdit` — CÙNG mức với `acknowledge`: ghi chú là một
+   *   thao tác XỬ LÝ trên cảnh báo của người khác, không phải một lời bình luận
+   *   vô hại. `client/.../nganXuLyLogic.ts` đã khai đúng mức ấy cho hành động
+   *   `ghiChu` từ trước, nên hai bên không lệch (luật "một lối vào rồi TỪ CHỐI").
+   *
+   * ⚠ `congPhamViAndon` là cổng phạm vi — CÙNG hàm mà `acknowledge`/`resolve`
+   *   dùng, không phải một khuôn thứ hai: `input.id` do client TỰ KHAI.
+   */
+  ghiChu: protectedProcedure
+    .use(requirePermission("andon", "canEdit"))
+    .input(z.object({
+      id: z.number().int().positive(),
+      // ⚠ `trim()` TRƯỚC `min(1)`: một ô toàn dấu cách là một ghi chú rỗng, và để
+      //   nó lọt xuống CSDL là để lại một dòng không nói gì trong hồ sơ sự cố.
+      note: z.string().trim().min(1).max(2000),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await congPhamViAndon(input.id, ctx);
+      const db = await getDb();
+      const [row] = await db
+        .insert(andonNotes)
+        .values({ andonId: input.id, note: input.note, createdBy: ctx.user.id })
+        .returning();
+      return row;
+    }),
+
+  /**
+   * ★ ĐỢT 25 VIỆC 2 — đọc ghi chú của MỘT cảnh báo, mới nhất trước.
+   *
+   * ⚠ Không có đường đọc thì `ghiChu` là một nút ghi vào hư không: người thứ hai
+   *   xử lý cùng sự cố không thấy được người thứ nhất đã thử gì — tức đúng cái
+   *   nghiệp vụ mà Việc 2 sinh ra để phục vụ sẽ không được giao.
+   * ⚠ `canView` (không phải `canEdit`): xem ≠ sửa. Có ô lưới riêng cho một tài
+   *   khoản `canView` mà không `canEdit` — đọc được, ghi thì 403.
+   * ⚠ Cổng phạm vi đi TRƯỚC, bằng CÙNG `congPhamViAndon`: một `id` ngoài phạm vi
+   *   phải cho `NOT_FOUND`, không phải nội dung xử lý sự cố của tenant khác.
+   *
+   * ⚠⚠ **TÊN người ghi, không phải SỐ.** `andon_notes.createdBy` là một id; in nó
+   *   ra màn hình thì câu hỏi nghiệp vụ ("ai đã thử gì?") vẫn không trả lời được
+   *   — người đọc phải đi tra một bảng khác. `LEFT JOIN` (không phải `JOIN`) vì
+   *   `createdBy` NULLABLE và tài khoản có thể đã bị xoá: dòng ghi chú vẫn phải
+   *   hiện, chỉ thiếu tên.
+   */
+  danhSachGhiChu: protectedProcedure
+    .use(requirePermission("andon", "canView"))
+    .input(z.object({
+      id: z.number().int().positive(),
+      limit: z.number().int().min(1).max(200).default(50),
+    }))
+    .query(async ({ input, ctx }) => {
+      await congPhamViAndon(input.id, ctx);
+      const db = await getDb();
+      return db
+        .select({
+          id: andonNotes.id,
+          andonId: andonNotes.andonId,
+          note: andonNotes.note,
+          createdBy: andonNotes.createdBy,
+          createdAt: andonNotes.createdAt,
+          tenNguoiGhi: users.name,
+        })
+        .from(andonNotes)
+        .leftJoin(users, eq(users.id, andonNotes.createdBy))
+        .where(eq(andonNotes.andonId, input.id))
+        .orderBy(desc(andonNotes.createdAt), desc(andonNotes.id))
+        .limit(input.limit);
     }),
 
   list: protectedProcedure

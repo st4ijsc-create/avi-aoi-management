@@ -19967,8 +19967,18 @@
       "guiBaoSuCo": "Send",
       "daBaoSuCo": "Issue reported",
       "daBaoSuCoTho": "Issue reported - could not be classified, needs review",
+      "ghiChu": "Add note",
+      "ghiChuCho": "Note on alarm: {{tieuDe}}",
+      "chuaCoGhiChu": "No notes on this alarm yet.",
+      "ghiChuKhuyetDanh": "(author unknown)",
+      "noiDungGhiChu": "Note",
+      "viDuGhiChu": "For example: checked the input sensor, nothing found",
+      "ghiChuKhongDong": "A note does NOT close the alarm - it only records the work in progress.",
+      "luuGhiChu": "Save note",
+      "daGhiChu": "Note saved",
       "dongNgan": "Close action panel",
-      "demTheoNhaMay": "(counted across the whole factory)"
+      "demTheoNhaMay": "(counted across the whole factory)",
+      "bangSucKhoe": "Machine health"
     },
     "studio": {
       "tieuDe": "3D Factory — Design",

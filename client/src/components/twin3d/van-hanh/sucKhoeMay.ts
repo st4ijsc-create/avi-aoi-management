@@ -394,6 +394,40 @@ const THU_TU_HANG: Record<HangSucKhoe, number> = {
 };
 
 /**
+ * ★★★ TASK 12 — SÁU HẠNG THEO ĐÚNG THỨ TỰ ĐỌC (tệ nhất trước), khai tường minh.
+ *
+ * Bảng 2D và mọi bộ đếm lặp trên danh sách NÀY, nên "hạng vắng mặt" và "hạng
+ * đếm được 0" là hai câu khác nhau đọc ra từ cùng một chỗ: hàng vẫn có, số là 0.
+ * Không có nó thì `Object.keys(...)` của một phép đếm chỉ liệt kê hạng CÓ MẶT —
+ * và một bảng thiếu hàng "nguy kịch" trông y hệt một nhà máy không có máy nguy
+ * kịch nào (NT-3: rỗng vì yên ổn ≠ rỗng vì chưa đọc được).
+ *
+ * ⚠ Cùng thứ tự với {@link THU_TU_HANG}; lưới `vienSucKhoeDoDuoc.dom.test.tsx`
+ *   đối chiếu nó với thứ tự THẬT mà {@link xepHangSucKhoe} sắp ra, nên hai chỗ
+ *   lệch nhau sẽ ĐỎ chứ không âm thầm.
+ */
+export const MOI_HANG_SUC_KHOE: readonly HangSucKhoe[] = [
+  "nguy_kich",
+  "canh",
+  "theo_doi",
+  "het_han",
+  "khoe",
+  "chua_do",
+];
+
+/**
+ * ★★★ TASK 12 — BỐN HẠNG CÓ VẼ VÒNG trên cảnh 3D, tức đúng tập mà bộ đếm
+ * `window.__demVien` phải khai được kể cả khi đếm ra 0.
+ *
+ * Viết tường minh chứ **không** suy bằng `MOI_HANG_SUC_KHOE.filter(h =>
+ * mauVienSucKhoe(h) !== null)`: một danh sách suy ra từ chính hàm đang bị kiểm
+ * thì lưới đối chiếu hai thứ ấy luôn XANH, kể cả khi bảng màu đổi sai (đúng lớp
+ * "lưới tự thoả" đã trả giá nhiều lần). Ở dạng literal, lưới so nó với
+ * {@link mauVienSucKhoe} là một phép đo THẬT và nó biết KÊU.
+ */
+export const MOI_HANG_CO_VIEN: readonly HangSucKhoe[] = ["nguy_kich", "canh", "theo_doi", "het_han"];
+
+/**
  * Xếp hạng mọi máy CÓ lời khai — tệ nhất lên đầu.
  *
  * ★ KHÔNG lọc `khoe`: bảng 2D là chỗ để đọc kỹ và so sánh, khác hẳn cảnh 3D là
@@ -429,6 +463,42 @@ export function xepHangSucKhoe(
       if (da !== db) return da - db;
       return a.machineId - b.machineId;
     });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* BẢNG THU GỌN CHO PANEL TRÁI — hạng × số máy                                  */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Một ô của bảng xếp hạng thu gọn: hạng, số máy, và màu vòng của hạng ấy. */
+export interface ODemHangSucKhoe {
+  hang: HangSucKhoe;
+  so: number;
+  /** Màu viền đế của hạng — `null` = hạng KHÔNG vẽ vòng nào trên cảnh. */
+  mau: string | null;
+}
+
+/**
+ * ★★★ TASK 12 — ĐẾM SỐ MÁY THEO TỪNG HẠNG, từ chính đầu ra của
+ * {@link xepHangSucKhoe}.
+ *
+ * Vì sao nhận `DongXepHangSucKhoe[]` chứ không nhận lại `khai`+`ids`+`bayGio`:
+ * nếu nhận dữ liệu thô thì hàm này sẽ gọi `hangSucKhoe()` một lần NỮA, và có
+ * thêm một cơ hội để bảng 2D và cảnh 3D nói hai điều khác nhau về cùng một máy.
+ * Nhận đầu ra đã xếp hạng ⇒ **một luật, một chỗ** (G12): bảng đọc đúng thứ vòng
+ * viền đọc.
+ *
+ * ★ Luôn trả ĐỦ {@link MOI_HANG_SUC_KHOE} hàng, kể cả hạng 0 máy — xem docblock
+ *   của hằng ấy. Tổng các `so` bằng `dong.length`: bất biến đối chiếu tổng
+ *   (BG-127) mà lưới ghim, để hàm không nuốt hàng và không đếm hai lần.
+ */
+export function demTheoHangSucKhoe(dong: readonly DongXepHangSucKhoe[]): ODemHangSucKhoe[] {
+  const dem = new Map<HangSucKhoe, number>(MOI_HANG_SUC_KHOE.map((h) => [h, 0]));
+  for (const d of dong) dem.set(d.hang, (dem.get(d.hang) ?? 0) + 1);
+  return MOI_HANG_SUC_KHOE.map((hang) => ({
+    hang,
+    so: dem.get(hang) ?? 0,
+    mau: mauVienSucKhoe(hang),
+  }));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */

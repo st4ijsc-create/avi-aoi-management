@@ -76,7 +76,15 @@ vi.mock("@/lib/trpc", () => {
   });
   return {
     trpc: {
-      andon: { acknowledge: { useMutation: mut } },
+      andon: {
+        acknowledge: { useMutation: mut },
+        // ★ ĐỢT 25 VIỆC 2 — hai điểm trpc mới của `GhiChu`. Tệp này mock `@/lib/trpc`
+        //   TRỌN GÓI, nên một điểm thiếu ⇒ `NganXuLy` ném ngay lúc render và 10 ca
+        //   không liên quan đỏ theo. Giữ danh sách ĐỦ là điều kiện để lưới này còn đo
+        //   được đúng thứ nó đo (nhúng tại chỗ), không phải một thủ tục vá cho xanh.
+        ghiChu: { useMutation: mut },
+        danhSachGhiChu: { useQuery: truyVan([]) },
+      },
       maintenance: { createWorkOrder: { useMutation: mut } },
       equipmentStandards: { shelveMasterAlarm: { useMutation: mut } },
       user: { assignableTechnicians: { useQuery: truyVan([]) } },

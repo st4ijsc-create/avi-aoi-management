@@ -212,7 +212,23 @@ import { tomTatAnToan } from "@/components/twin3d/van-hanh/canhBaoAnToan";
  *   dòng `import` này và ba chỗ gọi của chúng thì cả ba là **G16** — hàm không
  *   ai gọi = chưa xong.
  */
-import { vienSucKhoe, type KhaiSucKhoe } from "@/components/twin3d/van-hanh/sucKhoeMay";
+/*
+ * ★★★ TASK 12 — `xepHangSucKhoe` ĐÃ CÓ TỪ ĐỢT 21 VÀ CÓ CA KIỂM ĐƠN VỊ, NHƯNG
+ *   **0 CHỖ GỌI** trong mã sản phẩm cho tới đây, trong khi lớp phủ màu (vòng
+ *   viền đế) đã giao và nhìn thấy trên ảnh QA. §11.5 đòi mọi lớp phủ màu trên 3D
+ *   phải có **bảng xếp hạng 2D song song**, vì màu nói được "máy này tệ hơn máy
+ *   kia" mà không nói được "tệ hơn bao nhiêu, và có bao nhiêu máy như thế".
+ *   Ba dòng dưới là chỗ gọi ấy — thiếu chúng thì hàm là G16 (mã chết).
+ */
+import {
+  MOI_HANG_CO_VIEN,
+  demTheoHangSucKhoe,
+  vienSucKhoe,
+  xepHangSucKhoe,
+  type HangSucKhoe,
+  type KhaiSucKhoe,
+} from "@/components/twin3d/van-hanh/sucKhoeMay";
+import { useDemVienSucKhoe } from "@/components/twin3d/loi/KhungCanh";
 import { khaiNguonSo } from "@/components/twin3d/van-hanh/xuatXuNhip";
 import { vungTuDanhSach, type HangVung } from "@/components/twin3d/thiet-ke/vungAnToan";
 import {
@@ -273,6 +289,35 @@ import { coQuyenSuaNhaXuong } from "@/components/twin3d/bo-cuc/vungQuyen";
 
 /** Phạm vi mặc định khi URL không nói gì. */
 const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
+
+/**
+ * ★★★ TASK 12 — NHÃN HẠNG SỨC KHOẺ, sáu khoá i18n VIẾT THẲNG.
+ *
+ * ⚠ Vì sao KHÔNG tra qua một bảng `Record<HangSucKhoe, string>` trong
+ *   `sucKhoeMay.ts` dù điều đó gọn hơn: bộ quét của `i18nBaMan.unit.test.ts` chỉ
+ *   thấy `t("twin3d.…")` **viết thẳng**; một khoá đi qua biến là khoá VÔ HÌNH với
+ *   cổng i18n, và lớp lỗi ấy đã đo được một lần (10 khoá `coCheGiao` vắng cả ba
+ *   locale nhiều đợt mà cổng vẫn xanh, người dùng en/zh đọc chữ Việt).
+ * ★ Đúng sáu khoá mà `TwinMay.tsx` đã dùng — `vienSucKhoeDoDuoc.dom.test.tsx`
+ *   ghim hai màn dùng CÙNG tập khoá, nên hai màn không thể gọi một hạng bằng hai
+ *   cái tên.
+ */
+function nhanHangSucKhoe(hang: HangSucKhoe, t: (k: string, d: string) => string): string {
+  switch (hang) {
+    case "nguy_kich":
+      return t("twin3d.may.hang.nguyKich", "nguy kịch");
+    case "canh":
+      return t("twin3d.may.hang.canh", "cảnh báo");
+    case "theo_doi":
+      return t("twin3d.may.hang.theoDoi", "theo dõi");
+    case "khoe":
+      return t("twin3d.may.hang.khoe", "khoẻ");
+    case "het_han":
+      return t("twin3d.may.hang.hetHan", "quá hạn");
+    case "chua_do":
+      return t("twin3d.may.hang.chuaDo", "chưa đo");
+  }
+}
 
 /**
  * ════════════════════════════════════════════════════════════════════════════
@@ -1230,6 +1275,51 @@ export function ThanTwinVanHanh() {
       ),
     [sucKhoeQ.data, mayVe, bayGio],
   );
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ TASK 12 (a) — BỘ ĐẾM ĐỂ ĐO ĐƯỢC LỚP PHỦ VÒNG
+   * ════════════════════════════════════════════════════════════════════════
+   * Đọc điểm ảnh của canvas WebGL bị CẤM ở đây (`preserveDrawingBuffer` không
+   * bật ⇒ mọi phép đọc trả nền trắng, giống hệt canvas trống), nên suốt 11 đợt
+   * QA **không ai đo được** vòng sức khoẻ: lời khai "đã giao A-4" chưa bao giờ
+   * có một con số đứng sau. `__demVien` là con số ấy, và nó đếm **đúng mảng**
+   * truyền xuống `<CanhVanHanh vienSucKhoe={vienSucKhoeCanh}>` ngay dưới đây.
+   * Chỉ bật ở chế độ đo (DEV hoặc `?do=1`) — sản phẩm không đổi một byte nào.
+   */
+  useDemVienSucKhoe(vienSucKhoeCanh, MOI_HANG_CO_VIEN);
+
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ TASK 12 (b) — BẢNG XẾP HẠNG 2D SONG SONG VỚI LỚP PHỦ MÀU (§11.5)
+   * ════════════════════════════════════════════════════════════════════════
+   * `xepHangSucKhoe()` xếp MỌI máy có lời khai (kể cả `khoe` và máy chưa xếp
+   * chỗ), `demTheoHangSucKhoe()` gộp thành sáu hàng hạng × số máy. Hai hàm ấy
+   * dùng CÙNG `hangSucKhoe()` với `vienSucKhoe()` ở trên, nên bảng và vòng không
+   * thể nói hai điều khác nhau về cùng một máy (G12).
+   *
+   * ⚠ MẪU SỐ: `sucKhoeQ` hỏi theo **nhà máy**, đúng như năm ô của `hang-tong-quan`
+   *   — không phải theo tầng mà cảnh đang vẽ. Nhãn `(đếm theo toàn nhà máy)` ở
+   *   khối ấy phủ luôn bảng này vì chúng đứng cạnh nhau trong cùng khối; đừng
+   *   đọc số ở đây như số máy có vòng trên cảnh (số vòng là `__demVien.tong`).
+   */
+  const bangSucKhoe = useMemo(
+    () =>
+      demTheoHangSucKhoe(
+        xepHangSucKhoe(
+          (sucKhoeQ.data?.khai ?? []) as KhaiSucKhoe[],
+          mayVe.map((m) => m.machineId),
+          bayGio,
+        ),
+      ),
+    [sucKhoeQ.data, mayVe, bayGio],
+  );
+  /**
+   * `—` thay vì `0` khi chưa đọc được lời khai sức khoẻ: một `0` ở hàng "nguy
+   * kịch" nói *"không có máy nào nguy kịch"*, và đó là câu KHÁC HẲN *"chưa hỏi
+   * được"*. Cùng luật với `hienSo(...)` của năm ô đếm phía trên (CHẶN-2, Đợt 5).
+   */
+  const sucKhoeChuaDoc = sucKhoeQ.isLoading || sucKhoeQ.isError || factoryId === null;
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -3263,6 +3353,68 @@ export function ThanTwinVanHanh() {
               >
                 {t("twin3d.vanHanh.demTheoNhaMay", "(đếm theo toàn nhà máy)")}
               </span>
+            </div>
+            {/*
+              ════════════════════════════════════════════════════════════════
+              ★★★ TASK 12 — BẢNG XẾP HẠNG SỨC KHOẺ, SONG SONG VỚI LỚP PHỦ MÀU
+              ════════════════════════════════════════════════════════════════
+              §11.5: mọi lớp phủ màu trên 3D phải có bảng 2D song song. Vòng viền
+              đế nói được *"máy này tệ hơn máy kia"* nhưng KHÔNG nói được *"bao
+              nhiêu máy đang ở hạng nào"* — và đó đúng là câu người trực ca hỏi
+              đầu tiên. `xepHangSucKhoe()` có từ Đợt 21 mà **0 chỗ gọi** cho tới
+              đây; ba dòng này là chỗ gọi ấy.
+
+              ★ MỖI HẠNG MỘT Ô, KỂ CẢ HẠNG 0 MÁY: một bảng chỉ liệt kê hạng có
+                máy thì "0 máy nguy kịch" trông y hệt "chưa đọc được lời khai".
+                `hienSo(...)` giữ đúng ranh giới ấy: `—` khi chưa đọc được, số
+                khi đã đọc.
+              ★ Chấm màu lấy THẲNG từ `mauVienSucKhoe()` (qua `o.mau`) nên bảng
+                và vòng dùng chung một bảng màu; hạng không vẽ vòng (`khoe`,
+                `chua_do`) có chấm RỖNG — trùng với việc cảnh không vẽ gì cho
+                chúng, chứ không phải một màu thứ bảy (§10.2: ≤ 7 mã màu).
+              ★★★ CHIỀU CAO LÀ TÀI NGUYÊN CÓ CHỦ Ở ĐÂY — và khối này TIÊU vào nó.
+                `boCucPanelTrai.unit.test.ts` mô hình hoá panel bằng hằng ĐO THẬT:
+                @1280×720 phần dư `duPanel` = 720−231−**41**−30 = 418 px, dải cảnh
+                báo lấy 7/12 = 244 px, và ba hàng tồn đọng cần 91+24+3×41 = **238**.
+                Tức `khoi-tong-quan` (hằng 41) chỉ còn **10 px** dư trước khi tiêu
+                chí "≥3 hàng tồn đọng" của Đợt 57 rơi xuống 2. Không có hình dạng
+                nào của một bảng ĐỌC ĐƯỢC vừa trong 10 px, nên khối này LÀM RƠI
+                tiêu chí ấy @1280×720 (@1600×900 dải bị trần 328 chặn nên không
+                đổi; `danh-sach-may` 9 → 8 hàng).
+              ⇒ Chọn hình dạng RẺ NHẤT còn đọc được: **hai dòng chảy**, không viền,
+                không lề trên/dưới (≈ 28 px ⇒ hằng 41 → ~69). Mốc kế tiếp phải giữ:
+                @720 `hangMay` còn 5 khi hằng ≤ 68 và @900 `hangMay` còn 8 khi hằng
+                ≤ 81 — đừng thêm dòng thứ ba vào khối này.
+              ⚠ Cân lại tỉ lệ 7:5 / trần 328 là quyết định của Đợt 57/59 và nằm ở
+                tệp khác; task này KHÔNG tự đổi chúng, chỉ khai đúng cái giá.
+              ★ Tiêu đề chỉ ở `aria-label` (không chiếm một dòng nữa): sáu chữ hạng
+                kèm chấm màu trùng bảng màu vòng đã tự nói đây là bảng sức khoẻ.
+            */}
+            <div
+              className="mt-0.5 flex flex-wrap items-center gap-x-2 leading-tight"
+              data-testid="bang-suc-khoe"
+              role="group"
+              aria-label={t("twin3d.vanHanh.bangSucKhoe", "Sức khoẻ máy")}
+            >
+              {bangSucKhoe.map((o) => (
+                <span
+                  key={o.hang}
+                  className="inline-flex items-center gap-1 whitespace-nowrap"
+                  data-testid={`o-suc-khoe-${o.hang}`}
+                  data-hang={o.hang}
+                  /* Thuộc tính mang ĐÚNG chuỗi người đọc thấy — phép đo và mắt
+                     không thể lệch nhau (kể cả khi là `—`). */
+                  data-so={hienSo(o.so, sucKhoeChuaDoc)}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="inline-block size-2 shrink-0 rounded-full border border-border"
+                    style={o.mau ? { background: o.mau, borderColor: o.mau } : undefined}
+                  />
+                  <span className="text-text-2">{nhanHangSucKhoe(o.hang, t)}</span>
+                  <span className="font-medium">{hienSo(o.so, sucKhoeChuaDoc)}</span>
+                </span>
+              ))}
             </div>
             {/*
               ★★★ ĐỢT 40 (QA Đợt 39 Pareto #1) — "—" PHẢI CÓ CÂU LÝ DO NGAY TẠI CHỖ. Đo trước vá

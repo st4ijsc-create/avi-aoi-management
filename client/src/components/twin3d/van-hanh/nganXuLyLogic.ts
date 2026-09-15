@@ -26,6 +26,16 @@
  *   | ack alarm   | andon.acknowledge              | andon/canEdit         | operator1, supervisor1, engineer1 |
  *   | tạo phiếu   | maintenance.createWorkOrder    | machine_status/canCreate ★ | engineer1         |
  *   | ẩn tạm      | equipmentStandards.shelveMasterAlarm | machine_control/canCreate | supervisor1, engineer1 |
+ *   | ghi chú     | andon.ghiChu ★★              | andon/canEdit         | operator1, supervisor1, engineer1 |
+ *
+ * ★★ ĐỢT 25 VIỆC 2 — `ghiChu` khai ở bảng dưới từ Task 9 nhưng **chưa có đường
+ *   máy chủ**: thủ tục duy nhất nhận ghi chú là `andon.resolve`, và nó vừa ĐÓNG
+ *   cảnh báo vừa GHI ĐÈ mô tả gốc của người báo (`andonService.ts:276` đặt
+ *   `message: notes ?? current.message`). Nối nút vào đó là xoá lời khai đầu
+ *   tiên của một cuộc điều tra sự cố. Đợt 25 mở `andon.ghiChu` +
+ *   `andon.danhSachGhiChu` trên bảng `andon_notes` (migration `0357`) —
+ *   KHÔNG chạm một cột nào của `andon_events`. Quyền giữ nguyên `andon/canEdit`
+ *   (cùng mức `acknowledge`), nên ô `quyen.ackAlarm` dưới đây vẫn đúng.
  *
  * ★ `maintenance.createWorkOrder` khai `requirePermission("machine_monitoring",…)`,
  *   nhưng `machine_monitoring` là một CATEGORY, không phải module. Cả server lẫn

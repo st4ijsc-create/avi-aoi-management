@@ -100,15 +100,19 @@ function quetThuTuc(): Map<string, Set<string>> {
  *   (nhà máy/toà của CHÍNH chuyền/máy đang mở, thay cho `factories[0]`/`toaNha[0]`). Có ca ở `CA_DOC`.
  * ★ 2026-09-15 (Task 9, PH-34) — **44**: `andon.quickReport` thêm ở `NganXuLy.tsx` (nút "Báo sự cố"
  *   cho công nhân). Có ca ở `CA_GHI`.
- *   ⚠⚠ MÓN CÒN MỞ, ghi ra chứ không giấu: `andon.raise`/`andon.quickReport` gác RBAC
- *   (`requirePermission("andon","canCreate")`) nhưng **KHÔNG** gọi `congPhamViAndon` như
- *   `acknowledge`/`resolve` — tức `machineId`/`lineId` NGOÀI phạm vi vẫn raise được nếu gọi thẳng API.
- *   Lỗ này CÓ TRƯỚC đợt này (thủ tục đã sống trên `appRouter` từ F5a); Task 9 chỉ thêm một lối vào
- *   giao diện, và lối ấy chỉ chào máy đang xem. `CA_GHI` đo ĐÚNG cái nó đo — cổng RBAC — nên đừng đọc
- *   ca dưới là "đã rào phạm vi". Vá đúng chỗ là `andonRouter.ts` (một dòng `await congPhamViAndon`
- *   theo khuôn `acknowledge`), nằm ngoài phạm vi tệp của đợt này.
+ *   ✅ MÓN CÒN MỞ ghi ở đây đã ĐÓNG (Đợt 25 Việc 1). Nguyên văn lời khai cũ: "`andon.raise`/
+ *   `andon.quickReport` gác RBAC nhưng **KHÔNG** gọi `congPhamViAndon` — `machineId`/`lineId` NGOÀI
+ *   phạm vi vẫn raise được nếu gọi thẳng API". Nay cả hai gọi `congPhamViDichAndon` (khuôn
+ *   `maintenance.createWorkOrder`: `trongPhamVi` cho ĐÍCH tự khai, `NOT_FOUND` khi trượt, VÀ trên các
+ *   trục ĐÃ KHAI). Hai chiều đo ở `maintenanceAndonPhamVi.db.test.ts` §"ĐỢT 25". ⚠ `CA_GHI` dưới đây
+ *   vẫn đo ĐÚNG cổng RBAC và CHỈ cổng RBAC — đừng đọc nó là bằng chứng của hàng rào phạm vi.
+ * ★ 2026-09-15 (Đợt 25 Việc 2) — **46**: `andon.ghiChu` + `andon.danhSachGhiChu` thêm ở
+ *   `NganXuLy.tsx` (ghi chú xử lý cho một cảnh báo, bảng `andon_notes`, migration `0357`).
+ *   Xếp theo ĐÚNG hình dạng, không nhét vào ngoại lệ: `ghiChu` là đường GHI có phạm vi ⇒ `CA_GHI`;
+ *   `danhSachGhiChu` là đường ĐỌC theo `id` tự khai ⇒ `CA_DOC` với `chan: laNotFound` và một đối
+ *   chứng dương đọc ĐÚNG CHỮ của ghi chú fixture (không phải "không ném").
  */
-const SO_THU_TUC_GHIM = 44;
+const SO_THU_TUC_GHIM = 46;
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // Fixture
@@ -193,6 +197,13 @@ async function taoNhaMay(nhan: "TRONG" | "NGOAI"): Promise<NhaMay> {
   const andonId = id(await sql`
     INSERT INTO andon_events (state, reason, status, title, "machineId", "stationId", "lineId", "raisedBySystem", "raisedAt")
     VALUES ('red', 'quality', 'raised', ${`${ma}-ANDON`}, ${mayId}, ${tramId}, ${lineId}, true, now()) RETURNING id`);
+  /*
+   * ★ Đợt 25 Việc 2 — MỘT ghi chú cho chính cảnh báo ấy. Thiếu nó thì đối chứng dương của
+   *   `andon.danhSachGhiChu` chỉ còn "trả về một mảng", và `[]` thoả câu ấy — đúng lớp
+   *   "lưới tự thoả trên tập rỗng". Có nó thì chiều (+) đọc được ĐÚNG CHỮ mang dấu vết nhà máy.
+   */
+  await sql`
+    INSERT INTO andon_notes ("andonId", note) VALUES (${andonId}, ${`${ma}-GHICHU`})`;
   const woId = id(await sql`
     INSERT INTO maintenance_work_orders ("workOrderNumber", "machineId", type, status, trigger, priority, title, "factoryId")
     VALUES (${`${ma}-WO`}, ${mayId}, 'CORRECTIVE', 'OPEN', 'MANUAL', 3, ${`${ma}-PHIEU`}, ${factoryId}) RETURNING id`);
@@ -205,6 +216,9 @@ async function taoNhaMay(nhan: "TRONG" | "NGOAI"): Promise<NhaMay> {
 
 async function xoaNhaMay(nm: NhaMay): Promise<void> {
   await sql`DELETE FROM maintenance_work_orders WHERE id = ${nm.woId}`;
+  // ★ Đợt 25 — ghi chú xoá TƯỜNG MINH trước cảnh báo (ON DELETE CASCADE có làm, nhưng một
+  //   lưới dọn dấu vết của mình không dựa vào nó — cùng luật `twin_dat_cho` bên dưới).
+  await sql`DELETE FROM andon_notes WHERE "andonId" = ${nm.andonId}`;
   await sql`DELETE FROM andon_events WHERE id = ${nm.andonId}`;
   await sql`DELETE FROM machine_sensor_readings WHERE id = ANY(${nm.sensorIds})`;
   await sql`DELETE FROM line_balance_metrics WHERE id = ANY(${nm.lineBalanceIds})`;
@@ -310,6 +324,16 @@ interface CaDoc {
 const CA_DOC: CaDoc[] = [
   { duongDan: "andon.active", khongInput: true, goi: (c) => c.andon.active(),
     chan: (k) => k.ok, duong: (d, nm) => coChuoi(d, `${nm.ma}-ANDON`), ghi: "andon `raised` dựng cho từng máy" },
+  /*
+   * ★★★ Đợt 25 Việc 2 — thủ tục MỚI, đường ĐỌC theo `id` TỰ KHAI (đúng hình dạng
+   *   `andon.get`/`acknowledge`). Nội dung nó trả là **hồ sơ xử lý sự cố** của một nhà máy: ai đã
+   *   thử gì, lúc nào. Ngoài phạm vi phải `NOT_FOUND` — cùng mã với "không tồn tại", không xác
+   *   nhận cảnh báo ấy có thật (G82). Đối chứng dương đọc ĐÚNG CHỮ `${ma}-GHICHU` mà fixture dựng.
+   */
+  { duongDan: "andon.danhSachGhiChu", goi: (c, nm) => c.andon.danhSachGhiChu({ id: nm.andonId }),
+    chan: laNotFound,
+    duong: (d, nm) => Array.isArray(d) && d.some((g: { note: string }) => g.note === `${nm.ma}-GHICHU`),
+    ghi: "một ghi chú dựng cho từng cảnh báo ⇒ chiều (+) đọc CHỮ, không phải 'không ném'" },
   { duongDan: "assetCockpit.machineDetail", goi: (c, nm) => c.assetCockpit.machineDetail({ machineId: nm.mayId }),
     chan: laNotFound, duong: (d, nm) => d?.identity?.id === nm.mayId },
   { duongDan: "dashboard.getMachineStats", goi: (c, nm) => c.dashboard.getMachineStats({ machineId: nm.mayId }),
@@ -383,6 +407,10 @@ interface CaGhi {
 /** §2 — 14 thủ tục GHI: người 0 QUYỀN, input RỖNG ⇒ `FORBIDDEN` TRƯỚC khi zod chạy (cổng đứng trước parse). */
 const CA_GHI: CaGhi[] = [
   { duongDan: "andon.acknowledge", goi: (c) => c.andon.acknowledge({} as never), cong: "requirePermission(andon, canEdit)" },
+  // ★ Đợt 25 Việc 2 — ghi chú xử lý. CÙNG mức quyền với `acknowledge` (`canEdit`): ghi chú là một
+  //   thao tác XỬ LÝ trên cảnh báo của người khác, không phải một lời bình luận vô hại. Hàng rào
+  //   phạm vi của nó (`congPhamViAndon`) đo ở `andonGhiChuPhamVi.db.test.ts` §2 — ca này đo RBAC.
+  { duongDan: "andon.ghiChu", goi: (c) => c.andon.ghiChu({} as never), cong: "requirePermission(andon, canEdit)" },
   // ★ Task 9 — nút "Báo sự cố" của `NganXuLy`. Xem cảnh báo "MÓN CÒN MỞ" ở `SO_THU_TUC_GHIM`:
   //   ca này đo cổng RBAC, KHÔNG đo cổng phạm vi (thủ tục chưa có cổng phạm vi).
   { duongDan: "andon.quickReport", goi: (c) => c.andon.quickReport({} as never), cong: "requirePermission(andon, canCreate)" },

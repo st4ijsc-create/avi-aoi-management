@@ -135,6 +135,28 @@ export interface CuaSoDoTwin3d {
     /** ★ Đợt 49 (A) — hình chiếu màn hình của KHỐI 3D từng máy (`LopNhan` gắn), px gốc canvas. */
     hopKhoiMay?: () => Array<{ machineId: number; hop: { trai: number; phai: number; tren: number; duoi: number } }>;
   };
+  /**
+   * ★★★ TASK 12 — CỬA SỔ ĐO **LỚP PHỦ VÒNG SỨC KHOẺ** (A-4), chỉ gắn khi `laCheDoDo()`.
+   *
+   * Vì sao phải có, và vì sao không có cách nào khác: vòng viền đế là hình 3D
+   * trong buffer WebGL, còn `preserveDrawingBuffer` KHÔNG bật (bật lên là trả giá
+   * khung hình ở mọi khung, cho một nhu cầu chỉ của QA). Nên `toDataURL()` /
+   * `readPixels` trả **0 điểm ảnh khác nền** — *không phân biệt được cảnh vẽ đủ
+   * vòng với cảnh không vẽ gì*. `__demNhan`/`__demBadge` đếm hai lớp KHÁC (nhãn,
+   * badge) và mù hoàn toàn với lớp này. Đó là lý do 11 đợt QA không ai đo được
+   * A-4: **không phải vì khó, mà vì không có bộ đếm nào cả**.
+   *
+   * · `tong`     — số vòng lớp nhận để dựng (`inst.count` của `LopVienSucKhoe`).
+   * · `theoHang` — chia theo hạng; MỌI hạng có vòng đều có mặt, kể cả khi bằng 0
+   *   (một `undefined` ở đây nói "bộ đếm không tồn tại", không nói "không có
+   *   vòng nào" — hai câu khác hẳn nhau).
+   *
+   * ⚠ Số này là số vòng **được giao cho lớp vẽ**, đo ở đúng mảng mà trang truyền
+   *   vào `<CanhVanHanh vienSucKhoe={…}>`; lưới `vienSucKhoeDoDuoc.dom.test.tsx`
+   *   ghim rằng hai chỗ ấy là CÙNG một định danh, để bộ đếm không thể đếm một
+   *   mảng mà cảnh không hề nhận (lớp lỗi `wip={[]}`).
+   */
+  __demVien?: { tong: number; theoHang: Record<string, number> };
 }
 
 type WindowDo = Window & CuaSoDoTwin3d;
@@ -208,6 +230,47 @@ export function useDemCanvasSong(): void {
       if (typeof window !== "undefined") (window as WindowDo).__soCanvas = soCanvasDangSong;
     };
   }, []);
+}
+
+/** Một vòng đủ để ĐẾM. Khai tại chỗ chứ không nhập `VienDeMay`: kit `loi` không được phụ thuộc `van-hanh`. */
+export interface VienDemDuoc {
+  hang: string;
+}
+
+/**
+ * ★★★ TASK 12 — GẮN `window.__demVien` (xem {@link CuaSoDoTwin3d.__demVien}).
+ *
+ * Đúng khuôn `__demTuongTac`: **chỉ ở chế độ đo** (build DEV hoặc `?do=1`), dọn
+ * sạch khi rời màn, và không đổi một byte nào của sản phẩm khi cờ tắt.
+ *
+ * ★ Gọi ở TRANG, cạnh chỗ tính danh sách vòng, chứ không ở trong `<Canvas>`:
+ *   danh sách ấy là thứ trang trao cho `<CanhVanHanh vienSucKhoe={…}>`, nên đếm
+ *   ở đây là đếm đúng vật mà lớp vẽ nhận. (Đếm bên trong cảnh thì phải nhận diện
+ *   `InstancedMesh` theo MÀU — một phép đo gián tiếp qua bảng màu, và nó sẽ sai
+ *   im lặng ngay lần đầu ai đó chỉnh `mauVienSucKhoe`.)
+ *
+ * @param vien    danh sách vòng sẽ dựng; `null`/`undefined` cũng là **0**, không phải "chưa đo".
+ * @param hangNen các hạng phải LUÔN có mặt trong `theoHang` kể cả khi bằng 0. Truyền
+ *                `MOI_HANG_CO_VIEN` của `sucKhoeMay.ts` — tri thức về hạng thuộc tầng
+ *                nghiệp vụ, kit chỉ đếm.
+ * @param cheDoDo mặc định `laCheDoDo()`; tham số hoá để lưới kiểm được CẢ nhánh tắt.
+ */
+export function useDemVienSucKhoe(
+  vien: readonly VienDemDuoc[] | null | undefined,
+  hangNen: readonly string[] = [],
+  cheDoDo: boolean = laCheDoDo(),
+): void {
+  useEffect(() => {
+    if (typeof window === "undefined" || !cheDoDo) return;
+    const w = window as WindowDo;
+    const theoHang: Record<string, number> = {};
+    for (const h of hangNen) theoHang[h] = 0;
+    for (const v of vien ?? []) theoHang[v.hang] = (theoHang[v.hang] ?? 0) + 1;
+    w.__demVien = { tong: vien?.length ?? 0, theoHang };
+    return () => {
+      delete w.__demVien;
+    };
+  }, [vien, hangNen, cheDoDo]);
 }
 
 /**

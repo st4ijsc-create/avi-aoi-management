@@ -146,10 +146,12 @@ import {
   tsTrangThaiTheoMay,
 } from "@/components/twin3d/van-hanh/trungThucDuLieu";
 import {
+  MOI_HANG_CO_VIEN,
   vienSucKhoe,
   type HangSucKhoe,
   type KhaiSucKhoe,
 } from "@/components/twin3d/van-hanh/sucKhoeMay";
+import { useDemVienSucKhoe } from "@/components/twin3d/loi/KhungCanh";
 import type { CanhBaoDangMo, QuyenXuLy } from "@/components/twin3d/van-hanh/nganXuLyLogic";
 
 import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
@@ -568,6 +570,15 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
   // ★ Đợt 38 — cùng lý do với `mayTatCa`: `bayGio` đổi mỗi render; vòng viền chỉ đổi khi hạng/vị trí đổi.
   const vienSucKhoeCanh = useOnDinhTheoGiaTri(vienSucKhoeTho, JSON.stringify(vienSucKhoeTho));
 
+  /*
+   * ★★★ TASK 12 — `window.__demVien`: bộ đếm để **đo được** lớp phủ vòng ở cấp Máy.
+   *   Đọc điểm ảnh canvas WebGL bị cấm (`preserveDrawingBuffer` tắt ⇒ mọi phép đọc
+   *   trả nền trắng), nên trước đây không phép đo nào phân biệt được "vẽ đủ vòng"
+   *   với "không vẽ gì". Đếm ĐÚNG mảng truyền xuống `<CanhVanHanh vienSucKhoe={…}>`
+   *   ngay dưới; chỉ bật ở chế độ đo, sản phẩm không đổi.
+   */
+  useDemVienSucKhoe(vienSucKhoeCanh, MOI_HANG_CO_VIEN);
+
   /* ── Camera orbit GẦN quanh máy đích (≤ 8 m) — trừ khi deep-link nói rõ `?cam=` (Đợt 33) ── */
   const khungNhinTho = useMemo(() => (camUrl ? khungNhinTuCamera(camUrl) : khungNhinMay(mucTieu)), [camUrl, mucTieu]);
   /*
@@ -598,12 +609,29 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
     [mayNay, bayGio],
   );
 
-  /* ── Quyền xử lý (§9.2) — CÙNG bốn dòng với `TwinVanHanh.tsx`, G24 ──── */
+  /* ── Quyền xử lý (§9.2) — CÙNG TẬP với `TwinVanHanh.tsx`, G24 ───────── */
   const quyen: QuyenXuLy = {
     ackAlarm: hasPermission("andon", "canEdit"),
     anTamAlarm: hasPermission("machine_control", "canCreate"),
     taoPhieu: hasPermission("machine_monitoring", "canCreate"),
     suaPhieu: hasPermission("machine_monitoring", "canEdit"),
+    /*
+     * ★★★ TASK 12 (việc nhỏ bắt buộc) — DÒNG CÒN THIẾU CỦA TASK 9.
+     *
+     * Task 9 thêm hành động "Báo sự cố" vào `NganXuLy` và khai `baoSuCo` **tuỳ
+     * chọn, mặc định ẩn** (fail-closed) — đúng cách. Nhưng màn này vẫn dựng
+     * `QuyenXuLy` bằng bốn dòng cũ, nên trên `/twin/may/:id` nút ấy **ẩn với
+     * mọi vai**, kể cả `operator` (vai đã có `andon` canCreate=true sẵn trong
+     * khuôn quyền). Máy chưa có cảnh báo nào thì `/twin` cũng không mở ngăn
+     * được ⇒ công nhân KHÔNG có đường báo sự cố nào.
+     *
+     * ⚠ `andon`/**canCreate**, không phải `canEdit` của `ackAlarm`: đúng mức mà
+     *   `andonRouter.quickReport` đòi. Khai rộng hơn ⇒ nút hiện rồi server từ
+     *   chối; khai hẹp hơn ⇒ nút biến mất với đúng người cần nó.
+     * ★ `vienSucKhoeDoDuoc.dom.test.tsx` (TẦNG 4) ghim hai màn khai CÙNG tập
+     *   quyền, để lần sau thêm hành động mới thì lưới kêu thay vì lệch âm thầm.
+     */
+    baoSuCo: hasPermission("andon", "canCreate"),
   };
 
   const napLai = useCallback(() => {

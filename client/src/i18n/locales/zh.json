@@ -19973,8 +19973,18 @@
       "guiBaoSuCo": "发送",
       "daBaoSuCo": "已报告故障",
       "daBaoSuCoTho": "已报告故障 — 无法自动分类，需人工复核",
+      "ghiChu": "添加备注",
+      "ghiChuCho": "为告警添加备注：{{tieuDe}}",
+      "chuaCoGhiChu": "该告警暂无备注。",
+      "ghiChuKhuyetDanh": "（记录人未知）",
+      "noiDungGhiChu": "备注内容",
+      "viDuGhiChu": "例如：已检查入口传感器，未发现异常",
+      "ghiChuKhongDong": "备注不会关闭告警 — 它只记录正在进行的处理。",
+      "luuGhiChu": "保存备注",
+      "daGhiChu": "备注已保存",
       "dongNgan": "关闭处理面板",
-      "demTheoNhaMay": "（按整座工厂统计）"
+      "demTheoNhaMay": "（按整座工厂统计）",
+      "bangSucKhoe": "设备健康"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",

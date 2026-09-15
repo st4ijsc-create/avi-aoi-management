@@ -410,7 +410,32 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Bằng chứng nó không phải nhóm rò: **A giữ nguyên 341** (A là nhóm "đọc tenant KHÔNG lọc"), và
 // §7 — ô đột biến "router rò MỚI ⇒ nhóm A + không trong sổ nợ" — vẫn XANH.
 // ⇒ GHIM = số đo được trên cây sau CẢ HAI lô: `S 326 · tong 2268`.
-const GHIM = { A: 341, B: 8, C: 474, D: 1119, S: 326, tong: 2268 } as const;
+// ★★★ 2026-09-15 (Đợt 25 Việc 2) — **D: 1119 → 1120 · S: 326 → 327 · tong: 2268 → 2270.**
+// Lời khai kèm số liệu, không phải một phép sửa-cho-xanh:
+//
+// Đợt 25 thêm ĐÚNG HAI thủ tục trên `andonRouter` cho tính năng ghi chú xử lý cảnh báo
+// (bảng `andon_notes`, migration `0357`):
+//   · `andon.ghiChu`         — `.mutation` ⇒ nhóm **D** theo định nghĩa (`nhomCua`: không phải
+//                              `query` ⇒ D). +1 ở D.
+//   · `andon.danhSachGhiChu` — `.query` chạm bảng tenant, và danh tính **RỜI TAY handler**
+//                              (`await congPhamViAndon(input.id, ctx)` đặt TRƯỚC mọi lượt đọc,
+//                              cùng hàm mà `andon.get`/`acknowledge` dùng) ⇒ nhóm **S**. +1 ở S.
+//
+// Phép đo (bộ quét `quetPhamViDoc`, cây làm việc, 2026-09-15):
+//   TRƯỚC  `A 341 · B 8 · C 474 · D 1119 · S 326 · 2268`
+//   SAU    `A 341 · B 8 · C 474 · D 1120 · S 327 · 2270`
+//
+// ★ Bằng chứng KHÔNG phải nhóm rò: **A giữ nguyên 341** (A = "đọc tenant KHÔNG lọc"), sổ nợ
+//   không thêm dòng nào, và §7 — ô đột biến "router rò MỚI ⇒ nhóm A + không trong sổ nợ" —
+//   vẫn XANH ở cùng lượt chạy.
+// ★ Hai thủ tục này cũng có ca hai chiều trên CSDL thật ở `andonGhiChuPhamVi.db.test.ts` §2
+//   (ngoài phạm vi ⇒ `NOT_FOUND`, vai toàn quyền vẫn qua), nên con số ở đây không phải chỗ
+//   duy nhất canh chúng.
+// ⚠ Cây làm việc lúc đo CÒN mang sửa đổi chưa commit của một phiên khác — nhưng CHỈ dưới
+//   `client/**` (`sucKhoeMay.ts` · `KhungCanh.tsx` · `TwinMay.tsx` · `TwinVanHanh.tsx` +
+//   một tệp lưới mới). Bộ quét này chỉ duyệt `server/**`, và `git status server/` cho đúng
+//   ba tệp của Đợt 25 ⇒ +2 ở trên là của lô NÀY, không ký hộ ai.
+const GHIM = { A: 341, B: 8, C: 474, D: 1120, S: 327, tong: 2270 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

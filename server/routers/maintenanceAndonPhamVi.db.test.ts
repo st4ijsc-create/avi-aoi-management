@@ -88,6 +88,12 @@ interface Fixture {
 let fx: Fixture | null = null;
 /** Mọi phiếu do lưới này tạo — xoá theo id ở `afterAll`. */
 const phieuDaTao: number[] = [];
+/**
+ * ★ ĐỢT 25 — mọi `andon_events` do **THỦ TỤC** `raise`/`quickReport` tạo ra (khác
+ * `taoAndonRaised`, vốn INSERT bằng SQL thô). Ghi lại id để `afterAll` xoá đúng
+ * chừng ấy: một lưới để lại rác là một lưới làm hỏng phép đo của lần sau.
+ */
+const andonDaTao: number[] = [];
 
 async function taoNhanh(code: string, ten: string) {
   const f = await sql`INSERT INTO factories (code, name) VALUES (${code}, ${ten}) RETURNING id`;
@@ -240,7 +246,14 @@ describe.skipIf(!DB_URL)("L-1 — đường GHI lọc theo phạm vi tenant, hai
         await sql`DELETE FROM work_order_parts WHERE "workOrderId" = ANY(${phieuDaTao})`;
         await sql`DELETE FROM maintenance_work_orders WHERE id = ANY(${phieuDaTao})`;
       }
-      await sql`DELETE FROM andon_events WHERE id = ANY(${[fx.andonTrongId, fx.andonNgoaiId, fx.andonMoCoiId]})`;
+      await sql`DELETE FROM andon_events WHERE id = ANY(${[fx.andonTrongId, fx.andonNgoaiId, fx.andonMoCoiId, ...andonDaTao]})`;
+      // ⚠⚠ DỌN THEO DẤU VẾT, KHÔNG CHỈ THEO ID ĐÃ GHI. Đo được 2026-09-15: khi chạy
+      //   **ablation** (gỡ cổng phạm vi ra để xem lưới có đỏ lại không), các ô (−) ở
+      //   khối "ĐỢT 25" THÀNH CÔNG và ghi hàng thật — nhưng chúng không bao giờ vào
+      //   `andonDaTao`, vì nhánh ấy chỉ chạy khi lời gọi trả về. Ba lượt ablation để
+      //   lại 7 hàng rác trên DB test. Một lưới chỉ dọn được dấu vết của mình khi bản
+      //   vá còn nguyên là một lưới dọn dở đúng lúc cần nhất.
+      await sql`DELETE FROM andon_events WHERE title LIKE ${`${DAU}%`}`;
       await sql`DELETE FROM machines WHERE id = ANY(${[fx.mayTrongId, fx.mayNgoaiId]})`;
       await sql`DELETE FROM stations WHERE id = ANY(${[fx.tramTrongId, fx.tramNgoaiId]})`;
       await sql`DELETE FROM production_lines WHERE id = ANY(${[fx.lineTrongId, fx.lineNgoaiId]})`;
@@ -541,6 +554,219 @@ describe.skipIf(!DB_URL)("L-1 — đường GHI lọc theo phạm vi tenant, hai
     it("★ đối chứng `metrics`: vai toàn quyền vẫn đếm được > 0", async () => {
       const m: any = await goiAndon(fx!.userTrongId, "admin").metrics({ sinceHours: 24 * 90 });
       expect(m?.total).toBeGreaterThan(0);
+    });
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ ĐỢT 25 VIỆC 1 — `raise` / `quickReport`: ĐƯỜNG **BẬT** CẢNH BÁO      */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /*
+   * ══════════════════════════════════════════════════════════════════════════
+   * ★★★ LÔ R VÁ `acknowledge`/`resolve`, ĐỢT 24 VÁ ĐƯỜNG ĐỌC — HAI THỦ TỤC
+   *     BẬT CẢNH BÁO VẪN CÒN NGUYÊN.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Đo trên mã trước bản vá này (`andonRouter.ts:199` và `:239`): cả hai khai
+   * `async ({ input, ctx })` và **có** `ctx` — nhưng `ctx` chỉ để đóng dấu
+   * `raisedBy`, y hệt cái bẫy mà docblock đầu tệp đã đặt tên:
+   *
+   *       có `ctx`  ≠  có kiểm phạm vi.
+   *
+   * `input.machineId` / `input.lineId` / `input.stationId` / `input.machineCode`
+   * đều do client TỰ KHAI, và KHÔNG có một lời gọi `congPhamViAndon` /
+   * `trongPhamVi` nào trong thân hai thủ tục ⇒ một tài khoản có `andon/canCreate`
+   * ở nhà máy A **bật được đèn đỏ trên máy của nhà máy B** bằng cách đoán một số
+   * nguyên (hoặc gõ một mã máy). Đó là một thao tác DỪNG CHUYỀN tiềm năng: nó
+   * hiện trên bảng Andon của B, dập MTTA của B, và (với `state: red`) kích luôn
+   * đường thông báo của B.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * ★★★ VÌ SAO KHUÔN Ở ĐÂY LÀ **`createWorkOrder`** CHỨ KHÔNG PHẢI
+   *     `congPhamViAndon` — HAI CHIỀU, HAI PHÉP GHÉP
+   * ══════════════════════════════════════════════════════════════════════════
+   * `congPhamViAndon` gác một hàng ĐÃ CÓ, và ghép ba trục bằng **HOẶC**: hàng
+   * thuộc về ai thì chỉ cần MỘT trục khai đúng nhà máy ấy là đủ (một hàng khai
+   * `machineId` của A mà `stationId` NULL vẫn là hàng của A).
+   *
+   * Đường GHI đi ngược chiều: ba trục là ĐÍCH do người gọi tự khai, và ghép bằng
+   * HOẶC sẽ mở đúng cánh cửa vừa đóng — gửi `machineId` = máy của A **kèm**
+   * `lineId` = chuyền của B thì vế A làm cả câu đúng, hàng ghi xuống mang
+   * `lineId` của B, và vì cổng ĐỌC cũng là HOẶC nên nó hiện ngay trên bảng của
+   * B. Nên cổng ghi phải là **VÀ trên các trục ĐÃ KHAI**: mọi trục người gọi
+   * nêu tên đều phải nằm trong phạm vi của họ. Đó đúng là khuôn
+   * `maintenance.createWorkOrder` (`maintenanceRouter.ts:195`) — `trongPhamVi`
+   * cho ĐÍCH tự khai, `NOT_FOUND` khi trượt — chỉ nhân lên ba trục.
+   *
+   * ⚠ **KHÔNG khai trục nào ⇒ KHÔNG chặn.** `OperatorHome.tsx:193` ("Gọi bảo
+   *   trì") gọi `andon.raise` với ĐÚNG `state`/`reason`/`title` và **không** máy,
+   *   trạm, chuyền. Bắt nó fail-closed như hàng mồ côi ở đường ĐỌC sẽ giết một
+   *   nút đang chạy thật của mọi vai không-admin — "vá quá tay thành chặn tất
+   *   cả". Hàng vô chủ ấy KHÔNG rò sang tenant nào (cổng đọc fail-CLOSED đã
+   *   giấu nó khỏi mọi người bị thu hẹp), nên ô cuối khối này ĐO điều đó thay vì
+   *   suy đoán.
+   */
+  describe("★★★ ĐỢT 25 — andon.raise / quickReport: cổng phạm vi cho ĐÍCH TỰ KHAI", () => {
+    /** Đếm andon gắn vào một máy, KHÔNG tính hàng fixture dựng sẵn. */
+    async function demAndonCuaMay(machineId: number, tru: number[]): Promise<number> {
+      const r = await sql`
+        SELECT count(*)::int AS n FROM andon_events
+         WHERE "machineId" = ${machineId} AND NOT (id = ANY(${tru}))`;
+      return (r[0] as unknown as { n: number }).n;
+    }
+
+    it("ca dương DỰNG ĐƯỢC THẬT — hai máy/hai chuyền khác nhau (chống đo trên tập rỗng)", () => {
+      expect(fx!.mayNgoaiId).not.toBe(fx!.mayTrongId);
+      expect(fx!.lineNgoaiId).not.toBe(fx!.lineTrongId);
+    });
+
+    it("★★★ CHIỀU (−) — `raise` lên MÁY của B ⇒ NOT_FOUND, và 0 hàng được ghi", async () => {
+      const truoc = await demAndonCuaMay(fx!.mayNgoaiId, [fx!.andonNgoaiId]);
+      expect(truoc).toBe(0);
+      await chanBoiPhamVi(
+        goiAndon(fx!.userTrongId).raise({
+          state: "red",
+          reason: "quality",
+          title: `${DAU} raise xuyen tenant`,
+          machineId: fx!.mayNgoaiId,
+        }),
+      );
+      expect(await demAndonCuaMay(fx!.mayNgoaiId, [fx!.andonNgoaiId])).toBe(0);
+    });
+
+    it("★★★ CHIỀU (−) — `raise` lên CHUYỀN của B ⇒ NOT_FOUND (trục chuyền, không chỉ trục máy)", async () => {
+      await chanBoiPhamVi(
+        goiAndon(fx!.userTrongId).raise({
+          state: "yellow",
+          reason: "material",
+          title: `${DAU} raise chuyen B`,
+          lineId: fx!.lineNgoaiId,
+        }),
+      );
+      const kt = await sql`
+        SELECT count(*)::int AS n FROM andon_events
+         WHERE "lineId" = ${fx!.lineNgoaiId} AND title LIKE ${`${DAU}%`} AND id <> ${fx!.andonNgoaiId}`;
+      expect((kt[0] as unknown as { n: number }).n).toBe(0);
+    });
+
+    it("★★★ CHIỀU (−) — `raise` TRỘN máy của A + chuyền của B ⇒ NOT_FOUND (VÀ, không phải HOẶC)", async () => {
+      // ⚠ Đây là ô phân biệt hai phép ghép. Với HOẶC, vế "máy của A" làm cả câu
+      //   đúng và hàng ghi xuống vẫn mang `lineId` của B — tức cảnh báo hiện
+      //   trên bảng của B. Ô này phải ĐỎ ở bản HOẶC.
+      await chanBoiPhamVi(
+        goiAndon(fx!.userTrongId).raise({
+          state: "red",
+          reason: "safety",
+          title: `${DAU} raise tron truc`,
+          machineId: fx!.mayTrongId,
+          lineId: fx!.lineNgoaiId,
+        }),
+      );
+      const kt = await sql`
+        SELECT count(*)::int AS n FROM andon_events
+         WHERE title = ${`${DAU} raise tron truc`}`;
+      expect((kt[0] as unknown as { n: number }).n).toBe(0);
+    });
+
+    it("★★★ CHIỀU (−) — `quickReport` với `machineId` của B ⇒ NOT_FOUND, và 0 hàng", async () => {
+      await chanBoiPhamVi(
+        goiAndon(fx!.userTrongId).quickReport({
+          machineId: fx!.mayNgoaiId,
+          description: `${DAU} quick xuyen tenant`,
+        }),
+      );
+      expect(await demAndonCuaMay(fx!.mayNgoaiId, [fx!.andonNgoaiId])).toBe(0);
+    });
+
+    it("★★★ CHIỀU (−) — `quickReport` với **MÃ MÁY** của B ⇒ NOT_FOUND (đường tra mã, không chỉ đường id)", async () => {
+      // `quickReport` tự tra `machines.code` → id. Vá ở nhánh `machineId` mà bỏ
+      // nhánh `machineCode` là để nguyên cánh cửa ("vá xong kiểm NHÁNH KIA").
+      const maB = `${fx!.facNgoaiCode}-M`;
+      const kt0 = await sql`SELECT id FROM machines WHERE code = ${maB}`;
+      expect(kt0, "mã máy của B phải TỒN TẠI, nếu không ô này đo hư không").toHaveLength(1);
+      await chanBoiPhamVi(
+        goiAndon(fx!.userTrongId).quickReport({
+          machineCode: maB,
+          description: `${DAU} quick theo ma`,
+        }),
+      );
+      expect(await demAndonCuaMay(fx!.mayNgoaiId, [fx!.andonNgoaiId])).toBe(0);
+    });
+
+    it("người 0 gán BỊ CHẶN khi raise lên máy CÓ THẬT của A", async () => {
+      await chanBoiPhamVi(
+        goiAndon(fx!.userKhongGanId).raise({
+          state: "red",
+          reason: "quality",
+          title: `${DAU} 0 gan raise`,
+          machineId: fx!.mayTrongId,
+        }),
+      );
+    });
+
+    it("★★★ CHIỀU (+) — người gán A RAISE ĐƯỢC lên máy của A, và hàng CÓ THẬT trong CSDL", async () => {
+      // ⚠ `reason: setup` để KHÔNG rơi vào cửa sổ idempotency 30 s của hàng
+      //   fixture (`reason: quality` trên cùng máy) — nếu không, thủ tục UPDATE
+      //   hàng cũ và ô này xanh mà chưa hề chạm nhánh INSERT.
+      const r: any = await goiAndon(fx!.userTrongId).raise({
+        state: "yellow",
+        reason: "setup",
+        title: `${DAU} raise hop le`,
+        machineId: fx!.mayTrongId,
+      });
+      expect(r?.id).toBeTypeOf("number");
+      andonDaTao.push(r.id);
+      const kt = await sql`
+        SELECT "machineId", "raisedBy", title FROM andon_events WHERE id = ${r.id}`;
+      expect(kt).toHaveLength(1);
+      const row = kt[0] as unknown as { machineId: number; raisedBy: number; title: string };
+      expect(row.machineId).toBe(fx!.mayTrongId);
+      expect(row.raisedBy).toBe(fx!.userTrongId);
+    });
+
+    it("★★★ CHIỀU (+) — người gán A `quickReport` ĐƯỢC lên máy của A", async () => {
+      const r: any = await goiAndon(fx!.userTrongId).quickReport({
+        machineId: fx!.mayTrongId,
+        description: `${DAU} quick hop le`,
+      });
+      expect(r?.andonId).toBeTypeOf("number");
+      andonDaTao.push(r.andonId);
+      const kt = await sql`SELECT "machineId" FROM andon_events WHERE id = ${r.andonId}`;
+      expect((kt[0] as unknown as { machineId: number }).machineId).toBe(fx!.mayTrongId);
+    });
+
+    it("★ ĐỐI CHỨNG CHỐNG VÁ QUÁ TAY — vai TOÀN QUYỀN vẫn raise được lên máy của B", async () => {
+      const r: any = await goiAndon(fx!.userTrongId, "admin").raise({
+        state: "yellow",
+        reason: "setup",
+        title: `${DAU} admin raise B`,
+        machineId: fx!.mayNgoaiId,
+      });
+      expect(r?.id).toBeTypeOf("number");
+      andonDaTao.push(r.id);
+    });
+
+    it("★★★ ĐỐI CHỨNG CHỐNG VÁ QUÁ TAY — 'Gọi bảo trì' (KHÔNG khai trục nào) VẪN raise được", async () => {
+      // `OperatorHome.tsx:193` gọi đúng hình dạng này. Nếu ô này đỏ thì bản vá
+      // đã giết một nút đang chạy thật của mọi vai không-admin.
+      const r: any = await goiAndon(fx!.userTrongId).raise({
+        state: "call",
+        reason: "maintenance",
+        title: `${DAU} goi bao tri khong dich`,
+      });
+      expect(r?.id).toBeTypeOf("number");
+      andonDaTao.push(r.id);
+      const kt = await sql`
+        SELECT "machineId", "stationId", "lineId" FROM andon_events WHERE id = ${r.id}`;
+      const row = kt[0] as unknown as { machineId: null; stationId: null; lineId: null };
+      expect(row.machineId).toBeNull();
+      expect(row.stationId).toBeNull();
+      expect(row.lineId).toBeNull();
+    });
+
+    it("★★★ …và hàng vô chủ ấy KHÔNG rò sang ai — người 0 gán vẫn đọc ra ĐÚNG 0 hàng", async () => {
+      // Đây là lý do "không khai trục nào ⇒ không chặn" KHÔNG phải một cái lỗ:
+      // cổng ĐỌC fail-CLOSED giấu hàng mồ côi khỏi mọi người bị thu hẹp.
+      const rows: any[] = await goiAndon(fx!.userKhongGanId).active();
+      expect(rows).toHaveLength(0);
     });
   });
 });
