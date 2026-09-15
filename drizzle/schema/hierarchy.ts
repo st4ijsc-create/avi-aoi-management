@@ -111,6 +111,16 @@ export const workshops = pgTable("workshops", {
   // W3-A (doc 27 M1, 0180): fk_workshops_factory, ON DELETE RESTRICT.
   factoryId: integer("factoryId").notNull()
     .references(() => factories.id, { onDelete: "restrict" }),
+  /**
+   * Tầng của xưởng trong lớp Twin 3D. Cột có từ migration 0350 (FK
+   * fk_workshops_tang → twin_tang(id) ON DELETE SET NULL, index
+   * idx_workshops_tang) nhưng trước 2026-09-15 KHÔNG được khai ở đây, nên mọi
+   * truy vấn có kiểu đều mù với nó. Nullable: xưởng chưa gắn tầng là hợp lệ.
+   *
+   * ⚠ KHÔNG thêm .references() — bảng twin_tang nằm ở drizzle/schema/twin3d.ts
+   * và khai chéo hai tệp sẽ tạo vòng tròn import. Ràng buộc đã có trong DB.
+   */
+  tangId: integer("tangId"),
   code: varchar("code", { length: 50 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),

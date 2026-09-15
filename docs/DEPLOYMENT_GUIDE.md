@@ -121,9 +121,46 @@ cd /opt/avi-aoi-management
 # Install dependencies
 pnpm install
 
-# Run migrations (drizzle-kit generate + runner standalone áp file drizzle/*.sql)
+# Run migrations — runner standalone áp lần lượt file drizzle/*.sql, theo dõi
+# bằng bảng __applied_migrations (scripts/migrate-standalone.mjs).
+# ⚠ `pnpm db:push` KHÔNG phải `drizzle-kit push` và KHÔNG gọi `drizzle-kit
+#   generate`. Đừng thay nó bằng lệnh drizzle-kit nào — xem mục 3.3 ngay dưới.
 pnpm db:push
 ```
+
+### 3.3 ⛔ CẤM `drizzle-kit push` — và `generate` cũng không dùng được
+
+Đo 2026-09-15: `drizzle/` có 355 tệp `.sql` (cao nhất `0356`), nhưng
+`drizzle/meta/_journal.json` chỉ ghi 18 mục, ảnh chụp dừng ở `0017_snapshot.json`.
+Lệch **337** migration (`node scripts/kiem-drizzle-meta.mjs` in ra con số này và
+thoát mã 1).
+
+- `drizzle-kit generate` so schema với **ảnh chụp**, không so với cơ sở dữ liệu
+  sống ⇒ nó sẽ sinh một migration khổng lồ dựng lại gần như toàn bộ schema.
+- `drizzle-kit push` so với **cơ sở dữ liệu sống** ⇒ nó GỠ mọi cột không có
+  trong `schema.ts`. **Mất dữ liệu.** Đo 2026-09-15 trên DB dev `aoi_management`
+  (409 bảng / 5.826 cột) so với `drizzle/schema/*.ts` (372 bảng khai):
+  - `workshops.tangId` — đã khai lại 2026-09-15 (migration 0350);
+  - `equipment_3d_models`: `soTamGiac`, `kichThuocByte`, `anhXemTruocUrl`,
+    `phanLoai`, `nguonGoc` — 5 cột từ migration 0353, **chưa khai**;
+  - `training_datasets.contentHash` — từ migration 0301, **chưa khai**;
+  - `kb_chunks.embedding_vec` và `product_inspections.gateConfigVersion` /
+    `suspectedDuplicateSerial` — cố ý để ngoài Drizzle, có ghi lý do tại chỗ
+    (`drizzle/schema/kb.ts`, `drizzle/schema/inspection.ts`). Cố ý hay bỏ sót thì
+    `push` vẫn gỡ như nhau;
+  - **37 bảng** trong DB không có `pgTable()` nào khai — 25 trong đó là phân
+    mảnh `measurement_samples_*`, phần còn lại gồm `__applied_migrations`,
+    `machine_operating_config`, `workstation_machines`, `deployment_events`,
+    `integrity_scan_results`, `db_feature_status`, `machine_claim_tokens`,
+    `machine_enrollment_tokens`, `robot_commissioning_records`,
+    `defect_correlation_cache`, `w3_backup_alerts`, `w3_backup_insights`.
+
+**Cách làm đúng:** viết migration bằng tay, đánh số tiếp, chạy bằng owner `aoi`
+(xem `scripts/apply-migration-0349.mjs` làm mẫu), hoặc áp cả chuỗi bằng
+`pnpm db:push` (runner standalone, KHÔNG phải drizzle-kit). Kiểm độ lệch bất cứ
+lúc nào bằng `node scripts/kiem-drizzle-meta.mjs`.
+
+Muốn dùng lại `drizzle-kit`, phải rebase ảnh chụp trước — đó là một đợt riêng.
 
 ---
 
