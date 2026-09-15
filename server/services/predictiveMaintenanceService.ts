@@ -118,6 +118,34 @@ export interface FailureRiskResult {
     confidence: number;
     recommendedAction: string;
   } | null;
+  /**
+   * ★★★ PH-39 (QA tập đoàn 2026-09-15) — XUẤT XỨ CỦA `failureRisk`.
+   *
+   * `failureRisk` là `number`, nên nó KHÔNG tự nói được sự khác nhau giữa hai
+   * câu hoàn toàn khác nghĩa:
+   *     "đã tính, nguy cơ bằng 0"   ↔   "chưa tính được gì, mặc định là 0"
+   * Dòng sinh ra số ấy là `weightSum > 0 ? clamp(weightedRisk / weightSum) : 0`
+   * — nhánh `: 0` chạy khi KHÔNG đặc trưng nào (độ tin cậy / xu hướng sức khoẻ /
+   * bất thường / nhiệt độ) đủ dữ liệu. Đo được ở cơ sở dữ liệu QA: mỗi máy có
+   * ĐÚNG MỘT điểm `machine_health_history` không phải `PREDICTIVE_WS4`, tức
+   * `healthSeries.length = 1 < MIN_HEALTH_POINTS` ⇒ **mọi máy** nhận `0 / LOW`,
+   * và màn máy in "Failure risk 0 %" cạnh chip "Health 40 % · critical".
+   *
+   * Trường này là thứ DUY NHẤT tách ba trạng thái ở tầng dữ liệu:
+   *   • `"measured"`          — ít nhất một đặc trưng có trọng số ⇒ số là PHÉP ĐO
+   *                             (kể cả khi phép đo ấy ra đúng 0).
+   *   • `"insufficient_data"` — không đặc trưng nào đủ dữ liệu ⇒ `failureRisk` là
+   *                             MẶC ĐỊNH; tầng trình bày PHẢI nói "chưa đủ dữ
+   *                             liệu", KHÔNG được in "0 %".
+   *   • `"unavailable"`       — không đọc được nguồn (không có cơ sở dữ liệu).
+   *
+   * Cùng lớp lỗi với "Cảnh báo (0)" đã vá ở `trungThucDuLieu.ts` (NT-3.5): NÓI
+   * **KHÔNG** KHI NGHĨA LÀ **CHƯA BIẾT**. Giữ `failureRisk: number` (không đổi
+   * thành `number | null`) để 9 chỗ gọi hiện có — vốn chỉ so ngưỡng `>= X` nên
+   * số 0 không sinh cảnh báo giả — không phải đổi cùng lúc; chỗ nào HIỂN THỊ thì
+   * đọc `riskMethod` trước khi in.
+   */
+  riskMethod: "measured" | "insufficient_data" | "unavailable";
 }
 
 /** Raw inputs for pure risk computation — enables unit testing without a DB. */
@@ -473,6 +501,14 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     });
   }
 
+  /**
+   * ★★★ PH-39 — `weightSum === 0` nghĩa là KHÔNG một đặc trưng nào chạy được:
+   * không phải "rủi ro bằng 0", mà là "chưa đo được gì". Nhánh `: 0` bên dưới
+   * vẫn giữ nguyên (hợp đồng `failureRisk: number` không đổi), nhưng từ nay nó
+   * đi kèm nhãn `riskMethod` để tầng trình bày không in nó ra như một phép đo.
+   * Xem docblock `FailureRiskResult.riskMethod`.
+   */
+  const riskMethod: "measured" | "insufficient_data" = weightSum > 0 ? "measured" : "insufficient_data";
   const failureRisk = weightSum > 0 ? clamp(weightedRisk / weightSum) : 0;
 
   // Confidence: more data, more agreeing features, narrower CI -> higher.
@@ -584,6 +620,7 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
           recommendedAction: failureMode.recommendedAction,
         }
       : null,
+    riskMethod,
   };
 }
 
@@ -610,6 +647,9 @@ export async function computeFailureRisk(
       rulConfidence: null,
       rulNote: null,
       failureMode: null,
+      // ★ PH-39 — không có cơ sở dữ liệu thì đây KHÔNG phải "chưa đủ dữ liệu"
+      //   (điều đó hàm ý ĐÃ đọc được và đọc thấy ít), mà là KHÔNG ĐỌC ĐƯỢC.
+      riskMethod: "unavailable",
     };
   }
 

@@ -62,6 +62,10 @@ export const predictiveMaintenanceRouter = router({
               recommendedMaintenanceDate: risk.recommendedMaintenanceDate,
               maintenanceUrgency: risk.maintenanceUrgency,
               dataPoints: risk.dataPoints,
+              // ★ PH-39 — chuyền NGUYÊN VẸN xuất xứ của `failureRisk`; nếu không,
+              //   người đọc danh sách này không phân biệt được "0 vì đã đo" với
+              //   "0 vì chưa đo được gì". Xem `FailureRiskResult.riskMethod`.
+              riskMethod: risk.riskMethod,
             };
           } catch {
             return {
@@ -75,6 +79,9 @@ export const predictiveMaintenanceRouter = router({
               recommendedMaintenanceDate: null,
               maintenanceUrgency: "LOW" as const,
               dataPoints: 0,
+              // ★ PH-39 — nhánh này là một LỖI ĐỌC bị nuốt, không phải một phép
+              //   đo ra 0. Nhãn phải nói đúng điều đó.
+              riskMethod: "unavailable" as const,
             };
           }
         }),

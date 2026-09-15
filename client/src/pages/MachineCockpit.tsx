@@ -50,6 +50,8 @@ import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ProcessAnalyticsPanel } from "./ProcessAnalytics";
+// ★ PH-39 — ô "Nguy cơ hỏng" có BA trạng thái; quyết định nằm ở module thuần.
+import { nhanNguyCoHong, type NguonNguyCo } from "./nguyCoHongHienThi";
 import { MetricCard, PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/patterns";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -171,6 +173,73 @@ function RadialGauge({
       </div>
       <div className="text-sm font-medium">{label}</div>
       {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ PH-39 — Ô "NGUY CƠ HỎNG" CÓ BA TRẠNG THÁI, KHÔNG GỘP VỀ `0 %`          */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * QA tập đoàn 2026-09-15 (`.qa-tapdoan/anh/DE-D1-kythuat.png`): ô này in
+ * **"Failure risk 0 %"** ngay cạnh chip twin **"Health 40 % · critical"**. Số 0
+ * ấy là MẶC ĐỊNH của `computeFailureRisk` khi không đặc trưng nào đủ dữ liệu —
+ * không phải phép đo. Xem `nguyCoHongHienThi.ts` và
+ * `FailureRiskResult.riskMethod`.
+ *
+ * Ký hiệu giữ đúng khuôn sẵn có của sản phẩm (NT-3.5 `trungThucDuLieu.hienSo`):
+ * chưa biết thì in `—`, không in `0`. Dòng chú thích bên dưới `—` mới là thứ
+ * tách hai cái chưa-biết ra khỏi nhau, vì chúng dẫn tới hai hành động khác nhau:
+ *   · "Chưa đủ dữ liệu để tính"  → chờ máy chạy / gắn cảm biến
+ *   · "Không đọc được nguồn"     → đi hỏi vì sao (quyền, dịch vụ tắt, lỗi đọc)
+ */
+function nhanPhuNguyCo(
+  kind: "so" | "chuaDuDuLieu" | "chuaDocDuoc",
+  t: ReturnType<typeof useTranslation>["t"],
+): { chu: string; goiY: string } | null {
+  if (kind === "chuaDuDuLieu") {
+    return {
+      chu: t("cockpit.riskInsufficient", "Not enough data yet"),
+      goiY: t("cockpit.riskInsufficientHint", "Not enough health / sensor points to compute a risk."),
+    };
+  }
+  if (kind === "chuaDocDuoc") {
+    return { chu: t("cockpit.riskNoSource", "Source unavailable"), goiY: t("cockpit.riskNoSource", "Source unavailable") };
+  }
+  return null;
+}
+
+/** Ô KPI "Nguy cơ hỏng" ở dải trên cùng tab Tổng quan. */
+function OKpiNguyCoHong({ nguon }: { nguon: NguonNguyCo }) {
+  const { t } = useTranslation();
+  const nhan = nhanNguyCoHong(nguon);
+  const phu = nhanPhuNguyCo(nhan.kind, t);
+  return (
+    <div data-testid="cockpit-kpi-nguy-co" data-trang-thai={nhan.kind}>
+      <MetricCard
+        icon={<HeartPulse className="h-4 w-4" />}
+        label={t("cockpit.kpiRisk", "Failure risk")}
+        value={nhan.kind === "so" ? fmtPct(nhan.phanTram) : "—"}
+        tone={nhan.kind === "so" && nhan.phanTram > 60 ? "error" : "default"}
+        delta={phu ? <span title={phu.goiY}>{phu.chu}</span> : undefined}
+      />
+    </div>
+  );
+}
+
+/** Vòng tròn "Nguy cơ hỏng" ở tab Sức khoẻ / PdM. */
+function OVongNguyCoHong({ nguon }: { nguon: NguonNguyCo & { maintenanceUrgency?: string | null } }) {
+  const { t } = useTranslation();
+  const nhan = nhanNguyCoHong(nguon);
+  const phu = nhanPhuNguyCo(nhan.kind, t);
+  return (
+    <div data-testid="cockpit-vong-nguy-co" data-trang-thai={nhan.kind}>
+      <RadialGauge
+        value={nhan.kind === "so" ? nhan.phanTram : null}
+        label={t("cockpit.failureRisk", "Failure risk")}
+        color={nhan.kind === "so" && nhan.phanTram > 60 ? "#ef4444" : "#f59e0b"}
+        sub={phu ? phu.chu : (nguon.maintenanceUrgency ?? undefined)}
+      />
     </div>
   );
 }
@@ -917,11 +986,14 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                   value={d.oee.available ? fmtPct(d.oee.value?.oee ?? null) : "—"}
                   tone={d.oee.value?.oee != null && d.oee.value.oee < 60 ? "warning" : "default"}
                 />
-                <MetricCard
-                  icon={<HeartPulse className="h-4 w-4" />}
-                  label={t("cockpit.kpiRisk", "Failure risk")}
-                  value={d.health.available ? fmtPct(d.health.value?.failureRisk ?? null) : "—"}
-                  tone={d.health.value?.failureRisk != null && d.health.value.failureRisk > 60 ? "error" : "default"}
+                {/* ★★★ PH-39 — KHÔNG in thẳng `failureRisk`: số 0 ở đây có thể là
+                    "đã đo, bằng 0" HOẶC "chưa tính được gì". Xem `OKpiNguyCoHong`. */}
+                <OKpiNguyCoHong
+                  nguon={{
+                    available: d.health.available,
+                    failureRisk: d.health.value?.failureRisk ?? null,
+                    riskMethod: d.health.value?.riskMethod ?? null,
+                  }}
                 />
                 <MetricCard
                   icon={<AlertTriangle className="h-4 w-4" />}
@@ -1018,11 +1090,14 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                 ) : (
                   <div className="space-y-6">
                     <div className="flex flex-wrap items-center justify-around gap-6">
-                      <RadialGauge
-                        value={d.health.value.failureRisk}
-                        label={t("cockpit.failureRisk", "Failure risk")}
-                        color={d.health.value.failureRisk != null && d.health.value.failureRisk > 60 ? "#ef4444" : "#f59e0b"}
-                        sub={d.health.value.maintenanceUrgency ?? undefined}
+                      {/* ★★★ PH-39 — cùng lý do với ô KPI ở tab Tổng quan. */}
+                      <OVongNguyCoHong
+                        nguon={{
+                          available: d.health.available,
+                          failureRisk: d.health.value.failureRisk,
+                          riskMethod: d.health.value.riskMethod,
+                          maintenanceUrgency: d.health.value.maintenanceUrgency,
+                        }}
                       />
                       <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                         <MetricCard icon={<Wrench className="h-4 w-4" />} label={t("cockpit.mtbf", "MTBF")} value={fmtHours(d.health.value.mtbfHours)} />

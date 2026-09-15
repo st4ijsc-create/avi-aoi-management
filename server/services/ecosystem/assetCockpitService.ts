@@ -407,7 +407,15 @@ export interface MachineDetail {
   resolvedCapability: Section<ResolvedCapabilitySection>;
   liveState: Section<MachineLiveState>;
   health: Section<{
+    /**
+     * ★ PH-39 — `null` khi `riskMethod !== "measured"`. Mục `health` vẫn có thể
+     * `available: true` (MTBF/MTTR bên cạnh là số đo thật) trong khi RIÊNG ô
+     * nguy cơ chưa đo được — nên "chưa đủ dữ liệu" phải là một trạng thái của
+     * chính ô ấy, không mượn được cờ `available` của cả mục.
+     */
     failureRisk: number | null;
+    /** Xuất xứ của `failureRisk` — xem `FailureRiskResult.riskMethod`. */
+    riskMethod: "measured" | "insufficient_data" | "unavailable";
     maintenanceUrgency: string | null;
     predictedTimeframeHours: number | null;
     recommendedMaintenanceDate: number | null;
@@ -609,9 +617,23 @@ export async function machineDetail(machineId: number, scope?: PhamViDoc): Promi
       ]);
       // No sources → treat as unavailable (honest null) rather than fabricated zeros.
       if (risk.dataPoints === 0 && rel.unplannedEvents === 0 && rel.uptimeMinutes === 0) return null;
+      /**
+       * ★★★ PH-39 — cổng này ĐÃ CÓ và ĐÃ ĐÚNG luật ("honest null … rather than
+       * fabricated zeros") nhưng đo SAI dữ kiện: `dataPoints === 0` bắt được máy
+       * KHÔNG CÓ GÌ, không bắt được máy có ĐÚNG MỘT điểm — hình dạng thật của cơ
+       * sở dữ liệu QA, nơi `dataPoints = 1` lọt cổng rồi màn in "Failure risk 0 %".
+       * Dữ kiện đúng là `riskMethod`: nó nói thẳng đã có đặc trưng nào chạy chưa.
+       *
+       * Vì sao KHÔNG trả `null` cho cả mục: MTBF/MTTR cạnh bên vẫn là số đo thật
+       * của cùng máy ấy — null hoá cả mục sẽ giấu mất hai số ĐÚNG để che một số SAI.
+       */
+      const doDuoc = risk.riskMethod === "measured";
       return {
-        failureRisk: risk.failureRisk,
-        maintenanceUrgency: risk.maintenanceUrgency,
+        failureRisk: doDuoc ? risk.failureRisk : null,
+        riskMethod: risk.riskMethod,
+        // "LOW" cũng là một lời khai ("việc này không gấp") — chưa đo được thì
+        // không được khai, cùng luật với con số.
+        maintenanceUrgency: doDuoc ? risk.maintenanceUrgency : null,
         predictedTimeframeHours: risk.predictedTimeframeHours,
         recommendedMaintenanceDate: risk.recommendedMaintenanceDate
           ? risk.recommendedMaintenanceDate.getTime()

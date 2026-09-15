@@ -17,6 +17,8 @@ import {
 // `getAllMachineHealth`, `machine.list`) nên nhãn phạm vi phải tới bằng
 // `mqttClient.getScopeLabels`. MỘT nguồn câu chữ (`common.scopeEmpty.*`), không chép chuỗi.
 import { ScopeEmptyNotice, ScopeAwareEmpty, scopeEmptyReasonOf } from "@/components/ScopeEmptyNotice";
+// ★ PH-39 — `failureRisk` KHÔNG tự nói được "0 vì đã đo" hay "0 vì chưa đo được".
+import { nhanNguyCoHong } from "./nguyCoHongHienThi";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -307,13 +309,21 @@ export function MachineHealthMonitoringContent() {
     const healthById = new Map<number, number | null>(
       (allMachineHealth ?? []).map((h) => [h.machineId, h.healthScore]),
     );
-    // Fallback health index derived from real PdM risk (100 - failureRisk), only for
-    // machines that actually have data points (dataPoints > 0) — never fabricated.
+    /**
+     * Fallback health index derived from real PdM risk (100 - failureRisk) — never fabricated.
+     *
+     * ★★★ PH-39 — cổng cũ là `r.dataPoints > 0`, và nó ĐO SAI DỮ KIỆN: một máy có
+     * ĐÚNG MỘT điểm sức khoẻ (hình dạng thật của CSDL đang đo) có `dataPoints = 1`
+     * nhưng KHÔNG đặc trưng nào chạy được ⇒ `failureRisk` rơi về mặc định `0` ⇒
+     * chỉ số sức khoẻ suy ra là **100 %**. Tức cổng "không bịa" lại đang bịa ra
+     * một máy KHOẺ HOÀN HẢO cho máy mà hệ chưa biết gì. Dữ kiện đúng là
+     * `riskMethod` (xem `nguyCoHongHienThi.ts`).
+     */
     const riskHealthById = new Map<number, number | null>(
-      (rulForecast ?? []).map((r) => [
-        r.machineId,
-        r.dataPoints > 0 ? clampPct(100 - r.failureRisk) : null,
-      ]),
+      (rulForecast ?? []).map((r) => {
+        const nhan = nhanNguyCoHong({ available: true, failureRisk: r.failureRisk, riskMethod: r.riskMethod });
+        return [r.machineId, nhan.kind === "so" ? clampPct(100 - nhan.phanTram) : null];
+      }),
     );
     return allOEE.map(oee => ({
       name: oee.machineCode,
@@ -621,10 +631,32 @@ export function MachineHealthMonitoringContent() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="p-3 rounded-lg bg-muted/50 text-center">
-                        <p className="text-xs text-muted-foreground">{t('machines.failureRisk')}</p>
-                        <p className="text-2xl font-bold text-destructive">{pctLabel(pmRisk?.failureRisk)}</p>
-                      </div>
+                      {/* ★★★ PH-39 — ô này từng in "0 %" cho MỌI máy của CSDL đang đo,
+                          vì `computeFailureRisk` rơi về mặc định khi chưa đủ dữ liệu.
+                          `—` + câu lý do, theo đúng khuôn NT-3.5 (`trungThucDuLieu.hienSo`). */}
+                      {(() => {
+                        const nhanRr = nhanNguyCoHong({
+                          available: pmRisk != null,
+                          failureRisk: pmRisk?.failureRisk ?? null,
+                          riskMethod: pmRisk?.riskMethod ?? null,
+                        });
+                        return (
+                          <div className="p-3 rounded-lg bg-muted/50 text-center" data-testid="pdm-o-nguy-co" data-trang-thai={nhanRr.kind}>
+                            <p className="text-xs text-muted-foreground">{t('machines.failureRisk')}</p>
+                            <p className={nhanRr.kind === 'so' ? 'text-2xl font-bold text-destructive' : 'text-2xl font-bold text-muted-foreground'}>
+                              {nhanRr.kind === 'so' ? pctLabel(nhanRr.phanTram) : '—'}
+                            </p>
+                            {nhanRr.kind === 'chuaDuDuLieu' && (
+                              <p className="text-xs text-muted-foreground" title={t('cockpit.riskInsufficientHint')}>
+                                {t('cockpit.riskInsufficient')}
+                              </p>
+                            )}
+                            {nhanRr.kind === 'chuaDocDuoc' && (
+                              <p className="text-xs text-muted-foreground">{t('cockpit.riskNoSource')}</p>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <div className="p-3 rounded-lg bg-muted/50 text-center">
                         <p className="text-xs text-muted-foreground">{t('machines.confidence')}</p>
                         <p className="text-2xl font-bold">{pctLabel(pmRisk?.confidenceScore)}</p>
