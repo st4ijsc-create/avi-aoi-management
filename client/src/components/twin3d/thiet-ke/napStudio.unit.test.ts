@@ -237,7 +237,64 @@ describe("④ danh sách cho ba ô chọn — đủ mục, nhãn đọc được
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-/* ⑤ RỖNG KHÁC 0 — nhà máy chưa có toà nào                                     */
+/* ⑤ ★★★ V-14(2) — TẦNG ĐANG CHỌN BIẾN MẤT: RƠI VỀ TẦNG ĐẦU PHẢI KHAI RA       */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Rơi về phần tử đầu là hành vi ĐÚNG (khối ③) — nhưng nó im lặng. Một lượt nạp
+ * lại nền (hoặc ai đó xoá tầng ở máy khác) có thể làm tầng ĐANG MỞ biến khỏi
+ * danh sách; khi đó `TwinStudio` đổi mặt sàn **không qua cổng `xinDoiNap`**, và
+ * nếu buffer còn thay đổi chưa lưu thì đó là lối mất dữ liệu thứ ba (QA lần 11,
+ * V-14 số 2).
+ *
+ * ⇒ Hàm phân giải không tự sửa được điều đó (nó không biết có buffer hay không).
+ *   Việc của nó là **KHAI RA** rằng vừa có một lượt rơi; ai gọi thì cảnh báo.
+ */
+describe("★★★ ⑤ V-14(2) — `tangBienMat` khai lượt rơi về tầng đầu, không âm thầm", () => {
+  it("★★★ tầng đang chọn biến mất khỏi danh sách ⇒ cờ BẬT, và vẫn rơi về tầng đầu", () => {
+    // Tầng 83 vốn có thật (người dùng đang mở nó), lượt nạp mới chỉ còn 81/82.
+    const conLai: TangTho[] = [TANG[0], TANG[1]];
+    const kq = giaiNapThietKe(
+      { nhaMayId: 38, toaNhaId: 71, tangId: 83 },
+      { nhaMay: NHA_MAY, toaNha: TOA_NHA, tang: conLai },
+    );
+    expect(kq.tangBienMat).toBe(true);
+    // ★ Hành vi CŨ giữ nguyên: vẫn rơi về tầng đầu, chỉ khác là nay có lời khai.
+    expect(kq.tangId).toBe(81);
+  });
+
+  it("★★★ CA ÂM — tầng đang chọn CÒN trong danh sách ⇒ cờ TẮT", () => {
+    const kq = giaiNapThietKe({ nhaMayId: 38, toaNhaId: 71, tangId: 83 }, DU_LIEU);
+    expect(kq.tangBienMat).toBe(false);
+    expect(kq.tangId).toBe(83);
+  });
+
+  it("★★★ CHƯA CHỌN tầng nào (`tangId: null`) ⇒ cờ TẮT — mở màn lần đầu KHÔNG phải một lượt rơi", () => {
+    // Nếu cờ chỉ so `tangId` trả về với `muon.tangId`, ca này BẬT oan và trang
+    // sẽ kêu cảnh báo ngay lượt mở màn đầu tiên.
+    const kq = giaiNapThietKe(KHONG_MUON, DU_LIEU);
+    expect(kq.tangBienMat).toBe(false);
+    expect(kq.tangId).toBe(81);
+  });
+
+  it("★★★ DANH SÁCH TẦNG RỖNG + đang giữ một tầng ⇒ cờ BẬT (mặt sàn biến mất hẳn)", () => {
+    const kq = giaiNapThietKe(
+      { nhaMayId: 38, toaNhaId: 71, tangId: 81 },
+      { nhaMay: NHA_MAY, toaNha: TOA_NHA, tang: [] },
+    );
+    expect(kq.tangBienMat).toBe(true);
+    expect(kq.tangId).toBeNull();
+    expect(kq.san).toBeNull();
+  });
+
+  it("★ rỗng CẢ HAI phía (chưa chọn gì + chưa có tầng nào) ⇒ cờ TẮT, không kêu oan", () => {
+    const kq = giaiNapThietKe(KHONG_MUON, { nhaMay: NHA_MAY, toaNha: TOA_NHA, tang: [] });
+    expect(kq.tangBienMat).toBe(false);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ⑥ RỖNG KHÁC 0 — nhà máy chưa có toà nào                                     */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 describe("⑤ chưa có toà/tầng ⇒ `san` là null và KHÔNG hỏi tầng nào", () => {

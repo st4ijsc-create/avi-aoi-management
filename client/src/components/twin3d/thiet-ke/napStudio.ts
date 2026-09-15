@@ -100,6 +100,16 @@ export interface NapThietKe {
   tangIdsHoi: number[];
   /** `null` khi nhà máy chưa có toà/tầng — KHÔNG bịa ra một mặt sàn giả. */
   san: SanThietKe | null;
+  /**
+   * ★★★ V-14(2) — `true` khi tầng người dùng ĐANG CHỌN không còn trong danh
+   * sách mới (một lượt nạp lại nền, hoặc tầng bị xoá ở nơi khác).
+   *
+   * Rơi về tầng đầu vẫn là hành vi đúng, nhưng nó đổi MẶT SÀN mà **không đi qua
+   * cổng `xinDoiNap`** của `TwinStudio` — nên nếu buffer còn thay đổi chưa lưu
+   * thì đó là lối mất dữ liệu thứ ba. Module này không biết có buffer hay
+   * không; việc của nó là KHAI RA lượt rơi, việc cảnh báo là của người gọi.
+   */
+  tangBienMat: boolean;
 }
 
 /** Dữ liệu thô của một lượt nạp: ba danh sách, mỗi cái từ một truy vấn. */
@@ -209,6 +219,19 @@ export function giaiNapThietKe(muon: YeuCauNap, duLieu: DuLieuNap): NapThietKe {
   const toa = duLieu.toaNha.find((b) => b.id === toaNhaId) ?? null;
   const tang = duLieu.tang.find((s) => s.id === tangId) ?? null;
 
+  /**
+   * ★★★ V-14(2) — LƯỢT RƠI VỀ TẦNG ĐẦU PHẢI CÓ LỜI KHAI.
+   *
+   * Đọc Ý MUỐN (`muon.tangId`), KHÔNG đọc kết quả (`tangId`): so kết quả với ý
+   * muốn thì lượt mở màn đầu tiên (`muon.tangId === null`) cũng kêu — một cảnh
+   * báo nói sai còn tệ hơn không có cảnh báo.
+   *
+   * ⚠ `!= null` chứ không `!muon.tangId`: id hợp lệ không bao giờ là 0 ở đây,
+   *   nhưng viết theo `truthy` là mở sẵn đường cho một id 0 tương lai lọt qua
+   *   trong im lặng.
+   */
+  const tangBienMat = muon.tangId != null && !duLieu.tang.some((s) => s.id === muon.tangId);
+
   return {
     mucNhaMay,
     mucToaNha,
@@ -219,5 +242,6 @@ export function giaiNapThietKe(muon: YeuCauNap, duLieu: DuLieuNap): NapThietKe {
     // "Chưa có tầng" ≠ "tầng số 0": rỗng là câu trả lời, không phải một phép đếm.
     tangIdsHoi: tangId === null ? [] : [tangId],
     san: toa && tang ? sanCuaTang(toa, tang) : null,
+    tangBienMat,
   };
 }

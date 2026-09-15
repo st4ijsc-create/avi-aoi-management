@@ -20235,6 +20235,7 @@
       "batDinh": "Snap",
       "chonTang": "Floor",
       "chuaCoTang": "This factory has no building yet — build the shop floor first.",
+      "tangBienMat": "The floor you were designing is no longer in the list. Unsaved changes are lost; the view moved to the first floor.",
       "thietKe": "Design",
       "dungXuong": "Build shop floor",
       "nhapBanVe": "Import drawing",

@@ -20241,6 +20241,7 @@
       "batDinh": "吸附",
       "chonTang": "楼层",
       "chuaCoTang": "该工厂尚无建筑——请先搭建厂房。",
+      "tangBienMat": "您正在设计的楼层已不在列表中。未保存的更改已丢失，界面已切换到第一层。",
       "thietKe": "设计",
       "dungXuong": "搭建厂房",
       "nhapBanVe": "导入图纸",

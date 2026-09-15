@@ -23,9 +23,10 @@
  *   một thời điểm; chỗ đó thuộc về khung cảnh chính của Đợt 4). Xem trước của Đợt 3
  *   là SVG đúng tỉ lệ — đủ để thấy tầng chồng nhau và đối chiếu hình người 1,7 m.
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Building2, FileUp, LayoutGrid } from "lucide-react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/EmptyState";
@@ -46,11 +47,19 @@ import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/u
  * ★ Ba nhánh, không phải một `tangId`: đổi nhà máy/toà cũng KÉO THEO đổi tầng
  *   (id cũ không còn trong danh sách ⇒ `giaiNapThietKe` rơi về phần tử đầu),
  *   nên cả ba đều làm mất buffer y như nhau.
+ *
+ * ★★★ V-14(1) — NHÁNH THỨ TƯ `tab`: Radix `Tabs` **UNMOUNT** nội dung tab không
+ *   hoạt động (chỗ này CỐ Ý dựa vào điều đó — RB-4, xem docblock cạnh
+ *   `TabsTrigger value="thiet-ke"`). Nên bấm sang tab khác cũng tháo
+ *   `XuongThietKe` và vứt buffer y hệt đổi tầng: **cùng lớp mất mát, khác cửa
+ *   vào**. Nó mang `tab: string` chứ không `id: number` vì đích của nó là một
+ *   giá trị tab, không phải một hàng trong cơ sở dữ liệu.
  */
 type YDinhDoiNap =
   | { loai: "nha-may"; id: number }
   | { loai: "toa-nha"; id: number }
-  | { loai: "tang"; id: number };
+  | { loai: "tang"; id: number }
+  | { loai: "tab"; tab: string };
 
 export default function TwinStudio() {
   const { t } = useTranslation();
@@ -145,8 +154,20 @@ export default function TwinStudio() {
   const [yDinhDoi, setYDinhDoi] = useState<YDinhDoiNap | null>(null);
   const [dangLuuRoiDoi, setDangLuuRoiDoi] = useState(false);
 
+  /**
+   * ★★★ V-14(1) — TAB ĐANG MỞ NAY LÀ STATE, KHÔNG CÒN `defaultValue`.
+   *   `defaultValue` để Radix tự giữ tab đang mở, nên trang KHÔNG có chỗ nào để
+   *   từ chối một lượt đổi tab. Controlled là điều kiện cần để cổng
+   *   `xinDoiNap` chặn được lối vào thứ tư này.
+   */
+  const [tabDangMo, setTabDangMo] = useState("thiet-ke");
+
   /** Thi hành một ý muốn đổi — ĐÚNG những `setState` mà ba ô chọn vẫn làm. */
   const apDoiNap = useCallback((y: YDinhDoiNap) => {
+    if (y.loai === "tab") {
+      setTabDangMo(y.tab);
+      return;
+    }
     if (y.loai === "nha-may") {
       setNhaMayMuon(y.id);
       // Ý muốn cũ ở hai cấp dưới đã hết nghĩa: giữ lại chỉ làm
@@ -177,6 +198,26 @@ export default function TwinStudio() {
       apDoiNap(y);
     },
     [apDoiNap],
+  );
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ V-14(1) — ĐỔI TAB ĐI QUA ĐÚNG CỔNG CỦA ĐỔI TẦNG
+   * ════════════════════════════════════════════════════════════════════════
+   * Bộ tab gỡ nội dung tab không hoạt động khỏi cây, nên đổi tab cũng vứt
+   * buffer y như đổi tầng — cùng lớp lỗi, khác cửa vào (QA lần 11, V-14 số 1).
+   *
+   * ★ Gọi thẳng `xinDoiNap` chứ KHÔNG chép lại phép so `so > 0`: một luật hai
+   *   bản sao là hai chỗ để chúng lệch nhau, và lệch âm thầm (mỗi bên có lưới
+   *   riêng, cả hai xanh). Cổng vẫn là MỘT.
+   *
+   * ★ Và vẫn KHÔNG đụng `key={tangDangChon.tangId}`: chặn ở Ý MUỐN đổi nghĩa là
+   *   xưởng còn nguyên trong cây lúc người dùng chọn "Lưu rồi chuyển", nên lượt
+   *   ghi vẫn xuống ĐÚNG mặt sàn đang mở.
+   */
+  const xinDoiTab = useCallback(
+    (tabMoi: string) => xinDoiNap({ loai: "tab", tab: tabMoi }),
+    [xinDoiNap],
   );
 
   const luuRoiDoi = useCallback(async () => {
@@ -311,6 +352,46 @@ export default function TwinStudio() {
   );
   const tangDangChon = nap.san;
 
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   * ★★★ V-14(2) — TẦNG ĐANG MỞ BIẾN MẤT THÌ PHẢI NÓI, KHÔNG ĐƯỢC IM
+   * ═════════════════════════════════════════════════════════════════════════
+   * Lối mất dữ liệu thứ BA, và là lối KHÔNG AI BẤM GÌ: một lượt nạp lại nền trả
+   * danh sách tầng mới thiếu tầng đang mở ⇒ `giaiNapThietKe` rơi về tầng đầu ⇒
+   * `key` đổi ⇒ xưởng remount ⇒ buffer bị vứt — **không đi qua `xinDoiNap`**, nên
+   * hộp thoại ba nút không cứu được. Ở đây chỉ còn cách nói cho người dùng biết.
+   *
+   * ★★★ SỐ THAY ĐỔI ĐỌC Ở LƯỢT RENDER, KHÔNG ĐỌC TRONG HIỆU ỨNG — ĐO ĐƯỢC,
+   *   KHÔNG SUY ĐOÁN: bản đầu của chính bản vá này đọc `refChuaLuu.current.so`
+   *   ngay trong `useEffect` và cảnh báo **không bao giờ kêu** (khối ⑥ đỏ 2/2).
+   *   Lý do: React chạy lượt dọn của CON trước hiệu ứng của CHA, mà
+   *   `XuongThietKe` dọn lời khai về 0 khi bị tháo (`XuongThietKe.tsx:607`) — tới
+   *   lúc hiệu ứng ở đây chạy thì bằng chứng đã bị xoá. Lượt render này xảy ra
+   *   TRƯỚC mọi lượt dọn ấy, nên là chỗ duy nhất còn đọc được con số thật.
+   */
+  const soChuaLuuLucNap = refChuaLuu.current.so;
+  /** Id tầng đã cảnh báo rồi — một lượt mất dữ liệu = MỘT câu, không mỗi nhịp một câu. */
+  const refDaBaoTangRoi = useRef<number | null>(null);
+  useEffect(() => {
+    if (!nap.tangBienMat) {
+      // Người dùng đã chọn lại một tầng có thật ⇒ mở lại cửa cho lượt rơi sau.
+      refDaBaoTangRoi.current = null;
+      return;
+    }
+    if (refDaBaoTangRoi.current === tangMuon) return;
+    refDaBaoTangRoi.current = tangMuon;
+    // ★ Chỉ kêu khi THẬT SỰ MẤT GÌ: tầng biến mất mà buffer rỗng thì không có
+    //   thiệt hại nào để báo, và một cảnh báo kêu oan là cách để người dùng thôi đọc.
+    if (soChuaLuuLucNap > 0) {
+      toast.warning(
+        t(
+          "twin3d.studioUi.tangBienMat",
+          "Tầng bạn đang thiết kế không còn trong danh sách nữa. Các thay đổi chưa lưu đã mất, màn hình đã chuyển về tầng đầu.",
+        ),
+      );
+    }
+  }, [nap.tangBienMat, tangMuon, soChuaLuuLucNap, t]);
+
   return (
     <div
       ref={khungRef}
@@ -368,7 +449,10 @@ export default function TwinStudio() {
         </div>
       </header>
 
-      <Tabs defaultValue="thiet-ke" className="flex min-h-0 flex-1 flex-col">
+      {/* ★★★ V-14(1) — `value` + `onValueChange={xinDoiTab}`: mọi lượt đổi tab đi
+          qua cổng chặn mất dữ liệu. `defaultValue` (uncontrolled) KHÔNG có chỗ
+          để từ chối, nên nó là lối mất buffer thứ hai. */}
+      <Tabs value={tabDangMo} onValueChange={xinDoiTab} className="flex min-h-0 flex-1 flex-col">
         <div className="flex shrink-0 flex-wrap items-center gap-3">
           <TabsList className="h-9">
             {/*
