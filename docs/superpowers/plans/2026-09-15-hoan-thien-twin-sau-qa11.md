@@ -1335,3 +1335,26 @@ git commit -m "feat(twin3d): canh pham vi tap doan gop nhieu nha may (muc 26 spe
 - **G134** — luật chọn 30 nhãn trong 1.108 máy qua 3 nhà máy **vẫn chưa tồn tại**; chỉ đo được là không vỡ trần, chưa đo được là chọn đúng.
 - ~~`e2e/twin-lo-f.spec.ts` F3 chưa chạy~~ → **ĐÃ CHẠY 2026-09-16 08:4x, 4/4 xanh** (dựng `dist-t19`, cổng 3064, project `chromium-canh-3d`, dữ liệu `sinh-tai-twin.ts` 549 máy + nhịp tim làm tươi ngay trước khi đo). ★ F3 cho một số liệu **mạnh hơn cả thứ nó được giao kiểm**: tài khoản `e2e_tai_loE` (**supervisor, không-admin**, khác hẳn `qatd_giamdoc`) ở `?pv=tapdoan` thấy ô chọn nhà máy **2 mục**, breadcrumb `Corporate`, `dem-may` = **591**, và `banner ha cap` = **null**. Tức cảnh nhiều nhà máy chạy đúng cho cả một vai bị giới hạn phạm vi, không chỉ cho tài khoản tập đoàn của bộ dữ liệu QATD. F4 đo kèm: canvas 968×489 = **51,4 %** màn ở 1280×720 (lô E trước đây 13 %), 5 lệnh vẽ.
 - `.qa-tapdoan/t19-backup/` (3,3 MB bản sao mã nguồn cho ablation) còn untracked — không commit, và không tự xoá.
+
+---
+
+## Quyết định chủ dự án 2026-09-16 (đợt 3) — gỡ hai việc chặn
+
+| việc | quyết định (nguyên văn) | hệ quả |
+|---|---|---|
+| **PH-44** cảnh tập đoàn không đọc được | *"không nhất thiết phải vẽ đúng tỉ lệ kích thước của từng toà nhà, chỉ cần hiển thị dạng biểu tượng 3D, và hiển thị giống kiểu sa bàn quy hoạch với mật độ và kích thước nhẹ phù hợp"* | Thành **Task 20**. Chọn hướng (b) và nới rộng hơn: không chỉ nén bố cục mà **đổi hẳn đơn vị vẽ** ở cấp tập đoàn — từ 1.108 máy rời sang **biểu tượng toà nhà**. Tỉ lệ thật KHÔNG còn là ràng buộc; dễ đọc mới là ràng buộc. |
+| **PH-43** `dist/BUILD-INFO.txt` khai sai | *"Đồng ý xoá"* | **ĐÃ XOÁ 2026-09-16.** Bằng chứng ghi lại trước khi xoá (md5 `8ebaa84a6832806bbc2850e33d7d573e`, mtime 2026-09-14 09:38:22, nội dung `commit=e780bcab…`). Tệp nằm trong `.gitignore` nên không có vết trong lịch sử ⇒ đây là bản ghi duy nhất. Đã rà 5 tệp `BUILD-INFO.txt` còn lại trong `.qa-tapdoan/dist-*/`: mtime lệch 0-3 s so với `index.js` cùng thư mục ⇒ **đều khai đúng**, chỉ mỗi tệp `dist/` nói dối. |
+
+### Task 20: Sa bàn quy hoạch cho phạm vi tập đoàn
+
+**Đổi đơn vị vẽ, không phải đổi khung nhìn.** PH-44 đã đo: khuôn viên 2,25 km trên 968 px là 2,3 m mỗi pixel, nên một máy rộng ~2 m còn ~1 px **dù khung ôm vừa khít** — tự-khớp-khung không cứu được. Vẽ ít vật thể hơn và to hơn mới cứu được.
+
+**Ràng buộc nghiệp vụ mới (chủ dự án chốt):** toạ độ và kích thước thật **KHÔNG** phải ràng buộc ở cấp tập đoàn. Thứ phải đúng là **quan hệ**: toà nào thuộc nhà máy nào, và cụm nào nằm cạnh cụm nào.
+
+**Ràng buộc trung thực (của dự án, không được bỏ):** khi vị trí là sơ đồ chứ không phải toạ độ thật, giao diện **PHẢI NÓI RA**. Đã có khuôn `banner-vi-tri-tam-sinh`; ở cấp tập đoàn vị trí nay **luôn** là sơ đồ, nên lời khai phải đổi theo cho khỏi thành nửa sự thật.
+
+**Tiêu chí nghiệm thu — đo được, không phải cảm tính:**
+- @1280×720, khung mặc định, tài khoản tập đoàn: mỗi biểu tượng toà nhà rộng **≥ 24 px** trên màn, và **toàn bộ** sa bàn nằm trong khung.
+- Ảnh chụp phải cho thấy các cụm — chủ đợt sẽ **tự xem bằng mắt**, không nhận kết luận suy từ toạ độ chiếu.
+- Ngân sách vẽ giữ nguyên trần cũ (lệnh vẽ < 150 · tam giác < 500 k · nhãn < 30 · ≥ 30 khung/s).
+- **Đối chứng âm bắt buộc:** `/twin` một nhà máy **không đổi một ô nào** — đây là đường đang dùng được, một tính năng mới không được đẩy nó ra.
