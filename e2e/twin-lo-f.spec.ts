@@ -141,8 +141,26 @@ test.describe("Lo F — nghiem thu F1/F2/F3/F4", () => {
    *
    * ⇒ Test này giờ đo theo SỐ NHÀ MÁY TÀI KHOẢN THẬT SỰ THẤY, thay vì khoá cứng
    *   một kết cục — cách duy nhất để nó còn đúng khi ai đó gán thêm nhà máy.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * ★★★ TASK 19 (2026-09-16) — HAI VẾ CỦA Ô NÀY ĐÃ THÀNH MỘT
+   * ══════════════════════════════════════════════════════════════════════════
+   * Vế `soNhaMay > 1 ⇒ PHẢI hạ cấp` ra đời vì `canhThietKe` nhận ĐÚNG MỘT mã nhà
+   * máy. Task 18 nới đầu vào thành `factoryIds` và Task 19 nối phía trình duyệt
+   * (`canhTapDoan.ts` + `twinCanh.toaNhaTangNhieuNhaMay`), nên màn nay nạp MỌI
+   * nhà máy trong phạm vi và `banner-ha-cap` **đã bị gỡ khỏi sản phẩm** cùng khoá
+   * i18n `twin3d.vanHanh.haCapPhamVi` (thiết kế §8: để lại là nói dối theo chiều
+   * ngược). Giữ vế cũ ở đây là đòi sản phẩm nói một câu không còn đúng.
+   *
+   * ⇒ Ô này nay đo ĐÚNG MỘT điều, và đo nó ở CẢ HAI chiều số nhà máy:
+   *   **`banner-ha-cap` không còn tồn tại**, và breadcrumb giữ cấp Tập đoàn.
+   *
+   * ⚠ Phép đo kết cục THẬT của Task 19 (ba cụm khối / một cụm theo phạm vi) nằm
+   *   ở `.qa-tapdoan/t19-do.mjs` — nó cần bộ dữ liệu QATD ba công ty, thứ tài
+   *   khoản `e2e_tai_loE` (gán `SIM-FAC`) không có. Đừng nhét phép đo ấy vào đây
+   *   rồi để nó xanh trên một tập một-nhà-máy.
    */
-  test("F3 — ?pv=tapdoan khai dung theo SO NHA MAY TAI KHOAN THAT SU THAY", async ({ page }) => {
+  test("F3 — ?pv=tapdoan KHONG con banner ha cap (Task 19 da go)", async ({ page }) => {
     test.setTimeout(240_000);
     await page.setViewportSize({ width: 1280, height: 720 });
     await moTwin(page, "/twin?pv=tapdoan");
@@ -158,16 +176,13 @@ test.describe("Lo F — nghiem thu F1/F2/F3/F4", () => {
     console.log(`     breadcrumb   = "${b.breadcrumb}"`);
     console.log(`     dem-may      = ${b.demMay}`);
     console.log(`     banner ha cap= ${JSON.stringify(b.haCap)}`);
+    // Tien de: o chon nha may CO muc — neu 0 thi moi khang dinh duoi la ve mot
+    // tap rong va o nay khong do gi (G5).
     expect(soNhaMay).toBeGreaterThan(0);
-    if (soNhaMay <= 1) {
-      // Hang rao tenant chay dung: "Tap doan" la cau DUNG, KHONG duoc ha cap.
-      expect(b.haCap).toBeNull();
-    } else {
-      // Nhieu nha may ma chi nap 1 ⇒ PHAI ha cap va khai ro.
-      expect(b.haCap).not.toBeNull();
-      expect(b.haCap?.yeuCau).toBe("tapDoan");
-      expect(b.haCap?.thuc).toBe("nhaMay");
-    }
+    // Task 19: banner da bi GO khoi san pham, o CA HAI chieu so nha may.
+    expect(b.haCap).toBeNull();
+    // ...va pham vi KHONG con bi ha xuong "Nha may": breadcrumb giu cap Tap doan.
+    expect(b.breadcrumb ?? "").not.toBe("");
   });
 
   test("F4 — kich thuoc canvas o 1280x720", async ({ page }) => {

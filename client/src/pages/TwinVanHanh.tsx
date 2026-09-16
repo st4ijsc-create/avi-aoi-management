@@ -144,6 +144,12 @@ import {
   yeuCauBiBoQua,
   type MucChon,
 } from "@/components/twin3d/van-hanh/boChonNap";
+// ── Task 19 (Giai đoạn 6) — cảnh phạm vi TẬP ĐOÀN: chọn nhà máy + khuôn viên ──
+import {
+  khuonVienTapDoan,
+  nhaMayDeNap,
+  type ToaNhaKhuonVien,
+} from "@/components/twin3d/van-hanh/canhTapDoan";
 import { cn } from "@/lib/utils";
 import { BoChonNapUI } from "@/components/twin3d/van-hanh/BoChonNapUI";
 // ── ĐỢT 22 Z4 (G-7) — cây phân cấp CÓ ROLL-UP, TÁI DÙNG `CayPhanCap` ────────
@@ -516,26 +522,48 @@ export function ThanTwinVanHanh() {
 
   /**
    * ════════════════════════════════════════════════════════════════════════
-   * ★★★ F3 — `?pv=tapdoan` ĐANG NÓI DỐI, VÀ ĐÂY LÀ CHỖ NÓ THÔI NÓI DỐI
+   * ★★★ TASK 19 — `?pv=tapdoan` NAY NẠP **MỌI NHÀ MÁY TRONG PHẠM VI**
    * ════════════════════════════════════════════════════════════════════════
-   * Lô E đo: breadcrumb ghi "Tập đoàn" trong khi `dem-may=549` — **1.592 máy
-   * của 3 nhà máy khác vắng mặt**. Hai lối thoát, và lô F chọn có căn cứ:
+   * Lô E đo: breadcrumb ghi "Tập đoàn" trong khi `dem-may=549`. Lô F chọn lối
+   * (b) — *nói đúng phạm vi đang hiện* — vì lối (a) *hiện đủ nhiều nhà máy* đòi
+   * đổi hợp đồng server, ngoài phạm vi lô F lúc ấy.
    *
-   *   (a) hiện đủ 4 nhà máy — `canhThietKe` nhận ĐÚNG MỘT `factoryId`
-   *       (`twinCanhRouter.ts:646-651`); làm (a) là đổi hợp đồng server, ngoài
-   *       phạm vi lô F. Và §11e.6 đã ghi §10C.6 còn lỗi hình học riêng (bước
-   *       lưới 400 m làm 4 khối 3 km lồng vào nhau) chưa ai sửa.
-   *   (b) nói ĐÚNG phạm vi đang hiện — chọn (b).
+   * **Task 18 (`40f04457`) đã đổi hợp đồng ấy**: `canhThietKe` nhận `factoryIds`
+   * (≤ 8) + `tangIds` (≤ 300) và lọc phạm vi TỪNG mã. Task 19 nối phía trình
+   * duyệt, nên lối (a) — thứ lô F phải từ chối — nay là lối đang đi.
    *
-   * ★ Hạ cấp mà IM LẶNG cũng là nói dối, chỉ theo chiều ngược. Nên `daHaCap`
-   *   bật một dòng giải thích trên màn (xem `banner-ha-cap` phía render).
-   * ★ Khi tập đoàn chỉ có MỘT nhà máy, "Tập đoàn" là câu ĐÚNG và không bị hạ —
-   *   đó cũng chính là mục nghiệm thu §10C.6 mà lô E đo được là đang hỏng:
-   *   tạo nhà máy thứ hai PHẢI làm hành vi này đổi.
+   * ★ `dsNhaMayTrongPhamVi` là mã của `factory.list`, tức con số **ĐÃ QUA** hàng
+   *   rào tenant (`resolveTenantFactoryScope`). Client KHÔNG lọc lại: hàng rào
+   *   nằm ở server và một bộ lọc thứ hai ở đây là bộ luật thứ hai (lớp lỗi
+   *   `mqttOeeRouters.getScopeLabels`).
+   */
+  const dsNhaMayTrongPhamVi = useMemo(() => factories.map((f) => f.id), [factories]);
+  const napNhaMay = useMemo(
+    () => nhaMayDeNap(phamViYeuCau.cap, dsNhaMayTrongPhamVi, factoryId),
+    [phamViYeuCau.cap, dsNhaMayTrongPhamVi, factoryId],
+  );
+
+  /**
+   * ⚠⚠ `phamViThuc` GIỮ NGUYÊN — sáu ô lưới của nó ghim **quyết định đã đo**
+   *   (`boChonNap.unit.test.ts:165-235`, phép đo lại 2026-09-07: "tập đoàn một
+   *   nhà máy" là câu ĐÚNG). Thứ đổi là **đối số thứ ba**: trước Task 19 màn
+   *   luôn nạp đúng MỘT nhà máy nên nó là hằng `1`; nay nó là số nhà máy thật sự
+   *   được nạp. Ở phạm vi tập đoàn, tập nạp = tập trong phạm vi ⇒ **không còn gì
+   *   để hạ**, và đó chính là kết cục Task 19 mua được.
+   *
+   * ★ Phần dư *"phạm vi có nhiều nhà máy hơn trần một lượt"* KHÔNG đi qua đường
+   *   hạ cấp: hạ cả phạm vi xuống `nhaMay` trong khi cảnh đang vẽ 8 khối là một
+   *   lời khai sai to hơn cái nó vá. Nó đi ra `banner-nha-may-vuot-tran` với BA
+   *   con số thật (cần / trần / thiếu), cùng khuôn `banner-tang-vuot-tran`.
    */
   const phamViKq = useMemo(
-    () => phamViThuc(phamViYeuCau, factories.length, factoryId === null ? 0 : 1),
-    [phamViYeuCau, factories.length, factoryId],
+    () =>
+      phamViThuc(
+        phamViYeuCau,
+        factories.length,
+        napNhaMay.gopKhuonVien ? factories.length : factoryId === null ? 0 : 1,
+      ),
+    [phamViYeuCau, factories.length, napNhaMay.gopKhuonVien, factoryId],
   );
   const phamVi = phamViKq.pv;
 
@@ -640,6 +668,51 @@ export function ThanTwinVanHanh() {
     [dsTang],
   );
 
+  /* ═══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ TASK 19 — HÌNH HỌC SÀN CỦA **CẢ TẬP ĐOÀN**, MỘT LƯỢT GỌI             */
+  /* ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ VÌ SAO PHẢI CÓ TRUY VẤN NÀY — CHỖ CHẶN **C7** MÀ THIẾT KẾ §1.5 BỎ SÓT
+   * ════════════════════════════════════════════════════════════════════════
+   * Vị trí một máy nằm ở `twin_dat_cho`, và `canhThietKe` chỉ trả `datCho` của
+   * **`tangIds` được hỏi**. Hai đường lấy `tangIds` đều là đường MỘT:
+   *   `danhSachToaNha({ factoryId })` → toà của đúng một nhà máy;
+   *   `chiTietToaNha({ id })`         → tầng của đúng một toà.
+   * Ba nhà máy QATD = 12 toà ⇒ 1 + 3 + 12 = **15 lượt gọi** chỉ để biết 84 mã
+   * tầng, tức đúng hình dạng PA-1 mà thiết kế §3.1 đã bác (nhiều ảnh chụp lệch
+   * nhau, chi phí tăng theo số toà). `toaNhaTangNhieuNhaMay` là một lượt, 3 câu
+   * SQL, hàng rào CÙNG ba bất biến BB-1/2/3 của `traCayPhanCapNhieuNhaMay`.
+   *
+   * ⚠ Chỉ bật ở phạm vi tập đoàn. Ở cấp thường, đường `danhSachToaNha` +
+   *   `chiTietToaNha` cũ chạy NGUYÊN VẸN — không một byte nào của cảnh một tầng
+   *   đổi, và đó là điều kiện để lưới cũ còn là phép đo (N7 của thiết kế §9).
+   */
+  const khuonVienQ = trpc.twinCanh.toaNhaTangNhieuNhaMay.useQuery(
+    { factoryIds: napNhaMay.gui },
+    { enabled: napNhaMay.gopKhuonVien && napNhaMay.gui.length > 0, retry: false },
+  );
+  const kvToaNha = useMemo<ToaNhaKhuonVien[]>(
+    () => (khuonVienQ.data?.toaNha ?? []) as ToaNhaKhuonVien[],
+    [khuonVienQ.data],
+  );
+  const kvTang = useMemo(
+    () => (khuonVienQ.data?.tang ?? []) as Array<{ id: number; toaNhaId: number }>,
+    [khuonVienQ.data],
+  );
+
+  /**
+   * Khuôn viên: chỗ đứng của từng KHỐI nhà máy trong một cảnh chung.
+   *
+   * ★ `null` khi chưa tải xong HOẶC khi không ở phạm vi tập đoàn — người gọi
+   *   dùng chính `null` ấy để rơi về đường một-toà, không cần cờ thứ hai.
+   */
+  const khuonVien = useMemo(
+    () => (napNhaMay.gopKhuonVien ? khuonVienTapDoan(kvToaNha) : null),
+    [napNhaMay.gopKhuonVien, kvToaNha],
+  );
+
   /**
    * ★★★ Task 17c LỖI HAI — chỗ dời của TOÀ NHÀ cho từng tầng.
    *
@@ -647,11 +720,18 @@ export function ThanTwinVanHanh() {
    * nên thiếu số hạng này thì hai toà của **cùng một nhà máy** chồng khít lên
    * nhau. Neo vào **toà đang chọn** ⇒ cảnh một toà (hình dạng duy nhất hôm nay)
    * không đổi một pixel nào; xem docblock `gocToaTheoTang`.
+   *
+   * ★★★ Task 19 — ở phạm vi tập đoàn, NEO là **góc khuôn viên** (`null` ⇒ toạ độ
+   *   tuyệt đối của toà đã được `khuonVienTapDoan` tịnh tiến về `(0,0)`), không
+   *   phải toà đang chọn: neo vào một toà của nhà máy A sẽ đẩy nhà máy C ra khỏi
+   *   tấm sàn, vì sàn của `CanhVanHanh` trải từ `0` tới `rongM`.
    */
   const gocToa = useMemo(
     () =>
-      gocToaTheoTang(dsTang, dsToaNha, toaNhaId),
-    [dsTang, dsToaNha, toaNhaId],
+      khuonVien !== null
+        ? gocToaTheoTang(kvTang, khuonVien.toaNha, null)
+        : gocToaTheoTang(dsTang, dsToaNha, toaNhaId),
+    [khuonVien, kvTang, dsTang, dsToaNha, toaNhaId],
   );
 
   /** Tầng ĐANG HIỆN — từ URL, rơi về tầng đầu của toà đang chọn. */
@@ -730,16 +810,51 @@ export function ThanTwinVanHanh() {
    *   banner. Nay trần là hằng CÓ TÊN khớp `.max()` của Zod ở router, và phần bị
    *   cắt đi ra `banner-tang-vuot-tran` bên dưới. Xem `tangIdsDeHoi`.
    */
-  const tangDeHoi = useMemo(() => tangIdsDeHoi(dsTang.map((s) => s.id)), [dsTang]);
+  /*
+   * ★★★ Task 19 — ở phạm vi tập đoàn, tập tầng là **MỌI tầng của MỌI toà** của
+   *   mọi nhà máy trong phạm vi (84 tầng với QATD), không phải 7 tầng của toà
+   *   đang chọn. Trần vẫn là `TRAN_TANG_MOI_LUOT = 300`, và phần bị cắt vẫn đi
+   *   ra `banner-tang-vuot-tran`: trần lớn hơn không phải trần bỏ đi.
+   */
+  const tangDeHoi = useMemo(
+    () => tangIdsDeHoi(khuonVien !== null ? kvTang.map((s) => s.id) : dsTang.map((s) => s.id)),
+    [khuonVien, kvTang, dsTang],
+  );
   const tangIdsHoi = tangDeHoi.gui;
 
   // Hình học + cây phân cấp.
   // ★ Đợt 40 (QA Đợt 39 #5) — `placeholderData`: hai pha `tangIds` ([] → thật) đổi KHOÁ truy vấn ⇒ `data`
   //   `undefined` một nhịp ⇒ hàng máy `may-hang-*` remount ~250 ms (`.qa-dot39/cua-so-som/`). Giữ dữ liệu
   //   pha trước CHỈ khi cùng nhà máy (`giuDuLieuTruoc.ts`).
+  /*
+   * ★★★ Task 19 — HAI HÌNH DẠNG ĐẦU VÀO, VÀ VÌ SAO KHÔNG GỘP THÀNH MỘT.
+   *
+   * Zod `.refine` của `canhThietKe` đòi **ĐÚNG MỘT** trong `factoryId` /
+   * `factoryIds`, và hai dạng cho phản hồi giống hệt từng byte khi cùng một nhà
+   * máy. Vậy sao không dùng `factoryIds` cho cả hai đường?
+   *
+   * Vì `placeholderData` đọc `input.factoryId` **từ KHOÁ truy vấn**
+   * (`giuDuLieuTruoc.factoryIdCuaKhoa`). Đổi mọi lượt sang `factoryIds` làm hàm
+   * ấy trả `null` ⇒ bản vá remount của Đợt 40 **chết trong im lặng** trên đường
+   * đi phổ biến nhất của màn. Giữ `factoryId` cho đường một nhà máy là giữ phép
+   * đo ấy sống; đường khuôn viên vốn hỏi một lượt duy nhất (xem `enabled` dưới)
+   * nên không có hai pha để mà giữ.
+   *
+   * ⚠ `enabled` ở đường khuôn viên đợi `khuonVienQ.data`: bắn sớm với
+   *   `tangIds: []` rồi bắn lại với 84 tầng là đổi KHOÁ ⇒ đúng cái remount mà
+   *   Đợt 40 vá. Đợi một lượt là rẻ hơn và không cần placeholder.
+   */
   const canhQ = trpc.twinCanh.canhThietKe.useQuery(
-    { factoryId: factoryId ?? 0, tangIds: tangIdsHoi },
-    { enabled: factoryId !== null, retry: false, placeholderData: giuKhiCungNhaMay(factoryId) },
+    napNhaMay.gopKhuonVien
+      ? { factoryIds: napNhaMay.gui, tangIds: tangIdsHoi }
+      : { factoryId: factoryId ?? 0, tangIds: tangIdsHoi },
+    {
+      enabled: napNhaMay.gopKhuonVien
+        ? napNhaMay.gui.length > 0 && khuonVienQ.data !== undefined
+        : factoryId !== null,
+      retry: false,
+      placeholderData: giuKhiCungNhaMay(napNhaMay.gopKhuonVien ? null : factoryId),
+    },
   );
 
   /**
@@ -900,6 +1015,37 @@ export function ThanTwinVanHanh() {
     for (const s of tram) m.set(s.id, s.lineId);
     return m;
   }, [tram]);
+
+  /**
+   * ★★★ Task 19 — MÁY → NHÀ MÁY, suy qua CHUỖI THẬT, không qua "nhà máy đang chọn".
+   *
+   * `machines` KHÔNG có cột nhà máy; chuỗi duy nhất là
+   * **máy → trạm → chuyền → xưởng → `factoryId`**, và `canhThietKe` trả đủ cả bốn
+   * mảng nên đây là một phép NỐI, không phải phỏng đoán.
+   *
+   * ⚠⚠ Trước Task 19 cảnh chỉ nạp MỘT nhà máy, nên "mọi máy thuộc `factoryId`
+   *   đang chọn" là câu đúng và `traDanhTinhCanhBao` dựa vào đó. Từ lượt này
+   *   cảnh tập đoàn nạp ba nhà máy ⇒ câu ấy thành **SAI**, và nó sẽ dán tên
+   *   *Công ty A* lên máy của *Công ty C* mà không lỗi nào nổ. Bản đồ này là chỗ
+   *   sửa; xem `traDanhTinhCanhBao` bên dưới.
+   */
+  const nhaMayCuaMay = useMemo(() => {
+    const nhaMayCuaXuong = new Map<number, number>();
+    for (const x of canhQ.data?.xuong ?? []) nhaMayCuaXuong.set(x.id, x.factoryId);
+    const xuongCuaLine = new Map<number, number>();
+    for (const c of chuyen) xuongCuaLine.set(c.id, c.workshopId);
+    const m = new Map<number, number>();
+    for (const mv of may) {
+      if (mv.stationId == null) continue;
+      const lineId = lineCuaTram.get(mv.stationId);
+      if (lineId === undefined) continue;
+      const xuongId = xuongCuaLine.get(lineId);
+      if (xuongId === undefined) continue;
+      const f = nhaMayCuaXuong.get(xuongId);
+      if (f !== undefined) m.set(mv.id, f);
+    }
+    return m;
+  }, [canhQ.data, chuyen, may, lineCuaTram]);
 
   /** Danh sách máy đã hợp nhất trạng thái + tuổi dữ liệu (NT-3). */
   const mayNen = useMemo<MayVanHanh[]>(() => {
@@ -1142,13 +1288,34 @@ export function ThanTwinVanHanh() {
    *   quy chuỗi rỗng về `null` rồi, nhưng dựng sẵn một bản đồ toàn `""` là mời
    *   người sau tin rằng "đã tra được".
    */
+  /*
+   * ★★★ Task 19 — TÊN NHÀ MÁY TRA THEO **MÁY**, KHÔNG THEO "NHÀ MÁY ĐANG CHỌN".
+   *
+   * Câu *"mọi máy trong `maTheoMay` thuộc đúng `factoryId` đang xem"* ở trên là
+   * câu ĐÚNG cho tới Task 18, và **SAI từ lượt này** ở phạm vi tập đoàn: cảnh
+   * nạp ba nhà máy, nên một vòng lặp gán `nhaMayHienTai.name` cho mọi máy sẽ dán
+   * tên *Công ty A* lên máy của *Công ty C*. Đó đúng là lời khai sai mà PH-30
+   * sinh ra để chấm dứt, chỉ theo chiều ngược — và nó **không kêu**.
+   *
+   * ⇒ Tên tra qua `nhaMayCuaMay` (chuỗi máy → trạm → chuyền → xưởng → nhà máy).
+   *   Máy không tra được nhà máy ⇒ **không ghi vào bản đồ**: "chưa tra được" giữ
+   *   nguyên hình dạng cũ của dòng, còn một cái tên bịa thì không.
+   */
   const traDanhTinhCanhBao = useMemo<TraDanhTinh>(() => {
-    const tenNhaMay = (nhaMayHienTai?.name ?? "").trim();
-    if (tenNhaMay === "") return { maTheoMay };
+    const tenTheoNhaMay = new Map<number, string>();
+    for (const f of factories) {
+      const ten = (f.name ?? "").trim();
+      if (ten !== "") tenTheoNhaMay.set(f.id, ten);
+    }
     const tenNhaMayTheoMay = new Map<number, string>();
-    for (const id of maTheoMay.keys()) tenNhaMayTheoMay.set(id, tenNhaMay);
+    for (const id of maTheoMay.keys()) {
+      const f = nhaMayCuaMay.get(id);
+      const ten = f === undefined ? undefined : tenTheoNhaMay.get(f);
+      if (ten !== undefined) tenNhaMayTheoMay.set(id, ten);
+    }
+    if (tenNhaMayTheoMay.size === 0) return { maTheoMay };
     return { maTheoMay, tenNhaMayTheoMay };
-  }, [maTheoMay, nhaMayHienTai]);
+  }, [maTheoMay, nhaMayCuaMay, factories]);
 
   /**
    * Đặt chỗ theo máy **CỦA TẦNG ĐANG HIỆN** — nguồn vị trí 3D.
@@ -1157,6 +1324,14 @@ export function ThanTwinVanHanh() {
    *   đồ này PHẢI lọc lại theo `tangId`. Không lọc thì máy ba tầng chồng lên
    *   nhau trên cùng mặt sàn — và không có lỗi nào nổ, chỉ là một nhà xưởng
    *   trông đông gấp ba (đúng lớp "sai mà không kêu" của §5.2).
+   *
+   * ★★★ Task 19 — Ở PHẠM VI TẬP ĐOÀN THÌ **KHÔNG LỌC TẦNG**, và đó không mâu
+   *   thuẫn với đoạn trên. Lý do cơ học: `twin_dat_cho.viTriZMm` là cao độ
+   *   TUYỆT ĐỐI trong toà (bằng `twin_tang.caoDoMm`, đo được ở thiết kế §5.1),
+   *   nên 7 tầng của một toà **chồng đúng lên nhau theo trục cao**, không đè lên
+   *   cùng mặt sàn. Cái từng đè nhau là hai TOÀ — và `gocToa` (Task 17c) đã cộng
+   *   `twin_toa_nha.viTriX/Y` để tách chúng. Bỏ lọc mà thiếu một trong hai số
+   *   hạng ấy thì mới thành "nhà xưởng đông gấp ba".
    */
   const datChoTheoMay = useMemo(() => {
     // `NonNullable` vì `canhQ.data` là `… | undefined` lúc chưa tải xong; ta chỉ
@@ -1165,11 +1340,11 @@ export function ThanTwinVanHanh() {
     const m = new Map<number, HangDatCho>();
     for (const d of canhQ.data?.datCho ?? []) {
       if (d.loaiThucThe !== "machine") continue;
-      if (tangId !== null && d.tangId !== tangId) continue;
+      if (!napNhaMay.gopKhuonVien && tangId !== null && d.tangId !== tangId) continue;
       m.set(d.thucTheId, d);
     }
     return m;
-  }, [canhQ.data, tangId]);
+  }, [canhQ.data, tangId, napNhaMay.gopKhuonVien]);
 
   /**
    * Máy có chỗ ở **BẤT KỲ tầng nào của toà đang chọn** — vế thứ hai của F2.
@@ -1187,8 +1362,16 @@ export function ThanTwinVanHanh() {
    * Nhà máy chỉ có MỘT toà ⇒ lượt hỏi đã phủ mọi tầng của nhà máy, nên câu
    * "chưa xếp chỗ" suy được. Nhiều toà ⇒ KHÔNG suy được, và ta khai "chưa đo"
    * thay vì khai sai (G9: một phép đếm chỉ đúng trong phạm vi mẫu của nó).
+   *
+   * ★★★ Task 19 — lượt khuôn viên hỏi MỌI toà của MỌI nhà máy trong phạm vi
+   *   (`toaNhaTangNhieuNhaMay` + `tangIds` của cả 84 tầng), nên ở đó câu "chưa
+   *   xếp chỗ" **suy được thật**, không phải một lối tắt. Đây là chỗ duy nhất
+   *   trong màn mà việc gộp làm phép khai MẠNH LÊN thay vì yếu đi.
+   *
+   * ⚠ Điều kiện đi kèm: `tangDeHoi.biCat === 0`. Nếu trần 300 cắt bớt tầng thì
+   *   lượt hỏi KHÔNG còn phủ hết và câu ấy sập về "chưa đo được".
    */
-  const moiToaDaHoi = dsToaNha.length <= 1;
+  const moiToaDaHoi = napNhaMay.gopKhuonVien ? tangDeHoi.biCat === 0 : dsToaNha.length <= 1;
 
   /**
    * ════════════════════════════════════════════════════════════════════════
@@ -1280,6 +1463,25 @@ export function ThanTwinVanHanh() {
       }),
     [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, gocToa, phamVi, factoryId, mauNenCanh],
   );
+
+  /**
+   * ★★★ Task 19 — SỐ MÁY ĐANG VẼ MÀ **KHÔNG CÓ LỜI KHAI TRẠNG THÁI SỐNG**.
+   *
+   * Đếm trên `mayVe` (tập ĐÃ VẼ), không trên `mayVanHanh`: con số phải nói về
+   * đúng những khối người dùng nhìn thấy. Máy không tra được nhà máy KHÔNG bị
+   * tính — "chưa tra được" không phải "thuộc nhà máy khác" (G9).
+   *
+   * Nuôi `banner-trang-thai-mot-nha-may`; docblock lý do nằm ở chỗ banner ấy.
+   */
+  const soMayChuaCoTrangThaiSong = useMemo(() => {
+    if (factoryId === null) return 0;
+    let n = 0;
+    for (const m of mayVe) {
+      const f = nhaMayCuaMay.get(m.machineId);
+      if (f !== undefined && f !== factoryId) n += 1;
+    }
+    return n;
+  }, [mayVe, nhaMayCuaMay, factoryId]);
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -2560,8 +2762,31 @@ export function ThanTwinVanHanh() {
    */
 
   const mayDangChon = mayVanHanh.find((m) => m.id === machineIdNgan) ?? null;
-  const sanRongM = tangDau ? mmSangMet(tangDau.rongMm) : 40;
-  const sanSauM = tangDau ? mmSangMet(tangDau.sauMm) : 30;
+  /*
+   * ★★★ Task 19 — SÀN CỦA CẢNH TẬP ĐOÀN LÀ **BAO HÌNH KHUÔN VIÊN**, không phải
+   *   mặt sàn của toà đang chọn.
+   *
+   * `San` (`CanhVanHanh.tsx:265`) đặt tấm sàn ở `[rongM/2, …, sauM/2]`, tức nó
+   * trải từ `0` tới `rongM` — cùng hệ mà `khuonVienTapDoan` tịnh tiến về. Giữ
+   * kích thước của một toà ở đây thì hai nhà máy kia đứng NGOÀI tấm sàn: không
+   * lỗi nào nổ, chỉ là ba khối lơ lửng trên nền trời.
+   *
+   * ⚠⚠ HỆ QUẢ PHẢI NÓI RA (thiết kế §7.2, chưa vá ở lượt này): `banKinh` suy từ
+   *   chính hai số này và `far = max(2000, banKinh*24)`. Khuôn viên QATD rộng
+   *   ~2,25 km ⇒ `far` ~54 km với `near` mặc định ⇒ **tỉ lệ far/near lớn = nguy
+   *   cơ z-fighting**. Không ngưỡng nào của §4 bắt được nó — chỉ mắt người thấy.
+   */
+  /*
+   * ⚠ Mỗi dòng ĐÚNG MỘT `mmSangMet(` — `hopNhatCanhNoiVaoTrang.unit.test.ts:108`
+   *   coi hai lời gọi trên CÙNG một dòng là dấu hiệu trang tự viết phép hoán vị
+   *   trục (X/Y/Z → x/z/y) thay vì đi qua `mmSangScene`. Ở đây không có hoán vị
+   *   nào, chỉ là hai bề rộng; viết tách dòng để phép đo ấy không mù đi vì một ca
+   *   dương giả, và cũng để nó còn kêu đúng thứ nó sinh ra để bắt.
+   */
+  const sanRongMm = khuonVien !== null ? khuonVien.rongMm : tangDau ? tangDau.rongMm : 40_000;
+  const sanSauMm = khuonVien !== null ? khuonVien.sauMm : tangDau ? tangDau.sauMm : 30_000;
+  const sanRongM = mmSangMet(sanRongMm);
+  const sanSauM = mmSangMet(sanSauMm);
 
   const breadcrumb = dungBreadcrumb(phamVi, (cap, id) => {
     if (cap === "line" && id !== null) {
@@ -2774,17 +2999,95 @@ export function ThanTwinVanHanh() {
       },
     });
 
-    // ── F3 — phạm vi bị hạ cấp, nói thẳng vì sao.
+    /*
+     * ════════════════════════════════════════════════════════════════════════
+     * ★★★ TASK 19 — `banner-ha-cap` ĐÃ CHẾT, VÀ GỠ NÓ LÀ PHẦN BẮT BUỘC CỦA VÁ
+     * ════════════════════════════════════════════════════════════════════════
+     * Banner cũ nói: *"Phạm vi Tập đoàn **chưa nạp được nhiều nhà máy cùng
+     * lúc**"*. Đó là câu ĐÚNG từ Đợt 10 lô F tới Task 18. Từ lượt này màn nạp
+     * `factoryIds` và vẽ đủ các khối, nên câu ấy thành **lời khai sai theo chiều
+     * ngược** — sản phẩm nói dối về chính năng lực nó vừa có. Để lại một banner
+     * `hien: false` vĩnh viễn cũng không phải lối thoát: QĐ-18 ngay bên dưới đã
+     * chốt rằng một lời khai không bao giờ đúng thì phải GỠ, không phải tắt.
+     *
+     * ★ `phamViThuc`/`daHaCap` **không bị xoá** — sáu ô lưới của chúng ghim một
+     *   quyết định đã đo (2026-09-07). Thứ chết là *lời khai trên màn*, không
+     *   phải cơ chế; xem docblock ở chỗ gọi `phamViThuc`.
+     *
+     * Thay vào đó là HAI câu mới, và cả hai chỉ hiện khi có gì thật để nói:
+     */
+
+    /*
+     * ── Task 19 — TRẦN NHÀ MÁY: cắt thì phải NÓI RA (cùng khuôn trần tầng).
+     *   Phạm vi rộng hơn trần một lượt ⇒ cảnh thiếu khối. Hạ cả phạm vi xuống
+     *   "Nhà máy" trong khi đang vẽ 8 khối là lời khai sai to hơn; nêu BA con số
+     *   thật thì người dùng biết chính xác mình đang thiếu gì.
+     */
     ds.push({
-      testId: "banner-ha-cap",
+      testId: "banner-nha-may-vuot-tran",
       nhom: "phamVi",
-      hien: phamViKq.daHaCap,
+      hien: napNhaMay.biCat > 0,
       noiDung: t(
-        "twin3d.vanHanh.haCapPhamVi",
-        "Đang hiện dữ liệu của MỘT nhà máy ({{soNhaMay}} nhà máy trong hệ). Phạm vi Tập đoàn chưa nạp được nhiều nhà máy cùng lúc — dùng ô Nhà máy để chuyển.",
-        { soNhaMay: factories.length },
+        "twin3d.vanHanh.nhaMayVuotTran",
+        "Phạm vi của bạn có {{tong}} nhà máy, một cảnh chỉ nạp được {{tran}} — {{thieu}} nhà máy CHƯA có trên cảnh.",
+        { tong: napNhaMay.tong, tran: napNhaMay.tran, thieu: napNhaMay.biCat },
       ),
-      dataPhu: { "data-cap-yeu-cau": phamViKq.capYeuCau, "data-cap-thuc": phamVi.cap },
+      dataPhu: {
+        "data-tong-nha-may": napNhaMay.tong,
+        "data-tran-nha-may": napNhaMay.tran,
+        "data-nha-may-bi-cat": napNhaMay.biCat,
+      },
+    });
+
+    /*
+     * ── Task 19 — VỊ TRÍ TẠM SINH (thiết kế §5.3).
+     *   `khuonVienTapDoan` chỉ rải lưới khi ĐO ĐƯỢC là hai bao hình chồng nhau
+     *   (ca có thật: hai nhà máy đều để toà ở gốc toạ độ). Khi đã rải, khoảng
+     *   cách trên cảnh KHÔNG còn là khoảng cách trong dữ liệu — im lặng để người
+     *   dùng đọc nó như thật là nói dối, y như im lặng để chúng chồng nhau.
+     */
+    ds.push({
+      testId: "banner-vi-tri-tam-sinh",
+      nhom: "phamVi",
+      hien: khuonVien !== null && khuonVien.daRaiLuoi,
+      noiDung: t(
+        "twin3d.vanHanh.viTriTamSinh",
+        "{{soCap}} cặp nhà máy có vị trí chồng nhau trong dữ liệu — cảnh đang xếp tạm chúng thành hàng. Khoảng cách trên cảnh KHÔNG phải khoảng cách thật.",
+        { soCap: khuonVien?.soCapChong ?? 0 },
+      ),
+      dataPhu: {
+        "data-so-cap-chong": khuonVien?.soCapChong ?? 0,
+        "data-so-khoi": khuonVien?.khoi.length ?? 0,
+      },
+    });
+
+    /*
+     * ── ★★★ Task 19 — HẠN CHẾ ĐO ĐƯỢC CỦA CẢNH TẬP ĐOÀN, GHI RA CHỨ KHÔNG GIẤU.
+     *
+     * Hình học gộp được; **trạng thái sống thì chưa**. Ba trong bốn truy vấn của
+     * `useTrangThaiSong` nhận ĐÚNG MỘT `factoryId`: `factoryCommand.overview`
+     * (:87), `twinCanh.anToanRobot` (:114), `twinCanh.sucKhoeMay` (:129) — chỉ
+     * `andon.active` (:100) phủ cả phạm vi. Nên máy của nhà máy KHÔNG được chọn
+     * vẫn được VẼ đúng chỗ nhưng **không có lời khai trạng thái**, và chúng nhận
+     * màu "chưa rõ".
+     *
+     * ⚠ Đây KHÔNG phải một `null` để mặc: một cảnh 1.108 khối trong đó 737 khối
+     *   xám mà không lời giải thích sẽ bị đọc là "737 máy hỏng/offline". Banner
+     *   này nêu CON SỐ ĐÃ ĐẾM trên chính tập đang vẽ, không nêu chung chung.
+     *
+     * ⇒ Nợ có tên: gộp bốn truy vấn trạng thái theo `factoryIds` là việc của một
+     *   lượt sau (đổi ba hợp đồng máy chủ), không phải của Task 19.
+     */
+    ds.push({
+      testId: "banner-trang-thai-mot-nha-may",
+      nhom: "duLieu",
+      hien: soMayChuaCoTrangThaiSong > 0,
+      noiDung: t(
+        "twin3d.vanHanh.trangThaiMotNhaMay",
+        "{{so}} máy trên cảnh thuộc nhà máy khác nhà máy đang chọn — trạng thái sống chưa nạp cho chúng, nên chúng hiện màu “chưa rõ” chứ không phải đang hỏng.",
+        { so: soMayChuaCoTrangThaiSong },
+      ),
+      dataPhu: { "data-so": soMayChuaCoTrangThaiSong },
     });
 
     // ── Link cũ trỏ vào thứ không còn.

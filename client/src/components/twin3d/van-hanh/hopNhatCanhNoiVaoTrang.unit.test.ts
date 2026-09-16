@@ -46,6 +46,16 @@ const MA = docMaNguon(resolve(GOC, "src/pages/TwinVanHanh.tsx"))
   .replace(/^\s*\/\/.*$/gm, "");
 
 /**
+ * ★ Đợt 64 — đọc NGUYÊN VĂN, cố ý KHÔNG tước chú thích (khác `MA` ở trên).
+ *
+ * Hợp đồng "toà đã được dời sao cho góc trái-dưới của khuôn viên nằm ở `(0,0)`"
+ * sống trong docblock của `KhuonVien.toaNha`, và chính nó là thứ làm neo `null`
+ * ở nhánh khuôn viên trở nên hợp lệ. Tước chú thích ở đây sẽ làm ca W4 mất đúng
+ * mảnh bằng chứng mà ngoại lệ của nó dựa vào.
+ */
+const MA_KHUON_VIEN = docMaNguon(resolve(GOC, "src/components/twin3d/van-hanh/canhTapDoan.ts"));
+
+/**
  * Cắt thân một `useMemo` theo DẤU KẾT của chính nó, không theo độ dài cố định.
  * (Bài học `usePhanTichLine.unit.test.ts`: cửa sổ cố định đọc lấn hàng xóm và
  * cho ra một ca đỏ oan — hoặc tệ hơn, một ca xanh oan.)
@@ -146,10 +156,39 @@ describe("★★★ W4 (Task 17c) — cảnh phải CỘNG GỐC TOÀ NHÀ", () 
   it("★ `gocToa` dựng bằng `gocToaTheoTang(...)` và NEO vào toà đang chọn", () => {
     const t = than("gocToa");
     expect(t).toContain("gocToaTheoTang(");
-    // Neo phải là TOÀ ĐANG CHỌN. Neo `null` (toạ độ tuyệt đối) sẽ đẩy máy ra
-    // khỏi mặt sàn, vì `CanhVanHanh.San` vẽ ở gốc toạ độ và không nhận vị trí toà.
     expect(t).toContain("toaNhaId");
-    expect(t).not.toMatch(/gocToaTheoTang\([^)]*,\s*null\s*\)/);
+
+    /* ════════════════════════════════════════════════════════════════════════
+     * ★★★ ĐỢT 64 (Task 19) — LỆNH CẤM ĐƯỢC THU HẸP, CHỦ ĐỢT PHÂN XỬ.
+     * ════════════════════════════════════════════════════════════════════════
+     * Bản Task 17c cấm MỌI `gocToaTheoTang(…, null)` với lý do: "neo `null`
+     * (toạ độ tuyệt đối) sẽ đẩy máy ra khỏi mặt sàn, vì `CanhVanHanh.San` vẽ ở
+     * gốc toạ độ và không nhận vị trí toà".
+     *
+     * Lệnh cấm ấy viết theo HÌNH DẠNG MÃ, nên nó bắt cả một ca hợp lệ mà Task 19
+     * sinh ra. TIỀN ĐỀ của nó đã được xử lý **ở đúng chỗ nó nói**, và đo được:
+     *   (1) `khuonVienTapDoan` dời mọi toà sao cho góc trái-dưới của khuôn viên
+     *       nằm ở `(0, 0)` — xem docblock `KhuonVien.toaNha`. Toạ độ "tuyệt đối"
+     *       ở nhánh này là tuyệt đối TRONG KHUNG ĐÃ DỜI, không phải toạ độ CSDL.
+     *   (2) `sanRongMm`/`sanSauMm` (TwinVanHanh:2786-2787) nay lấy từ
+     *       `khuonVien.rongMm`/`sauMm` khi đang ở chế độ khuôn viên, nên sàn
+     *       trải đúng bằng khuôn viên chứ không bằng một tầng.
+     * Neo vào MỘT toà ở nhánh khuôn viên mới là cái sai: nó đẩy nhà máy C ra
+     * khỏi sàn. Tức hai nhánh cần hai neo NGƯỢC nhau.
+     *
+     * Vì vậy lệnh cấm được THU HẸP về đúng nhánh nó bảo vệ, và kèm hai khẳng
+     * định DƯƠNG cho nhánh mới — bỏ một trong hai là mất chỗ đứng của ngoại lệ.
+     */
+    // ① nhánh MỘT TOÀ vẫn tuyệt đối không được neo `null`.
+    expect(t).not.toMatch(/gocToaTheoTang\(\s*dsTang\s*,[^)]*,\s*null\s*\)/);
+    // ② nhánh khuôn viên neo `null` — và chỉ hợp lệ vì hai điều dưới đây.
+    expect(t).toMatch(/gocToaTheoTang\(\s*kvTang\s*,\s*khuonVien\.toaNha\s*,\s*null\s*\)/);
+    // ③ toà đã được dời về gốc khuôn viên (nguồn của tính hợp lệ, ở tệp kia).
+    expect(MA_KHUON_VIEN).toContain("góc trái-dưới của khuôn viên nằm ở `(0, 0)`");
+    // ④ sàn lấy kích thước từ KHUÔN VIÊN, không từ một tầng — nếu ai đó trả về
+    //    `tangDau.rongMm` thì neo `null` lập tức thành cái lỗi Task 17c đã cấm.
+    expect(MA).toContain("khuonVien !== null ? khuonVien.rongMm :");
+    expect(MA).toContain("khuonVien !== null ? khuonVien.sauMm :");
   });
 
   it("★★★ trang KHÔNG tự viết phép cộng gốc toà — một luật, một chỗ", () => {

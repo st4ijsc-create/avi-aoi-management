@@ -367,3 +367,28 @@ Bản dựng được làm lại sáng 16/09 mà tệp lai lịch KHÔNG cập n
 ★ HỆ QUẢ NGƯỢC VỀ SỔ CŨ (phiên `-fe` chỉ ra): phép đo chéo rò tenant ngày 14/09 (`operator1` ⇒ 0 máy · đối chứng ⇒ 41 máy) chạy trên PID 37052 bản `e780bcab`, tiến trình đó đã chết. **Con số ấy không nói gì về bản 06:12 đang phục vụ** và không được mang sang.
 
 Chủ sở hữu cổng 3000: KHÔNG phiên Claude nào. Chuỗi cha `24872 → 10944 cross-env → 13488 cmd → 18012 pnpm → 29564 cmd → 32100 pnpm start → 37528 powershell -noexit → 10216 Code.exe`; con DUY NHẤT của 37528 là 32100, và **0** `claude.exe` trong chuỗi (mọi `claude.exe` sống đều có cha `30108 Code.exe` hoặc `12780 python.exe`). Phiên `-fe` xác nhận độc lập bằng cùng phép đo. ⇒ Đã tắt theo quyết định chủ dự án "3000 để tắt tới khi xong kế hoạch". Xác nhận hai đường: `Get-NetTCPConnection` rỗng **và** HTTP không nối được. 3001/3008/3064/5173 cũng tắt.
+
+## V-25 ★★★ Task 19 ĐẠT kết cục gốc — cảnh tập đoàn vẽ ba nhà máy, ngân sách vẽ dưới trần cả bốn ô
+Đo sống cổng 3064, `/twin?pv=tapdoan`, 1280×720, **ANGLE+GPU** (không SwiftShader), hai bản dựng riêng cho trước/sau.
+| | TRƯỚC | SAU |
+|---|---|---|
+| `qatd_giamdoc` (3 nhà máy) | **1 khối**, 45 máy vẽ | **3 khối** (QATD-A/B/C), **1.108 máy** |
+| `qatd_quanly` (gán 1 nhà máy) | 1 khối, 45 máy | **1 khối**, 371 máy |
+| cặp bao hình chồng | 0 | **0** |
+| `banner-ha-cap` | CÓ | **gỡ** (bundle 1→0, khoá i18n 3→0) |
+Ngân sách khi đang xoay, 1.108 máy: lệnh vẽ **2**/150 · tam giác **61.248**/500k · nhãn **0**/30 · **40 khung/s**/30. ĐẠT cả bốn, **không nới ngưỡng nào**.
+Đối chứng âm N7: `/twin` mặc định một nhà máy **giống hệt** trước/sau ở mọi ô (45 máy, 5 lệnh vẽ, 9.998 tam giác, 12 hàng, 0 lỗi).
+★ Phân nhóm theo **dải mã máy của bộ sinh**, không theo khe hở trên màn — gom-theo-khe-hở cho "2 cụm" vì phối cảnh nén, đã bỏ làm thước chính.
+★ Panel trái KHÔNG tệ thêm: cao hàng cảnh báo 39,00 px trước = 39,00 px sau. Tương tác chủ đợt cảnh báo **không xảy ra** — 55 dòng danh tính đã tra được từ trước.
+★ Chủ đợt siết ca W4 (`hopNhatCanhNoiVaoTrang:152`) thay vì nới: lệnh cấm `gocToaTheoTang(…, null)` viết theo HÌNH DẠNG MÃ nên bắt cả ca hợp lệ. Thu hẹp về đúng nhánh một-toà, cộng hai khẳng định DƯƠNG cho nhánh khuôn viên (toà đã dời về `(0,0)`; sàn lấy kích thước từ khuôn viên). Đối chứng: đổi sàn về `tangDau` ⇒ ca ĐỎ ⇒ hoàn nguyên sạch.
+
+## PH-44 (MỚI, CAO) · Cảnh tập đoàn ĐÚNG nhưng KHÔNG ĐỌC ĐƯỢC ở khung mặc định
+Ngân sách vẽ đạt **không** chứng minh người dùng thấy gì. Khuôn viên QATD rộng **2,25 km** (bước cụm 1 km do bộ sinh nướng vào `twin_toa_nha`), chiếu xuống 968 px ⇒ mỗi khối máy rộng **~0,2 px**. Ảnh `anh/t19-sau/qatd_giamdoc-2-canvas.png` gần như **đen hoàn toàn** — chủ đợt đã tự xem và xác nhận: panel khai `Machines 1108` / `Alarms (55)` trong khi vùng cảnh trống trơn.
+**Không phải giới hạn chụp WebGL**: ảnh cùng khuôn của bản TRƯỚC hiện rõ 45 máy. Cuộn vào 16 nấc thì khối rộng 2,5 px (trung vị) / 19,4 px (lớn nhất) và cảnh **hiện ra** (`anh/t19-nhin-sau/2-cuon-16.png`) ⇒ dữ liệu đúng, **khung hình mặc định sai tỉ lệ**.
+★ Tự-khớp-khung KHÔNG cứu được: khuôn viên 2,25 km trên 968 px là **2,3 m/px**, mà một máy rộng ~2 m ⇒ ~1 px dù khung ôm vừa khít. Đây là vấn đề **tỉ lệ**, không phải vấn đề khung.
+Thiết kế §5.3/§7.2 đã cảnh báo trước (D-3: *"1:1 là 99,99 % khoảng trống"*). Kế hoạch ghi rõ **vượt là lý do quay lại thiết kế, không phải lý do nới ngưỡng** ⇒ KHÔNG tự nới, KHÔNG tự thiết kế lại. **CHỜ CHỦ DỰ ÁN CHỐT HƯỚNG**: (a) LOD cấp tập đoàn — vẽ khối nhà máy thay vì 1.108 máy rời, hiện máy khi cuộn gần; (b) bố cục nén — xếp lại khoảng cách giữa các nhà máy thay vì dùng toạ độ thật.
+⚠ Một phần là tật của DỮ LIỆU THỬ (bộ sinh đặt các công ty cách nhau 1 km), nhưng §5.3 cảnh báo cho dữ liệu THẬT nên không được coi là chỉ do bộ sinh.
+
+## PH-45 (MỚI, TRUNG BÌNH) · Ba truy vấn trạng thái vẫn chỉ nhận một nhà máy
+`useTrangThaiSong` có 3/4 truy vấn nhận đúng một `factoryId`, nên ở phạm vi tập đoàn **737 máy được vẽ đúng chỗ mà không có lời khai trạng thái** ⇒ màu "chưa rõ". Không nói ra thì 737 khối xám bị đọc là 737 máy hỏng. Đã có `banner-trang-thai-mot-nha-may` nói ra, nhưng đó là khai hạn chế chứ chưa vá. Nợ có tên: gộp bốn truy vấn trạng thái theo `factoryIds`.
+★ Bản vá Task 19 tự sinh ra một lời khai sai và đã tự vá trong cùng lượt: `traDanhTinhCanhBao` gán `nhaMayHienTai.name` cho MỌI máy (đúng khi cảnh nạp một nhà máy, **sai** từ lượt này). Nay tra qua `nhaMayCuaMay` (máy→trạm→chuyền→xưởng→nhà máy); máy không tra được thì **không ghi**, không bịa tên.

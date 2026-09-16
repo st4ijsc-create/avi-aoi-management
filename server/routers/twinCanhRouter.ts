@@ -82,6 +82,7 @@ import {
   traCayPhanCapNhaMay,
   // ── Task 18 — cây phân cấp của một TẬP nhà máy (cảnh Twin nhiều nhà máy) ──
   traCayPhanCapNhieuNhaMay,
+  traToaNhaTangNhieuNhaMay,
   // ── PH-12 (QA lần 11) — nơi của một chuyền / một máy (nhà máy · toà · tầng) ──
   traNoiCuaThucThe,
   traDatChoTheoTang,
@@ -335,6 +336,29 @@ export const twinCanhRouter = router({
     .input(z.object({ factoryId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       return traToaNhaTheoNhaMay(input.factoryId, phamViCua(ctx));
+    }),
+
+  /**
+   * ★★★ Task 19 — TOÀ NHÀ **+ TẦNG** CỦA MỘT TẬP NHÀ MÁY, MỘT LƯỢT GỌI.
+   *
+   * Cảnh phạm vi Tập đoàn cần `tangIds` của MỌI toà của MỌI nhà máy trong phạm
+   * vi **trước** khi gọi được `canhThietKe` (vị trí máy nằm ở `twin_dat_cho`, và
+   * `canhThietKe` chỉ trả `datCho` của `tangIds` được hỏi). Đường cũ cần
+   * `danhSachToaNha` × số nhà máy + `chiTietToaNha` × số toà = **15 lượt** cho ba
+   * nhà máy QATD. Xem docblock `traToaNhaTangNhieuNhaMay` (chỗ chặn **C7**).
+   *
+   * ⚠ Trần **8 nhà máy** — CÙNG con số với `canhThietKe.factoryIds`, vì hai thủ
+   *   tục phục vụ đúng một lượt vẽ. Lệch trần là một bên nhận, một bên từ chối.
+   *
+   * ⚠ KHÔNG nhận `tangIds`/`toaNhaIds` từ client: lọc theo danh sách phía gọi tự
+   *   khai là mở lại lỗ `pham-vi-tenant-dot-lon`. Phạm vi suy từ `factoryId`
+   *   THẬT của hàng `twin_toa_nha`.
+   */
+  toaNhaTangNhieuNhaMay: protectedProcedure
+    .use(quyenDocHinhHoc())
+    .input(z.object({ factoryIds: z.array(z.number().int().positive()).min(1).max(8) }))
+    .query(async ({ input, ctx }) => {
+      return traToaNhaTangNhieuNhaMay(input.factoryIds, phamViCua(ctx));
     }),
 
   /** Một toà nhà kèm các tầng, numeric đã quy về number. */

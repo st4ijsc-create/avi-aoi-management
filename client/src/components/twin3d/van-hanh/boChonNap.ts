@@ -212,10 +212,31 @@ export function tapDoiSoatTheoNap(
  *   (b) **Nói đúng phạm vi nó đang hiện**: giữ dữ liệu một nhà máy, nhưng
  *       KHÔNG cho breadcrumb tự xưng "Tập đoàn".
  *
- * ⇒ Chọn (b), và **khai thẳng lý do trên giao diện** thay vì lặng lẽ hạ cấp:
- *   `phamViThuc()` hạ `tapDoan` xuống `nhaMay` và trả cờ `daHaCap` để người gọi
- *   hiện một dòng giải thích. Hạ cấp im lặng cũng là nói dối, chỉ theo chiều
- *   ngược lại.
+ * ⇒ Lô F chọn (b), và **khai thẳng lý do trên giao diện** thay vì lặng lẽ hạ
+ *   cấp: `phamViThuc()` hạ `tapDoan` xuống `nhaMay` và trả cờ `daHaCap` để
+ *   người gọi hiện một dòng giải thích. Hạ cấp im lặng cũng là nói dối, chỉ
+ *   theo chiều ngược lại.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ TASK 19 (2026-09-16) — LÝ DO CHỌN (b) ĐÃ **HẾT HẠN**, VÀ MÃ ĐÃ ĐỔI THEO
+ * ════════════════════════════════════════════════════════════════════════════
+ * Cái làm (a) bất khả là *"`canhThietKe` nhận ĐÚNG MỘT `factoryId`"*. **Task 18
+ * (`40f04457`) đã gỡ chính câu đó**: thủ tục nay nhận `factoryIds` (≤ 8) +
+ * `tangIds` (≤ 300), lọc phạm vi TỪNG mã; Task 19 thêm
+ * `twinCanh.toaNhaTangNhieuNhaMay` cho hình học sàn và nối cả hai vào
+ * `TwinVanHanh` qua `canhTapDoan.ts`. Đường (a) là đường đang đi.
+ *
+ * ⇒ **Banner `banner-ha-cap` và khoá i18n `twin3d.vanHanh.haCapPhamVi` ĐÃ GỠ**
+ *   cùng lượt với bản vá. Câu *"Phạm vi Tập đoàn chưa nạp được nhiều nhà máy
+ *   cùng lúc"* nay là lời khai sai theo chiều ngược, và một lý do hoãn có HẠN
+ *   SỬ DỤNG thì tài liệu trong mã phải hết hạn theo — nếu không người đọc sau
+ *   sẽ tin tài liệu chứ không tin mã.
+ *
+ * ⚠ `phamViThuc` và `daHaCap` **KHÔNG bị xoá**: sáu ô lưới của chúng
+ *   (`boChonNap.unit.test.ts:165-235`) ghim một quyết định đã đo lại
+ *   2026-09-07. Thứ đổi là **đối số thứ ba ở chỗ gọi** — xưa là hằng `1` (màn
+ *   luôn nạp một nhà máy), nay là số nhà máy THẬT SỰ được nạp. Với phạm vi tập
+ *   đoàn, hai số bằng nhau ⇒ không còn gì để hạ.
  */
 export interface PhamViThuc {
   pv: PhamVi;
@@ -228,10 +249,21 @@ export interface PhamViThuc {
 /**
  * Hạ phạm vi xuống mức mà dữ liệu ĐÃ NẠP thật sự phát biểu được.
  *
- * Hiện chỉ có một luật: `tapDoan` cần dữ liệu nhiều nhà máy, mà đường nạp chỉ
- * cho một. Khi `soNhaMayDaNap >= soNhaMayCoThat` thì `tapDoan` là câu ĐÚNG (một
- * tập đoàn một nhà máy), nên không hạ — cũng chính là nghiệm thu §10C.6 mà lô E
- * chỉ ra đang hỏng: tạo nhà máy thứ hai phải làm hành vi này ĐỔI.
+ * Hiện chỉ có một luật: `tapDoan` cần dữ liệu nhiều nhà máy. Khi
+ * `soNhaMayDaNap >= soNhaMayCoThat` thì `tapDoan` là câu ĐÚNG, nên không hạ —
+ * cũng chính là nghiệm thu §10C.6 mà lô E chỉ ra đang hỏng: tạo nhà máy thứ hai
+ * phải làm hành vi này ĐỔI.
+ *
+ * ★★★ Task 19 — HÀM GIỮ NGUYÊN, **CHỖ GỌI ĐỔI**. Trước lượt này `TwinVanHanh`
+ *   truyền `soNhaMayDaNap = 1` vì đường nạp chỉ cho một nhà máy; nay nó truyền
+ *   số nhà máy thật sự nạp (`nhaMayDeNap().gui.length`), và ở phạm vi tập đoàn
+ *   hai số bằng nhau. Đó là lý do nhánh hạ cấp **không còn đường sống trong sản
+ *   phẩm** — không phải vì hàm bị vô hiệu hoá, mà vì tiền đề của nó đã hết.
+ *
+ * ⚠ Phần dư *"phạm vi rộng hơn trần một lượt"* KHÔNG đi qua đây: xem
+ *   `nhaMayDeNap` / `banner-nha-may-vuot-tran` ở `canhTapDoan.ts`. Hạ cả phạm vi
+ *   xuống `nhaMay` trong khi cảnh đang vẽ 8 khối là lời khai sai to hơn cái nó
+ *   vá.
  */
 export function phamViThuc(
   yeuCau: PhamVi,

@@ -1,0 +1,62 @@
+Task 19 — CẢNH TẬP ĐOÀN Ở PHÍA TRÌNH DUYỆT
+nhánh feat/ai-local-L7-hang-rao @ 485678dc (CHƯA commit — chủ đợt commit)
+xong 2026-09-16
+
+DỮ LIỆU (sinh lại, mã định danh MỚI — cấm dùng số cũ)
+  sinh-tap-doan.mjs --ghi : câu chỉ ĐẠT 32/32 · 3 công ty · 12 toà · 84 tầng · 1.108 máy
+  factoryId  QATD-A=44 QATD-B=45 QATD-C=46
+  toà 78..89 · tầng 333..416
+  dải mã máy A=6413..6783 · B=6784..7192 · C=7193..7520
+  tài khoản qatd_* : 7 vai (giamdoc id=27092 · quanly id=27093 · admin id=27096), mật khẩu Qatd!2026
+
+BẢN DỰNG (md5 làm bằng chứng)
+  TRƯỚC .qa-tapdoan/dist-t19-truoc  bundle assets/index-DrD4Djtg.js  (cây = HEAD 485678dc)
+  SAU   .qa-tapdoan/dist-t19        bundle assets/index-BQIJZVql.js  (cây = HEAD + bản vá)
+  md5 cây nguồn đã vá: .qa-tapdoan/t19-md5-sau.txt (9/9 OK sau khi hoàn nguyên)
+  md5 dist SAU: .qa-tapdoan/md5-dist-t19.txt (909 dòng)
+
+KẾT CỤC ĐO SỐNG (cổng 3064, /twin?pv=tapdoan&do=1, 1280x720, ANGLE+GPU)
+                      TRƯỚC                          SAU
+  qatd_giamdoc  khối 1 (QATD-A)                khối 3 (QATD-A/B/C)      ← N1 ĐẠT
+                máy vẽ 45                      máy vẽ 1.108
+                dem-may 371                    dem-may 1.108
+                banner-ha-cap CÓ               banner-ha-cap KHÔNG      ← N6 ĐẠT
+  qatd_quanly   khối 1 · máy vẽ 45             khối 1 (QATD-A) · máy vẽ 371  ← N2 ĐẠT
+  cặp bao hình chồng trên màn 0                0                        ← N3 ĐẠT
+  qatd_admin    khối 1 · máy vẽ 45             khối 4 · máy vẽ 1.151 · banner "1 cặp chồng" BẬT
+
+NGÂN SÁCH VẼ khi ĐANG XOAY (giamdoc, 1.108 máy) — N4
+  lệnh vẽ 2      (trần 150)   ĐẠT
+  tam giác 61.248 (trần 500k) ĐẠT   (thiết kế ước ~81.400)
+  nhãn 0          (trần 30)   ĐẠT
+  khung hình 40/s (sàn 30)    ĐẠT   — đo trên dist-t19, ANGLE+GPU, không SwiftShader
+
+N7 — ĐƯỜNG MỘT NHÀ MÁY (/twin mặc định): GIỐNG HỆT trước/sau ở MỌI ô đo
+  45 máy · dem-may 371 · toà 78 · tầng 333 · 7 tầng · 5 lệnh vẽ · 9.998 tam giác · 1 nhãn · 12 hàng · 0 lỗi
+
+PANEL TRÁI 1280x720 — KHÔNG tệ thêm (tương tác đã được cảnh báo trước)
+  cao hàng cảnh báo trung bình 39,00 px trước = 39,00 px sau (giamdoc, quanly)
+                               40,81 px trước = 40,81 px sau (admin)
+  số hàng nhìn trọn vẹn 2 trước = 2 sau · số dòng danh tính 55 trước = 55 sau
+
+CỔNG NỀN
+  npx vitest run client/src/components/twin3d : 123→124 tệp · 2.892→2.917 ca · 1 ĐỎ (xem dưới)
+  npx vitest run phamVi                       : 20 tệp · 525→529 ca · 0 ĐỎ
+  npm run check                               : 0
+  npm run i18n:check                          : 0
+
+ABLATION (gỡ bản vá khỏi cây, đo lại, hoàn nguyên)
+  gỡ 6 tệp sản phẩm về HEAD ⇒ canhTapDoan.unit.test 1 ĐỎ · phamVi 7 ĐỎ
+  hoàn nguyên ⇒ md5sum -c 9/9 OK
+
+CÒN ĐỎ — QUYẾT ĐỊNH CỦA CHỦ ĐỢT, TÔI KHÔNG TỰ SỬA
+  hopNhatCanhNoiVaoTrang.unit.test.ts:152 (W4, Task 17c)
+    ghim: `gocToa` KHÔNG được gọi `gocToaTheoTang(..., null)`
+    bản vá gọi đúng thế ở NHÁNH khuôn viên (toạ độ đã tịnh tiến về góc khuôn viên)
+    xem báo cáo, mục "CÒN ĐỎ".
+
+★★★ PHÁT HIỆN CHƯA VÁ — CẢNH ĐÚNG NHƯNG KHÔNG ĐỌC ĐƯỢC Ở KHUNG MẶC ĐỊNH
+  khuôn viên QATD rộng 2,25 km (bước cụm 1 km của bộ sinh), chiếu xuống 968 px
+  ⇒ khối máy rộng ~0,2 px. Ảnh `anh/t19-sau/qatd_giamdoc-2-canvas.png` gần như đen.
+  Cuộn vào 16 nấc ⇒ khối rộng 2,5 px (trung vị) / 19,4 px (lớn nhất) và cảnh HIỆN RA
+  (`anh/t19-nhin-sau/2-cuon-16.png`). Tức dữ liệu đúng, khung hình mặc định sai tỉ lệ.

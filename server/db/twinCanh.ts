@@ -1071,6 +1071,99 @@ export async function traCayPhanCapNhieuNhaMay(
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ Task 19 — TOÀ NHÀ + TẦNG CỦA **MỘT TẬP NHÀ MÁY**, MỘT LƯỢT              */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Toà nhà và tầng của một TẬP nhà máy — thứ `canhThietKe` **không** trả.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO HÀM NÀY PHẢI TỒN TẠI (chỗ chặn thứ BẢY, thiết kế §1.5 bỏ sót)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Thiết kế Task 17 liệt kê SÁU chỗ chặn việc gộp nhiều nhà máy (C1…C6) và Task
+ * 18 đã mở C1/C2/C3. Nhưng cảnh Twin không sống bằng mỗi `canhThietKe`: vị trí
+ * của một máy nằm ở `twin_dat_cho`, và `canhThietKe` chỉ trả `datCho` của
+ * **`tangIds` được hỏi**. Client biết `tangIds` từ đâu?
+ *
+ *   `danhSachToaNha({ factoryId })`  → toà của **ĐÚNG MỘT** nhà máy
+ *   `chiTietToaNha({ id })`          → tầng của **ĐÚNG MỘT** toà
+ *
+ * Ba nhà máy QATD = 12 toà ⇒ đường cũ cần **1 + 3 + 12 = 15 lượt gọi** để biết
+ * 84 mã tầng, rồi mới gọi được `canhThietKe`. Đó chính là hình dạng PA-1 mà
+ * thiết kế §3.1 đã bác (nhiều ảnh chụp lệch nhau, chi phí tăng theo số toà), chỉ
+ * là ở một thủ tục khác. ⇒ **C7**: không có đường nào lấy hình học sàn của nhiều
+ * nhà máy trong một lượt. Hàm này là đường ấy.
+ *
+ * ★ **CÙNG BA BẤT BIẾN HÀNG RÀO của `traCayPhanCapNhieuNhaMay`**, không phải một
+ *   bộ luật thứ hai:
+ *   **BB-1** lọc TỪNG mã bằng `ids.filter(...)` trên tập đã phân giải;
+ *   **BB-2** mã ngoài phạm vi rơi im lặng, không ném, không đếm, không nêu tên;
+ *   **BB-3** toàn ngoài ⇒ hai mảng rỗng, và vì không câu đọc nào chạy nên không
+ *   mã/tên toà nào có đường ra.
+ *
+ * ★ **CHI PHÍ KHÔNG TĂNG THEO SỐ NHÀ MÁY**: đúng 3 câu (một lần phân giải phạm
+ *   vi + `inArray` toà + `inArray` tầng) cho 1 hay 8 nhà máy.
+ *
+ * ⚠ `[]` vào ⇒ RỖNG, **không phải "không lọc"** — cùng bẫy đã ghi ở
+ *   `locTangTrongPhamVi` và `traCayPhanCapNhieuNhaMay`.
+ *
+ * ⚠ `numeric` quy về `number` **ở đây**, không để client `Number()` lần nữa:
+ *   `"38400" + "0"` nối chuỗi thành `"384000"` mà không throw — nhà xưởng to gấp
+ *   mười, không lỗi nào nổ (đúng bẫy đã ghi ở `tangDau` của `TwinVanHanh`).
+ */
+export async function traToaNhaTangNhieuNhaMay(
+  factoryIds: readonly number[],
+  scope?: PhamViNguoiXem,
+) {
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError();
+
+  const ids = [...new Set(factoryIds)].filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length === 0) return { toaNha: [], tang: [] };
+
+  const nhaMayChoPhep = await idsTrongPhamVi("factory", scope);
+  const choPhep = nhaMayChoPhep === null ? null : new Set(nhaMayChoPhep);
+  // ★★★ BB-1 — DÒNG LỌC. Ablation gỡ đúng dòng này làm ca phạm vi ĐỎ.
+  const hopLe = choPhep === null ? ids : ids.filter((n) => choPhep.has(n));
+  if (hopLe.length === 0) return { toaNha: [], tang: [] };
+
+  const toaTho = await d
+    .select()
+    .from(twinToaNha)
+    .where(and(inArray(twinToaNha.factoryId, hopLe), eq(twinToaNha.isActive, true)))
+    .orderBy(asc(twinToaNha.factoryId), asc(twinToaNha.ma));
+  const toaNha = toaTho.map((t) => ({
+    id: t.id,
+    factoryId: t.factoryId,
+    ma: t.ma,
+    ten: t.ten,
+    rongMm: chuoiRaSo(t.rongMm),
+    sauMm: chuoiRaSo(t.sauMm),
+    caoMm: chuoiRaSo(t.caoMm),
+    viTriXMm: chuoiRaSo(t.viTriXMm),
+    viTriYMm: chuoiRaSo(t.viTriYMm),
+    viTriZMm: chuoiRaSo(t.viTriZMm),
+  }));
+  const toaIds = toaNha.map((t) => t.id);
+  if (toaIds.length === 0) return { toaNha, tang: [] };
+
+  const tangTho = await d
+    .select()
+    .from(twinTang)
+    .where(and(inArray(twinTang.toaNhaId, toaIds), eq(twinTang.isActive, true)))
+    .orderBy(asc(twinTang.toaNhaId), asc(twinTang.capSo));
+  const tang = tangTho.map((s) => ({
+    id: s.id,
+    toaNhaId: s.toaNhaId,
+    capSo: s.capSo,
+    ten: s.ten,
+    caoDoMm: chuoiRaSo(s.caoDoMm),
+  }));
+
+  return { toaNha, tang };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
 /* ★★★ PH-12 (QA lần 11) — **NƠI** CỦA MỘT CHUYỀN / MỘT MÁY                    */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 

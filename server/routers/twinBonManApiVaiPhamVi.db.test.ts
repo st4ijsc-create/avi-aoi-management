@@ -111,8 +111,13 @@ function quetThuTuc(): Map<string, Set<string>> {
  *   Xếp theo ĐÚNG hình dạng, không nhét vào ngoại lệ: `ghiChu` là đường GHI có phạm vi ⇒ `CA_GHI`;
  *   `danhSachGhiChu` là đường ĐỌC theo `id` tự khai ⇒ `CA_DOC` với `chan: laNotFound` và một đối
  *   chứng dương đọc ĐÚNG CHỮ của ghi chú fixture (không phải "không ném").
+ * ★ 2026-09-16 (Task 19, Giai đoạn 6) — **47**: `twinCanh.toaNhaTangNhieuNhaMay` thêm ở
+ *   `TwinVanHanh.tsx` (hình học sàn của MỘT TẬP nhà máy cho cảnh phạm vi Tập đoàn). Đường ĐỌC có
+ *   phạm vi ⇒ `CA_DOC`, `chan: laRong` (ngoài phạm vi ⇒ `{toaNha: [], tang: []}`, KHÔNG `FORBIDDEN`
+ *   — G82: một lỗi riêng cho "anh không được xem nhà máy 42" vẫn xác nhận nhà máy 42 có thật), đối
+ *   chứng dương ghim MÃ TOÀ của fixture.
  */
-const SO_THU_TUC_GHIM = 46;
+const SO_THU_TUC_GHIM = 47;
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // Fixture
@@ -387,6 +392,17 @@ const CA_DOC: CaDoc[] = [
   { duongDan: "twinCanh.noiCuaThucThe", goi: (c, nm) => c.twinCanh.noiCuaThucThe({ loai: "may", id: nm.mayId }),
     chan: laNotFound, duong: (d, nm) => d?.factoryId === nm.factoryId && d?.toaNhaId === nm.toaNhaId,
     ghi: "fixture xếp chỗ máy ở đúng 1 tầng ⇒ đối chứng dương ghim CẢ `factoryId` LẪN `toaNhaId`" },
+  /*
+   * ★★★ Task 19 (Giai đoạn 6) — thủ tục MỚI: hình học sàn của MỘT TẬP nhà máy.
+   *   Đây là thủ tục quyết định cảnh phạm vi Tập đoàn hỏi TẦNG của những nhà máy
+   *   nào, nên hàng rào của nó là hàng rào của cả cảnh ấy. Ba bất biến đo ở đây:
+   *   ngoài phạm vi ⇒ **hai mảng RỖNG** (không `FORBIDDEN`, không nêu tên — G82),
+   *   và đối chứng dương ghim MÃ TOÀ của fixture chứ không chỉ "không ném".
+   */
+  { duongDan: "twinCanh.toaNhaTangNhieuNhaMay",
+    goi: (c, nm) => c.twinCanh.toaNhaTangNhieuNhaMay({ factoryIds: [nm.factoryId] }),
+    chan: laRong, duong: (d, nm) => coChuoi(d, nm.toaNhaMa),
+    ghi: "Task 19 — toà + tầng của một TẬP nhà máy; ngoài phạm vi ⇒ `{toaNha: [], tang: []}`" },
   { duongDan: "twinCanh.sucKhoeMay", goi: (c, nm) => c.twinCanh.sucKhoeMay({ factoryId: nm.factoryId }),
     chan: (k) => k.ok && rong((k.data as { khai?: unknown[] })?.khai) && (k.data as { tongMayTrongPhamVi?: number })?.tongMayTrongPhamVi === 0,
     duong: (d) => d?.tongMayTrongPhamVi === 1, ghi: "`tongMayTrongPhamVi` đếm máy trong phạm vi — 1 cho người gán A, 0 khi ngoài" },

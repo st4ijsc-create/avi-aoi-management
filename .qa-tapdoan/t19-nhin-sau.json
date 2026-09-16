@@ -1,0 +1,44 @@
+[
+ {
+  "muc": "mac-dinh",
+  "soMay": 1108,
+  "soHopKhoi": 0,
+  "rongKhoiPx": {
+   "min": null,
+   "giua": null,
+   "max": null
+  },
+  "trongKhung": 0,
+  "trai": 384.7231024055455,
+  "phai": 618.8893185121714,
+  "canvasW": 968
+ },
+ {
+  "muc": "cuon-vao-8",
+  "soMay": 1108,
+  "soHopKhoi": 737,
+  "rongKhoiPx": {
+   "min": 0.050190805157228624,
+   "giua": 0.9828839954651585,
+   "max": 4.378326282102989
+  },
+  "trongKhung": 588,
+  "trai": 266.65364062579886,
+  "phai": 1000.9686404524562,
+  "canvasW": 968
+ },
+ {
+  "muc": "cuon-vao-16",
+  "soMay": 1108,
+  "soHopKhoi": 780,
+  "rongKhoiPx": {
+   "min": 0.10365923590261161,
+   "giua": 2.507916102616825,
+   "max": 19.39179637948473
+  },
+  "trongKhung": 607,
+  "trai": -874.4986850378465,
+  "phai": 777.8011076923362,
+  "canvasW": 968
+ }
+]

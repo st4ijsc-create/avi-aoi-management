@@ -435,7 +435,25 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   `client/**` (`sucKhoeMay.ts` · `KhungCanh.tsx` · `TwinMay.tsx` · `TwinVanHanh.tsx` +
 //   một tệp lưới mới). Bộ quét này chỉ duyệt `server/**`, và `git status server/` cho đúng
 //   ba tệp của Đợt 25 ⇒ +2 ở trên là của lô NÀY, không ký hộ ai.
-const GHIM = { A: 341, B: 8, C: 474, D: 1120, S: 327, tong: 2270 } as const;
+// ★★★ 2026-09-16 (Task 19, Giai đoạn 6) — **S: 327 → 328 · tong: 2270 → 2271.**
+// Lời khai kèm số liệu, không phải một phép sửa-cho-xanh:
+//
+// Task 19 thêm ĐÚNG MỘT thủ tục trên `twinCanhRouter` cho cảnh phạm vi Tập đoàn:
+//   · `twinCanh.toaNhaTangNhieuNhaMay` — `.query` chạm `twin_toa_nha`/`twin_tang` (bảng tenant),
+//     và danh tính **RỜI TAY handler**: `traToaNhaTangNhieuNhaMay(input.factoryIds, phamViCua(ctx))`
+//     phân giải phạm vi bằng `idsTrongPhamVi("factory", scope)` — CHÍNH hàm mà `trongPhamVi` gọi
+//     bên trong — rồi lọc TỪNG mã trước mọi lượt đọc ⇒ nhóm **S**. +1 ở S.
+//
+// Phép đo (bộ quét `quetPhamViDoc`, cây làm việc, 2026-09-16):
+//   TRƯỚC  `A 341 · B 8 · C 474 · D 1120 · S 327 · 2270`
+//   SAU    `A 341 · B 8 · C 474 · D 1120 · S 328 · 2271`
+//
+// ★ Bằng chứng KHÔNG phải nhóm rò: **A giữ nguyên 341** (A = "đọc tenant KHÔNG lọc"), **D giữ
+//   nguyên 1120** (không thêm đường ghi nào), sổ nợ không thêm dòng, và §7 — ô đột biến "router
+//   rò MỚI ⇒ nhóm A + không trong sổ nợ" — vẫn XANH ở cùng lượt chạy.
+// ★ Thủ tục này cũng có ca hai chiều trên CSDL thật ở `twinBonManApiVaiPhamVi.db.test.ts` (CA_DOC,
+//   `chan: laRong` + đối chứng dương ghim mã toà), nên con số ở đây không phải chỗ duy nhất canh nó.
+const GHIM = { A: 341, B: 8, C: 474, D: 1120, S: 328, tong: 2271 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
