@@ -1306,3 +1306,32 @@ git commit -m "feat(twin3d): canh pham vi tap doan gop nhieu nha may (muc 26 spe
 | Gộp nhiều nhà máy trong một cảnh | **Thiết kế để mở rộng thêm** | Thành Giai đoạn 6, Task 17 đến 19. |
 | Chỉ mục cho môi trường sản xuất | **Không còn là nợ** — hệ thống hiện chỉ nằm trong hệ sinh thái máy tự động hoá, chưa chạm sản xuất thật | Gỡ khỏi danh sách chờ. Khi nào có môi trường sản xuất thật thì mở lại. |
 | Hai chỉ số rủi ro ngược nhau | **Đồng ý đo**, giả thuyết là lỗi dữ liệu sinh ngẫu nhiên | Thành Task 16 bước 4. |
+
+---
+
+## Trạng thái thực thi — cập nhật 2026-09-16 (chủ đợt)
+
+⚠ **103 ô `- [ ]` ở trên vẫn CHƯA TICK, và đó là cố ý.** Bài học của dự án này (Pha 0): *"kế hoạch 0/89 ô tick = nghiệm thu lại, không tin artefact"*. Tick hàng loạt theo trí nhớ sẽ biến một sổ ghi thành một lời khai. Bảng dưới ghi **commit** — thứ tự kiểm lại được — thay cho dấu tick.
+
+| việc | trạng thái | commit | bằng chứng mạnh nhất |
+|---|---|---|---|
+| PH-41 bấm khối khi đa chọn | **KHÔNG TÁI HIỆN** | `c1f95557` | đối chứng dương thấy được một lần thu lựa chọn THẬT trước khi kết luận nó không xảy ra |
+| PH-39 chỉ số rủi ro luôn 0 % | **ĐÓNG** | `197b0f3a` | 42/42 máy cold start trên CSDL nền; cổng "honest null" cũ không bắt được vì `uptimeMinutes=43200` |
+| Task 18 hợp đồng nhận danh sách | **ĐẠT** | `40f04457` | ablation PHÂN BIỆT: hai lần gỡ cho hai tập đỏ RỜI NHAU (6/25 và 1/30) |
+| PH-38 dải cảnh báo đếm lệch | **KHÔNG TÁI HIỆN** + 2 lỗi thật đã vá | `f435b9bf` | bộ chọn `[data-ma-may]` của kịch bản đo ĐỊNH NGHĨA RA kết cục; cùng cây DOM cho 55 và 15 |
+| Bấm nền bỏ chọn ở bản 3D | **ĐÓNG** | `7dc5bf97` | `onPointerMissed` chạy ở HAI tình huống — gác sai sẽ làm bấm vùng an toàn xoá tập chọn |
+| Cân lại tỉ lệ khung | **ĐO XONG ⇒ KHÔNG CÂN** | `f435b9bf` | @1280 tiêu chí ≥3 hàng là BẤT KHẢ (thiếu 64,48 px, quét 11 tỉ lệ ra 0 nghiệm); tỉ lệ chưa bao giờ sai, bốn hằng dưới nó đã đổi |
+| Task 19 cảnh tập đoàn | **ĐẠT kết cục gốc** | `94de24be` | 1 khối → 3 khối, 1.108 máy, ngân sách vẽ dưới trần cả bốn ô, không nới ngưỡng nào |
+
+### ⛔ HAI VIỆC CHẶN, CHỜ CHỦ DỰ ÁN CHỐT — không ai được tự quyết
+
+1. **PH-44 — cảnh tập đoàn đúng nhưng không đọc được ở khung mặc định.** Khuôn viên 2,25 km trên 968 px là 2,3 m mỗi pixel; một máy rộng ~2 m nên còn ~1 px **dù khung ôm vừa khít**. Đây là vấn đề TỈ LỆ, không phải vấn đề khung, nên tự-khớp-khung không cứu được. Kế hoạch ghi rõ *vượt là lý do quay lại thiết kế, không phải lý do nới ngưỡng*. Hai hướng đã nêu: (a) LOD cấp tập đoàn — vẽ khối nhà máy thay vì 1.108 máy rời, hiện máy khi cuộn gần; (b) bố cục nén — xếp lại khoảng cách thay vì dùng toạ độ thật. **Cả hai đều là thay đổi thiết kế ⇒ phải hỏi.**
+2. **PH-43 — `dist/BUILD-INFO.txt` khai SAI và không khôi phục được.** Hai lối sạch: dựng lại từ commit biết rõ, hoặc **xoá tệp** để nó im lặng thay vì nói dối. Lối thứ hai là xoá tệp ⇒ theo ràng buộc của chủ dự án, phải hỏi trước.
+
+### Nợ có tên, chưa vá
+- **PH-45** — 3/4 truy vấn của `useTrangThaiSong` vẫn nhận một `factoryId` ⇒ 737 máy vẽ đúng chỗ mà không có lời khai trạng thái. Đã có banner nói ra; gộp bốn truy vấn theo `factoryIds` là lượt sau.
+- **PH-42** — `/factory-command` bấm nền xoá nhấn sáng nhưng giữ viền và nhãn. Lệch CÓ SẴN; bản vá chỉ thêm một nguồn kích hoạt.
+- **V-21 mục (1)** — tỉ lệ cảnh báo dự đoán theo hạng sức khoẻ 53,5/49,6/49,7/55,8 % vẫn phẳng và ngược chiều. Lỗi bộ sinh.
+- **G134** — luật chọn 30 nhãn trong 1.108 máy qua 3 nhà máy **vẫn chưa tồn tại**; chỉ đo được là không vỡ trần, chưa đo được là chọn đúng.
+- `e2e/twin-lo-f.spec.ts` F3 đã sửa (nó ghim hành vi hạ cấp vừa bị gỡ) nhưng **chưa chạy**.
+- `.qa-tapdoan/t19-backup/` (3,3 MB bản sao mã nguồn cho ablation) còn untracked — không commit, và không tự xoá.
