@@ -392,3 +392,30 @@ Thiết kế §5.3/§7.2 đã cảnh báo trước (D-3: *"1:1 là 99,99 % kho�
 ## PH-45 (MỚI, TRUNG BÌNH) · Ba truy vấn trạng thái vẫn chỉ nhận một nhà máy
 `useTrangThaiSong` có 3/4 truy vấn nhận đúng một `factoryId`, nên ở phạm vi tập đoàn **737 máy được vẽ đúng chỗ mà không có lời khai trạng thái** ⇒ màu "chưa rõ". Không nói ra thì 737 khối xám bị đọc là 737 máy hỏng. Đã có `banner-trang-thai-mot-nha-may` nói ra, nhưng đó là khai hạn chế chứ chưa vá. Nợ có tên: gộp bốn truy vấn trạng thái theo `factoryIds`.
 ★ Bản vá Task 19 tự sinh ra một lời khai sai và đã tự vá trong cùng lượt: `traDanhTinhCanhBao` gán `nhaMayHienTai.name` cho MỌI máy (đúng khi cảnh nạp một nhà máy, **sai** từ lượt này). Nay tra qua `nhaMayCuaMay` (máy→trạm→chuyền→xưởng→nhà máy); máy không tra được thì **không ghi**, không bịa tên.
+
+## V-26 ★★★ Task 20 ĐẠT — sa bàn quy hoạch, và CHỦ ĐỢT ĐÃ TỰ XEM BẰNG MẮT
+Chủ dự án chốt: *"không nhất thiết phải vẽ đúng tỉ lệ kích thước của từng toà nhà, chỉ cần hiển thị dạng biểu tượng 3D, và hiển thị giống kiểu sa bàn quy hoạch với mật độ và kích thước nhẹ phù hợp"*. ⇒ Đổi **ĐƠN VỊ VẼ**: 1.108 khối máy → **12 biểu tượng toà nhà** trên một bệ sa bàn.
+| | TRƯỚC (`dist-t19`) | SAU (`dist-t20`) | trần |
+|---|---|---|---|
+| biểu tượng toà | **0** (canvas ĐEN) | **12** (3 cụm × 4) | — |
+| rộng trên màn | – | **46,8-64,0 px** | ≥ 24 ✅ |
+| toà chồng toà khác công ty | – | **0** | 0 ✅ |
+| lệnh vẽ / tam giác | 2 / 61.248 | **4 / 182** | <150 / <500k ✅ |
+| nhãn / khung-s | 0 / 50 | 15 (**9 đọc được**) / 44-49 | <30 / ≥30 ✅ |
+Đối chứng âm: `/twin` một nhà máy **giống BYTE** bản chuẩn Task 19 (45 máy · 5 lệnh vẽ · 9.998 tam giác · 1 nhãn · 12 hàng · 0 lỗi). Ablation gỡ 1 dòng ⇒ 2 đỏ + 6 lỗi tsc; hoàn nguyên `md5sum -c` 11/11.
+★ Lời khai đi theo bản vá: `banner-vi-tri-tam-sinh` trước chỉ bật khi **đo được** là bao hình chồng nhau; nay vị trí cấp tập đoàn **LUÔN** là sơ đồ nên banner bật theo `laSoDo` và nêu hai con số thật ("khuôn viên thật 2.240 m → sa bàn 673 m"). Khoá `viTriTamSinh` GỠ khỏi cả ba locale.
+
+★★★ **CHỦ ĐỢT TỰ XEM `anh/t20-sau/qatd_giamdoc-2-canvas.png` (khung MẶC ĐỊNH, không thu panel)** và xác nhận: bệ sa bàn hình thoi hiện rõ, cụm "Công ty B" đọc được cả bốn nhãn "Toà 1-4", "Công ty C" đọc được. **Đây là kết luận từ PIXEL, không phải từ toạ độ chiếu** — Task 19 từng khai "3 khối" từ toạ độ chiếu trong khi ảnh vẫn đen, nên lần này bằng chứng phải là con mắt.
+
+## PH-46 (MỚI, TRUNG BÌNH) · Thẻ Metrics che khuất một cụm ở khung mặc định
+Chủ đợt đo bằng mắt trên đúng ảnh khung mặc định: thẻ `Metrics` (z-30, góc trên-trái) **phủ trọn cụm QATD-A**, kể cả nhãn "Công ty A". Chỉ **2/3** tên công ty đọc được; agent đếm ra 6/15 nhãn bị ẩn (`__demSaBan.soNhan() = {ve:9, an:6, tong:15}` — đếm ra thay vì khai "15 nhãn đã vẽ", đúng khuôn).
+⇒ Yêu cầu nghiệp vụ *"nhìn ra cụm nào thuộc công ty nào"* **chưa đạt ở khung mặc định**; ảnh rõ nhất là ảnh **đã thu panel**, mà người dùng không mặc định thu panel.
+★ Tính chất bố cục trang này CÓ TRƯỚC Task 20 và cũng đúng với cảnh một nhà máy — nhưng ở cấp tập đoàn nó phá đúng thứ tính năng tồn tại để làm.
+
+## PH-47 (MỚI, TRUNG BÌNH) · Sa bàn chỉ chiếm ~35 % bề rộng canvas
+Hai nguyên nhân đo được: (1) `HE_SO_LUI.tapDoan = 2,4` (`phamViCanh.ts:167`) đẩy camera lùi xa; (2) ba cụm xếp trên lưới **2×2** nên **ô thứ tư bỏ trống**, ăn mất một phần ngân sách pixel. Agent KHÔNG sửa hằng vì `phamViCanh.unit.test.ts:166` ghim nó — và dừng lại hỏi là đúng.
+★ **Chủ đợt phân xử: hằng ấy ĐƯỢC PHÉP ĐỔI.** Ô T-2 là ô **chống LỆCH** (nó đo `lui` độc lập từ hình học rồi so với hằng), không phải ô ghim một QUYẾT ĐỊNH về con số 2,4. Đổi hằng thì cập nhật bảng viết tay; phép đo độc lập vẫn còn nguyên sức.
+
+## PH-48 (MỚI, THẤP) · Thẻ KPI đếm một nhà máy trong khi cảnh nói về ba
+Ở cấp tập đoàn thẻ `Metrics` vẫn in "371 machines / Công ty A · Toà 1 · Tầng 1" trong khi cảnh vẽ cả ba công ty và `dem-may` = 1.108. Cùng lớp với G1 của PH-38 (hai con số trên một màn tả hai tập khác nhau mà không câu nào nói ra), và chủ dự án đã ra luật cho lớp này: **nói ra, đừng âm thầm thu hẹp**.
+★ Agent không sửa vì `nguonKpiTheoTang.unit.test.ts` ghim `may={mayVeTatCa}` ở đúng hai chỗ — dừng lại là đúng. Hệ quả phụ họ tự khai: docblock `TwinVanHanh.tsx:2459` nói `idMayTrongCanh` là "tập mà cảnh thật sự vẽ" nay đã thành **nửa đúng** ở cấp tập đoàn, vì cảnh nhận 1.108 máy nhưng vẽ 12 biểu tượng.

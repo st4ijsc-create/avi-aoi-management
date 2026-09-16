@@ -546,3 +546,115 @@ export function dungCanhBao3D(
   }
   return ra;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* SA BÀN TẬP ĐOÀN — mm (CSDL) → mét (scene), MỘT chỗ quy đổi (Task 20)        */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Một biểu tượng toà nhà ĐÃ sẵn sàng cho cảnh: **tâm khối**, mét, trục scene.
+ *
+ * ⚠ `viTri` là TÂM, không phải góc — `<boxGeometry>` của three lấy tâm làm gốc.
+ *   `MayTrongLo.viTri` ngược lại là ĐÁY máy. Hai quy ước khác nhau trong cùng
+ *   một cảnh là chỗ trượt chân kinh điển, nên nó được khai ngay ở kiểu.
+ */
+export interface BieuTuongToaVe {
+  toaNhaId: number;
+  factoryId: number;
+  chiSoCum: number;
+  /** Chữ ĐÃ sẵn sàng hiển thị (trang lo `t()`; cảnh không được gọi `t()` — RB-8.3). */
+  nhan: string;
+  viTri: { x: number; y: number; z: number };
+  co: { rong: number; cao: number; sau: number };
+}
+
+/** Nền một cụm (một nhà máy) — tấm mỏng nằm dưới nhóm biểu tượng. */
+export interface CumSaBanVe {
+  factoryId: number;
+  chiSoCum: number;
+  nhan: string;
+  viTri: { x: number; y: number; z: number };
+  co: { rong: number; sau: number };
+}
+
+/** Hình dạng sa bàn mà {@link dungSaBanVe} cần — khớp `SaBanTapDoan` của `canhTapDoan.ts`. */
+export interface SaBanVao {
+  bieuTuong: readonly {
+    toaNhaId: number;
+    factoryId: number;
+    chiSoCum: number;
+    ten: string;
+    ma: string;
+    xMm: number;
+    yMm: number;
+    rongMm: number;
+    sauMm: number;
+    caoMm: number;
+  }[];
+  oCum: readonly {
+    factoryId: number;
+    chiSoCum: number;
+    xMm: number;
+    yMm: number;
+    rongMm: number;
+    sauMm: number;
+    soToa: number;
+  }[];
+}
+
+/** Bề dày tấm nền cụm (m) — mỏng để không thành một khối thứ hai tranh chỗ với toà. */
+export const DAY_NEN_CUM_M = 0.4;
+
+/**
+ * Quy đổi sa bàn (mm, góc trái-dưới) sang cảnh (m, tâm khối).
+ *
+ * ★ Đi qua `mmSangScene()` như mọi thứ khác trong tệp này: viết tay ba lời gọi
+ *   `mmSangMet` ở đây là bản sao thứ hai của phép hoán vị trục
+ *   (`hopNhatCanhKhongTachThem.unit.test.ts` TỪ CHỐI 3 ghim điều đó).
+ *
+ * ⚠ Sa bàn đặt mọi toà **trên mặt sàn** (đáy ở `y = 0`), cố ý bỏ `viTriZMm` của
+ *   toà: ở cấp tập đoàn cao độ nền của từng toà là một chi tiết không đọc được
+ *   ở 2,8 m/px, còn một toà chìm dưới sàn thì đọc thành "thiếu toà". Đây là một
+ *   phần của lời khai `laSoDo`, không phải một phép làm tròn giấu đi.
+ *
+ * @param tenNhaMay `factoryId → tên hiển thị`; thiếu ⇒ nhãn cụm RỖNG (trang lo
+ *   câu dự phòng, vì chỉ ở trang mới gọi được `t()`).
+ * @param tenDuPhong câu cho toà KHÔNG có tên trong CSDL — ĐÃ dịch.
+ */
+export function dungSaBanVe(
+  saBan: SaBanVao,
+  tenNhaMay: ReadonlyMap<number, string>,
+  tenDuPhong: (toaNhaId: number) => string,
+): { toa: BieuTuongToaVe[]; cum: CumSaBanVe[] } {
+  const toa = saBan.bieuTuong.map((v) => {
+    const tam = mmSangScene({
+      xMm: v.xMm + v.rongMm / 2,
+      yMm: v.yMm + v.sauMm / 2,
+      zMm: v.caoMm / 2,
+    });
+    const co = mmSangScene({ xMm: v.rongMm, yMm: v.sauMm, zMm: v.caoMm });
+    return {
+      toaNhaId: v.toaNhaId,
+      factoryId: v.factoryId,
+      chiSoCum: v.chiSoCum,
+      nhan: v.ten || v.ma || tenDuPhong(v.toaNhaId),
+      viTri: tam,
+      // `mmSangScene` hoán vị trục, nên bề SÂU về `z` và chiều CAO về `y`.
+      co: { rong: co.x, cao: co.y, sau: co.z },
+    };
+  });
+
+  const cum = saBan.oCum.map((o) => {
+    const tam = mmSangScene({ xMm: o.xMm + o.rongMm / 2, yMm: o.yMm + o.sauMm / 2, zMm: 0 });
+    const co = mmSangScene({ xMm: o.rongMm, yMm: o.sauMm, zMm: 0 });
+    return {
+      factoryId: o.factoryId,
+      chiSoCum: o.chiSoCum,
+      nhan: tenNhaMay.get(o.factoryId) ?? "",
+      viTri: tam,
+      co: { rong: co.x, sau: co.z },
+    };
+  });
+
+  return { toa, cum };
+}

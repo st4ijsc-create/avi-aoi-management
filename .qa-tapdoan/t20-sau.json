@@ -1,0 +1,232 @@
+{
+ "nhan": "sau",
+ "luc": "2026-09-16T02:44:22.859Z",
+ "tran": {
+  "calls": 150,
+  "triangles": 500000,
+  "nhan": 30,
+  "fps": 30,
+  "rongPx": 24
+ },
+ "vai": {
+  "qatd_giamdoc": {
+   "moTa": "cap tap doan (gan TD QATD)",
+   "canvas": {
+    "w": 968,
+    "h": 489
+   },
+   "soBieuTuong": 12,
+   "rongPxMin": 46.8,
+   "rongPxMax": 64,
+   "soToaDuoiTran": 0,
+   "soNgoaiKhung": 0,
+   "ngoaiKhung": [],
+   "theoNhaMay": {
+    "QATD-A": {
+     "soToa": 4,
+     "chiSoCum": [
+      0
+     ],
+     "rongPxMin": 46.8,
+     "hop": {
+      "trai": 426,
+      "phai": 535,
+      "tren": 173,
+      "duoi": 230
+     }
+    },
+    "QATD-B": {
+     "soToa": 4,
+     "chiSoCum": [
+      1
+     ],
+     "rongPxMin": 57.1,
+     "hop": {
+      "trai": 531,
+      "phai": 663,
+      "tren": 211,
+      "duoi": 288
+     }
+    },
+    "QATD-C": {
+     "soToa": 4,
+     "chiSoCum": [
+      2
+     ],
+     "rongPxMin": 53.1,
+     "hop": {
+      "trai": 322,
+      "phai": 445,
+      "tren": 204,
+      "duoi": 277
+     }
+    }
+   },
+   "soCum": 3,
+   "nhaMayLanCum": [],
+   "capBaoHinhCumChongTrenMan": 2,
+   "capBaoHinhCumChongTen": [
+    "QATD-A×QATD-B",
+    "QATD-A×QATD-C"
+   ],
+   "capToaChongKhacNhaMay": 0,
+   "capToaChongTen": [],
+   "soMayVe": -1,
+   "soNhanSaBan": {
+    "ve": 9,
+    "an": 6,
+    "tong": 15
+   },
+   "soNhanDom": {
+    "tong": 15,
+    "hien": 9
+   },
+   "nhanCum": [
+    {
+     "factoryId": 44,
+     "chu": "Công ty A"
+    },
+    {
+     "factoryId": 45,
+     "chu": "Công ty B"
+    },
+    {
+     "factoryId": 46,
+     "chu": "Công ty C"
+    }
+   ],
+   "demMay": "1108",
+   "breadcrumb": "Corporate",
+   "banner": {
+    "viTriSoDo": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and 12 buildings across 3 factories are grouped into clusters so they can be read. The real campus is 2240 m wide; the model compresses it to 673 m — positions and distances on screen are",
+    "soToa": "12",
+    "soKhoi": "3",
+    "rongThatMm": "2240000",
+    "rongSoDoMm": "673200",
+    "haCap": null,
+    "nhaMayVuotTran": null
+   },
+   "nhanKhiThuPanel": {
+    "ve": 15,
+    "an": 0,
+    "tong": 15
+   },
+   "thongKe": {
+    "calls": 4,
+    "triangles": 182,
+    "matContext": 0,
+    "khoiPhuc": 0
+   },
+   "xoay": {
+    "khung": 160,
+    "ms": 3255,
+    "fps": 49,
+    "thongKe": {
+     "calls": 4,
+     "triangles": 182,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "soBieuTuong": 12
+   },
+   "loi": [],
+   "DAT": {
+    "①a moi bieu tuong >= 24px": true,
+    "①b toan bo sa ban trong khung": true,
+    "② quan he dung (1 cum = 1 nha may, 0 toa chong toa khac cong ty)": true,
+    "③ ngan sach ve": true
+   }
+  },
+  "qatd_quanly": {
+   "moTa": "chi gan QATD-A",
+   "canvas": {
+    "w": 968,
+    "h": 489
+   },
+   "soBieuTuong": 4,
+   "rongPxMin": 163,
+   "rongPxMax": 235.1,
+   "soToaDuoiTran": 0,
+   "soNgoaiKhung": 0,
+   "ngoaiKhung": [],
+   "theoNhaMay": {
+    "QATD-A": {
+     "soToa": 4,
+     "chiSoCum": [
+      0
+     ],
+     "rongPxMin": 163,
+     "hop": {
+      "trai": 295,
+      "phai": 725,
+      "tren": 143,
+      "duoi": 408
+     }
+    }
+   },
+   "soCum": 1,
+   "nhaMayLanCum": [],
+   "capBaoHinhCumChongTrenMan": 0,
+   "capBaoHinhCumChongTen": [],
+   "capToaChongKhacNhaMay": 0,
+   "capToaChongTen": [],
+   "soMayVe": -1,
+   "soNhanSaBan": {
+    "ve": 4,
+    "an": 1,
+    "tong": 5
+   },
+   "soNhanDom": {
+    "tong": 5,
+    "hien": 4
+   },
+   "nhanCum": [
+    {
+     "factoryId": 44,
+     "chu": "Công ty A"
+    }
+   ],
+   "demMay": "371",
+   "breadcrumb": "Corporate",
+   "banner": {
+    "viTriSoDo": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and 4 buildings across 1 factories are grouped into clusters so they can be read. The real campus is 240 m wide; the model compresses it to 286 m — positions and distances on screen are N",
+    "soToa": "4",
+    "soKhoi": "1",
+    "rongThatMm": "240000",
+    "rongSoDoMm": "286000",
+    "haCap": null,
+    "nhaMayVuotTran": null
+   },
+   "nhanKhiThuPanel": {
+    "ve": 5,
+    "an": 0,
+    "tong": 5
+   },
+   "thongKe": {
+    "calls": 4,
+    "triangles": 62,
+    "matContext": 0,
+    "khoiPhuc": 0
+   },
+   "xoay": {
+    "khung": 162,
+    "ms": 2867,
+    "fps": 57,
+    "thongKe": {
+     "calls": 4,
+     "triangles": 62,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "soBieuTuong": 4
+   },
+   "loi": [],
+   "DAT": {
+    "①a moi bieu tuong >= 24px": true,
+    "①b toan bo sa ban trong khung": true,
+    "② quan he dung (1 cum = 1 nha may, 0 toa chong toa khac cong ty)": true,
+    "③ ngan sach ve": true
+   }
+  }
+ }
+}

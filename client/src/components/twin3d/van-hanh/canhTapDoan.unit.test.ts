@@ -23,10 +23,14 @@ import { fileURLToPath } from "node:url";
 import { docMaNguon } from "@shared/testing/docMaNguon";
 
 import {
+  BIEU_TUONG_CAO_TOI_THIEU_MM,
+  BIEU_TUONG_TOI_THIEU_MM,
+  KHE_GIUA_CUM_TOI_THIEU_LAN,
   KHE_HO_KHOI_MM,
   TRAN_NHA_MAY_MOT_LUOT,
   khuonVienTapDoan,
   nhaMayDeNap,
+  saBanTapDoan,
   type ToaNhaKhuonVien,
 } from "./canhTapDoan";
 
@@ -338,5 +342,292 @@ describe("★★★ khuonVienTapDoan — dời chỗ từng khối nhà máy (th
     const kv = khuonVienTapDoan(chuoi)!;
     expect(kv.khoi).toHaveLength(1);
     expect(kv.rongMm).toBe(39_400);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* 3. saBanTapDoan — SA BÀN QUY HOẠCH (Task 20)                                */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ Ô NGHIỆM THU CỦA TASK 20 LÀ **PIXEL**, MÀ LƯỚI NÀY CHẠY Ở NODE
+ * ════════════════════════════════════════════════════════════════════════════
+ * Tiêu chí chủ đợt đặt ra là "mỗi biểu tượng rộng ≥ 24 px ở 1280×720, khung mặc
+ * định". Không hàm thuần nào đo được pixel — nên lưới này **không giả vờ đo**
+ * pixel. Nó đo đúng cái CƠ CHẾ sinh ra pixel ấy, và cơ chế đó là một tỉ số:
+ *
+ *   bề rộng biểu tượng / bề rộng SA BÀN
+ *
+ * vì khung nhìn ôm cả sa bàn, nên số pixel của một biểu tượng tỉ lệ thẳng với tỉ
+ * số này. Số đo trước/sau nói rõ vì sao Task 19 đen màn hình:
+ *   · toạ độ THẬT  : 110.000 / 2.240.000 = **4,9 %** bề rộng
+ *   · sa bàn Task 20: 110.000 /   629.200 = **17,5 %** — gấp 3,56 lần.
+ * Pixel thật do `.qa-tapdoan/t20-do.mjs` đo trên trình duyệt; ở đây ta ghim cái
+ * **bất biến** làm nó đúng, để một bản vá sau này nới bố cục ra là ĐỎ ngay.
+ *
+ * ⚠ Mọi ô dưới đây khẳng định KÍCH THƯỚC ĐẦU VÀO trước khi khẳng định kết cục
+ *   (G5), và đi theo CẶP N1/N2 như phần trên của tệp.
+ */
+
+/** Ngưỡng tỉ số "đọc được": biểu tượng nhỏ nhất ≥ 1/10 bề rộng sa bàn. */
+const TI_SO_DOC_DUOC = 0.1;
+
+/**
+ * Mẫu số là CẠNH DÀI NHẤT của sa bàn, không phải bề rộng: khung nhìn ôm cả bao
+ * hình, nên cạnh dài mới là thứ quyết định số mét trên một pixel.
+ */
+const tiSoNhoNhat = (sb: { bieuTuong: { rongMm: number }[]; rongMm: number; sauMm: number }) =>
+  Math.min(...sb.bieuTuong.map((v) => v.rongMm)) / Math.max(sb.rongMm, sb.sauMm);
+
+describe("★★★ saBanTapDoan — đổi ĐƠN VỊ VẼ, không đổi khung nhìn (Task 20)", () => {
+  it("★ N1 — 12 toà của BA công ty ⇒ 12 BIỂU TƯỢNG trong BA cụm, mỗi cụm 4 toà", () => {
+    expect(TOA_QATD).toHaveLength(12);
+    const sb = saBanTapDoan(TOA_QATD);
+    expect(sb).not.toBeNull();
+    if (!sb) return;
+
+    expect(sb.bieuTuong).toHaveLength(12);
+    expect(sb.oCum).toHaveLength(3);
+    expect(sb.oCum.map((o) => o.factoryId)).toEqual([44, 45, 46]);
+    expect(sb.oCum.map((o) => o.soToa)).toEqual([4, 4, 4]);
+    // Tổng biểu tượng = tổng toà của các cụm: không toà nào rơi vào khe.
+    expect(sb.oCum.reduce((a, o) => a + o.soToa, 0)).toBe(sb.bieuTuong.length);
+  });
+
+  it("★★★ QUAN HỆ ĐÚNG — mỗi biểu tượng nằm TRONG ô cụm của ĐÚNG nhà máy nó thuộc về", () => {
+    const sb = saBanTapDoan(TOA_QATD);
+    if (!sb) throw new Error("sa bàn null");
+    expect(sb.bieuTuong.length).toBeGreaterThan(0);
+
+    for (const v of sb.bieuTuong) {
+      const o = sb.oCum.find((c) => c.factoryId === v.factoryId);
+      expect(o, `toà ${v.toaNhaId} không có cụm`).toBeDefined();
+      if (!o) continue;
+      expect(v.chiSoCum).toBe(o.chiSoCum);
+      expect(v.xMm).toBeGreaterThanOrEqual(o.xMm);
+      expect(v.yMm).toBeGreaterThanOrEqual(o.yMm);
+      expect(v.xMm + v.rongMm).toBeLessThanOrEqual(o.xMm + o.rongMm + 1e-6);
+      expect(v.yMm + v.sauMm).toBeLessThanOrEqual(o.yMm + o.sauMm + 1e-6);
+    }
+  });
+
+  it("★★★ CÁC CỤM TÁCH BẠCH — 0 cặp ô cụm giao nhau (đây là thứ 'ba cụm' nghĩa là)", () => {
+    const sb = saBanTapDoan(TOA_QATD);
+    if (!sb) throw new Error("sa bàn null");
+    expect(sb.oCum.length).toBe(3);
+
+    let cap = 0;
+    for (let i = 0; i < sb.oCum.length; i += 1) {
+      for (let j = i + 1; j < sb.oCum.length; j += 1) {
+        if (giaoNhau(sb.oCum[i], sb.oCum[j])) cap += 1;
+      }
+    }
+    expect(cap).toBe(0);
+  });
+
+  it("★★★ KHE GIỮA CỤM PHẢI LỚN HƠN HẲN KHE TRONG CỤM — nếu không, 12 toà đọc thành MỘT lưới đều", () => {
+    const sb = saBanTapDoan(TOA_QATD);
+    if (!sb) throw new Error("sa bàn null");
+
+    // Khe TRONG cụm: hai biểu tượng liền nhau cùng một cụm, cùng hàng.
+    const cumA = sb.bieuTuong.filter((v) => v.factoryId === 44).sort((a, b) => a.xMm - b.xMm);
+    expect(cumA.length).toBe(4);
+    const kheTrong = cumA[2].xMm - (cumA[0].xMm + cumA[0].rongMm);
+
+    // Khe GIỮA cụm: mép phải ô cụm 0 → mép trái ô cụm 1.
+    const o0 = sb.oCum[0];
+    const o1 = sb.oCum[1];
+    const kheGiua = o1.xMm - (o0.xMm + o0.rongMm);
+
+    expect(kheTrong).toBeGreaterThan(0);
+    expect(kheGiua).toBeGreaterThan(0);
+    expect(kheGiua / kheTrong).toBeGreaterThanOrEqual(KHE_GIUA_CUM_TOI_THIEU_LAN);
+  });
+
+  it("★★★ KẾT CỤC ĐO ĐƯỢC — biểu tượng nhỏ nhất chiếm ≥ 10 % bề rộng sa bàn", () => {
+    const sb = saBanTapDoan(TOA_QATD);
+    if (!sb) throw new Error("sa bàn null");
+    expect(sb.bieuTuong).toHaveLength(12);
+    expect(tiSoNhoNhat(sb)).toBeGreaterThanOrEqual(TI_SO_DOC_DUOC);
+  });
+
+  it("★★★ ĐỐI CHỨNG BIẾT KÊU — ĐÚNG phép đo ấy BÁC BỎ bố cục toạ độ thật (4,9 %)", () => {
+    /*
+     * Không có ô này, ô trên là một khẳng định không ai kiểm được: nó phải ĐỎ
+     * trên bố cục cũ thì mới chứng minh được nó đo đúng thứ Task 20 sinh ra để
+     * sửa. `khuonVienTapDoan` là chính bố cục cũ, còn sống và còn lưới.
+     */
+    const cu = khuonVienTapDoan(TOA_QATD);
+    if (!cu) throw new Error("khuôn viên null");
+    const tiSoCu = TOA_RONG_MM / cu.rongMm;
+    expect(tiSoCu).toBeLessThan(TI_SO_DOC_DUOC);
+
+    const sb = saBanTapDoan(TOA_QATD);
+    if (!sb) throw new Error("sa bàn null");
+    // Và hai phép đo phải KHÁC NHAU rõ rệt: sa bàn nén bề rộng xuống dưới MỘT
+    // NỬA (đo được với giáo cụ này: 2.250.000 → 734.400 mm, tức 3,06 lần).
+    expect(sb.rongMm).toBeLessThan(cu.rongMm / 2);
+    expect(tiSoNhoNhat(sb)).toBeGreaterThan(tiSoCu * 2);
+  });
+
+  it("★ N2 — MỘT công ty ⇒ MỘT cụm, 4 biểu tượng; CẶP N1/N2 phải KHÁC NHAU", () => {
+    const motCongTy = toaCuaCongTy(44, 78, 0);
+    expect(motCongTy).toHaveLength(4);
+    const mot = saBanTapDoan(motCongTy);
+    const ba = saBanTapDoan(TOA_QATD);
+    if (!mot || !ba) throw new Error("sa bàn null");
+
+    expect(mot.oCum).toHaveLength(1);
+    expect(mot.bieuTuong).toHaveLength(4);
+    // Cặp phải khác: "một cụm" cũng là kết quả khi tính năng gộp chưa bật (G139).
+    expect(mot.oCum.length).not.toBe(ba.oCum.length);
+    expect(ba.oCum.length).toBe(3);
+  });
+
+  it("★★★ SỰ THẬT VỀ DỮ LIỆU KHÔNG BỊ VỨT — `thatRongMm`/`soCapChong` giữ nguyên phép đo cũ", () => {
+    const cu = khuonVienTapDoan(TOA_QATD);
+    const sb = saBanTapDoan(TOA_QATD);
+    if (!cu || !sb) throw new Error("null");
+    expect(sb.thatRongMm).toBe(cu.rongMm);
+    expect(sb.thatSauMm).toBe(cu.sauMm);
+    expect(sb.soCapChong).toBe(cu.soCapChong);
+    expect(sb.soCapChong).toBe(0);
+
+    // Ca CÓ chồng (SIM-FAC): con số phải đi theo, không bị sa bàn xoá mất.
+    const chong = saBanTapDoan(TOA_CHONG);
+    if (!chong) throw new Error("null");
+    expect(chong.soCapChong).toBe(1);
+  });
+
+  it("★★★ LỜI KHAI SƠ ĐỒ LUÔN BẬT — `laSoDo`/`daRaiLuoi` không phụ thuộc dữ liệu có chồng hay không", () => {
+    // Đây là chỗ Task 20 đổi hợp đồng: trước đây banner chỉ nói thật khi ĐO ĐƯỢC
+    // là chồng; nay vị trí LUÔN là sơ đồ nên lời khai phải luôn bật.
+    const tach = saBanTapDoan(TOA_QATD);
+    const chong = saBanTapDoan(TOA_CHONG);
+    if (!tach || !chong) throw new Error("null");
+    expect(tach.laSoDo).toBe(true);
+    expect(chong.laSoDo).toBe(true);
+    expect(tach.daRaiLuoi).toBe(true);
+    expect(chong.daRaiLuoi).toBe(true);
+
+    // Đối chứng: hàm CŨ vẫn phân biệt hai ca — nó chưa bị sửa nghĩa.
+    expect(khuonVienTapDoan(TOA_QATD)?.daRaiLuoi).toBe(false);
+    expect(khuonVienTapDoan(TOA_CHONG)?.daRaiLuoi).toBe(true);
+  });
+
+  it("★★★ GÓC SA BÀN VỀ (0,0) VÀ MỌI BIỂU TƯỢNG NẰM TRONG SÀN", () => {
+    const sb = saBanTapDoan(TOA_QATD);
+    if (!sb) throw new Error("null");
+    expect(sb.bieuTuong.length).toBe(12);
+    for (const v of sb.bieuTuong) {
+      expect(v.xMm).toBeGreaterThan(0);
+      expect(v.yMm).toBeGreaterThan(0);
+      expect(v.xMm + v.rongMm).toBeLessThanOrEqual(sb.rongMm);
+      expect(v.yMm + v.sauMm).toBeLessThanOrEqual(sb.sauMm);
+    }
+  });
+
+  it("★ `toaNha` đã dời TRÙNG KHỚP góc biểu tượng — máy trong tầng mới nằm trong toà", () => {
+    const sb = saBanTapDoan(TOA_QATD);
+    if (!sb) throw new Error("null");
+    expect(sb.toaNha).toHaveLength(12);
+    for (const v of sb.bieuTuong) {
+      const t = sb.toaNha.find((x) => x.id === v.toaNhaId);
+      expect(t, `toà ${v.toaNhaId}`).toBeDefined();
+      expect(t?.viTriXMm).toBe(v.xMm);
+      expect(t?.viTriYMm).toBe(v.yMm);
+    }
+  });
+
+  it("★★★ Z KHÔNG BỊ DỜI — cùng bất biến với `khuonVienTapDoan` (thiết kế §5.1)", () => {
+    const co: ToaNhaKhuonVien[] = [
+      { id: 1, factoryId: 1, viTriXMm: 0, viTriYMm: 0, viTriZMm: 12_345, rongMm: 40_000, sauMm: 30_000 },
+      { id: 2, factoryId: 2, viTriXMm: 500_000, viTriYMm: 0, viTriZMm: -7_000, rongMm: 40_000, sauMm: 30_000 },
+    ];
+    const sb = saBanTapDoan(co);
+    if (!sb) throw new Error("null");
+    expect(sb.toaNha.find((t) => t.id === 1)?.viTriZMm).toBe(12_345);
+    expect(sb.toaNha.find((t) => t.id === 2)?.viTriZMm).toBe(-7_000);
+  });
+
+  it("★★★ TOÀ THIẾU SỐ ĐO ⇒ BIỂU TƯỢNG TỐI THIỂU, **KHÔNG** rộng 0 (mất khỏi màn không lời báo)", () => {
+    const co: ToaNhaKhuonVien[] = [
+      { id: 1, factoryId: 1, viTriXMm: 0, viTriYMm: 0, viTriZMm: 0 },
+      { id: 2, factoryId: 1, viTriXMm: 0, viTriYMm: 0, viTriZMm: 0, rongMm: 60_000, sauMm: 50_000 },
+    ];
+    const sb = saBanTapDoan(co);
+    if (!sb) throw new Error("null");
+    const v1 = sb.bieuTuong.find((v) => v.toaNhaId === 1);
+    expect(v1?.rongMm).toBe(BIEU_TUONG_TOI_THIEU_MM);
+    expect(v1?.sauMm).toBe(BIEU_TUONG_TOI_THIEU_MM);
+    expect(v1?.caoMm).toBe(BIEU_TUONG_CAO_TOI_THIEU_MM);
+    // Đối chứng: toà CÓ số đo giữ nguyên số đo thật, không bị kẹp theo.
+    expect(sb.bieuTuong.find((v) => v.toaNhaId === 2)?.rongMm).toBe(60_000);
+  });
+
+  it("★ NHÃN lấy từ CSDL; thiếu ⇒ chuỗi RỖNG, không bịa tên", () => {
+    const co: ToaNhaKhuonVien[] = [
+      { id: 1, factoryId: 1, ma: "QATD-A-T1", ten: "Toà 1", rongMm: 40_000, sauMm: 30_000 },
+      { id: 2, factoryId: 1, rongMm: 40_000, sauMm: 30_000 },
+    ];
+    const sb = saBanTapDoan(co);
+    if (!sb) throw new Error("null");
+    expect(sb.bieuTuong.find((v) => v.toaNhaId === 1)?.ten).toBe("Toà 1");
+    expect(sb.bieuTuong.find((v) => v.toaNhaId === 1)?.ma).toBe("QATD-A-T1");
+    expect(sb.bieuTuong.find((v) => v.toaNhaId === 2)?.ten).toBe("");
+    expect(sb.bieuTuong.find((v) => v.toaNhaId === 2)?.ma).toBe("");
+  });
+
+  it("★★★ THỨ TỰ ỔN ĐỊNH — xáo đầu vào ⇒ CÙNG một sa bàn (không nhảy chỗ giữa hai lần F5)", () => {
+    const xao = [...TOA_QATD].reverse();
+    expect(xao).toHaveLength(12);
+    const a = saBanTapDoan(TOA_QATD);
+    const b = saBanTapDoan(xao);
+    if (!a || !b) throw new Error("null");
+    const khoa = (sb: NonNullable<ReturnType<typeof saBanTapDoan>>) =>
+      [...sb.bieuTuong]
+        .sort((x, y) => x.toaNhaId - y.toaNhaId)
+        .map((v) => `${v.toaNhaId}@${v.xMm},${v.yMm}#${v.chiSoCum}`)
+        .join("|");
+    expect(khoa(b)).toBe(khoa(a));
+  });
+
+  it("★★★ KHÔNG CÓ TOÀ NÀO ⇒ `null` — KHÔNG phải một sa bàn 0×0 (cảnh trắng không lời giải thích)", () => {
+    expect(saBanTapDoan([])).toBeNull();
+  });
+
+  it("★ numeric dạng CHUỖI (drizzle) vẫn ra số — không nối chuỗi", () => {
+    const co: ToaNhaKhuonVien[] = [
+      {
+        id: 1,
+        factoryId: 1,
+        viTriXMm: "100000.000",
+        viTriYMm: "0",
+        viTriZMm: "3000.000",
+        rongMm: "110000.000",
+        sauMm: "80000.000",
+        caoMm: "42000.000",
+      },
+    ];
+    const sb = saBanTapDoan(co);
+    if (!sb) throw new Error("null");
+    expect(sb.bieuTuong[0].rongMm).toBe(110_000);
+    expect(sb.bieuTuong[0].caoMm).toBe(42_000);
+    expect(sb.toaNha[0].viTriZMm).toBe(3_000);
+    expect(Number.isFinite(sb.rongMm)).toBe(true);
+  });
+
+  it("★★★ NỚI TỚI TRẦN 8 NHÀ MÁY — tỉ số đọc-được VẪN đứng (không chỉ đúng với 3)", () => {
+    const tam: ToaNhaKhuonVien[] = [];
+    for (let k = 0; k < TRAN_NHA_MAY_MOT_LUOT; k += 1) {
+      tam.push(...toaCuaCongTy(40 + k, 100 + k * 10, k * BUOC_CUM_MM));
+    }
+    expect(tam).toHaveLength(32);
+    const sb = saBanTapDoan(tam);
+    if (!sb) throw new Error("null");
+    expect(sb.oCum).toHaveLength(8);
+    expect(sb.bieuTuong).toHaveLength(32);
+    expect(tiSoNhoNhat(sb)).toBeGreaterThanOrEqual(TI_SO_DOC_DUOC);
   });
 });

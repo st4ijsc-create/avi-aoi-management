@@ -157,6 +157,35 @@ export interface CuaSoDoTwin3d {
    *   mảng mà cảnh không hề nhận (lớp lỗi `wip={[]}`).
    */
   __demVien?: { tong: number; theoHang: Record<string, number> };
+  /**
+   * ★★★ TASK 20 — CỬA SỔ ĐO **SA BÀN TẬP ĐOÀN** (`LopSaBan` gắn, chỉ ở chế độ đo).
+   *
+   * Tiêu chí nghiệm thu của Task 20 là một con số PIXEL ("mỗi biểu tượng toà nhà
+   * rộng ≥ 24 px ở khung mặc định 1280×720"), và không phép đo nào đang có nói
+   * được nó: `__thongKeVe` đếm draw call, `__demTuongTac.dsMay` chỉ biết máy (sa
+   * bàn không vẽ máy nào), `toDataURL` trả 0 điểm khác nền vì
+   * `preserveDrawingBuffer` tắt. Suy từ toạ độ chiếu ngoài trang là ĐÚNG cách
+   * Task 19 khai "3 cụm" trong khi ảnh chụp vẫn đen.
+   *
+   * · `bieuTuong()` — bao hình MÀN HÌNH (px gốc canvas) của từng khối, kèm
+   *   `factoryId` để gom cụm theo NHÀ MÁY (nguồn độc lập: dải mã của bộ sinh),
+   *   không theo khe hở trên màn.
+   * · `soNhan()`    — `{ve, an, tong}`: nhãn THẬT SỰ đọc được / bị lớp phủ DOM
+   *   nuốt / tổng. Một con số duy nhất ở đây sẽ tái lập đúng lời khai sai của QA
+   *   Đợt 32 ("nhãn vẽ rồi" trong khi nó nằm dưới bảng `Metrics` z-30).
+   */
+  __demSaBan?: {
+    bieuTuong: () => Array<{
+      toaNhaId: number;
+      factoryId: number;
+      chiSoCum: number;
+      hop: { trai: number; phai: number; tren: number; duoi: number };
+      rongPx: number;
+      caoPx: number;
+      trongKhung: boolean;
+    }>;
+    soNhan: () => { ve: number; an: number; tong: number };
+  };
 }
 
 type WindowDo = Window & CuaSoDoTwin3d;

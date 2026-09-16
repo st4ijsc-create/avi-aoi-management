@@ -64,6 +64,8 @@ import { DongChayLine, type DiemDongChay } from "./DongChayLine";
 import type { VienDeMay } from "./sucKhoeMay";
 import { LopVung } from "../thiet-ke/LopVung";
 import type { VungVe } from "../thiet-ke/vungAnToan";
+import { LopSaBan } from "./LopSaBan";
+import type { BieuTuongToaVe, CumSaBanVe } from "./hopNhatCanh";
 
 export interface CanhVanHanhProps {
   may: MayTrongLo[];
@@ -137,6 +139,21 @@ export interface CanhVanHanhProps {
   chuCanhBaoAn?: (n: number) => string;
   chuMatContext: string;
   ariaLabel: string;
+  /**
+   * ★★★ TASK 20 — SA BÀN QUY HOẠCH: biểu tượng TOÀ NHÀ **thay cho** khối máy.
+   *
+   * Không rỗng ⇒ cảnh vẽ {@link LopSaBan} và **bỏ** `LoBatchMay`/`LopNhan`/
+   * `LopCanhBao`/vòng sức khoẻ/vùng an toàn. Đây là điều kiện, không phải tuỳ
+   * chọn thẩm mỹ: ở 2,3 m/px một máy còn ~1 px (xem `saBanTapDoan`), nên vẽ cả
+   * hai lớp cho ra một sa bàn có 1.108 hạt bụi và 30 cái nhãn máy lơ lửng trên
+   * những toà nhà mà bấm vào không chọn được máy nào.
+   *
+   * ⚠ Rỗng (mặc định) ⇒ **không một byte nào của cảnh cũ đổi** — đó là điều kiện
+   *   để `/twin` một nhà máy còn là đối chứng âm của Task 20.
+   */
+  saBan?: readonly BieuTuongToaVe[];
+  /** Ô cụm (một nhà máy) của sa bàn — nền + nhãn công ty. */
+  saBanCum?: readonly CumSaBanVe[];
   /** Báo camera vừa đổi — tầng trên ghi vào URL bằng `replaceState` (§9.4). */
   onCameraDoi?: (viTri: THREE.Vector3, muc: THREE.Vector3) => void;
   /**
@@ -392,6 +409,10 @@ const EMPTY_VIEN: readonly VienDeMay[] = [];
 /** Hằng rỗng ổn định cho `vung` — cùng lý do như {@link EMPTY_VIEN}. */
 const EMPTY_VUNG: readonly VungVe[] = [];
 
+/** Hằng rỗng ổn định cho sa bàn (Task 20) — cùng lý do như {@link EMPTY_VIEN}. */
+const EMPTY_SA_BAN: readonly BieuTuongToaVe[] = [];
+const EMPTY_SA_BAN_CUM: readonly CumSaBanVe[] = [];
+
 function LopVienSucKhoe({ vien }: { vien: readonly VienDeMay[] }) {
   const ref = useRef<THREE.InstancedMesh | null>(null);
   const invalidate = useThree((s) => s.invalidate);
@@ -500,6 +521,10 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
   const chuNhanAn = props.chuNhanAn;
   const vienSK = props.vienSucKhoe ?? EMPTY_VIEN;
   const vungAT = props.vung ?? EMPTY_VUNG;
+  const saBan = props.saBan ?? EMPTY_SA_BAN;
+  const saBanCum = props.saBanCum ?? EMPTY_SA_BAN_CUM;
+  /** ★ Task 20 — sa bàn THAY cảnh máy, không đứng cạnh (xem docblock prop `saBan`). */
+  const veSaBan = saBan.length > 0;
 
   const controlsRef = useRef<OrbitControls | null>(null);
   const [chon, setChon] = useState<TrangThaiChon>(TRANG_THAI_CHON_RONG);
@@ -571,6 +596,18 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         onCameraDoi={camDoi}
       />
       <San rongM={sanRongM} sauM={sanSauM} toi={toi} />
+      {/*
+        ★★★ TASK 20 — SA BÀN **THAY** CẢNH MÁY, không đứng cạnh nó.
+        Lý lẽ đầy đủ ở docblock prop `saBan` và ở `LopSaBan.tsx`: ở 2,3 m/px một
+        khối máy còn ~1 px, nên vẽ thêm 1.108 khối chỉ thêm nhiễu, còn `LopNhan`/
+        `LopCanhBao` sẽ dán nhãn MÁY lên mặt những toà nhà không bấm được.
+        ⚠ Nhánh `false` phải là cây CŨ Y NGUYÊN — đối chứng âm của Task 20 là
+          "/twin một nhà máy không đổi một ô nào".
+      */}
+      {veSaBan ? (
+        <LopSaBan toa={saBan} cum={saBanCum} toi={toi} tatNhan={tatNhan} />
+      ) : (
+        <>
       {/* ★ A-6 — VÙNG AN TOÀN, sát sàn nhất, dưới cả vòng sức khoẻ. Nó là NỀN
           bối cảnh ("chỗ này chia sẻ với người"), không phải chỉ báo về một máy.
           ★ KHÔNG truyền `onChon`: vận hành chỉ đọc, cú bấm thuộc về máy. */}
@@ -608,6 +645,8 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         /* ★ Đợt 47 (N2) — bấm lên NHÃN cũng chọn máy (nhãn pointer-events:none, LopNhan tự hit-test hộp thật). */
         onChonNhan={khiChon}
       />
+        </>
+      )}
     </>
   );
 }
@@ -637,7 +676,16 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
  */
 type PropsDuLieu = Pick<
   CanhVanHanhProps,
-  "may" | "nhan" | "canhBao" | "dongChay" | "wip" | "vienSucKhoe" | "vung" | "khungNhin"
+  | "may"
+  | "nhan"
+  | "canhBao"
+  | "dongChay"
+  | "wip"
+  | "vienSucKhoe"
+  | "vung"
+  | "khungNhin"
+  | "saBan"
+  | "saBanCum"
 >;
 type PropsHam = Pick<
   CanhVanHanhProps,
@@ -665,6 +713,11 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
   const vienSucKhoe = useOnDinhTheoGiaTri(props.vienSucKhoe, khoaGiaTri(props.vienSucKhoe));
   const vung = useOnDinhTheoGiaTri(props.vung, khoaGiaTri(props.vung));
   const khungNhin = useOnDinhTheoGiaTri(props.khungNhin, khoaGiaTri(props.khungNhin));
+  // ★ Task 20 — sa bàn cũng là prop DỮ LIỆU: bỏ quên hai dòng này thì mỗi nhịp
+  //   poll dựng mảng mới cùng giá trị ⇒ `useEffect([toa])` của `LopSaBan` nạp lại
+  //   buffer + `invalidate()` ⇒ `frameloop="demand"` thành vòng lặp im lặng.
+  const saBan = useOnDinhTheoGiaTri(props.saBan, khoaGiaTri(props.saBan));
+  const saBanCum = useOnDinhTheoGiaTri(props.saBanCum, khoaGiaTri(props.saBanCum));
 
   // ── Prop hàm: trampoline ổn định đọc bản MỚI NHẤT — tầng ngoài luôn render nên `ref` luôn tươi. ──
   // ★ Đợt 45 (mục 4) — G5 đo được: thêm prop hàm ở `CanhVanHanhProps` mà KHÔNG thêm vào ba chỗ dưới ⇒ prop
@@ -715,6 +768,8 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       vienSucKhoe={vienSucKhoe}
       vung={vung}
       khungNhin={khungNhin}
+      saBan={saBan}
+      saBanCum={saBanCum}
       machineIdChon={props.machineIdChon}
       onChonMay={onChonMay}
       onCameraDoi={onCameraDoi}

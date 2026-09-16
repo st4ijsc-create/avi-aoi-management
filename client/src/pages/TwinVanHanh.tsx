@@ -80,7 +80,10 @@ import {
   gopNhan,
   dungCanhBao3D,
   gocToaTheoTang,
+  dungSaBanVe,
   CO_DU_PHONG,
+  type BieuTuongToaVe,
+  type CumSaBanVe,
 } from "@/components/twin3d/van-hanh/hopNhatCanh";
 import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
 import { mauChoTrangThai } from "@/components/twin3d/mauTrangThai";
@@ -146,8 +149,8 @@ import {
 } from "@/components/twin3d/van-hanh/boChonNap";
 // ── Task 19 (Giai đoạn 6) — cảnh phạm vi TẬP ĐOÀN: chọn nhà máy + khuôn viên ──
 import {
-  khuonVienTapDoan,
   nhaMayDeNap,
+  saBanTapDoan,
   type ToaNhaKhuonVien,
 } from "@/components/twin3d/van-hanh/canhTapDoan";
 import { cn } from "@/lib/utils";
@@ -297,6 +300,17 @@ import { coQuyenSuaNhaXuong } from "@/components/twin3d/bo-cuc/vungQuyen";
 
 /** Phạm vi mặc định khi URL không nói gì. */
 const PHAM_VI_MAC_DINH: PhamVi = { cap: "tang", id: null };
+
+/**
+ * ★ Task 20 — hằng rỗng ỔN ĐỊNH cho sa bàn (cấp module, không literal mỗi render).
+ *
+ * `?? []` viết trong thân component sinh một mảng MỚI mỗi lần render; prop dữ
+ * liệu của `CanhVanHanh` ghim theo giá trị nên nó không lọt xuống cảnh, nhưng
+ * nó vẫn làm `CanhVanHanh` (tầng ngoài) tính lại khoá mỗi render cho không.
+ * Cùng lý do đã ghi ở `EMPTY_VIEN` của `CanhVanHanh.tsx`.
+ */
+const SA_BAN_RONG: readonly BieuTuongToaVe[] = [];
+const SA_BAN_CUM_RONG: readonly CumSaBanVe[] = [];
 
 /**
  * ★★★ TASK 12 — NHÃN HẠNG SỨC KHOẺ, sáu khoá i18n VIẾT THẲNG.
@@ -707,9 +721,26 @@ export function ThanTwinVanHanh() {
    *
    * ★ `null` khi chưa tải xong HOẶC khi không ở phạm vi tập đoàn — người gọi
    *   dùng chính `null` ấy để rơi về đường một-toà, không cần cờ thứ hai.
+   *
+   * ★★★ TASK 20 — nguồn đổi từ `khuonVienTapDoan` sang `saBanTapDoan`, và đó là
+   *   một đổi Ý NGHĨA chứ không phải đổi tên hàm: `khuonVienTapDoan` giữ TOẠ ĐỘ
+   *   THẬT (khuôn viên QATD rộng 2,24 km ⇒ 2,3 m/px ⇒ máy 2 m còn ~1 px ⇒ màn
+   *   ĐEN, ảnh `t19-sau/qatd_giamdoc-2-canvas.png`), còn `saBanTapDoan` xếp lại
+   *   thành sa bàn 673 m và trả thêm `bieuTuong`/`oCum`. Hàm cũ **vẫn sống** và
+   *   được gọi TỪ BÊN TRONG hàm mới, vì hai con số của nó (`soCapChong`,
+   *   kích thước thật) là thứ banner phải nêu ra.
+   *
+   * ⇒ Hệ quả dây chuyền, cả ba đều CÓ CHỦ Ý và đều đã có lưới:
+   *     · `gocToa` neo `null` vào góc sa bàn (W4 ②) — vẫn đúng, vì sa bàn cũng
+   *       dời góc trái-dưới về `(0,0)`;
+   *     · `sanRongMm`/`sanSauMm` lấy từ đây (W4 ④) ⇒ sàn bằng SA BÀN, không bằng
+   *       khuôn viên thật — nếu không, tấm sàn 2,24 km × 180 m sẽ ôm một sa bàn
+   *       673 × 553 m và cảnh lại xa như cũ;
+   *     · `khungNhinTho` ôm bbox của `mayVe`, mà `mayVe` đã dời theo `gocToa`
+   *       ⇒ camera tự ôm sa bàn, KHÔNG phải sửa `khungNhinTho`.
    */
   const khuonVien = useMemo(
-    () => (napNhaMay.gopKhuonVien ? khuonVienTapDoan(kvToaNha) : null),
+    () => (napNhaMay.gopKhuonVien ? saBanTapDoan(kvToaNha) : null),
     [napNhaMay.gopKhuonVien, kvToaNha],
   );
 
@@ -725,6 +756,11 @@ export function ThanTwinVanHanh() {
    *   tuyệt đối của toà đã được `khuonVienTapDoan` tịnh tiến về `(0,0)`), không
    *   phải toà đang chọn: neo vào một toà của nhà máy A sẽ đẩy nhà máy C ra khỏi
    *   tấm sàn, vì sàn của `CanhVanHanh` trải từ `0` tới `rongM`.
+   *
+   * ★ Task 20 — `khuonVien.toaNha` nay là **góc biểu tượng trên sa bàn**, vẫn
+   *   dời về `(0,0)` nên câu trên còn nguyên giá trị. Máy KHÔNG được vẽ ở cấp
+   *   tập đoàn (sa bàn thay chúng), nhưng bản đồ này vẫn phải đúng: nó là thứ
+   *   đặt `mayVe` vào đúng ô, và `khungNhinTho` ôm chính bbox ấy để lấy khung.
    */
   const gocToa = useMemo(
     () =>
@@ -2237,6 +2273,32 @@ export function ThanTwinVanHanh() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- cố ý: chỉ đổi đối tượng khi GIÁ TRỊ đổi
   const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin]);
 
+  /*
+   * ═══════════════════════════════════════════════════════════════════════
+   * ★★★ TASK 20 — SA BÀN QUY HOẠCH: ĐƠN VỊ VẼ CỦA CẤP TẬP ĐOÀN
+   * ═══════════════════════════════════════════════════════════════════════
+   * Không rỗng ⇒ `CanhVanHanh` vẽ 12 biểu tượng toà nhà và **bỏ** lớp máy.
+   * Vì sao phải đổi đơn vị vẽ chứ không chỉ đổi khung nhìn: xem docblock
+   * `saBanTapDoan` (2,24 km / 968 px = 2,3 m mỗi pixel — một máy 2 m còn ~1 px
+   * *dù khung ôm vừa khít*, nên tự-khớp-khung không cứu được).
+   *
+   * ★ RB-8.3 — cảnh nằm trong cây Canvas và KHÔNG được gọi `t()`. Hai câu dự
+   *   phòng (toà không tên / nhà máy không tên) dịch **ở đây** rồi truyền xuống,
+   *   cùng khuôn `chuNhanAn`.
+   */
+  const saBanVe = useMemo(() => {
+    if (khuonVien === null) return null;
+    const tenNhaMay = new Map(mucNhaMay.map((m) => [m.id, m.nhan]));
+    return dungSaBanVe(khuonVien, tenNhaMay, (id) =>
+      t("twin3d.vanHanh.toaKhongTen", "Toà #{{id}}", { id }),
+    );
+  }, [khuonVien, mucNhaMay, t]);
+  /* ★ Ổn định theo GIÁ TRỊ ở CỬA VÀO cảnh: `useMemo` trên dựng mảng mới mỗi khi
+     `mucNhaMay` đổi tham chiếu, và `CanhVanHanh` đã có bộ ghim riêng — nhưng hằng
+     rỗng thì phải là MỘT đối tượng, không phải `[]` literal mỗi render. */
+  const saBanToa = saBanVe?.toa ?? SA_BAN_RONG;
+  const saBanCum = saBanVe?.cum ?? SA_BAN_CUM_RONG;
+
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* NT-3 — đếm, đối soát, độ tươi                                            */
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -3040,24 +3102,43 @@ export function ThanTwinVanHanh() {
     });
 
     /*
-     * ── Task 19 — VỊ TRÍ TẠM SINH (thiết kế §5.3).
-     *   `khuonVienTapDoan` chỉ rải lưới khi ĐO ĐƯỢC là hai bao hình chồng nhau
-     *   (ca có thật: hai nhà máy đều để toà ở gốc toạ độ). Khi đã rải, khoảng
-     *   cách trên cảnh KHÔNG còn là khoảng cách trong dữ liệu — im lặng để người
-     *   dùng đọc nó như thật là nói dối, y như im lặng để chúng chồng nhau.
+     * ── ★★★ TASK 20 — VỊ TRÍ LÀ **SƠ ĐỒ**, VÀ NÓ PHẢI NÓI RA MỖI LẦN, KHÔNG
+     *   PHẢI THỈNH THOẢNG.
+     *
+     * Bản Task 19 của banner này bật khi `daRaiLuoi` — tức chỉ khi ĐO ĐƯỢC là
+     * hai bao hình nhà máy chồng nhau. Task 20 đổi bố cục thành sa bàn quy
+     * hoạch: vị trí ở cấp tập đoàn **LUÔN** là sơ đồ, nên điều kiện cũ biến lời
+     * khai thành NỬA SỰ THẬT — đúng lớp lỗi vừa vá hai lần trong đợt này
+     * (`CanhVanHanh2D:94` khai 'cùng hành vi bản 3D' khi bản 3D không có hành vi
+     * ấy; `banner-ha-cap` khai 'chưa nạp được nhiều nhà máy' sau khi đã nạp được).
+     *
+     * ★ Câu mới nêu HAI con số thật, không nêu một tính từ: khuôn viên thật rộng
+     *   bao nhiêu mét, sa bàn xếp lại còn bao nhiêu. Người đọc tự biết mình đang
+     *   nhìn một sơ đồ nén 3,3 lần chứ không phải một bản đồ.
+     * ⚠ `data-so-cap-chong` GIỮ LẠI: nó là phép đo trên DỮ LIỆU THẬT
+     *   (`khuonVienTapDoan` bên trong `saBanTapDoan` vẫn tính), và nó vẫn là một
+     *   sự thật đáng giữ — chỉ thôi làm điều kiện bật/tắt.
      */
     ds.push({
       testId: "banner-vi-tri-tam-sinh",
       nhom: "phamVi",
-      hien: khuonVien !== null && khuonVien.daRaiLuoi,
+      hien: khuonVien !== null && khuonVien.laSoDo,
       noiDung: t(
-        "twin3d.vanHanh.viTriTamSinh",
-        "{{soCap}} cặp nhà máy có vị trí chồng nhau trong dữ liệu — cảnh đang xếp tạm chúng thành hàng. Khoảng cách trên cảnh KHÔNG phải khoảng cách thật.",
-        { soCap: khuonVien?.soCapChong ?? 0 },
+        "twin3d.vanHanh.viTriSoDo",
+        "Cảnh cấp tập đoàn là SA BÀN SƠ ĐỒ: mỗi toà nhà là một biểu tượng, và {{soToa}} toà của {{soKhoi}} nhà máy được xếp thành cụm cho đọc được. Khuôn viên thật rộng {{rongThat}} m, sa bàn xếp lại còn {{rongSoDo}} m — vị trí và khoảng cách trên cảnh KHÔNG phải số thật.",
+        {
+          soToa: khuonVien?.bieuTuong.length ?? 0,
+          soKhoi: khuonVien?.khoi.length ?? 0,
+          rongThat: Math.round(mmSangMet(khuonVien?.thatRongMm ?? 0)),
+          rongSoDo: Math.round(mmSangMet(khuonVien?.rongMm ?? 0)),
+        },
       ),
       dataPhu: {
         "data-so-cap-chong": khuonVien?.soCapChong ?? 0,
         "data-so-khoi": khuonVien?.khoi.length ?? 0,
+        "data-so-toa": khuonVien?.bieuTuong.length ?? 0,
+        "data-rong-that-mm": khuonVien?.thatRongMm ?? 0,
+        "data-rong-so-do-mm": khuonVien?.rongMm ?? 0,
       },
     });
 
@@ -4053,6 +4134,9 @@ export function ThanTwinVanHanh() {
               machineIdChon={machineIdNgan}
               onChonMay={chonMay}
               khungNhin={khungNhin}
+              /* ★★★ Task 20 — sa bàn THAY lớp máy ở cấp tập đoàn (rỗng ⇒ cảnh cũ y nguyên). */
+              saBan={saBanToa}
+              saBanCum={saBanCum}
               sanRongM={sanRongM}
               sanSauM={sanSauM}
               tatNhan={false}

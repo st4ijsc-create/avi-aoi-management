@@ -152,11 +152,21 @@ export function nhaMayDeNap(
 export interface ToaNhaKhuonVien {
   id: number;
   factoryId: number;
+  /**
+   * Mã/tên như CSDL ghi — **nhãn** của biểu tượng trên sa bàn (Task 20).
+   *
+   * ⚠ Bỏ trống ⇒ {@link saBanTapDoan} trả chuỗi RỖNG, không bịa `"Toà #12"`:
+   *   một nhãn bịa nhìn y hệt nhãn thật và không ai biết nó là bịa. Người gọi
+   *   (trang) tự quyết định câu dự phòng vì chỉ ở đó mới gọi được `t()`.
+   */
+  ma?: string | null;
+  ten?: string | null;
   viTriXMm?: number | string | null;
   viTriYMm?: number | string | null;
   viTriZMm?: number | string | null;
   rongMm?: number | string | null;
   sauMm?: number | string | null;
+  caoMm?: number | string | null;
 }
 
 /** Toà nhà SAU khi dời về hệ toạ độ khuôn viên — hình dạng `gocToaTheoTang` nhận. */
@@ -333,5 +343,285 @@ export function khuonVienTapDoan(
     sauMm: Math.max(...khoi.map((k) => k.yMm + k.sauMm), 0),
     daRaiLuoi,
     soCapChong,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* 3. SA BÀN QUY HOẠCH — ĐỔI **ĐƠN VỊ VẼ** Ở CẤP TẬP ĐOÀN (Task 20)            */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO TỰ-KHỚP-KHUNG KHÔNG CỨU ĐƯỢC — PHÉP ĐO, KHÔNG PHẢI CẢM TÍNH
+ * ════════════════════════════════════════════════════════════════════════════
+ * Task 19 vẽ đúng 1.108 máy của ba nhà máy, ngân sách dưới trần cả bốn ô — và
+ * màn hình vẫn **gần như ĐEN** (`.qa-tapdoan/anh/t19-sau/qatd_giamdoc-2-canvas.png`,
+ * panel khai `Machines 1108`). Gốc rễ là một phép chia:
+ *
+ *   khuôn viên QATD rộng **2.240 m** · canvas rộng **968 px** ⇒ **2,3 m / pixel**
+ *   ⇒ một máy rộng ~2 m còn **~1 px** — *dù khung ôm vừa khít*.
+ *
+ * Tức đây là vấn đề **TỈ LỆ**, không phải vấn đề khung: không có khung nhìn nào
+ * làm 1 px thành 24 px. Đối chứng đã đo: cuộn vào 16 nấc thì cảnh **hiện ra**
+ * (`t19-nhin-sau/2-cuon-16.png`) — WebGL vẽ đủ, mắt không đọc nổi.
+ *
+ * ⇒ Lối thoát duy nhất: **vẽ ÍT vật thể hơn và TO hơn**. Ở cấp tập đoàn, đơn vị
+ *   vẽ thôi là *máy* và thành *toà nhà*: 3 công ty × 4 toà = **12 biểu tượng**.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ THỨ PHẢI ĐÚNG LÀ **QUAN HỆ**, KHÔNG PHẢI TOẠ ĐỘ (chủ dự án chốt 2026-09-16)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Nguyên văn: *"không nhất thiết phải vẽ đúng tỉ lệ kích thước của từng toà nhà,
+ * chỉ cần hiển thị dạng biểu tượng 3D, và hiển thị giống kiểu sa bàn quy hoạch
+ * với mật độ và kích thước nhẹ phù hợp"*. Vậy ràng buộc còn lại là:
+ *   · toà nào thuộc nhà máy nào — **một cụm = một nhà máy**, không lẫn;
+ *   · các cụm **tách bạch** nhau, đọc được là ba cụm chứ không phải một vệt.
+ *
+ * ★★★ RÀNG BUỘC TRUNG THỰC (của dự án, không được bỏ): khi vị trí là **sơ đồ**
+ *   chứ không phải toạ độ thật, giao diện **PHẢI NÓI RA**. Vì thế hàm này trả về
+ *   {@link SaBanTapDoan.laSoDo} = `true` **luôn luôn** và giữ lại
+ *   {@link SaBanTapDoan.thatRongMm}/`thatSauMm` — kích thước THẬT của khuôn viên
+ *   — để banner nêu được CẢ HAI con số ("thật 2.240 m → sa bàn 629 m") thay vì
+ *   một câu chung chung. Một banner chỉ *thỉnh thoảng* nói thật là nửa sự thật.
+ */
+
+/** Bề rộng/bề sâu TỐI THIỂU của một biểu tượng toà (mm) — 20 m. */
+export const BIEU_TUONG_TOI_THIEU_MM = 20_000;
+
+/** Chiều cao TỐI THIỂU của một biểu tượng toà (mm) — 6 m, đủ để thấy là khối. */
+export const BIEU_TUONG_CAO_TOI_THIEU_MM = 6_000;
+
+/** Khe giữa hai toà TRONG một cụm = 20 % cạnh ô, sàn dưới 10 m. */
+export const KHE_TRONG_CUM_TI_LE = 0.2;
+export const KHE_TRONG_CUM_TOI_THIEU_MM = 10_000;
+
+/**
+ * Khe giữa hai CỤM = 60 % cạnh cụm, và **luôn ≥ 3 lần** khe trong cụm.
+ *
+ * ⚠ Hai con số này không phải thẩm mỹ: nếu khe giữa cụm không LỚN HƠN HẲN khe
+ *   trong cụm thì mắt (và mọi phép gom theo khe hở) đọc 12 toà thành một lưới
+ *   đều, và "ba cụm" biến mất. Tỉ lệ 3× là ngưỡng để phép gom-theo-khe-hở còn
+ *   phân biệt được — nó là một hợp đồng với PHÉP ĐO, không chỉ với con mắt.
+ */
+export const KHE_GIUA_CUM_TI_LE = 0.6;
+export const KHE_GIUA_CUM_TOI_THIEU_LAN = 3;
+
+/** Một biểu tượng toà nhà trên sa bàn — ĐƠN VỊ VẼ ở cấp tập đoàn. */
+export interface BieuTuongToa {
+  toaNhaId: number;
+  factoryId: number;
+  /** Cụm thứ mấy (0-based, theo mã nhà máy TĂNG DẦN — ổn định giữa hai lần tải). */
+  chiSoCum: number;
+  /** Tên/mã như CSDL ghi; RỖNG khi CSDL không có — người gọi tự lo câu dự phòng. */
+  ten: string;
+  ma: string;
+  /** Góc trái-dưới của biểu tượng trên mặt bằng sa bàn (mm, hệ đã dời về `(0,0)`). */
+  xMm: number;
+  yMm: number;
+  rongMm: number;
+  sauMm: number;
+  caoMm: number;
+}
+
+/** Ô chứa một cụm (một nhà máy) trên sa bàn — nền cụm + chỗ đặt nhãn cụm. */
+export interface OCumSaBan {
+  factoryId: number;
+  chiSoCum: number;
+  xMm: number;
+  yMm: number;
+  rongMm: number;
+  sauMm: number;
+  soToa: number;
+}
+
+/**
+ * Sa bàn = một {@link KhuonVien} (để `gocToaTheoTang`/sàn/khung nhìn dùng y
+ * nguyên đường cũ) **cộng** danh sách biểu tượng và hai con số của sự thật.
+ */
+export interface SaBanTapDoan extends KhuonVien {
+  bieuTuong: BieuTuongToa[];
+  oCum: OCumSaBan[];
+  /** LUÔN `true`: ở cấp tập đoàn vị trí trên cảnh là SƠ ĐỒ, không phải toạ độ thật. */
+  laSoDo: true;
+  /** Bề rộng/bề sâu THẬT của khuôn viên (mm) — cái mà sa bàn đã thay thế. */
+  thatRongMm: number;
+  thatSauMm: number;
+}
+
+/** Tuỳ chọn bố cục — để lưới đo được GIÁ TRỊ thay vì đếm chính tả một dòng mã. */
+export interface TuyChonSaBan {
+  kheHoMm?: number;
+  bieuTuongToiThieuMm?: number;
+}
+
+const kepDuong = (n: number, san: number): number => (Number.isFinite(n) && n > san ? n : san);
+
+/**
+ * Xếp mọi toà nhà của phạm vi thành **sa bàn quy hoạch**.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ HÀM NÀY GỌI {@link khuonVienTapDoan} TRƯỚC, VÀ ĐÓ LÀ CHỦ Ý
+ * ════════════════════════════════════════════════════════════════════════════
+ * Sa bàn vứt **vị trí** thật, nhưng nó KHÔNG được vứt *phép đo* về dữ liệu thật:
+ * `soCapChong` (mấy cặp nhà máy chồng nhau trong CSDL) và `thatRongMm/thatSauMm`
+ * (khuôn viên thật rộng bao nhiêu) là hai sự thật mà banner phải nêu được. Tính
+ * chúng ở đây bằng chính hàm đã có lưới thay vì viết lại phép đo lần hai (G12).
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * BỐ CỤC — hai tầng lưới, cả hai theo **mã tăng dần** nên ổn định giữa hai F5:
+ *   ① ô đơn vị = cạnh LỚN NHẤT trong toàn tập (mọi biểu tượng chung một lưới,
+ *      nên một nhà máy có toà to không đẩy nhà máy bên cạnh lệch hàng);
+ *   ② trong một cụm: lưới `ceil(√n)` cột — `n` = số toà của cụm ĐÔNG NHẤT, để
+ *      mọi cụm có cùng hình dạng ô và đọc được là những khối cùng cỡ;
+ *   ③ giữa các cụm: lại `ceil(√số cụm)` cột, khe giữa cụm ≥ 3× khe trong cụm.
+ *
+ * ⚠ Toà thiếu `rongMm/sauMm` ⇒ biểu tượng lấy **kích thước tối thiểu**, KHÔNG
+ *   lấy 0. Đây là chỗ khác hẳn `khuonVienTapDoan` (ở đó "chưa biết" phải thành
+ *   một ĐIỂM để bao hình không nói dối về diện tích): sa bàn không nói gì về
+ *   diện tích — nó là BIỂU TƯỢNG, và một biểu tượng rộng 0 px thì người dùng
+ *   mất luôn toà nhà khỏi màn hình mà không một dòng nào báo. Cả lớp nói-xấp-xỉ
+ *   này được `laSoDo` khai ra MỘT LƯỢT, thay vì im lặng từng chỗ.
+ *
+ * ⚠ `viTriZMm` GIỮ NGUYÊN (không dời): cao độ đã tuyệt đối trong toà và tầng
+ *   chồng lên nhau vốn đã đúng (thiết kế §5.1) — cùng bất biến với `khuonVienTapDoan`.
+ *
+ * @returns `null` khi không có toà nào — cùng lý do với `khuonVienTapDoan`.
+ */
+export function saBanTapDoan(
+  toaNhas: readonly ToaNhaKhuonVien[],
+  tuyChon: TuyChonSaBan = {},
+): SaBanTapDoan | null {
+  const that = khuonVienTapDoan(toaNhas, tuyChon.kheHoMm);
+  if (that === null) return null;
+
+  const toiThieu = kepDuong(tuyChon.bieuTuongToiThieuMm ?? BIEU_TUONG_TOI_THIEU_MM, 1);
+
+  // ── Nhóm theo nhà máy (mã tăng dần), trong nhóm theo id toà tăng dần.
+  const nhom = new Map<number, ToaNhaKhuonVien[]>();
+  for (const b of toaNhas) {
+    const ds = nhom.get(b.factoryId);
+    if (ds) ds.push(b);
+    else nhom.set(b.factoryId, [b]);
+  }
+  const maNhaMay = [...nhom.keys()].sort((a, b) => a - b);
+  for (const ma of maNhaMay) {
+    (nhom.get(ma) ?? []).sort((a, b) => a.id - b.id);
+  }
+
+  // ── ① Ô đơn vị: cạnh lớn nhất SAU khi kẹp sàn.
+  const coCua = (b: ToaNhaKhuonVien) => ({
+    rongMm: kepDuong(soMm(b.rongMm), toiThieu),
+    sauMm: kepDuong(soMm(b.sauMm), toiThieu),
+    caoMm: kepDuong(soMm(b.caoMm), BIEU_TUONG_CAO_TOI_THIEU_MM),
+  });
+  const oRong = Math.max(...toaNhas.map((b) => coCua(b).rongMm));
+  const oSau = Math.max(...toaNhas.map((b) => coCua(b).sauMm));
+  const kheToa = Math.max(KHE_TRONG_CUM_TI_LE * Math.max(oRong, oSau), KHE_TRONG_CUM_TOI_THIEU_MM);
+
+  // ── ② Lưới TRONG cụm, dựng theo cụm ĐÔNG NHẤT (mọi cụm cùng hình dạng ô).
+  const toaNhieuNhat = Math.max(...maNhaMay.map((ma) => (nhom.get(ma) ?? []).length));
+  const cot = Math.max(1, Math.ceil(Math.sqrt(toaNhieuNhat)));
+  const hang = Math.max(1, Math.ceil(toaNhieuNhat / cot));
+  const cumRong = cot * oRong + (cot - 1) * kheToa;
+  const cumSau = hang * oSau + (hang - 1) * kheToa;
+
+  // ── ③ Lưới GIỮA các cụm.
+  const kheCum = Math.max(
+    KHE_GIUA_CUM_TI_LE * Math.max(cumRong, cumSau),
+    KHE_GIUA_CUM_TOI_THIEU_LAN * kheToa,
+  );
+  const cotCum = Math.max(1, Math.ceil(Math.sqrt(maNhaMay.length)));
+  const hangCum = Math.max(1, Math.ceil(maNhaMay.length / cotCum));
+
+  /*
+   * Viền quanh sa bàn = ĐÚNG một khe trong cụm. Không phải trang trí: `San` của
+   * `CanhVanHanh` trải đúng từ `0` tới `rongM`, nên biểu tượng sát mép sẽ đứng
+   * NGAY trên đường biên tấm sàn và trông như bị cắt.
+   *
+   * ⚠ Viền là bề rộng BỊ TRỪ khỏi ngân sách pixel của biểu tượng: lấy `kheCum/2`
+   *   (thử đầu tiên) làm sa bàn QATD rộng thêm 9 % và tỉ số đọc-được tụt từ
+   *   16,3 % xuống 14,2 %. Một viền đẹp mắt trả bằng đúng thứ Task 20 đi mua.
+   */
+  const vien = kheToa;
+
+  const bieuTuong: BieuTuongToa[] = [];
+  const oCum: OCumSaBan[] = [];
+  maNhaMay.forEach((maNM, iCum) => {
+    const cua = nhom.get(maNM) ?? [];
+    const cumX = vien + (iCum % cotCum) * (cumRong + kheCum);
+    const cumY = vien + Math.floor(iCum / cotCum) * (cumSau + kheCum);
+    oCum.push({
+      factoryId: maNM,
+      chiSoCum: iCum,
+      xMm: cumX,
+      yMm: cumY,
+      rongMm: cumRong,
+      sauMm: cumSau,
+      soToa: cua.length,
+    });
+    cua.forEach((b, iToa) => {
+      const co = coCua(b);
+      const oX = cumX + (iToa % cot) * (oRong + kheToa);
+      const oY = cumY + Math.floor(iToa / cot) * (oSau + kheToa);
+      bieuTuong.push({
+        toaNhaId: b.id,
+        factoryId: b.factoryId,
+        chiSoCum: iCum,
+        ten: typeof b.ten === "string" ? b.ten : "",
+        ma: typeof b.ma === "string" ? b.ma : "",
+        // Toà nhỏ hơn ô ⇒ đặt GIỮA ô: dồn về một góc làm lưới trông vỡ hàng.
+        xMm: oX + (oRong - co.rongMm) / 2,
+        yMm: oY + (oSau - co.sauMm) / 2,
+        rongMm: co.rongMm,
+        sauMm: co.sauMm,
+        caoMm: co.caoMm,
+      });
+    });
+  });
+
+  // ── Toà đã dời: gốc của toạ độ TRONG TẦNG chính là góc trái-dưới biểu tượng.
+  const viTriTheoToa = new Map(bieuTuong.map((v) => [v.toaNhaId, v]));
+  const toaNha: ToaNhaDaDoi[] = toaNhas.map((b) => {
+    const v = viTriTheoToa.get(b.id);
+    return {
+      id: b.id,
+      factoryId: b.factoryId,
+      viTriXMm: v ? v.xMm : 0,
+      viTriYMm: v ? v.yMm : 0,
+      viTriZMm: soMm(b.viTriZMm),
+    };
+  });
+
+  // ── Bao hình từng nhà máy TRÊN SA BÀN (khít theo biểu tượng, không theo ô).
+  const khoi: KhoiNhaMay[] = maNhaMay.map((maNM) => {
+    const cua = bieuTuong.filter((v) => v.factoryId === maNM);
+    const trai = Math.min(...cua.map((v) => v.xMm));
+    const duoi = Math.min(...cua.map((v) => v.yMm));
+    const phai = Math.max(...cua.map((v) => v.xMm + v.rongMm));
+    const tren = Math.max(...cua.map((v) => v.yMm + v.sauMm));
+    return {
+      factoryId: maNM,
+      xMm: trai,
+      yMm: duoi,
+      rongMm: phai - trai,
+      sauMm: tren - duoi,
+      soToa: cua.length,
+    };
+  });
+
+  return {
+    toaNha,
+    khoi,
+    rongMm: cotCum * cumRong + (cotCum - 1) * kheCum + 2 * vien,
+    sauMm: hangCum * cumSau + (hangCum - 1) * kheCum + 2 * vien,
+    // Sa bàn LUÔN là vị trí tạm sinh — không còn "chỉ khi đo được là chồng".
+    daRaiLuoi: true,
+    // ★ Con số của DỮ LIỆU THẬT, giữ nguyên từ `khuonVienTapDoan` (không tính lại).
+    soCapChong: that.soCapChong,
+    bieuTuong,
+    oCum,
+    laSoDo: true,
+    thatRongMm: that.rongMm,
+    thatSauMm: that.sauMm,
   };
 }

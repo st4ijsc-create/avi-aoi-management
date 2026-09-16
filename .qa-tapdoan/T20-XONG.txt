@@ -1,0 +1,76 @@
+Task 20 — SA BÀN QUY HOẠCH CHO PHẠM VI TẬP ĐOÀN
+nhánh feat/ai-local-L7-hang-rao (CHƯA commit — chủ đợt commit)
+xong 2026-09-16
+
+VẤN ĐỀ, VÀ VÌ SAO KHÔNG PHẢI LỖI KHUNG NHÌN
+  khuôn viên QATD 2.240 m / canvas 968 px = 2,3 m mỗi pixel
+  ⇒ máy rộng ~2 m còn ~1 px DÙ KHUNG ÔM VỪA KHÍT ⇒ vùng đen.
+  Đo lại bằng chính thiết bị của Task 20 trên dist-t19 (ảnh anh/t20-truoc/):
+    biểu tượng toà = 0 · máy vẽ 1.108 · tam giác 61.248 · canvas ĐEN.
+
+BẢN VÁ — ĐỔI ĐƠN VỊ VẼ, KHÔNG ĐỔI KHUNG NHÌN
+  canhTapDoan.ts     + saBanTapDoan() (gọi khuonVienTapDoan BÊN TRONG để giữ
+                       soCapChong + kích thước THẬT), + BieuTuongToa/OCumSaBan
+  hopNhatCanh.ts     + dungSaBanVe() (mm→scene qua mmSangScene, một chỗ quy đổi)
+  LopSaBan.tsx       (MỚI) 2 instancedMesh + một lớp <Html> nhãn; né lớp phủ
+                       z-30 bằng layVungCam() dùng chung với LopNhan
+  CanhVanHanh.tsx    + prop saBan/saBanCum; sa bàn THAY LoBatchMay/LopNhan/
+                       LopCanhBao/vòng sức khoẻ/vùng (một biểu thức ba ngôi)
+  KhungCanh.tsx      + cửa sổ đo __demSaBan (chỉ chế độ đo)
+  TwinVanHanh.tsx    khuonVien = saBanTapDoan(...); banner đổi theo bản vá
+  i18n vi/en/zh      + viTriSoDo + toaKhongTen ; GỠ viTriTamSinh (QĐ-18)
+
+KẾT CỤC ĐO SỐNG — cổng 3064, /twin?pv=tapdoan&do=1, 1280×720, ANGLE+GPU
+                              TRƯỚC (dist-t19)      SAU (dist-t20)
+  qatd_giamdoc  biểu tượng            0                   12
+                cụm                   0                    3  (A/B/C, 4 toà mỗi cụm)
+                rộng px            (không có)        46,8 .. 64,0   ← trần ≥ 24 ĐẠT
+                ngoài khung           —                    0        ← toàn bộ trong khung
+                toà chồng khác cty    —                    0        ← quan hệ ĐÚNG
+                lệnh vẽ               2                    4        (trần 150)
+                tam giác         61.248                  182        (trần 500k)
+                nhãn                  0               9 / 15        (trần 30)
+                khung/s              50                   44..49    (sàn 30)
+                dem-may           1108                 1108         (không đổi)
+  qatd_quanly   biểu tượng            0                    4  · rộng 163..235 px
+  banner viTriSoDo: "…12 buildings across 3 factories… real campus 2240 m …
+                     model compresses it to 673 m…"  (data-rong-that-mm=2240000,
+                     data-rong-so-do-mm=673200, data-so-toa=12, data-so-khoi=3)
+
+ĐỐI CHỨNG ÂM BẮT BUỘC — /twin MỘT NHÀ MÁY
+  t19-mot-nha-may-t20-sau.json === t19-mot-nha-may-sau.json  (so BYTE, true)
+  45 máy · 5 lệnh vẽ · 9.998 tam giác · 1 nhãn · 12 hàng · 0 lỗi — KHÔNG ĐỔI MỘT Ô.
+
+ABLATION (gỡ đúng bản vá ⇒ đỏ ⇒ hoàn nguyên ⇒ md5)
+  gỡ 1 dòng (saBanTapDoan → khuonVienTapDoan ở TwinVanHanh.tsx):
+    saBanNoiVaoTrang.unit.test.ts  2 ĐỎ / 14 xanh
+    tsc                            6 lỗi (laSoDo/bieuTuong/thatRongMm không tồn tại)
+  hoàn nguyên: md5sum -c t20-md5-sau.txt → 11/11 OK · 59/59 xanh lại.
+  Ablation thứ hai nằm TRONG lưới: ô "ĐỐI CHỨNG BIẾT KÊU" đo bố cục CŨ bằng
+  CÙNG thước ⇒ 4,9 % < ngưỡng 10 % ⇒ thước biết BÁC BỎ, không chỉ biết gật.
+
+CỔNG NỀN            trước            sau
+  vitest twin3d   124 tệp / 2.917   125 tệp / 2.951   (+1 tệp, +34 ca, 0 đỏ)
+  vitest phamVi    20 / 529          20 / 529
+  npm run check     0                 0
+  npm run i18n:check 0                0
+  ⚠ Lần chạy nền ĐẦU TIÊN của phamVi cho 1 ĐỎ (timeout) khi chạy SONG SONG với
+    cổng twin3d; chạy lại một mình: 529/529 xanh. Đỏ đó có TRƯỚC bản vá.
+
+ẢNH (chủ đợt tự xem)
+  anh/t20-truoc/qatd_giamdoc-2-canvas.png        — canvas ĐEN (nền)
+  anh/t20-sau/qatd_giamdoc-2-canvas.png          — sa bàn, khung mặc định
+  anh/t20-sau/qatd_giamdoc-3-canvas-thu-panel.png— sa bàn KHÔNG bị panel che
+  anh/t20-sau/qatd_quanly-*.png                  — vai một nhà máy
+
+NỢ CÓ TÊN (chưa vá, xem báo cáo)
+  · 6/15 nhãn sa bàn bị panel DOM z-30 che ở 1280×720 (bảng Metrics). Lớp tự ẩn
+    và ĐẾM ra (`__demSaBan.soNhan() = {ve, an, tong}`), nhưng cụm QATD-A vẫn nằm
+    dưới bảng Metrics ở khung mặc định. Là tính chất BỐ CỤC TRANG, có trước
+    Task 20 và cũng đúng với cảnh một nhà máy.
+  · Ô 2D (`?2d=`/nút 2D) ở cấp tập đoàn VẪN vẽ 1.108 máy, chưa có sa bàn 2D.
+  · Cấp tập đoàn không còn chọn được máy TRÊN CẢNH (không còn khối máy); danh
+    sách DOM + NganXuLy vẫn chọn/hành động bình thường.
+  · Chưa chạy bộ e2e (cần bộ dữ liệu FUYU-F). Đã đọc F3/F4 của twin-lo-f.spec.ts:
+    chúng chỉ khẳng định `chon-nha-may` > 0, `banner-ha-cap` null, breadcrumb
+    khác rỗng, `calls > 0` — không ô nào chạm thứ Task 20 đổi.
