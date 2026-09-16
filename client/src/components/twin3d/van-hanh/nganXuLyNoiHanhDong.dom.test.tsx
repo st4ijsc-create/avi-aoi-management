@@ -539,10 +539,72 @@ describe("★★★ NP — hai con số nói rõ mẫu số của mình (không 
     expect(TRANG).toContain("twin3d.vanHanh.demTheoNhaMay");
   });
 
-  it("★★★ KHÔNG ĐỔI CÁCH ĐẾM — `dem-may` vẫn là `mayVanHanh.length`, dải vẫn `theoPhamVi.length`", () => {
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ KỲ VỌNG VẾ (b) ĐỔI Ở ĐỢT 64 — CHỦ ĐỢT PHÂN XỬ, KHÔNG PHẢI "SỬA CHO XANH"
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản trước ghim NGUYÊN VĂN một dòng nguồn:
+   *     expect(DAI).toContain('const nhanTong = chuaDo ? "—" : String(theoPhamVi.length);')
+   * Nó canh quyết định của chủ dự án (2026-09-15): *"thêm nhãn phạm vi mà KHÔNG
+   * đổi cách đếm"* — vì thu con số về theo cảnh sẽ **giấu** cảnh báo của nhà máy
+   * khác mà tài khoản có quyền thấy.
+   *
+   * Đợt 64 (PH-38) đo được một khuyết tật KHÁC HẲN thứ quyết định ấy cấm:
+   * `daiCanhBaoTieuDeVsDanhSach.dom.test.tsx` #A4 — chọn chip mức `yellow` thì
+   * tiêu đề in **55** trong khi danh sách vẽ **20 hàng**. Tiêu đề đọc
+   * `theoPhamVi` (bước 2 của đường ống) còn danh sách vẽ `theoMuc` (bước 3);
+   * hai bước ấy chỉ bằng nhau khi `chonMuc === "tat_ca"`.
+   *
+   * ⇒ Chủ đợt phân xử: ĐƯỢC đổi `nhanTong`, với ĐÚNG MỘT ràng buộc —
+   *   **tổng của phạm vi phải CÒN HIỆN TRÊN MÀN**. Dạng `20 / 55` thoả cả hai:
+   *   tử số ứng với thứ đang vẽ, mẫu số vẫn phơi ra tập đầy đủ.
+   *
+   * ★★★ VÀ CA NÀY ĐƯỢC SIẾT, KHÔNG NỚI. Bản cũ chỉ đọc CHUỖI trong tệp nguồn —
+   *   nó xanh kể cả khi component render ra bất cứ thứ gì (một `toContain` trên
+   *   mã nguồn không biết gì về DOM). Bản này giữ nguyên vế (a) rồi đo vế (b)
+   *   bằng **HÀNH VI trên component thật**: tổng phạm vi phải đọc được từ màn
+   *   ở đúng cái ca nguy hiểm nhất — khi một bộ lọc mức đang thu hẹp danh sách.
+   */
+  it("★★★ KHÔNG ĐỔI CÁCH ĐẾM (a) `dem-may` = `mayVanHanh.length` · (b) dải vẫn PHƠI TỔNG phạm vi", () => {
+    // ── (a) KHÔNG ĐỤNG: ô đếm máy vẫn đếm theo NHÀ MÁY (`cayVanHanh.ts:58-61`).
     const i = TRANG.indexOf('data-testid="dem-may"');
     expect(i).toBeGreaterThan(-1);
     expect(TRANG.slice(i, i + 160)).toContain("hienSo(mayVanHanh.length, dangTai)");
-    expect(DAI).toContain('const nhanTong = chuaDo ? "—" : String(theoPhamVi.length);');
+
+    // ── (b) ĐO BẰNG HÀNH VI: 9 cảnh báo, 4 `red` + 5 `yellow`, đang lọc `red`.
+    const seed: CanhBaoDai[] = [
+      ...Array.from({ length: 4 }, (_, k) => cb({ idNguon: 100 + k, muc: "red" })),
+      ...Array.from({ length: 5 }, (_, k) => cb({ idNguon: 200 + k, muc: "yellow" })),
+    ];
+    expect(seed).toHaveLength(9); // kích thước đầu vào TRƯỚC khi khẳng định kết cục
+    expect(seed.filter((c) => c.muc === "red")).toHaveLength(4);
+
+    render(<DaiCanhBao seed={seed} bayGio={BAY_GIO} chonMuc="red" />);
+
+    const hang = screen.queryAllByTestId(/^canh-bao-/);
+    expect(hang).toHaveLength(4); // danh sách thật sự vẽ 4
+
+    const tieuDe = screen.getByTestId("dai-tieu-de");
+    // Tử số = thứ đang vẽ (PH-38 vá).
+    expect(tieuDe.getAttribute("data-so-hien")).toBe(String(hang.length));
+    // ★ Mẫu số = TOÀN tập của phạm vi, KHÔNG bị thu theo bộ lọc. Đây là điều
+    //   quyết định 2026-09-15 bảo vệ, và là lý do ca này tồn tại.
+    expect(tieuDe.getAttribute("data-so-tong")).toBe("9");
+    // Và nó phải đọc được BẰNG MẮT, không chỉ nằm trong một `data-*`.
+    expect(tieuDe.textContent).toContain("9");
+    expect(tieuDe.textContent).toMatch(/\b4\b/);
+
+    // ── ĐỐI CHỨNG BIẾT KÊU: bỏ bộ lọc ⇒ hai số trùng nhau và chỉ in MỘT số.
+    cleanup();
+    render(<DaiCanhBao seed={seed} bayGio={BAY_GIO} chonMuc="tat_ca" />);
+    expect(screen.queryAllByTestId(/^canh-bao-/)).toHaveLength(9);
+    const tieuDe2 = screen.getByTestId("dai-tieu-de");
+    expect(tieuDe2.getAttribute("data-so-hien")).toBe("9");
+    expect(tieuDe2.getAttribute("data-so-tong")).toBe("9");
+
+    // ── Và mã nguồn vẫn dùng `theoPhamVi.length` làm MẪU SỐ: nếu ai đó thu mẫu
+    //   số về theo cảnh (`theoMuc`/`mayVanHanh`), vế (b) mất chỗ đứng.
+    expect(DAI).toContain("String(theoPhamVi.length)");
+    expect(DAI).toContain("data-so-tong={chuaDo ? undefined : String(theoPhamVi.length)}");
   });
 });

@@ -90,6 +90,53 @@ const HANG_MAY = 24;
 const TRAN_DAI_PX = 328; //     mục C
 const DONG_TIEN_TO = 17; //     dòng "Prefix: …" của Task 7 — đo 2026-09-16
 
+/* ════════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 64 — ĐO LẠI TOÀN BỘ BẰNG TRÌNH DUYỆT THẬT, VÀ BA HẰNG NỮA ĐÃ LỆCH
+ * ════════════════════════════════════════════════════════════════════════════════
+ * Nguồn: `.qa-tapdoan/khung-dem/truoc.json` — Playwright, bản dựng
+ * `index-DrD4Djtg.js` trên cổng 3064, tài khoản `e2e_tai_loE`, nhà máy SIM-FAC
+ * (42 máy · 7 andon đang mở, **cả 7 đều >24 h** nên nhóm tồn đọng là ca DƯƠNG
+ * thật, không phải tập rỗng — G146). Mỗi số là `getBoundingClientRect().height`.
+ *
+ * Lượt đo trước (cùng ngày) chỉ đọc `khoi-tong-quan` rồi dừng, nên nó khai
+ * `CAO_NGOAI_PANEL`/`TRAN_DAI_PX`/`HANG_MAY` "vẫn đúng" mà **không đo ba hằng
+ * còn lại**. Đo đủ thì ra:
+ *
+ *   ✔ ĐÚNG NGUYÊN: CAO_NGOAI_PANEL 231 · TIEU_DE_NHOM 24 · KHUNG_DANH_SACH 44
+ *                  · HANG_MAY 24 · KHOI_TONG_QUAN_1280 85 · KHOI_TONG_QUAN_1600 68
+ *   ✘ LỆCH:        KHUNG_DAI_CANH_BAO 91 → **111 @1280 / 84,5 @1600**
+ *                  HANG_TON_DONG      41 → **54,66** (ở CẢ HAI bề rộng)
+ *                  DAI_CHUYEN_CHE_DO  30 → 29,5 (lệch nhỏ, giữ 30 cho mô hình cũ)
+ *   ⚠ CÓ ĐIỀU KIỆN: DONG_TIEN_TO — đo được **VẮNG MẶT (0 px)** trên SIM-FAC.
+ *
+ * ★★★ VÀ ĐÂY LÀ PHÁT HIỆN QUAN TRỌNG NHẤT CỦA ĐỢT: brief giao việc nói thủ phạm
+ *   là "hai thứ mới" (khối tổng quan + dòng tiền tố). Đo đủ thì **hai thứ ấy
+ *   giải thích chưa được một nửa**, và thứ nặng thứ hai chưa ai khai:
+ *
+ *     khối tổng quan   41 → 85  =  +44 px   (bảng sức khoẻ Task 12 + hàng số 2 dòng)
+ *     hàng tồn đọng    41 → 54,66 = +13,66 px **MỖI HÀNG** ⇒ ×3 hàng = +41 px
+ *     khung dải        91 → 111 =  +20 px   (dòng `dai-pham-vi`, chốt 2026-09-15)
+ *     dòng tiền tố             =    0 px   (không rút được tiền tố ⇒ không render)
+ *                                ─────────
+ *     tổng thiệt hại cho tiêu chí 3 hàng @1280        **105 px**
+ *
+ *   61 px trong đó đến từ HAI BẢN VÁ CỦA QA lần 11 — dòng phụ danh tính (PH-30)
+ *   và dòng nhãn phạm vi — cả hai đều đúng, đều được chủ dự án chốt, và **cả hai
+ *   đều chưa từng vào mô hình này**. Đó là lý do mô hình khai "tồn đọng 2 hàng"
+ *   trong khi màn thật chỉ có **1**.
+ */
+const KHUNG_DAI_1280 = 111; //  đo 2026-09-16 — hàng chip XUỐNG HAI DÒNG ở `w-56`
+const KHUNG_DAI_1600 = 84.5; // đo 2026-09-16 — hàng chip một dòng ở `w-72`
+const HANG_TON_DONG_NAY = 54.66; // đo 2026-09-16 — 41 + dòng phụ danh tính (PH-30)
+/*
+ * ⚠ 29,5 chứ không 30 — nửa pixel, và nó KHÔNG vô hại: mô hình dùng 30 cho ra
+ *   `dai = 218,17` trong khi trình duyệt đo **218,45**. Sai số 0,28 px ấy tự nó
+ *   không lật hàng nào, nhưng nó là dấu hiệu mô hình và thực tế đang trôi khỏi
+ *   nhau — và một mô hình lệch 0,28 px thì không dùng để phán "đủ hay không đủ
+ *   một hàng 54,66 px" được nữa. §④ vì thế dùng trị ĐO, §②/§③ giữ 30 (lịch sử).
+ */
+const DAI_CHUYEN_CHE_DO_NAY = 29.5; // đo 2026-09-16
+
 /** Mô hình: từ chiều cao viewport ⇒ số hàng ĐỦ của hai ô. `tran = null` = bản trước mục C. */
 function duDoan(vpH: number, tran: number | null) {
   const duPanel = vpH - CAO_NGOAI_PANEL - KHOI_TONG_QUAN - DAI_CHUYEN_CHE_DO;
@@ -172,13 +219,23 @@ describe("★★★ ③ ĐỐI CHỨNG — vì sao `2xl:` (bề ngang) là câu 
  * âm thầm làm xấu thêm, và để chủ dự án có số mà quyết.
  */
 describe("★★★ ④ Bố cục HÔM NAY (đo thật 2026-09-16) — ghim sự thật, không phán quyết", () => {
-  /** Mô hình như §② nhưng nhận chiều cao khối tổng quan theo đúng bề rộng. */
-  function duDoanThat(vpH: number, khoiTongQuan: number, tienTo: number) {
-    const duPanel = vpH - CAO_NGOAI_PANEL - khoiTongQuan - DAI_CHUYEN_CHE_DO;
-    const dai = Math.min((duPanel * 7) / 12, TRAN_DAI_PX);
+  /**
+   * Mô hình bố cục HÔM NAY: nhận chiều cao khối tổng quan VÀ khung dải theo đúng
+   * bề rộng, và dùng chiều cao hàng tồn đọng THẬT (54,66) chứ không phải 41.
+   *
+   * ⚠ `tienTo` là tham số CÓ ĐIỀU KIỆN, không phải hằng: `DanhSachMay.tsx:330`
+   *   chỉ render dòng tiền tố khi rút được tiền tố chung. Trên SIM-FAC (mã
+   *   `ESP32-…`/`GLUE-…`/`SIM-L1-…`) không rút được ⇒ 0 px; trên bộ QATD (mọi mã
+   *   `QATD-A-T1-X1-L1-M…`) rút được ⇒ 17 px. Ca nào cũng phải nói rõ mình dùng trị nào.
+   */
+  function duDoanThat(vpH: number, khoiTongQuan: number, khungDai: number, tienTo: number, tran = TRAN_DAI_PX) {
+    const duPanel = vpH - CAO_NGOAI_PANEL - khoiTongQuan - DAI_CHUYEN_CHE_DO_NAY;
+    const dai = Math.min((duPanel * 7) / 12, tran);
     const danhSach = duPanel - dai;
     return {
-      hangTonDong: Math.max(0, Math.floor((dai - KHUNG_DAI_CANH_BAO - TIEU_DE_NHOM) / HANG_TON_DONG)),
+      duPanel,
+      dai: Math.round(dai * 100) / 100,
+      hangTonDong: Math.max(0, Math.floor((dai - khungDai - TIEU_DE_NHOM) / HANG_TON_DONG_NAY)),
       hangMay: Math.max(0, Math.floor((danhSach - KHUNG_DANH_SACH - tienTo) / HANG_MAY)),
     };
   }
@@ -188,22 +245,162 @@ describe("★★★ ④ Bố cục HÔM NAY (đo thật 2026-09-16) — ghim s�
     expect(KHOI_TONG_QUAN_1280 - KHOI_TONG_QUAN_1600).toBe(17);
   });
 
-  it("@1600×900 bố cục hôm nay cho 7 hàng máy — KHÔNG phải 9 như tiêu chí Đợt 59 đặt ra", () => {
-    const nay = duDoanThat(900, KHOI_TONG_QUAN_1600, DONG_TIEN_TO);
-    expect(nay.hangMay).toBe(7);
-    expect(nay.hangMay).toBeLessThan(9); // tiêu chí Đợt 59 — nay KHÔNG còn đạt, cần quyết lại
+  it("★★★ khung dải cũng KHÔNG phải hằng: 111 @1280 vs 84,5 @1600 — hàng chip WRAP ở `w-56`", () => {
+    // Cùng lớp lỗi với khối tổng quan, và cùng nguyên nhân: một khối `flex-wrap`
+    // ở cột 224 px xuống hai dòng, ở cột 288 px thì không. Mô hình MỘT-HẰNG
+    // (`KHUNG_DAI_CANH_BAO = 91`) không mô tả nổi cả hai, và 91 thì SAI ở cả hai.
+    expect(KHUNG_DAI_1280).toBeGreaterThan(KHUNG_DAI_1600);
+    expect(KHUNG_DAI_1280 - KHUNG_DAI_1600).toBeCloseTo(26.5, 2);
+    // Hằng cũ 91 nằm GIỮA hai trị thật ⇒ nó sai ở CẢ HAI bề rộng, chỉ sai ít hơn
+    // ở một bên. Đó là hình dạng điển hình của một hằng "trung bình hoá" hai ca.
+    expect(KHUNG_DAI_CANH_BAO).toBeGreaterThan(KHUNG_DAI_1600);
+    expect(KHUNG_DAI_CANH_BAO).toBeLessThan(KHUNG_DAI_1280);
   });
 
-  it("@1280×720 nhóm tồn đọng tụt xuống 2 hàng — tiêu chí Đợt 57 đòi ≥3, nay KHÔNG còn đạt", () => {
-    const nay = duDoanThat(720, KHOI_TONG_QUAN_1280, DONG_TIEN_TO);
-    expect(nay.hangTonDong).toBe(2);
-    expect(nay.hangTonDong).toBeLessThan(3); // tiêu chí Đợt 57 — nay KHÔNG còn đạt
+  it("★★★ hàng tồn đọng cao 54,66 px chứ không 41 — dòng phụ danh tính PH-30 cộng 13,66 px MỖI HÀNG", () => {
+    expect(HANG_TON_DONG_NAY).toBeGreaterThan(HANG_TON_DONG);
+    expect(HANG_TON_DONG_NAY - HANG_TON_DONG).toBeCloseTo(13.66, 2);
+    // Ba hàng tồn đọng đắt thêm ~41 px — gần bằng NGUYÊN khối tổng quan của mô
+    // hình lịch sử (41). Một dòng phụ 13,66 px ăn đúng bằng một khối 5 chỉ số.
+    expect(3 * (HANG_TON_DONG_NAY - HANG_TON_DONG)).toBeCloseTo(KHOI_TONG_QUAN, 0);
   });
 
-  it("đối chứng — bỏ HAI thứ mới đi thì cả hai tiêu chí cũ đạt lại (chứng minh đúng thủ phạm)", () => {
-    const cu1600 = duDoanThat(900, 41, 0);
-    const cu1280 = duDoanThat(720, 41, 0);
-    expect(cu1600.hangMay).toBeGreaterThanOrEqual(9);
-    expect(cu1280.hangTonDong).toBeGreaterThanOrEqual(3);
+  it("@1280×720 mô hình cho 1 hàng tồn đọng + 4 hàng máy — KHỚP ĐÚNG số đo trình duyệt", () => {
+    const nay = duDoanThat(720, KHOI_TONG_QUAN_1280, KHUNG_DAI_1280, 0);
+    // `.qa-tapdoan/khung-dem/truoc.json` @1280×720: dai 218,45 · hangTonDongDu 1 · hangMayDu 4
+    expect(nay.dai).toBeCloseTo(218.45, 1); // mô hình khớp trình duyệt tới 0,01 px
+    expect(nay.hangTonDong).toBe(1);
+    expect(nay.hangMay).toBe(4);
+    expect(nay.hangTonDong).toBeLessThan(3); // tiêu chí Đợt 57 — KHÔNG đạt
+  });
+
+  it("@1600×900 mô hình cho 4 hàng tồn đọng + 8 hàng máy — KHỚP ĐÚNG số đo trình duyệt", () => {
+    const nay = duDoanThat(900, KHOI_TONG_QUAN_1600, KHUNG_DAI_1600, 0);
+    // `.qa-tapdoan/khung-dem/truoc.json` @1600×900: dai 328 (chạm trần) · 4 · 8
+    expect(nay.dai).toBe(TRAN_DAI_PX);
+    expect(nay.hangTonDong).toBe(4);
+    expect(nay.hangMay).toBe(8);
+    expect(nay.hangTonDong).toBeGreaterThanOrEqual(3); // tiêu chí Đợt 57 — ĐẠT
+  });
+
+  /* ════════════════════════════════════════════════════════════════════════════
+   * ★★★ PHÁN QUYẾT ĐỢT 64 — VÌ SAO **KHÔNG** CÂN LẠI TỈ LỆ, VÀ BẰNG CHỨNG SỐ HỌC
+   * ════════════════════════════════════════════════════════════════════════════
+   * Việc được giao là chia lại chỗ sao cho @cả hai bề rộng: tồn đọng ≥3 hàng VÀ
+   * danh sách máy KHÔNG tụt dưới số hàng đang đạt (4 @1280 · 8 @1600).
+   * Đo xong thì @1280×720 **hai ràng buộc ấy loại trừ nhau**, và không tỉ lệ nào
+   * cứu được — đó là một mệnh đề SỐ HỌC, không phải một lựa chọn thiết kế.
+   */
+  describe("★★★ ④b Phán quyết — @1280×720 tiêu chí ≥3 hàng tồn đọng là BẤT KHẢ", () => {
+    const DU_PANEL_1280 = 720 - CAO_NGOAI_PANEL - KHOI_TONG_QUAN_1280 - DAI_CHUYEN_CHE_DO_NAY;
+
+    it("ngân sách 374,5 px < 438,98 px mà hai ràng buộc đòi ⇒ THIẾU 64,5 px", () => {
+      expect(DU_PANEL_1280).toBe(374.5);
+      const caiDaiCan = KHUNG_DAI_1280 + TIEU_DE_NHOM + 3 * HANG_TON_DONG_NAY; // 3 hàng tồn đọng
+      const caiDanhSachCan = KHUNG_DANH_SACH + 4 * HANG_MAY; // giữ 4 hàng máy như hiện tại
+      expect(caiDaiCan).toBeCloseTo(298.98, 1);
+      expect(caiDanhSachCan).toBe(140);
+      expect(caiDaiCan + caiDanhSachCan).toBeGreaterThan(DU_PANEL_1280);
+      expect(caiDaiCan + caiDanhSachCan - DU_PANEL_1280).toBeCloseTo(64.48, 1);
+    });
+
+    it("QUÉT MỌI TỈ LỆ 1..11 — không tỉ lệ nào cho (tồn đọng ≥3 VÀ máy ≥4)", () => {
+      const daQuet: Array<{ tu: number; tonDong: number; may: number }> = [];
+      for (let tu = 1; tu <= 11; tu += 1) {
+        const dai = (DU_PANEL_1280 * tu) / 12;
+        daQuet.push({
+          tu,
+          tonDong: Math.max(0, Math.floor((dai - KHUNG_DAI_1280 - TIEU_DE_NHOM) / HANG_TON_DONG_NAY)),
+          may: Math.max(0, Math.floor((DU_PANEL_1280 - dai - KHUNG_DANH_SACH) / HANG_MAY)),
+        });
+      }
+      expect(daQuet).toHaveLength(11); // quét THẬT, không phải tập rỗng
+      expect(daQuet.filter((x) => x.tonDong >= 3 && x.may >= 4)).toHaveLength(0);
+      // ★★★ ĐỐI CHỨNG BIẾT KÊU — chạy ĐÚNG mô hình LỊCH SỬ (khối 41 · khung 91 ·
+      //   hàng 41 · dải chuyển 30) thì bài toán CÓ nghiệm, và nghiệm ấy chính là
+      //   7:5 đang dùng. Tức tỉ lệ chưa bao giờ sai; cái đổi là BỐN HẰNG dưới nó.
+      const duCu = 720 - CAO_NGOAI_PANEL - KHOI_TONG_QUAN - DAI_CHUYEN_CHE_DO;
+      expect(duCu).toBe(418);
+      const cu = [] as number[];
+      for (let tu = 1; tu <= 11; tu += 1) {
+        const dai = (duCu * tu) / 12;
+        const td = Math.max(0, Math.floor((dai - KHUNG_DAI_CANH_BAO - TIEU_DE_NHOM) / HANG_TON_DONG));
+        const may = Math.max(0, Math.floor((duCu - dai - KHUNG_DANH_SACH) / HANG_MAY));
+        if (td >= 3 && may >= 4) cu.push(tu);
+      }
+      expect(cu).toEqual([7]); // ⇒ bài toán vỡ vì BỐN HẰNG, không vì tỉ lệ
+    });
+
+    it("7:5 ĐÃ LÀ phần chia lớn nhất cho dải mà danh sách máy còn giữ được 4 hàng", () => {
+      const tai = (tu: number) => {
+        const dai = (DU_PANEL_1280 * tu) / 12;
+        return {
+          tonDong: Math.max(0, Math.floor((dai - KHUNG_DAI_1280 - TIEU_DE_NHOM) / HANG_TON_DONG_NAY)),
+          may: Math.max(0, Math.floor((DU_PANEL_1280 - dai - KHUNG_DANH_SACH) / HANG_MAY)),
+        };
+      };
+      expect(tai(7)).toEqual({ tonDong: 1, may: 4 }); // hiện tại
+      expect(tai(8).may).toBe(3); // nhích lên một nấc ⇒ danh sách máy TỤT, vi phạm ràng buộc
+      expect(tai(8).tonDong).toBe(2); // và vẫn CHƯA đạt ≥3
+    });
+
+    it("@1600×900 CẢ HAI ràng buộc đã đạt sẵn ⇒ không có gì để cân lại", () => {
+      const nay = duDoanThat(900, KHOI_TONG_QUAN_1600, KHUNG_DAI_1600, 0);
+      expect(nay.hangTonDong).toBeGreaterThanOrEqual(3);
+      expect(nay.hangMay).toBeGreaterThanOrEqual(8);
+    });
+
+    /*
+     * ★ LỰA CHỌN ĐÃ CÂN NHẮC RỒI BỎ — ghi lại kèm SỐ để chủ dự án quyết, chứ
+     *   không im lặng: hạ trần 328 → 305 mua được hàng máy thứ 9 @1600×900
+     *   (tiêu chí cũ của Đợt 59) bằng cách TRẢ một hàng tồn đọng (4 → 3).
+     *   Tôi KHÔNG làm, vì docblock Đợt 57 đã cân đúng cái đổi chác này theo
+     *   chiều ngược lại: *"danh sách máy là danh sách 42 máy CÓ Ô LỌC, luôn phải
+     *   cuộn ở mọi chiều cao"* còn nhóm tồn đọng là **tập hữu hạn phải phơi ra**
+     *   (ISA-18.2). Đổi một hàng cảnh báo quá hạn lấy một hàng của danh sách
+     *   luôn-phải-cuộn là đi ngược quyết định ấy.
+     */
+    it("ĐÃ CÂN NHẮC — trần 305 cho 9 hàng máy @1600 nhưng TRẢ một hàng tồn đọng", () => {
+      const v305 = duDoanThat(900, KHOI_TONG_QUAN_1600, KHUNG_DAI_1600, 0, 305);
+      expect(v305.hangMay).toBe(9);
+      expect(v305.hangTonDong).toBe(3); // vẫn đạt tiêu chí, nhưng mất hàng thứ 4
+      // ★ TÔI ĐÃ NGHI TRẦN 305 LÀM HỒI QUY Ở CỬA SỔ 1280 CAO — ĐO THÌ KHÔNG.
+      //   1280×1024 giữ nguyên 3 hàng tồn đọng ở cả hai trần (305 > 298,98 = chỗ
+      //   ba hàng cần), và còn ĐƯỢC thêm một hàng máy. Ghi lại vì lý lẽ bác bỏ
+      //   305 KHÔNG được dựa vào một hồi quy không tồn tại — nó chỉ còn dựa vào
+      //   đánh đổi 1 hàng cảnh báo ⇄ 1 hàng máy ở 1600×900, và đó là chỗ docblock
+      //   Đợt 57 đã phán.
+      expect(duDoanThat(1024, KHOI_TONG_QUAN_1280, KHUNG_DAI_1280, 0).hangTonDong).toBe(3);
+      expect(duDoanThat(1024, KHOI_TONG_QUAN_1280, KHUNG_DAI_1280, 0, 305).hangTonDong).toBe(3);
+      expect(duDoanThat(1024, KHOI_TONG_QUAN_1280, KHUNG_DAI_1280, 0, 305).hangMay).toBe(13);
+    });
+
+    it("★ cửa sổ khả thi của TRẦN chỉ rộng 12,5 px — cái nút này gần cạn", () => {
+      // Cận trên: máy ≥9 @1600×900. Cận dưới: tồn đọng ≥3 ở cửa sổ 1280 CAO.
+      const canTren = 900 - CAO_NGOAI_PANEL - KHOI_TONG_QUAN_1600 - DAI_CHUYEN_CHE_DO_NAY - KHUNG_DANH_SACH - 9 * HANG_MAY;
+      const canDuoi = KHUNG_DAI_1280 + TIEU_DE_NHOM + 3 * HANG_TON_DONG_NAY;
+      expect(canTren).toBe(311.5);
+      expect(canDuoi).toBeCloseTo(298.98, 1);
+      expect(canTren - canDuoi).toBeLessThan(13);
+      expect(canTren - canDuoi).toBeGreaterThan(0); // vẫn còn nghiệm — nhưng vừa đủ
+    });
+  });
+
+  it("★★★ ĐỐI CHỨNG TÁCH THỦ PHẠM — gỡ khối tổng quan thôi thì VẪN KHÔNG đạt", () => {
+    // Brief giao việc quy tội cho "hai thứ mới" (khối tổng quan + dòng tiền tố).
+    // Ca này tách từng thủ phạm ra bằng cách gỡ đúng một thứ mỗi lần.
+    const duCu1280 = (720 - CAO_NGOAI_PANEL - KHOI_TONG_QUAN - DAI_CHUYEN_CHE_DO) * (7 / 12);
+    const hang = (dai: number, khung: number, caoHang: number) =>
+      Math.max(0, Math.floor((dai - khung - TIEU_DE_NHOM) / caoHang));
+
+    // (1) mô hình LỊCH SỬ nguyên vẹn ⇒ ĐẠT — đây là nền so sánh.
+    expect(hang(duCu1280, KHUNG_DAI_CANH_BAO, HANG_TON_DONG)).toBeGreaterThanOrEqual(3);
+    // (2) gỡ khối tổng quan về 41 NHƯNG giữ hàng thật 54,66 ⇒ **VẪN KHÔNG ĐẠT**.
+    expect(hang(duCu1280, KHUNG_DAI_CANH_BAO, HANG_TON_DONG_NAY)).toBeLessThan(3);
+    // (3) giữ khối tổng quan thật 85 NHƯNG hàng cũ 41 ⇒ cũng KHÔNG đạt.
+    const duNay1280 = (720 - CAO_NGOAI_PANEL - KHOI_TONG_QUAN_1280 - DAI_CHUYEN_CHE_DO_NAY) * (7 / 12);
+    expect(hang(duNay1280, KHUNG_DAI_1280, HANG_TON_DONG)).toBeLessThan(3);
+    // ⇒ KHÔNG có MỘT thủ phạm nào đủ để giải thích; phải gỡ CẢ HAI mới đạt lại.
+    //   Nên "cân lại tỉ lệ" không thể là lời giải — tỉ lệ không phải thủ phạm nào.
   });
 });

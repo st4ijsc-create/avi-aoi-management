@@ -20336,7 +20336,9 @@
       "daAck": "Ack",
       "xuLyTaiCho": "Handle",
       "phamViTaiKhoan": "Counted across your whole account scope",
-      "phamViNhanh": "Counted within {{nhanh}}"
+      "phamViNhanh": "Counted within {{nhanh}}",
+      "ngoaiLuotNap": "Machine in another factory (not in this load)",
+      "locTuTong": "Showing {{hien}} of {{tong}} alarms in scope"
     },
     "canvasUi": {
       "fitTatCa": "Fit all in view",

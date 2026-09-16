@@ -20314,7 +20314,9 @@
       "daAck": "Đã xác nhận",
       "xuLyTaiCho": "Xử lý",
       "phamViTaiKhoan": "Đếm trên toàn phạm vi tài khoản",
-      "phamViNhanh": "Đếm trong nhánh {{nhanh}}"
+      "phamViNhanh": "Đếm trong nhánh {{nhanh}}",
+      "ngoaiLuotNap": "Máy ở nhà máy khác (lượt nạp này chưa có)",
+      "locTuTong": "Đang hiện {{hien}} trong {{tong}} cảnh báo của phạm vi"
     },
     "canvasUi": {
       "fitTatCa": "Vừa khung nhìn",

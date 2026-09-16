@@ -20342,7 +20342,9 @@
       "daAck": "已确认",
       "xuLyTaiCho": "处理",
       "phamViTaiKhoan": "按账号全部范围统计",
-      "phamViNhanh": "按分支 {{nhanh}} 统计"
+      "phamViNhanh": "按分支 {{nhanh}} 统计",
+      "ngoaiLuotNap": "其他工厂的设备（本次载入不含）",
+      "locTuTong": "显示范围内 {{tong}} 条告警中的 {{hien}} 条"
     },
     "canvasUi": {
       "fitTatCa": "适应视图",

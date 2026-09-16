@@ -148,6 +148,7 @@ function DongCanhBao({
   nhanTonDong,
   nhanAck,
   nhanXuLy,
+  nhanNgoaiLuotNap,
 }: {
   c: CanhBaoDai;
   tonDong: boolean;
@@ -157,6 +158,7 @@ function DongCanhBao({
   nhanTonDong: (n: number) => string;
   nhanAck: string;
   nhanXuLy: string;
+  nhanNgoaiLuotNap: string;
 }) {
   const kieu = KIEU_MUC[c.muc];
   /**
@@ -178,7 +180,54 @@ function DongCanhBao({
    *   (15 → 30) — giữ lại ghi chú vì cái bẫy nằm ở phía người đặt tên, không
    *   phải ở phía lưới.
    */
-  const coDanhTinh = c.maMay !== null || c.tenNhaMay !== null;
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-38 (G3) — BA TRẠNG THÁI DANH TÍNH, KHÔNG PHẢI HAI
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản PH-30 chỉ phân biệt *tra được* / *không tra được*, và gộp hai sự thật
+   * rất khác nhau vào vế thứ hai:
+   *
+   *   `co`             — tra được mã máy và/hoặc tên nhà máy.
+   *   `ngoai-luot-nap` — cảnh báo **CÓ** gắn máy (`machineId !== null`) nhưng
+   *                      máy ấy KHÔNG có trong `maTheoMay` của trang. Đường duy
+   *                      nhất dẫn tới đây là máy thuộc **nhà máy khác**:
+   *                      `maTheoMay` dựng từ `mayVanHanh`, vốn bắt nguồn từ
+   *                      `twinCanh.canhThietKe({ factoryId })`, trong khi
+   *                      `andon.active` KHÔNG nhận `factoryId`
+   *                      (`andonRouter.ts:348-358`) nên trả cảnh báo của MỌI
+   *                      nhà máy trong phạm vi tài khoản.
+   *   `khong-gan-may`  — `machineId === null`: cảnh báo thật sự không gắn máy
+   *                      nào (`andon_events.machineId` nullable).
+   *
+   * ★★★ VÌ SAO PHẢI TÁCH: QA lần 11 (PH-38) đọc một dải 55 dòng của ba công ty
+   *   và kết luận *"tất cả đều Công ty A"*. Đo lại
+   *   (`daiCanhBaoTieuDeVsDanhSach.dom.test.tsx` #A1/#A2) thì **đủ 55 dòng nằm
+   *   trong DOM** — nhưng 40 dòng của hai công ty kia **không nói gì về mình**,
+   *   trong khi 15 dòng còn lại nói rõ "… · Công ty A". Người đọc một danh sách
+   *   mà chỉ vài dòng khai nguồn gốc sẽ suy phần còn lại cùng nguồn gốc ấy. Im
+   *   lặng ở đây KHÔNG trung tính: nó là một lời khai sai được phát bằng cách
+   *   không nói gì.
+   *
+   * ⚠ `khong-gan-may` GIỮ NGUYÊN hành vi cũ (không vẽ dòng phụ) — và đó là CÓ
+   *   CHỦ Ý, không phải bỏ sót: dán "máy ở nhà máy khác" lên một cảnh báo không
+   *   có máy nào là **bịa ra một nhà máy**, đúng lớp lỗi mà `traChuoi()` đã
+   *   tránh khi từ chối biến `""` thành dữ liệu. Ca âm ghim ở #A5b.
+   *
+   * ★ Thuộc tính `data-danh-tinh` LUÔN có mặt trên mọi hàng — khác hẳn
+   *   `data-ma-may` (cố ý vắng mặt khi chưa biết). Đây là bài học trực tiếp từ
+   *   PH-38: `.qa-tapdoan/do-cuoi-P2b.mjs:31` đếm hàng bằng `[data-ma-may]`,
+   *   một thuộc tính CÓ ĐIỀU KIỆN, nên bộ chọn ấy **định nghĩa** ra kết cục
+   *   "chỉ 15 dòng, cả 15 của Công ty A" thay vì đo nó. Một thuộc tính luôn có
+   *   mặt cho phép đếm tổng đúng, và ba giá trị của nó cho phép phân rã mà
+   *   không phải suy từ sự vắng mặt của thứ khác.
+   */
+  const danhTinh: "co" | "ngoai-luot-nap" | "khong-gan-may" =
+    c.maMay !== null || c.tenNhaMay !== null
+      ? "co"
+      : c.machineId !== null
+        ? "ngoai-luot-nap"
+        : "khong-gan-may";
+  const coDanhTinh = danhTinh !== "khong-gan-may";
   /*
    * ★★★ TASK 10 — nút "xử lý tại chỗ" là ANH EM của nút dòng, KHÔNG lồng trong nó.
    *
@@ -201,6 +250,7 @@ function DongCanhBao({
         data-ton-dong={tonDong ? "1" : "0"}
         data-ma-may={c.maMay ?? undefined}
         data-nha-may={c.tenNhaMay ?? undefined}
+        data-danh-tinh={danhTinh}
         className="flex min-w-0 flex-1 items-start gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-accent/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
         onClick={() => onChon?.(c)}
       >
@@ -220,9 +270,18 @@ function DongCanhBao({
               className="block truncate text-[10px] text-text-2"
               data-testid={`danh-tinh-${c.nguon}-${c.idNguon}`}
             >
-              {c.maMay}
-              {c.maMay !== null && c.tenNhaMay !== null ? " · " : null}
-              {c.tenNhaMay}
+              {danhTinh === "ngoai-luot-nap" ? (
+                /* Đây là NHÃN GIAO DIỆN (câu của ta về một hạn chế của lượt
+                   nạp), không phải dữ liệu từ DB — nên nó ĐƯỢC dịch, ngược với
+                   `maMay`/`tenNhaMay` ngay dưới (RB-8.3). */
+                nhanNgoaiLuotNap
+              ) : (
+                <>
+                  {c.maMay}
+                  {c.maMay !== null && c.tenNhaMay !== null ? " · " : null}
+                  {c.tenNhaMay}
+                </>
+              )}
             </span>
           ) : null}
           <span className="mt-0.5 flex flex-wrap items-center gap-1">
@@ -287,7 +346,42 @@ export function DaiCanhBao({
 
   // ★★★ NT-3/G15 — `—` khi CHƯA ĐO ĐƯỢC, `0` chỉ khi thật sự đã đo và bằng 0.
   const chuaDo = dangTai || khongDoDuoc;
-  const nhanTong = chuaDo ? "—" : String(theoPhamVi.length);
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-38 (G1) — CON SỐ Ở TIÊU ĐỀ PHẢI ỨNG VỚI THỨ TRƯỚC MẮT NGƯỜI ĐỌC
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản trước in `theoPhamVi.length` — tức số ĐO Ở BƯỚC 2 của đường ống bốn
+   * bước — trong khi danh sách bên dưới vẽ `nhom.*`, dẫn xuất từ `theoMuc` ở
+   * BƯỚC 3. Hai bước đó bằng nhau **chỉ khi** `chonMuc === "tat_ca"`. Bấm một
+   * chip mức là tách chúng ra: đo được (#A4) 55 ở tiêu đề trên 20 hàng đang vẽ.
+   *
+   * ★★★ VÀ CÁCH SỬA SAI LÀ ĐỔI TIÊU ĐỀ THÀNH `theoMuc.length` RỒI DỪNG LẠI:
+   *   làm thế thì bấm chip `yellow` sẽ in "Cảnh báo (20)" và **35 cảnh báo kia
+   *   biến mất khỏi mọi bề mặt** — người dùng không còn đường nào biết mình
+   *   đang nhìn một phần. Đó là đổi một con số sai lấy một con số **giấu**, mà
+   *   giấu thì tệ hơn: một dải giám sát nói "20" khi có 55 là lời nói dối duy
+   *   nhất mà ISA-18.2 không tha.
+   * ⇒ Khi và chỉ khi bộ lọc mức đang thu hẹp, tiêu đề in **CẢ HAI**: `20 / 55`.
+   *   Tử số luôn là thứ đang vẽ, mẫu số luôn là tập nó được rút ra từ đó.
+   *
+   * ★ Bộ lọc NHÁNH (#15) KHÔNG vào mẫu số — cố ý. Nó là bộ lọc người dùng chủ
+   *   động chọn trên cây, đã có `dai-theo-nhanh` + `nhanPhamVi` nói ra, và
+   *   `theoPhamVi` chính là "tập đang xét". Bộ lọc MỨC thì khác: nó là một hàng
+   *   chip ngay trên danh sách, dễ để lại trạng thái rồi quên.
+   *
+   * ★ Hai `data-*` mang ĐÚNG hai con số đang hiện (khuôn của `o-suc-khoe-*`):
+   *   phép đo ngoài và con mắt không thể lệch nhau. `data-so-hien` PHẢI bằng số
+   *   hàng `canh-bao-*` trong DOM — đó là bất biến §B của lưới, và là thứ duy
+   *   nhất chặn được lớp lỗi này tái sinh ở lần đổi đường ống sau.
+   * ★ Chưa đo được ⇒ **vắng mặt cả hai thuộc tính**, không phải `"0"`/`"—"`
+   *   (G15: *chưa đo* ≠ *đã đo và bằng 0*).
+   */
+  const dangLocMuc = !chuaDo && theoMuc.length !== theoPhamVi.length;
+  const nhanTong = chuaDo
+    ? "—"
+    : dangLocMuc
+      ? `${theoMuc.length} / ${theoPhamVi.length}`
+      : String(theoPhamVi.length);
 
   const nhanTonDong = (n: number) => t("twin3d.daiCanhBao.tonDongNgay", { n });
   /*
@@ -297,12 +391,30 @@ export function DaiCanhBao({
    *   đỏ cùng lúc. Khoá được thêm đủ ba locale nên không có ca "thiếu bản dịch".
    */
   const nhanXuLy = t("twin3d.daiCanhBao.xuLyTaiCho");
+  // PH-38 — hai khoá MỚI, đã thêm đủ ba locale vi/en/zh (en/zh không dấu Việt).
+  const nhanNgoaiLuotNap = t("twin3d.daiCanhBao.ngoaiLuotNap");
+  const nhanLocTuTong = t("twin3d.daiCanhBao.locTuTong", {
+    hien: theoMuc.length,
+    tong: theoPhamVi.length,
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="dai-canh-bao">
       <div className="flex items-center justify-between gap-2 border-b px-2 py-1.5">
-        <span className="text-xs font-semibold">
+        <span
+          className="text-xs font-semibold"
+          data-testid="dai-tieu-de"
+          data-so-hien={chuaDo ? undefined : String(theoMuc.length)}
+          data-so-tong={chuaDo ? undefined : String(theoPhamVi.length)}
+          /* Chuột dừng lại đọc được câu đầy đủ mà không tốn một pixel chiều cao
+             nào — panel trái đang tranh từng hàng với danh sách máy. */
+          title={dangLocMuc ? nhanLocTuTong : undefined}
+        >
           {t("twin3d.daiCanhBao.tieuDe")} ({nhanTong})
+          {/* `sr-only` = 0 px bố cục, nhưng là bề mặt DUY NHẤT nói được "20 / 55"
+              cho người dùng trình đọc màn hình: `title` không được công bố đáng
+              tin, và một dấu `/` đọc lên thành "gạch chéo" thì vô nghĩa. */}
+          {dangLocMuc ? <span className="sr-only">{nhanLocTuTong}</span> : null}
         </span>
         {phamVi !== null ? (
           <span
@@ -399,6 +511,7 @@ export function DaiCanhBao({
                       nhanTonDong={nhanTonDong}
                       nhanAck={t("twin3d.daiCanhBao.daAck")}
                       nhanXuLy={nhanXuLy}
+                      nhanNgoaiLuotNap={nhanNgoaiLuotNap}
                     />
                   ))}
                 </ul>
@@ -428,6 +541,7 @@ export function DaiCanhBao({
                       nhanTonDong={nhanTonDong}
                       nhanAck={t("twin3d.daiCanhBao.daAck")}
                       nhanXuLy={nhanXuLy}
+                      nhanNgoaiLuotNap={nhanNgoaiLuotNap}
                     />
                   ))}
                 </ul>
