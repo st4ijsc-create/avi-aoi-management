@@ -1,0 +1,198 @@
+{
+ "nhan": "sau",
+ "luc": "2026-09-16T09:39:46.125Z",
+ "vai": {
+  "qatd_giamdoc": {
+   "ba_3D": {
+    "hopCanh": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soBieuTuong": 12,
+    "rongPx": [
+     56.5,
+     60.6,
+     59.3,
+     63.2,
+     71.6,
+     79.2,
+     74.7,
+     83,
+     66.3,
+     71.1,
+     70,
+     75.5
+    ],
+    "soNhanDom": 15,
+    "thongKe": {
+     "calls": 4,
+     "triangles": 182,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "demMay": "1108",
+    "nutChe": "3D",
+    "ariaCanh": null
+   },
+   "ba_2D": {
+    "coSvg": true,
+    "viewBox": "-22.44 -22.44 718.08 598.08",
+    "hopSvg": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "hopSan": {
+     "x": 0,
+     "y": 0,
+     "w": 0,
+     "h": 0
+    },
+    "soMay": 0,
+    "soNhanText": 15,
+    "coBieuTuongSaBan2D": 0,
+    "demMay": "1108",
+    "nutChe": "2D",
+    "ariaSvg": "2D schematic site model, corporate level: 12 building icons across 3 factories, 55 open alarms. Individual machines are not drawn at this level.",
+    "banner": [],
+    "thongKe": {
+     "calls": 4,
+     "triangles": 182,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "soCanvas": 0,
+    "soMayDuoi1px": 0,
+    "soMayDuoi4px": 0,
+    "soMayDuoi24px": 0,
+    "rongPx": {
+     "min": null,
+     "p50": null,
+     "max": null
+    },
+    "caoPx": {
+     "min": null,
+     "p50": null,
+     "max": null
+    },
+    "mau10": []
+   },
+   "mucAnh": {
+    "3d-canvas": {
+     "w": 968,
+     "h": 489,
+     "nen": "#070a10",
+     "tyLeNen": 42.6,
+     "pxKhacNen": 117377,
+     "tyLeMuc": 24.8,
+     "soMauRieng": 3631
+    },
+    "2d-svg": {
+     "w": 968,
+     "h": 489,
+     "nen": "#0e1218",
+     "tyLeNen": 23.2,
+     "pxKhacNen": 110933,
+     "tyLeMuc": 23.4,
+     "soMauRieng": 4037
+    }
+   },
+   "loi": []
+  },
+  "qatd_quanly": {
+   "ba_3D": {
+    "hopCanh": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soBieuTuong": 4,
+    "rongPx": [
+     163.4,
+     203.4,
+     185.8,
+     236.1
+    ],
+    "soNhanDom": 5,
+    "thongKe": {
+     "calls": 4,
+     "triangles": 62,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "demMay": "371",
+    "nutChe": "3D",
+    "ariaCanh": null
+   },
+   "ba_2D": {
+    "coSvg": true,
+    "viewBox": "-9.533333333333333 -9.533333333333333 305.06666666666666 245.06666666666666",
+    "hopSvg": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "hopSan": {
+     "x": 0,
+     "y": 0,
+     "w": 0,
+     "h": 0
+    },
+    "soMay": 0,
+    "soNhanText": 5,
+    "coBieuTuongSaBan2D": 0,
+    "demMay": "371",
+    "nutChe": "2D",
+    "ariaSvg": "2D schematic site model, corporate level: 4 building icons across 1 factories, 15 open alarms. Individual machines are not drawn at this level.",
+    "banner": [],
+    "thongKe": {
+     "calls": 4,
+     "triangles": 62,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "soCanvas": 0,
+    "soMayDuoi1px": 0,
+    "soMayDuoi4px": 0,
+    "soMayDuoi24px": 0,
+    "rongPx": {
+     "min": null,
+     "p50": null,
+     "max": null
+    },
+    "caoPx": {
+     "min": null,
+     "p50": null,
+     "max": null
+    },
+    "mau10": []
+   },
+   "mucAnh": {
+    "3d-canvas": {
+     "w": 968,
+     "h": 489,
+     "nen": "#070a10",
+     "tyLeNen": 38.1,
+     "pxKhacNen": 136415,
+     "tyLeMuc": 28.8,
+     "soMauRieng": 3477
+    },
+    "2d-svg": {
+     "w": 968,
+     "h": 489,
+     "nen": "#0e1218",
+     "tyLeNen": 23.2,
+     "pxKhacNen": 195280,
+     "tyLeMuc": 41.3,
+     "soMauRieng": 3343
+    }
+   },
+   "loi": []
+  }
+ }
+}

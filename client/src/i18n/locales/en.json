@@ -19914,6 +19914,8 @@
         "banDieuKhien": "Command console"
       },
       "canhAria2D": "2D factory map: {{may}} machines, {{canhBao}} open alarms, {{khongRo}} machines with no signal",
+      "canhAriaSaBan": "3D schematic site model, corporate level: {{soToa}} building icons across {{soKhoi}} factories, {{canhBao}} open alarms. Individual machines are not drawn at this level.",
+      "canhAriaSaBan2D": "2D schematic site model, corporate level: {{soToa}} building icons across {{soKhoi}} factories, {{canhBao}} open alarms. Individual machines are not drawn at this level.",
       "statsAoi": "AOI results",
       "chuaKiemChiecNao": "no units inspected",
       "aoiOk": "OK",

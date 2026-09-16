@@ -19894,6 +19894,8 @@
         "banDieuKhien": "Bàn điều khiển lệnh"
       },
       "canhAria2D": "Sơ đồ 2D nhà máy: {{may}} máy, {{canhBao}} cảnh báo đang mở, {{khongRo}} máy mất tín hiệu",
+      "canhAriaSaBan": "Sa bàn sơ đồ 3D cấp tập đoàn: {{soToa}} biểu tượng toà nhà của {{soKhoi}} nhà máy, {{canhBao}} cảnh báo đang mở. Cấp này không vẽ từng máy.",
+      "canhAriaSaBan2D": "Sa bàn sơ đồ 2D cấp tập đoàn: {{soToa}} biểu tượng toà nhà của {{soKhoi}} nhà máy, {{canhBao}} cảnh báo đang mở. Cấp này không vẽ từng máy.",
       "statsAoi": "Kết quả AOI",
       "chuaKiemChiecNao": "chưa kiểm chiếc nào",
       "aoiOk": "OK",

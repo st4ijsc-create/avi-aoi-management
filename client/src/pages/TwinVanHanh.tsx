@@ -3010,11 +3010,35 @@ export function ThanTwinVanHanh() {
    *   nghiệm thu bắt được nó vẫn đọc "Cảnh 3D" khi đang ở chế độ 2D — với người
    *   dùng trình đọc màn hình, đó là bề mặt DUY NHẤT mô tả cảnh, nên nói sai
    *   chế độ là nói sai toàn bộ thứ họ đang xem.
+   *
+   * ★★★ VÀ NÓ PHẢI NÓI ĐÚNG **ĐƠN VỊ VẼ**, KHÔNG CHỈ ĐÚNG CHẾ ĐỘ.
+   *
+   * Đo được trên bản đang phục vụ (`?pv=tapdoan`, vai `qatd_giamdoc`,
+   * `.qa-tapdoan/b1-loikhai-truoc.json`): ở chế độ 3D câu này đọc *"3D factory
+   * scene: **1108 machines**…"* trong khi từ Task 20 cảnh vẽ **12 biểu tượng
+   * toà nhà và 0 máy**. Đó là lời khai sai cùng lớp với bốn cái đợt này đã vá
+   * (`banner-ha-cap`, `CanhVanHanh2D:94`, `banner-vi-tri-tam-sinh`,
+   * `banner-trang-thai-mot-nha-may`) — chỉ khác là nó nằm trên bề mặt mà người
+   * dùng trình đọc màn hình KHÔNG có cách nào đối chiếu bằng mắt.
+   *
+   * ⇒ Có sa bàn ⇒ câu nói về BIỂU TƯỢNG TOÀ và số nhà máy; không ⇒ câu cũ nói
+   *   về số máy, nguyên văn, cho đường một nhà máy.
+   * ⚠ `veSaBan` suy từ CHÍNH mảng đang được truyền xuống cảnh, không từ
+   *   `phamVi.cap === "tapdoan"`: hai đường ấy lệch nhau khi phạm vi bị hạ cấp,
+   *   và đúng lúc lệch thì câu aria lại sai lần nữa.
    */
-  const ariaLabel = t(
-    che2D ? "twin3d.vanHanh.canhAria2D" : "twin3d.vanHanh.canhAria",
-    { may: mayVe.length, canhBao: andonRows.length, khongRo: demTuoi.khongRo },
-  );
+  const veSaBan = saBanToa.length > 0;
+  const ariaLabel = veSaBan
+    ? t(che2D ? "twin3d.vanHanh.canhAriaSaBan2D" : "twin3d.vanHanh.canhAriaSaBan", {
+        soToa: saBanToa.length,
+        soKhoi: saBanCum.length,
+        canhBao: andonRows.length,
+      })
+    : t(che2D ? "twin3d.vanHanh.canhAria2D" : "twin3d.vanHanh.canhAria", {
+        may: mayVe.length,
+        canhBao: andonRows.length,
+        khongRo: demTuoi.khongRo,
+      });
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -4170,6 +4194,18 @@ export function ThanTwinVanHanh() {
               onChonMay={chonMay}
               sanRongM={sanRongM}
               sanSauM={sanSauM}
+              /*
+                ★★★ "HAI CHIỀU" — CÙNG SA BÀN, CÙNG MẢNG, CÙNG ĐƠN VỊ VẼ.
+                Task 20 đổi đơn vị vẽ ở cấp tập đoàn cho bản 3D và bản 2D ở lại
+                với 1.108 khối máy. Đo được (`?pv=tapdoan`, 1280×720, khung mặc
+                định): 2D vẽ 1.108 vật thể rộng 0,11 .. 3,95 px — **1.108/1.108
+                dưới 4 px** — trong khi 3D vẽ 12 biểu tượng rộng 56,5 .. 83,0 px.
+                Người dùng bấm nút 2D/3D và thấy hai thứ khác hẳn nhau.
+                ⇒ Truyền CHÍNH `saBanToa`/`saBanCum` đang đi xuống bản 3D. Dựng
+                  một mảng thứ hai cho 2D là mở lại đúng khe vừa bịt.
+              */
+              saBan={saBanToa}
+              saBanCum={saBanCum}
               nhanTrangThai={(tt) => t(mauChoTrangThai(tt).khoaNhan)}
               ariaLabel={ariaLabel}
             />

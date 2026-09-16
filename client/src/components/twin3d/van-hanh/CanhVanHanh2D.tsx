@@ -25,13 +25,60 @@
  * ★ SVG, không canvas — mỗi máy là một `<rect>` DOM thật, nên:
  *   • Playwright click được, trình đọc màn hình đọc được
  *   • KHÔNG tốn WebGL context (đây là fallback khi WebGL hỏng — RB-4)
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ HAI ĐƠN VỊ VẼ — VÀ CHÚNG PHẢI GIỐNG BẢN 3D Ở CẢ HAI CẤP
+ * ════════════════════════════════════════════════════════════════════════════
+ * Tệp này vẽ MỘT trong hai đơn vị, không bao giờ cả hai:
+ *
+ *   `saBan` RỖNG      ⇒ **khối máy** — cấp nhà máy/toà/tầng, y như trước.
+ *   `saBan` KHÁC RỖNG ⇒ **biểu tượng toà nhà** — cấp tập đoàn, cùng mảng
+ *                        `dungSaBanVe()` mà bản 3D nhận.
+ *
+ * Luật rẽ nhánh sao chép ĐÚNG bản 3D (`CanhVanHanh` + `LopSaBan`, Task 20), và
+ * đó là chủ đích: trước lượt này hai chế độ kể hai câu chuyện khác nhau ở cấp
+ * tập đoàn mà không câu nào trên màn nói ra. Lý lẽ đầy đủ + số đo nằm ở khối
+ * chú thích ngay trên nhánh `veSaBan ?` trong thân hàm; lưới ghim là
+ * `saBan2D.dom.test.tsx` (hành vi) và `saBanHaiCheDo.unit.test.ts` (khớp nối).
  */
 
 import { useMemo } from "react";
 
+import { useOptionalTheme } from "@/components/factory-scene/useOptionalTheme";
+
 import { giaiMauCanh, mauChoTrangThai } from "../mauTrangThai";
 import { mmSangMet } from "../heToaDo";
+import {
+  MAU_BIEU_TUONG_TOA,
+  NEN_CUM_SANG,
+  NEN_CUM_TOI,
+  type BieuTuongToaVe,
+  type CumSaBanVe,
+} from "./hopNhatCanh";
 import type { MayTrongLo } from "../loi";
+
+/**
+ * Mặc định RỖNG bằng HẰNG MODULE, không `[]` literal ở chỗ khai tham số: một
+ * literal dựng mảng MỚI mỗi render và mọi `useMemo([saBan])` phía dưới mất tác
+ * dụng — cùng bẫy mà `CanhVanHanh` đã phải dựng `EMPTY_SA_BAN` để tránh.
+ */
+const SA_BAN_2D_RONG: readonly BieuTuongToaVe[] = [];
+const SA_BAN_2D_CUM_RONG: readonly CumSaBanVe[] = [];
+
+/**
+ * Cỡ chữ nhãn tính theo **TỈ LỆ cạnh sa bàn**, không theo hằng mét.
+ *
+ * `<svg viewBox>` co giãn toàn bộ hệ toạ độ, nên một cỡ chữ cố định *bằng mét*
+ * cho ra số pixel khác nhau ở mỗi sa bàn: khuôn viên QATD (sa bàn 673 m) và một
+ * khuôn viên gấp đôi sẽ ra chữ to gấp đôi / bé một nửa. Buộc cỡ chữ vào cạnh sa
+ * bàn giữ số PIXEL gần như không đổi — và pixel mới là thứ người ta đọc.
+ *
+ * Hai mẫu số đo trên khung mặc định 1280×720 (canvas 968×489, sa bàn 677×557 m):
+ *   cụm 677/48 ≈ 14,1 m × 0,877 px/m ≈ **12,4 px**
+ *   toà 677/62 ≈ 10,9 m × 0,877 px/m ≈ **9,6 px**
+ */
+const TI_LE_CHU_CUM = 1 / 48;
+const TI_LE_CHU_TOA = 1 / 62;
 
 export interface CanhVanHanh2DProps {
   may: readonly MayTrongLo[];
@@ -46,6 +93,20 @@ export interface CanhVanHanh2DProps {
   /** Nhãn trạng thái ĐÃ qua `t()` — component không gọi `t()` (RB-8.3). */
   nhanTrangThai: (trangThai: string) => string;
   ariaLabel: string;
+  /**
+   * ★★★ SA BÀN QUY HOẠCH — **ĐƠN VỊ VẼ** của phạm vi tập đoàn.
+   *
+   * Không rỗng ⇒ cảnh 2D vẽ biểu tượng toà nhà và **bỏ** lớp khối máy, đúng
+   * luật mà bản 3D (`CanhVanHanh` + `LopSaBan`) đã theo từ Task 20. Rỗng ⇒ cây
+   * cũ y nguyên, không một thuộc tính nào đổi.
+   *
+   * Cùng mảng `dungSaBanVe()` mà bản 3D nhận — KHÔNG dựng bản thứ hai: hai bề
+   * mặt đọc hai nguồn là cách chắc chắn nhất để chúng nói khác nhau về cùng một
+   * khuôn viên.
+   */
+  saBan?: readonly BieuTuongToaVe[];
+  /** Nền từng cụm (một cụm = một nhà máy) — đi kèm `saBan`. */
+  saBanCum?: readonly CumSaBanVe[];
 }
 
 /** Lề quanh mặt sàn, mét — để máy sát mép không bị cắt. */
@@ -61,9 +122,35 @@ export function CanhVanHanh2D({
   sanSauM,
   nhanTrangThai,
   ariaLabel,
+  saBan = SA_BAN_2D_RONG,
+  saBanCum = SA_BAN_2D_CUM_RONG,
 }: CanhVanHanh2DProps) {
-  const rong = Math.max(sanRongM, 10) + LE_M * 2;
-  const sau = Math.max(sanSauM, 10) + LE_M * 2;
+  const theme = useOptionalTheme();
+  const toi = theme === "dark";
+
+  /**
+   * ★★★ SA BÀN **THAY** LỚP MÁY, KHÔNG ĐỨNG CẠNH NÓ.
+   *
+   * Suy từ ĐỘ DÀI chứ không từ một cờ riêng: một cờ tách "có dữ liệu" khỏi "vẽ
+   * lớp nào" và mở đúng khe cho một cảnh TRẮNG im lặng (`CanhVanHanh.tsx` đã ghi
+   * cùng lý lẽ cho bản 3D).
+   */
+  const veSaBan = saBan.length > 0;
+
+  const chuCum = Math.max(sanRongM, sanSauM) * TI_LE_CHU_CUM;
+  const chuToa = Math.max(sanRongM, sanSauM) * TI_LE_CHU_TOA;
+  /*
+   * Lề: sa bàn cần chỗ cho nhãn cụm nằm NGAY TRÊN tấm nền — cụm hàng đầu chỉ có
+   * `vien = kheToa` phía trên và chữ sẽ bị cắt ở mép viewBox. Một dòng chữ rưỡi
+   * là đủ, và nó lấy đi ~3 % bề rộng sa bàn — trả giá ít hơn hẳn một nhãn cụt.
+   */
+  const le = veSaBan ? Math.max(LE_M, chuCum * 1.6) : LE_M;
+  const rong = Math.max(sanRongM, 10) + le * 2;
+  const sau = Math.max(sanSauM, 10) + le * 2;
+
+  /** Màu chữ + quầng chữ: quầng làm nhãn đọc được TRÊN CẢ nền cụm lẫn mặt sàn. */
+  const mauChu = toi ? "#e2e8f0" : "#0f172a";
+  const quangChu = toi ? "#0f172a" : "#ffffff";
 
   /**
    * Phân giải màu MỘT LẦN cho mỗi trạng thái xuất hiện, không mỗi máy: mỗi lượt
@@ -85,11 +172,19 @@ export function CanhVanHanh2D({
 
   return (
     <svg
-      viewBox={`${-LE_M} ${-LE_M} ${rong} ${sau}`}
+      viewBox={`${-le} ${-le} ${rong} ${sau}`}
       className="h-full w-full"
       role="img"
       aria-label={ariaLabel}
       data-testid="canh-van-hanh-2d"
+      /*
+       * ★★★ MÀN NÓI RA ĐƠN VỊ VẼ, không bắt người đọc suy từ số hình trên cảnh.
+       *   Câu dành cho NGƯỜI nằm ở `banner-vi-tri-tam-sinh` và ở `aria-label`;
+       *   thuộc tính này là bản dành cho PHÉP ĐO — nó cho nghiệm thu khẳng định
+       *   "hai chế độ cùng đơn vị vẽ" bằng một giá trị đọc được, thay vì bằng
+       *   một ấn tượng về ảnh chụp.
+       */
+      data-don-vi-ve={veSaBan ? "toa-nha" : "may"}
       onClick={(e) => {
         /*
          * Click nền = bỏ chọn.
@@ -126,7 +221,121 @@ export function CanhVanHanh2D({
       {/* Mặt sàn — xám trung tính (§10.1). */}
       <rect x="0" y="0" width={sanRongM} height={sanSauM} className="fill-muted/40 stroke-border" strokeWidth="0.1" />
 
-      {may.map((m) => {
+      {/*
+        ════════════════════════════════════════════════════════════════════════
+        ★★★ SA BÀN QUY HOẠCH — ĐƠN VỊ VẼ CỦA PHẠM VI TẬP ĐOÀN
+        ════════════════════════════════════════════════════════════════════════
+        Số đo bắt bản vá này (trình duyệt thật, `?pv=tapdoan`, 1280×720, khung
+        mặc định, canvas 968×489):
+
+          bản 3D (sau Task 20) · 12 biểu tượng · rộng 56,5 .. 83,0 px · 15 nhãn
+          bản 2D (trước đây)   · 1.108 khối máy · rộng **0,11 .. 3,95 px**
+                                 (trung vị 1,32 px) · **1.108/1.108 dưới 4 px**
+                                 · 0 nhãn · ảnh gần như ĐEN
+
+        Đây là **cùng khuyết tật PH-44** mà Task 20 vá cho bản 3D, còn nguyên ở
+        chế độ kia — không phải hai chế độ cố ý vẽ hai thứ. Đối chứng trên bản
+        dựng TRƯỚC Task 20 cho trung vị **0,65 px** và 924/1.108 dưới 1 px, nên
+        2D vốn đã hỏng ở cấp này; Task 20 không gây ra và cũng không chữa nó.
+
+        ★ Phép chia quyết định giống hệt `saBanTapDoan`: muốn một vật thể rộng
+          24 px trên 968 px thì trường nhìn phải ≤ 81 m. Khuôn viên là 673 m
+          (2.240 m trước khi sa bàn nén). Không khung nhìn nào bù nổi 8,3 lần —
+          **phải vẽ ít vật thể hơn và to hơn**.
+
+        ★★★ VÌ SAO KHÔNG CHỌN "GIỮ MÁY + THÊM MỘT CÂU GIẢI THÍCH": bản 2D là
+          đường DỰ PHÒNG khi WebGL hỏng (`che2D = epChe2D || webglHong`, và nút
+          chuyển `disabled={webglHong}`). Lúc ấy người dùng không rời khỏi nó
+          được, nên một lời khai trung thực về một ô đen vẫn để họ ở lại với một
+          ô đen.
+
+        ⚠ THAY, không ĐỨNG CẠNH: vẽ cả hai là tự mâu thuẫn — nhãn máy lơ lửng
+          trên một khối nhà mà không bấm được vào máy nào (nguyên văn lý lẽ của
+          `LopSaBan.tsx` cho bản 3D).
+      */}
+      {veSaBan ? (
+        <g data-testid="lop-sa-ban-2d" data-so-toa={saBan.length} data-so-cum={saBanCum.length}>
+          {/* Nền cụm TRƯỚC — vẽ sau biểu tượng thì tấm nền đè mất chính thứ nó nền cho. */}
+          {saBanCum.map((c) => (
+            <rect
+              key={`cum-${c.factoryId}`}
+              data-testid="cum-2d-sa-ban"
+              data-factory-id={c.factoryId}
+              x={c.viTri.x - c.co.rong / 2}
+              y={c.viTri.z - c.co.sau / 2}
+              width={c.co.rong}
+              height={c.co.sau}
+              fill={(toi ? NEN_CUM_TOI : NEN_CUM_SANG)[c.chiSoCum % NEN_CUM_SANG.length]}
+            />
+          ))}
+          {saBan.map((v) => (
+            <rect
+              key={`toa-${v.toaNhaId}`}
+              data-testid="toa-2d-sa-ban"
+              data-toa-nha-id={v.toaNhaId}
+              data-factory-id={v.factoryId}
+              data-chi-so-cum={v.chiSoCum}
+              /*
+                ★ Nhìn TỪ TRÊN XUỐNG: trục dọc của màn là `z` của scene — đúng
+                  phép chiếu mà lớp máy phía dưới đã dùng (`translate(x z)`).
+                  `co.cao` (chiều đứng) cố ý KHÔNG dùng: mặt bằng không có nó.
+              */
+              x={v.viTri.x - v.co.rong / 2}
+              y={v.viTri.z - v.co.sau / 2}
+              width={v.co.rong}
+              height={v.co.sau}
+              fill={toi ? MAU_BIEU_TUONG_TOA.toi : MAU_BIEU_TUONG_TOA.sang}
+              stroke={quangChu}
+              strokeWidth={Math.max(v.co.rong, v.co.sau) * 0.012}
+            />
+          ))}
+          {/*
+            Nhãn SAU hình — chữ nằm dưới khối là chữ không đọc được.
+            `paint-order: stroke` cho quầng chữ chạy TRƯỚC nét chữ, nên chữ đọc
+            được trên cả nền cụm sáng lẫn mặt sàn tối mà không cần một tấm nền
+            riêng (tấm nền lại che mất biểu tượng bên dưới).
+          */}
+          {saBanCum.map((c) => (
+            <text
+              key={`nhan-cum-${c.factoryId}`}
+              data-testid="nhan-cum-sa-ban-2d"
+              data-factory-id={c.factoryId}
+              x={c.viTri.x}
+              y={c.viTri.z - c.co.sau / 2 - chuCum * 0.45}
+              textAnchor="middle"
+              fontSize={chuCum}
+              fontWeight={600}
+              fill={mauChu}
+              stroke={quangChu}
+              strokeWidth={chuCum * 0.26}
+              paintOrder="stroke"
+              style={{ pointerEvents: "none" }}
+            >
+              {c.nhan}
+            </text>
+          ))}
+          {saBan.map((v) => (
+            <text
+              key={`nhan-toa-${v.toaNhaId}`}
+              data-testid="nhan-toa-sa-ban-2d"
+              data-toa-nha-id={v.toaNhaId}
+              x={v.viTri.x}
+              y={v.viTri.z + chuToa * 0.36}
+              textAnchor="middle"
+              fontSize={chuToa}
+              fill={mauChu}
+              stroke={quangChu}
+              strokeWidth={chuToa * 0.26}
+              paintOrder="stroke"
+              style={{ pointerEvents: "none" }}
+            >
+              {v.nhan}
+            </text>
+          ))}
+        </g>
+      ) : null}
+
+      {veSaBan ? null : may.map((m) => {
         const tt = trangThaiTheoMay.get(m.machineId) ?? "khong_ro";
         const kieu = mauTheoTrangThai.get(tt) ?? { mau: "#94a3b8", doMo: 1, gachCheo: true };
         const rongM = mmSangMet(m.kichThuocMm.rongMm);

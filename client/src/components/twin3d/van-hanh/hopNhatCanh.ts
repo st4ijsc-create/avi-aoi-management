@@ -605,6 +605,38 @@ export interface SaBanVao {
 /** Bề dày tấm nền cụm (m) — mỏng để không thành một khối thứ hai tranh chỗ với toà. */
 export const DAY_NEN_CUM_M = 0.4;
 
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ BẢNG MÀU SA BÀN — MỘT NGUỒN CHO **CẢ HAI** CHẾ ĐỘ VẼ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ba hằng dưới đây sinh ra ở `LopSaBan.tsx` (bản 3D, Task 20) và ở đó chúng là
+ * hằng RIÊNG TƯ của tệp. Khi bản 2D cũng vẽ sa bàn, "chép sang tệp kia" là cách
+ * chắc chắn nhất để hai chế độ tách nhau lần nữa — lần này ở MÀU thay vì ở đơn
+ * vị vẽ, và tách kiểu đó không lưới nào bắt vì cả hai vẫn xanh.
+ *
+ * ⇒ Bảng màu về đây, cạnh `BieuTuongToaVe`/`CumSaBanVe` mà cả hai chế độ đã dùng
+ *   chung. Tệp này không nhập `three` và không nhập React, nên cả lớp R3F lẫn
+ *   lớp SVG đọc được mà không kéo theo phụ thuộc chéo.
+ *
+ * ★ LÝ LẼ MÀU GIỮ NGUYÊN (nguyên văn từ `LopSaBan.tsx`): bảng màu CÓ SẮC của màn
+ *   này ĐÃ có nghĩa — đỏ = critical, hổ phách = warning, vàng = watch, lục =
+ *   healthy, xám = chưa rõ. Một toà nhà màu lục cạnh một toà hổ phách sẽ bị đọc
+ *   là *trạng thái*. Nên biểu tượng toà là **một màu xám duy nhất**, còn NHÓM
+ *   đọc bằng (a) khe hở giữa cụm, (b) bậc độ sáng của nền cụm, (c) nhãn mang tên
+ *   công ty — ba dấu hiệu, không cái nào mượn ý nghĩa của bảng trạng thái.
+ */
+
+/** Màu biểu tượng toà nhà — một sắc duy nhất, đổi theo theme. */
+export const MAU_BIEU_TUONG_TOA = { sang: "#9aa8ba", toi: "#7e8ea4" } as const;
+
+/**
+ * Bậc độ sáng của tấm nền cụm. 4 bậc chứ không phải 8: quá 4 bậc thì hai bậc
+ * cạnh nhau không phân biệt được bằng mắt, và trần nhà máy một lượt là 8 — nên
+ * bậc được LẶP LẠI có chủ ý, vì khoảng cách mới là thứ tách cụm, không phải màu.
+ */
+export const NEN_CUM_SANG = ["#cbd5e1", "#dbe2ea", "#b9c4d2", "#e7ecf1"] as const;
+export const NEN_CUM_TOI = ["#27364b", "#1f2c3e", "#2f4058", "#18222f"] as const;
+
 /**
  * Quy đổi sa bàn (mm, góc trái-dưới) sang cảnh (m, tâm khối).
  *

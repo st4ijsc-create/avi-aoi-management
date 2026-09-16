@@ -37,7 +37,14 @@ import * as THREE from "three";
 import { laCheDoDo } from "../loi/cheDoDo";
 import { TAM_CANVAS, layVungCam } from "../loi/LopNhan";
 import type { CuaSoDoTwin3d } from "../loi/KhungCanh";
-import { DAY_NEN_CUM_M, type BieuTuongToaVe, type CumSaBanVe } from "./hopNhatCanh";
+import {
+  DAY_NEN_CUM_M,
+  MAU_BIEU_TUONG_TOA,
+  NEN_CUM_SANG,
+  NEN_CUM_TOI,
+  type BieuTuongToaVe,
+  type CumSaBanVe,
+} from "./hopNhatCanh";
 
 export interface LopSaBanProps {
   toa: readonly BieuTuongToaVe[];
@@ -57,13 +64,13 @@ const TRUOT_TOI_DA = 40;
 /** Tên nhóm để e2e/`__demSaBan` tìm đúng lớp này trong scene. */
 export const TEN_NHOM_SA_BAN = "twin3d-sa-ban";
 
-/**
- * Bậc độ sáng của tấm nền cụm. 4 bậc chứ không phải 8: quá 4 bậc thì hai bậc
- * cạnh nhau không phân biệt được bằng mắt, và trần nhà máy một lượt là 8 — nên
- * bậc được LẶP LẠI có chủ ý, vì khoảng cách mới là thứ tách cụm, không phải màu.
+/*
+ * ★★★ BẢNG MÀU DỜI SANG `hopNhatCanh.ts` — xem docblock ở đó.
+ *   Lý do dời: từ lượt này bản **2D** (`CanhVanHanh2D.tsx`) cũng vẽ sa bàn, và
+ *   hai bảng màu song song là cách hai chế độ tách nhau lần nữa mà không lưới
+ *   nào bắt được (cả hai vẫn xanh, chỉ khác sắc trên màn). Giá trị KHÔNG đổi một
+ *   ký tự — ablation gỡ bản vá phải cho ra đúng ảnh cũ.
  */
-const NEN_CUM_SANG = ["#cbd5e1", "#dbe2ea", "#b9c4d2", "#e7ecf1"] as const;
-const NEN_CUM_TOI = ["#27364b", "#1f2c3e", "#2f4058", "#18222f"] as const;
 
 /** 8 góc hộp đơn vị (nửa cạnh ±0,5) — dùng để chiếu bao hình biểu tượng ra px. */
 const GOC_HOP: readonly (readonly [number, number, number])[] = [
@@ -135,7 +142,7 @@ export function LopSaBan({ toa, cum, toi, tatNhan }: LopSaBanProps) {
     const inst = refToa.current;
     if (!inst) return;
     const mt = new THREE.Matrix4();
-    const mau = new THREE.Color(toi ? "#7e8ea4" : "#9aa8ba");
+    const mau = new THREE.Color(toi ? MAU_BIEU_TUONG_TOA.toi : MAU_BIEU_TUONG_TOA.sang);
     toa.forEach((v, i) => {
       mt.compose(
         new THREE.Vector3(v.viTri.x, v.viTri.y, v.viTri.z),

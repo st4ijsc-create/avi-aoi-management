@@ -526,3 +526,29 @@ Chủ đợt sinh lại bộ QATD (`--go` rồi `--ghi`) sau khi cả hai agent 
 | | | | đơn điệu **CÓ** · **5,09×** | |
 ★★★ **Trùng KHÍT bảng mô phỏng `_v21-sim.mjs` ở cả bốn hạng, cả bốn cỡ mẫu, và cả tỉ số 5,09×.** Mô phỏng ấy được viết **trước khi** dữ liệu tồn tại ⇒ nó **DỰ ĐOÁN**, không phải khớp số. Đây là kiểu bằng chứng mạnh hơn hẳn "chạy xong thấy số đẹp".
 Tiêu chí (đơn điệu giảm + xấu/tốt ≥ 2×) **ĐẠT trên dữ liệu sống**. ⚠ Mã định danh QATD nay **đã khác** lần trước — mọi harness phải đọc lại từ `.qa-tapdoan/sinh-summary.json`.
+
+## V-31 ★★★ Ô 2D ĐÓNG — và 2D bị ĐÚNG bệnh PH-44, có TRƯỚC Task 20
+**Bước 1, đo trước khi vá:** 2D ở `?pv=tapdoan` vẽ **1.108 vật thể SVG thật**, rộng **0,11-3,95 px** (trung vị **1,32**), 234 cái **dưới 1 px**, **1.108/1.108 dưới 4 px**, **0 nhãn**, mực ảnh 9,7 % ⇒ gần như đen.
+★ Đối chứng quyết định hướng: chạy **cùng phép đo** trên `dist-t19` (trước Task 20) ⇒ trung vị **0,65 px**, **924/1.108 dưới 1 px**, cũng đen. ⇒ **Task 20 không gây ra và không chữa**; nó vô tình làm to gấp đôi (sa bàn nén 2.240 m → 673 m). Phép chia dứt điểm: muốn 24 px trên 968 px thì trường nhìn ≤ **81 m**, mà khuôn viên là **673 m** — thiếu **8,3 lần**, không khung nhìn nào bù được.
+
+**Vì sao chọn (a) bê sa bàn sang 2D, không chọn (b) hay (c):** `TwinVanHanh.tsx:2699` `che2D = epChe2D || webglHong`, và nút chuyển `disabled={webglHong}` ⇒ **2D là đường dự phòng khi WebGL hỏng, lúc đó người dùng KHÔNG rời khỏi nó được**. (c) chặn 2D ở cấp tập đoàn là chặn chính cái phao. (b) giữ máy + thêm lời khai chỉ đổi một ô đen thành **một ô đen có chú thích** (0/1.108 vật thể ≥ 4 px).
+
+★★★ **LỜI KHAI SAI THỨ NĂM ĐÃ SỐNG SẴN — agent tìm ra, không tạo ra**: ở chế độ 2D, `banner-vi-tri-tam-sinh` nói *"each building is an icon, and 12 buildings… grouped into clusters"* trong khi màn vẽ **1.108 máy và 0 biểu tượng**, còn `aria-label` cạnh đó nói *"1108 machines"*. Hướng (a) làm câu banner thành **THẬT ở cả hai chế độ**, thay vì phải viết câu thứ năm chống chế cho câu thứ tư.
+
+| | trước | sau |
+|---|---|---|
+| 2D đơn vị vẽ | 1.108 máy | **12 biểu tượng toà, 0 máy** |
+| rộng px | 0,11-3,95 (p50 1,32) | **89,9** |
+| nhãn | **0** | 15 (3 tên công ty + 12 tên toà) |
+| quan hệ | — | 3 cụm × 4 toà, **0 sai** so `sinh-summary.toas[].factoryId` |
+| nút SVG | 1.113 | 36 |
+8/8 ô ĐẠT; 3D tập đoàn **không đổi** (trước = sau). Đối chứng âm `/twin` một nhà máy ở **cả hai** chế độ: 3D **giống BYTE**; 2D khác đúng một thuộc tính khai báo mới. Ablation **hai chiều**: gỡ 2 dòng nối ở trang ⇒ đúng 2 ca khớp-nối đỏ, 13 ca hành vi vẫn xanh; ép `veSaBan=false` trong component ⇒ 12/13 ca hành vi đỏ, 2 ca khớp-nối vẫn xanh.
+Chủ đợt **tự xem** `anh/b2-sau/qatd_giamdoc-2d-toan-man.png`: đọc được "Công ty A/B/C" với các ô "Toà 1-4".
+
+★ Agent sửa thiết bị đo **hai lần, in cả hai số**: (i) kịch bản bấm mở dải hợp nhất lần hai ⇒ **đóng** nó ⇒ khai "0 banner"; số đúng là 2. (ii) đo nhãn **khi dải ĐANG MỞ** ⇒ khai **1/3** tên công ty đọc được — nhưng dải mở là **một lớp phủ do chính thiết bị đo bật lên**, không phải khung mặc định; số đúng là **3/3**. Cùng lớp với PH-38 và PH-41: **phép đo tự sinh ra phát hiện**, lần thứ tư trong đợt.
+
+## PH-49 (MỚI, CAO cho PHÉP ĐO) · `--go` xoá gán tài khoản, `--ghi` không tạo lại, và KHÔNG MỘT DÒNG NÀO NÓI RA
+★★★ **Chủ đợt đã sập bẫy này 2026-09-16.** Sau khi chạy `--go` rồi `--ghi` để bản vá V-21 có hiệu lực, cả **7** tài khoản `qatd_*` còn **0 gán** ⇒ mọi vai thấy `factory.list = 0` và màn hiện *"not assigned to any factory"*. **Nhìn như lỗi phân quyền, thực ra là dữ liệu thiếu.** Một agent phải truy ngược mới tìm ra.
+Gốc: `sinh-tap-doan.mjs:868/870` xoá `user_factory_assignments` (theo `factoryCode LIKE`) và `user_corporate_assignments` (theo `corporateCode`) trong `--go`; `--ghi` không dựng lại.
+⛔ **KHÔNG chữa bằng `--gan`**: lệnh ấy gán **cả ba công ty cho mọi vai**, tức phá chính phép đo phạm vi mà bộ dữ liệu này tồn tại để phục vụ. Script đúng là `.qa-tapdoan/b1-khoi-phuc-gan.mjs` (idempotent, đọc `tai-khoan.mjs` làm nguồn sự thật).
+**Đã vá:** `canhBaoMatGan()` chạy ở cuối `--ghi`, miễn trừ đúng hai tài khoản ĐƯỢC PHÉP 0 gán (`qatd_admin` bypass phạm vi, `qatd_khonggan` là đối chứng 0-gán), và **chỉ ĐO rồi NÓI, không tự sửa** — một bước sửa âm thầm ở cuối lượt ghi là đúng loại im lặng vừa gây ra sự cố. Đối chứng: xoá tạm hàng gán của `qatd_quanly` ⇒ hàm **KÊU** đích danh; hoàn nguyên ⇒ im lặng và số hàng về đúng nguyên trạng.

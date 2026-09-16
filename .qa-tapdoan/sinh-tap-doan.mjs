@@ -166,6 +166,51 @@ export const tiLeNgTheoSucKhoe = (health, jitter) =>
  *  Một dòng nằm trong docblock là KHÔNG ĐỦ: mười đợt QA đã đọc số `predictive_alerts`
  *  mà không biết bộ sinh không ghi bảng đó. Người chạy bộ sinh phải NHÌN THẤY.
  */
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ CANH BAO MAT GAN — cai bay chu dot DA SAP VAO 2026-09-16
+ * ════════════════════════════════════════════════════════════════════════════
+ * `--go` XOA CA HAI bang gan (`user_factory_assignments` theo `factoryCode LIKE`,
+ * va `user_corporate_assignments` theo `corporateCode`) — xem `cheDoGo`. Nhung
+ * `--ghi` KHONG tao lai chung, va truoc ban va nay **khong mot dong nao noi ra**.
+ *
+ * Hau qua do duoc: sau `--go` + `--ghi`, ca 7 tai khoan `qatd_*` co 0 gan, moi vai
+ * thay `factory.list = 0`, va man hien "not assigned to any factory". Nhin nhu mot
+ * loi phan quyen, thuc ra la du lieu thieu. Mot agent phai truy nguoc moi tim ra.
+ *
+ * ★ KHONG tu chay `--gan`: lenh ay gan CA BA cong ty cho MOI vai, tuc no pha chinh
+ *   phep do pham vi ma bo du lieu nay ton tai de phuc vu. Dung script khoi phuc
+ *   doc `tai-khoan.mjs` lam nguon su that.
+ *
+ * ★ Ham nay chi DO va NOI, khong tu sua: mot buoc sua am tham o cuoi luot ghi la
+ *   dung loai im lang vua gay ra su co.
+ */
+async function canhBaoMatGan(sql) {
+  try {
+    const r = await sql`
+      select u.username,
+             (select count(*)::int from user_factory_assignments a where a."userId" = u.id) as nm,
+             (select count(*)::int from user_corporate_assignments c where c."userId" = u.id) as td
+      from users u where u.username like ${"qatd%"} order by u.username`;
+    if (r.length === 0) return;
+    // `qatd_admin` (bypass pham vi) va `qatd_khonggan` (doi chung 0-gan) DUNG la 0.
+    const mienTru = new Set(["qatd_admin", "qatd_khonggan"]);
+    const mat = r.filter((x) => !mienTru.has(x.username) && x.nm === 0 && x.td === 0);
+    if (mat.length === 0) {
+      console.log(`\n  Gan tai khoan: ${r.length - mat.length}/${r.length} tai khoan co gan (2 mien tru la dung). OK.`);
+      return;
+    }
+    console.log(`\n  ┌─ !! MAT GAN TAI KHOAN — ${mat.length} vai se thay "not assigned to any factory" ──`);
+    console.log(`  │ '--go' XOA hai bang gan; '--ghi' KHONG tao lai chung. Khong phai loi phan quyen.`);
+    for (const x of mat) console.log(`  │   ${String(x.username).padEnd(18)} nha may=${x.nm}  tap doan=${x.td}`);
+    console.log(`  │ => CHAY: node .qa-tapdoan/b1-khoi-phuc-gan.mjs   (idempotent, doc tai-khoan.mjs)`);
+    console.log(`  │ => DUNG chay '--gan': no gan CA BA cong ty cho MOI vai, pha phep do pham vi.`);
+    console.log(`  └──────────────────────────────────────────────────────────────────────────────`);
+  } catch (e) {
+    console.log(`\n  (khong kiem duoc gan tai khoan: ${e.message})`);
+  }
+}
+
 export function loiKhaiCanhBao() {
   console.log(`
   ┌─ LOI KHAI VE \`predictive_alerts\` (V-21 muc 1) ─────────────────────────────
@@ -669,6 +714,7 @@ async function cheDoGhi() {
   tomTat.urlMau = tomTat.congTys.map((c) => ({ congTy: c.code, twin: `/twin?nm=${c.id}`, line: `/twin/line/${c.lineDauId}`, may: `/twin/may/${c.mayDauId}` }));
   fs.writeFileSync(path.join(__dirname, "sinh-summary.json"), JSON.stringify(tomTat, null, 2));
   console.log(`\n  Tom tat: .qa-tapdoan/sinh-summary.json`);
+  await canhBaoMatGan(sql);
   loiKhaiCanhBao();
   await sql.end();
   if (!ok.dat) { console.error("\nLOI: CAU CHI DO. Chay '--go' roi sua."); process.exit(1); }

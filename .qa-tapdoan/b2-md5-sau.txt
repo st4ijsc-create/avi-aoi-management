@@ -1,0 +1,9 @@
+3e89c66e770b019db4f0ee8ca9b70cee *client/src/pages/TwinVanHanh.tsx
+bfa860775e3fd15e8741c54963305de5 *client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx
+6612d1351ae24fccc0d121d40f52d67b *client/src/components/twin3d/van-hanh/LopSaBan.tsx
+8d0268d46e957236029218818fe8781c *client/src/components/twin3d/van-hanh/hopNhatCanh.ts
+06405dc539ae8f6a5163067b3941be75 *client/src/i18n/locales/vi.json
+62290468e5f3e79c9cce88890517596d *client/src/i18n/locales/en.json
+b8f63ba96ccccc454c7173e092e2faf4 *client/src/i18n/locales/zh.json
+c5a69b4c035f218a94e689f5b49f326d *client/src/components/twin3d/van-hanh/saBan2D.dom.test.tsx
+5749e507ef6ec80332815330c8a64b6b *client/src/components/twin3d/van-hanh/saBanHaiCheDo.unit.test.ts

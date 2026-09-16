@@ -1,0 +1,232 @@
+{
+ "nhan": "sau",
+ "luc": "2026-09-16T09:46:47.755Z",
+ "tran": {
+  "rongPx": 24,
+  "nhan": 30
+ },
+ "vai": {
+  "qatd_giamdoc": {
+   "3D": {
+    "donViVe": "(3D: canvas)",
+    "aria": null,
+    "banner": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and 12 buildings across 3 factories are grouped into clusters so they can be read. The real campus is 2240 m wide; the model compresses it to 673 m — positions and distances on screen are NOT real values.hide",
+    "bannerSoToa": "12",
+    "bannerSoKhoi": "3",
+    "demMay": "1108",
+    "thongKe": {
+     "calls": 4,
+     "triangles": 182,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "soBieuTuong": 12,
+    "rongPx": [
+     56.5,
+     60.6,
+     59.3,
+     63.2,
+     71.6,
+     79.2,
+     74.7,
+     83,
+     66.3,
+     71.1,
+     70,
+     75.5
+    ],
+    "soNhanDom": 15
+   },
+   "2D": {
+    "donViVe": "toa-nha",
+    "aria": "2D schematic site model, corporate level: 12 building icons across 3 factories, 55 open alarms. Individual machines are not drawn at this level.",
+    "banner": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and 12 buildings across 3 factories are grouped into clusters so they can be read. The real campus is 2240 m wide; the model compresses it to 673 m — positions and distances on screen are NOT real values.hide",
+    "bannerSoToa": "12",
+    "bannerSoKhoi": "3",
+    "demMay": "1108",
+    "thongKe": {
+     "calls": 4,
+     "triangles": 182,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "viewBox": "-22.44 -22.44 718.08 598.08",
+    "hopSvg": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "lopSaBan": {
+     "soToa": "12",
+     "soCum": "3"
+    },
+    "soMayVe2D": 0,
+    "soBieuTuong": 12,
+    "soNutSvg": 36,
+    "rongPxMin": 89.9,
+    "rongPxMax": 89.9,
+    "soToaDuoiTran": 0,
+    "soNgoaiKhung": 0,
+    "ngoaiKhung": [],
+    "soCum": 3,
+    "theoNhaMay": {
+     "QATD-A": {
+      "soToa": 4,
+      "cum": [
+       0
+      ],
+      "rongPxMin": 89.9
+     },
+     "QATD-B": {
+      "soToa": 4,
+      "cum": [
+       1
+      ],
+      "rongPxMin": 89.9
+     },
+     "QATD-C": {
+      "soToa": 4,
+      "cum": [
+       2
+      ],
+      "rongPxMin": 89.9
+     }
+    },
+    "saiThuocNhaMay": [],
+    "nhaMayLanCum": [],
+    "cumLan": [],
+    "toaChongKhacNM": 0,
+    "tenCongTyMongDoi": [
+     "Công ty A",
+     "Công ty B",
+     "Công ty C"
+    ],
+    "tenCongTyTrenMan": [
+     "Công ty A",
+     "Công ty B",
+     "Công ty C"
+    ],
+    "soNhanCumDocDuoc": 3,
+    "nhanCumBiChe": [],
+    "bannerKhungMacDinh": null,
+    "soNhanCumDocDuocKhiMoDai": 1,
+    "soNhanToa": 12,
+    "soNhanToaDocDuoc": 12,
+    "caoChuCumPx": 15,
+    "caoChuToaPx": 12,
+    "soNhanTong": 15
+   },
+   "loi": [],
+   "DAT": {
+    "① hai chế độ CÙNG đơn vị vẽ + màn nói ra": true,
+    "① aria 2D nói BIỂU TƯỢNG, không nói số máy": true,
+    "② mỗi biểu tượng ≥ 24 px": true,
+    "② toàn bộ sa bàn trong khung": true,
+    "② quan hệ đúng theo DẢI MÃ BỘ SINH": true,
+    "② đủ tên công ty và ĐỌC ĐƯỢC": true,
+    "③ nhãn < 30": true,
+    "0 lỗi trang": true
+   }
+  },
+  "qatd_quanly": {
+   "3D": {
+    "donViVe": "(3D: canvas)",
+    "aria": null,
+    "banner": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and 4 buildings across 1 factories are grouped into clusters so they can be read. The real campus is 240 m wide; the model compresses it to 286 m — positions and distances on screen are NOT real values.hide",
+    "bannerSoToa": "4",
+    "bannerSoKhoi": "1",
+    "demMay": "371",
+    "thongKe": {
+     "calls": 4,
+     "triangles": 62,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "soBieuTuong": 4,
+    "rongPx": [
+     163.4,
+     203.4,
+     185.8,
+     236.1
+    ],
+    "soNhanDom": 5
+   },
+   "2D": {
+    "donViVe": "toa-nha",
+    "aria": "2D schematic site model, corporate level: 4 building icons across 1 factories, 15 open alarms. Individual machines are not drawn at this level.",
+    "banner": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and 4 buildings across 1 factories are grouped into clusters so they can be read. The real campus is 240 m wide; the model compresses it to 286 m — positions and distances on screen are NOT real values.hide",
+    "bannerSoToa": "4",
+    "bannerSoKhoi": "1",
+    "demMay": "371",
+    "thongKe": {
+     "calls": 4,
+     "triangles": 62,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "viewBox": "-9.533333333333333 -9.533333333333333 305.06666666666666 245.06666666666666",
+    "hopSvg": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "lopSaBan": {
+     "soToa": "4",
+     "soCum": "1"
+    },
+    "soMayVe2D": 0,
+    "soBieuTuong": 4,
+    "soNutSvg": 16,
+    "rongPxMin": 219.5,
+    "rongPxMax": 219.5,
+    "soToaDuoiTran": 0,
+    "soNgoaiKhung": 0,
+    "ngoaiKhung": [],
+    "soCum": 1,
+    "theoNhaMay": {
+     "QATD-A": {
+      "soToa": 4,
+      "cum": [
+       0
+      ],
+      "rongPxMin": 219.5
+     }
+    },
+    "saiThuocNhaMay": [],
+    "nhaMayLanCum": [],
+    "cumLan": [],
+    "toaChongKhacNM": 0,
+    "tenCongTyMongDoi": [
+     "Công ty A"
+    ],
+    "tenCongTyTrenMan": [
+     "Công ty A"
+    ],
+    "soNhanCumDocDuoc": 0,
+    "nhanCumBiChe": [
+     "Công ty A←SPAN#co-che-giao-so"
+    ],
+    "bannerKhungMacDinh": null,
+    "soNhanCumDocDuocKhiMoDai": 0,
+    "soNhanToa": 4,
+    "soNhanToaDocDuoc": 4,
+    "caoChuCumPx": 16,
+    "caoChuToaPx": 12,
+    "soNhanTong": 5
+   },
+   "loi": [],
+   "DAT": {
+    "① hai chế độ CÙNG đơn vị vẽ + màn nói ra": true,
+    "① aria 2D nói BIỂU TƯỢNG, không nói số máy": true,
+    "② mỗi biểu tượng ≥ 24 px": true,
+    "② toàn bộ sa bàn trong khung": true,
+    "② quan hệ đúng theo DẢI MÃ BỘ SINH": true,
+    "② đủ tên công ty và ĐỌC ĐƯỢC": false,
+    "③ nhãn < 30": true,
+    "0 lỗi trang": true
+   }
+  }
+ }
+}

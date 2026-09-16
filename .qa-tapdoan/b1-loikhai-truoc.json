@@ -1,0 +1,52 @@
+{
+ "nhan": "truoc",
+ "luc": "2026-09-16T09:24:19.037Z",
+ "o3d": {
+  "soBieuTuong3D": 12,
+  "soMay2D": 0,
+  "coSvg2D": false,
+  "coCanvas": 1,
+  "nutChe2D": "3D",
+  "ariaCanh": null,
+  "banner": [
+   {
+    "id": "banner-vi-tri-tam-sinh",
+    "hien": true,
+    "chu": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and 12 buildings across 3 factories are grouped into clusters so they can be read. The real campus is 2240 m wide; the model compresses it to 673 m — positions and distances on screen are NOT real values.hide",
+    "soToa": "12",
+    "soKhoi": "3"
+   },
+   {
+    "id": "banner-vi-tri-tam-sinh-an",
+    "hien": true,
+    "chu": "hide",
+    "soToa": null,
+    "soKhoi": null
+   }
+  ]
+ },
+ "o2d": {
+  "soBieuTuong3D": null,
+  "soMay2D": 1108,
+  "coSvg2D": true,
+  "coCanvas": 0,
+  "nutChe2D": "2D",
+  "ariaCanh": "2D factory map: 1108 machines, 55 open alarms, 1108 machines with no signal",
+  "banner": [
+   {
+    "id": "banner-vi-tri-tam-sinh",
+    "hien": true,
+    "chu": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and 12 buildings across 3 factories are grouped into clusters so they can be read. The real campus is 2240 m wide; the model compresses it to 673 m — positions and distances on screen are NOT real values.hide",
+    "soToa": "12",
+    "soKhoi": "3"
+   },
+   {
+    "id": "banner-vi-tri-tam-sinh-an",
+    "hien": true,
+    "chu": "hide",
+    "soToa": null,
+    "soKhoi": null
+   }
+  ]
+ }
+}

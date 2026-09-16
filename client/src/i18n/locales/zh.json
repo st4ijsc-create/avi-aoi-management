@@ -19922,6 +19922,8 @@
         "banDieuKhien": "指令控制台"
       },
       "canhAria2D": "2D 工厂平面图：{{may}} 台设备，{{canhBao}} 条未处理报警，{{khongRo}} 台设备失去信号",
+      "canhAriaSaBan": "集团级 3D 示意沙盘：{{soKhoi}} 个工厂共 {{soToa}} 个建筑图标，{{canhBao}} 条未处理报警。该层级不绘制单台设备。",
+      "canhAriaSaBan2D": "集团级 2D 示意沙盘：{{soKhoi}} 个工厂共 {{soToa}} 个建筑图标，{{canhBao}} 条未处理报警。该层级不绘制单台设备。",
       "statsAoi": "AOI 结果",
       "chuaKiemChiecNao": "尚未检测任何产品",
       "aoiOk": "OK",
