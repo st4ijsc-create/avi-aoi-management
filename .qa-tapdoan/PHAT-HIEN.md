@@ -552,3 +552,22 @@ Chủ đợt **tự xem** `anh/b2-sau/qatd_giamdoc-2d-toan-man.png`: đọc đư
 Gốc: `sinh-tap-doan.mjs:868/870` xoá `user_factory_assignments` (theo `factoryCode LIKE`) và `user_corporate_assignments` (theo `corporateCode`) trong `--go`; `--ghi` không dựng lại.
 ⛔ **KHÔNG chữa bằng `--gan`**: lệnh ấy gán **cả ba công ty cho mọi vai**, tức phá chính phép đo phạm vi mà bộ dữ liệu này tồn tại để phục vụ. Script đúng là `.qa-tapdoan/b1-khoi-phuc-gan.mjs` (idempotent, đọc `tai-khoan.mjs` làm nguồn sự thật).
 **Đã vá:** `canhBaoMatGan()` chạy ở cuối `--ghi`, miễn trừ đúng hai tài khoản ĐƯỢC PHÉP 0 gán (`qatd_admin` bypass phạm vi, `qatd_khonggan` là đối chứng 0-gán), và **chỉ ĐO rồi NÓI, không tự sửa** — một bước sửa âm thầm ở cuối lượt ghi là đúng loại im lặng vừa gây ra sự cố. Đối chứng: xoá tạm hàng gán của `qatd_quanly` ⇒ hàm **KÊU** đích danh; hoàn nguyên ⇒ im lặng và số hàng về đúng nguyên trạng.
+
+## V-32 ★★ Tên khả truy cập của cảnh — lời khai của agent ĐÚNG MỘT NỬA, và nửa kia đổi hẳn kết luận
+Agent HAI-CHIỀU báo: *"`aria-label` của cảnh 3D là `null` — cảnh 3D không có tên khả truy cập nào"*. Chủ đợt đo lại **trên trình duyệt sống** (`.qa-tapdoan/_probe-aria.mjs`, cổng 3064):
+```
+tập đoàn 3D    => { ariaTrenCanvas: null, roleTrenCanvas: null,
+                    toTienGanNhatCoAria: null, soPhanTuCoAriaTrongMan: 18 }
+một nhà máy 3D => { ariaTrenCanvas: null, ... soPhanTuCoAriaTrongMan: 19 }
+```
+**Nửa đầu ĐÚNG**: `<canvas>` không có tên, và **không tổ tiên nào** của nó có. 18-19 phần tử khác trong màn thì có ⇒ không phải "màn chưa làm a11y" mà là đúng bề mặt chính bị bỏ trống.
+
+★★★ **Nửa sau SAI, và nó đổi hẳn mức độ**: người dùng trình đọc màn hình **vẫn nghe được cảnh**, qua **hai cơ chế khác nhau** tuỳ chế độ:
+- **2D** — `CanhVanHanh2D.tsx:178` đặt `aria-label={ariaLabel}` **thẳng** lên `<svg>`.
+- **3D** — không đặt được: chuỗi đi vào `NoiDung {...props}` **bên trong cây `<Canvas>`**, mà phần tử R3F không sinh DOM nên nó rơi ở đó. Bù lại, **TRANG** in cùng chuỗi ấy ra một đoạn `sr-only` (`data-testid="tom-tat-canh"`), kèm chú thích nguyên văn *"canvas WebGL vô hình với nó (§9.9)"*.
+
+⇒ Không phải khuyết tật a11y. **Khuyết tật thật là: lối thứ hai KHÔNG CÓ MỘT CA LƯỚI NÀO GIỮ.** Xoá đoạn `sr-only` ấy thì `tsc` xanh, `i18n:check` xanh, 3.022 ca twin3d xanh, và người dùng trình đọc màn hình mất sạch mô tả cảnh mà **không cổng nào kêu**. Đợt này đã đếm được **năm** lời khai sai sống sót nhiều đợt và nhiều nhánh mã chết chỉ vì không ai ghim — đây là chỗ thứ sáu, ghim **trước khi** mất.
+
+**Đã vá:** `tenKhaTruyCapCuaCanh.unit.test.ts` (6 ca) ghim **cả hai** lối, bốn khoá i18n × ba ngôn ngữ, và luật "bốn khoá xuất hiện ĐÚNG MỘT LẦN" (dùng lại một khoá cho hai nhánh là cách im lặng nhất để một chế độ mô tả chế độ kia — đúng lớp lỗi `CanhVanHanh2D:94`). Một ca cố ý đọc mã **THÔ** để giữ luôn câu giải thích: không có nó, người sau đọc đoạn `sr-only` sẽ tưởng là rác và dọn đi, đúng thứ vừa xảy ra với nhánh `machineId === null` ở `XuongThietKe:1088`.
+**Đối chứng biết kêu — bốn đột biến, bốn lần đỏ:** gỡ `sr-only` ⇒ 1 đỏ · xoá hẳn đoạn tóm tắt ⇒ **2** đỏ (mất cả ca docblock) · gỡ `aria-label` khỏi `<svg>` 2D ⇒ 1 đỏ · cho nhánh sa-bàn-2D dùng lại khoá của nhánh 3D ⇒ 1 đỏ. `md5sum -c` 2/2 OK sau hoàn nguyên, 6/6 xanh lại.
+⚠ Còn mở: prop `ariaLabel` vẫn được chuyền vào cây `<Canvas>` nơi nó **không thể** có tác dụng. Vô hại nhưng là một hợp đồng trông như đang làm việc. Không gỡ trong lượt này vì cơ chế ghim "mọi prop phải được chuyền" của `CanhVanHanhOnDinh` sẽ đỏ theo.
