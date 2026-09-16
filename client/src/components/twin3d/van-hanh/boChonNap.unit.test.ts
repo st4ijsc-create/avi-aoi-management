@@ -246,24 +246,45 @@ describe("★★★ phamViThuc — F3: `?pv=tapdoan` ĐANG NÓI DỐI", () => {
  * QATD = 12 toà × 7 tầng = **84 tầng**; `slice` vứt **34 tầng** và màn hiện một
  * tập đoàn thiếu một phần ba, **không lỗi, không banner**.
  *
- * Bản vá KHÔNG phải "nới trần cho to": trần thật nằm ở Zod `.max(50)` của
+ * Bản vá của 17c KHÔNG phải "nới trần cho to": trần thật nằm ở Zod của
  * `canhThietKe`, nới một mình ở client thì server ném `BAD_REQUEST` và cảnh
  * TRẮNG HOÀN TOÀN — tệ hơn hẳn. Bản vá là **trả về con số bị cắt** để trang nói
  * ra bằng chữ người dùng đọc được.
+ *
+ * ★ **Task 18 nâng CẢ HAI bên 50 → 300** (căn cứ đo được ghi ở docblock
+ *   `TRAN_TANG_MOI_LUOT`). Hành vi "cắt thì phải nói ra" GIỮ NGUYÊN và vẫn có ô
+ *   đo — chỉ khác là 84 tầng nay lọt hết. Ô trần-cũ dưới đây truyền trần 50
+ *   tường minh để phép đo của 17c không biến mất theo con số mặc định.
  *
  * ⚠ Ca "84 tầng" dùng đúng con số của dữ liệu đo, không phải một số tròn tiện tay.
  */
 describe("Task 17c — tangIdsDeHoi: cắt thì phải NÓI RA", () => {
   const day = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
-  it("★★★ 84 tầng (3 nhà máy QATD) ⇒ gửi 50 và KHAI 34 tầng bị bỏ lại", () => {
-    const kq = tangIdsDeHoi(day(84));
+  it("★★★ 84 tầng (3 nhà máy QATD) ở TRẦN CŨ 50 ⇒ gửi 50 và KHAI 34 tầng bị bỏ lại", () => {
+    /*
+     * ★ Task 18 nâng trần mặc định 50 → 300, nên 84 tầng KHÔNG còn bị cắt ở mặc
+     *   định (ô dưới đo điều đó). Ô này giữ lại NGUYÊN phép đo cũ bằng cách truyền
+     *   trần 50 tường minh: hành vi "cắt thì phải nói ra" là thứ 17c vá, và nó
+     *   không được biến mất chỉ vì con số mặc định đổi. Trần lớn hơn ≠ trần bỏ đi.
+     */
+    const kq = tangIdsDeHoi(day(84), 50);
     expect(kq.gui).toHaveLength(50);
     expect(kq.tong).toBe(84);
     expect(kq.biCat).toBe(34);
     expect(kq.tran).toBe(50);
     // ★ Bất biến: gửi + bị cắt = tổng. Không tầng nào rơi vào khe giữa.
     expect(kq.gui.length + kq.biCat).toBe(kq.tong);
+  });
+
+  it("★★★ Task 18 — 84 tầng ở trần MẶC ĐỊNH MỚI ⇒ gửi ĐỦ 84, KHÔNG cắt, không kêu", () => {
+    // Đây là kết cục mà việc nâng trần mua được: cảnh ba nhà máy nạp ĐỦ tầng.
+    // Ô này đỏ ngay nếu ai đó hạ `TRAN_TANG_MOI_LUOT` lại dưới 84.
+    const kq = tangIdsDeHoi(day(84));
+    expect(kq.gui).toHaveLength(84);
+    expect(kq.biCat).toBe(0);
+    expect(kq.tran).toBe(TRAN_TANG_MOI_LUOT);
+    expect(TRAN_TANG_MOI_LUOT).toBeGreaterThanOrEqual(84);
   });
 
   it("★★★ ĐỐI CHỨNG — dưới trần thì KHÔNG khai cắt (banner không được kêu oan)", () => {
@@ -276,14 +297,16 @@ describe("Task 17c — tangIdsDeHoi: cắt thì phải NÓI RA", () => {
   });
 
   it("★★★ ĐÚNG BẰNG trần ⇒ không cắt, không kêu (biên dưới)", () => {
-    const kq = tangIdsDeHoi(day(50));
-    expect(kq.gui).toHaveLength(50);
+    // ★ Đo theo HẰNG, không theo con số gõ tay: nâng/hạ trần thì hai ô biên này đi
+    //   theo, còn ô "TRẦN CLIENT PHẢI KHỚP SERVER" mới là chỗ giá trị bị ghim.
+    const kq = tangIdsDeHoi(day(TRAN_TANG_MOI_LUOT));
+    expect(kq.gui).toHaveLength(TRAN_TANG_MOI_LUOT);
     expect(kq.biCat).toBe(0);
   });
 
   it("★★★ VƯỢT trần ĐÚNG MỘT ⇒ kêu đúng một (biên trên)", () => {
-    const kq = tangIdsDeHoi(day(51));
-    expect(kq.gui).toHaveLength(50);
+    const kq = tangIdsDeHoi(day(TRAN_TANG_MOI_LUOT + 1));
+    expect(kq.gui).toHaveLength(TRAN_TANG_MOI_LUOT);
     expect(kq.biCat).toBe(1);
   });
 

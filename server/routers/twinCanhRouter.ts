@@ -80,6 +80,8 @@ import {
   ghiDatChoHangLoat,
   goKhoiMatBang,
   traCayPhanCapNhaMay,
+  // ── Task 18 — cây phân cấp của một TẬP nhà máy (cảnh Twin nhiều nhà máy) ──
+  traCayPhanCapNhieuNhaMay,
   // ── PH-12 (QA lần 11) — nơi của một chuyền / một máy (nhà máy · toà · tầng) ──
   traNoiCuaThucThe,
   traDatChoTheoTang,
@@ -1005,15 +1007,65 @@ export const twinCanhRouter = router({
   canhThietKe: protectedProcedure
     .use(quyenDocHinhHoc())
     .input(
-      z.object({
-        factoryId: z.number().int().positive(),
-        tangIds: z.array(z.number().int().positive()).max(50).optional(),
-      }),
+      z
+        .object({
+          /**
+           * ★★★ Task 18 — HAI Ô, ĐÚNG MỘT ĐƯỢC KHAI.
+           *
+           * `factoryId` giữ lại NGUYÊN VẸN cho mọi chỗ gọi cũ (`XuongThietKe`,
+           * `TwinVanHanh`, `TwinLine`, `TwinMay`, lưới Đợt 42). `factoryIds` là
+           * đường mới cho cảnh nhiều nhà máy. Cả hai chiếu về CÙNG MỘT hàm
+           * (`traCayPhanCapNhieuNhaMay`) nên không có bộ luật hàng rào thứ hai.
+           *
+           * ⚠ Bắt buộc ĐÚNG MỘT, không phải "ưu tiên cái này rồi bỏ cái kia":
+           * khai cả hai là hai nguồn sự thật trong một đầu vào, và người gọi sẽ
+           * không bao giờ biết ô nào đã thắng. Vắng cả hai KHÔNG có nghĩa "mọi
+           * nhà máy" — nó là một câu hỏi thiếu vế, và `BAD_REQUEST` nói đúng thế.
+           */
+          factoryId: z.number().int().positive().optional(),
+          /**
+           * Trần **8 nhà máy** một lượt (thiết kế §6.2).
+           *
+           * ⚠ Không phải số đẹp: 3 nhà máy đo được **10 câu / 25 ms / 55 KB gzip**
+           * ở đường cổng gộp, và số câu KHÔNG tăng theo số nhà máy. 8 ≈ 3.000 máy
+           * ≈ 150 KB gzip — *cái đã đo nhân hơn hai lần*. Trần đặt ở ĐƠN VỊ NGƯỜI
+           * DÙNG HIỂU (số nhà máy), không ở số máy: một trần theo số máy sẽ cắt
+           * giữa một nhà máy và vẽ nửa nhà máy mà không ai biết.
+           *
+           * ⚠⚠ Vượt trần ⇒ Zod `BAD_REQUEST`. TUYỆT ĐỐI KHÔNG `slice`/`take`.
+           */
+          factoryIds: z.array(z.number().int().positive()).min(1).max(8).optional(),
+          /**
+           * ★★★ Task 18 — TRẦN TẦNG 50 → **300**.
+           *
+           * Lý do đo được: ba nhà máy QATD = 12 toà × 7 tầng = **84 tầng**, tức
+           * đầu vào danh sách vừa nới ra đã chết ngay lượt dùng đầu (hoặc client
+           * cắt 34 tầng, hoặc Zod ném và cảnh trắng). Sau Task 17b, cổng tầng
+           * phân giải phạm vi MỘT LẦN nên 84 tầng tốn **3–4 câu** thay vì 337 ⇒
+           * trần này chặn KÍCH THƯỚC đầu vào, **không mua thêm rủi ro SQL**.
+           *
+           * ⚠⚠ PHẢI KHỚP `TRAN_TANG_MOI_LUOT` ở
+           * `client/src/components/twin3d/van-hanh/boChonNap.ts` — ô "TRẦN CLIENT
+           * PHẢI KHỚP `.max()` CỦA SERVER" đọc GIÁ TRỊ này thẳng từ mã nguồn và
+           * đỏ khi một bên đổi mà bên kia không.
+           */
+          tangIds: z.array(z.number().int().positive()).max(300).optional(),
+        })
+        .refine((v) => (v.factoryId === undefined) !== (v.factoryIds === undefined), {
+          message: "Khai ĐÚNG MỘT trong hai: `factoryId` (một nhà máy) hoặc `factoryIds` (danh sách).",
+          path: ["factoryIds"],
+        }),
     )
     .query(async ({ input, ctx }) => {
       const scope = phamViCua(ctx);
+      /*
+       * ★ Danh sách mã ĐI THẲNG xuống `traCayPhanCapNhieuNhaMay`, nơi phép giao
+       *   với phạm vi xảy ra (BB-1). Router KHÔNG tự lọc, KHÔNG tự đếm mã bị bỏ,
+       *   KHÔNG ném khi có mã ngoài phạm vi — cả ba đều là oracle tồn-tại (G82).
+       */
+      const dsNhaMay = input.factoryIds ?? [input.factoryId as number];
       const [cay, kichThuoc] = await Promise.all([
-        traCayPhanCapNhaMay(input.factoryId, scope),
+        traCayPhanCapNhieuNhaMay(dsNhaMay, scope),
         traKichThuocTheoLoai(),
       ]);
       const datCho =

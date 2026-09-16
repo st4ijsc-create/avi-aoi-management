@@ -251,13 +251,34 @@ export function phamViThuc(
 /**
  * Trần số tầng một lượt hỏi `twinCanh.canhThietKe`.
  *
- * ⚠⚠ **PHẢI KHỚP `tangIds: z.array(...).max(50)`** ở `server/routers/twinCanhRouter.ts`.
+ * ⚠⚠ **PHẢI KHỚP `tangIds: z.array(...).max(300)`** ở `server/routers/twinCanhRouter.ts`.
  *   Hai con số ở hai nơi là hai nguồn sự thật: nới một bên thì Zod ném
  *   `BAD_REQUEST` và cả cảnh trắng, hạ một bên thì client tự cắt sớm hơn cần.
  *   Đây là hằng CÓ TÊN chính vì thế — để lưới đo được GIÁ TRỊ, không phải đếm
  *   chính tả một dòng mã.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ Task 18 — 50 → **300**, và vì sao con số ấy chứ không phải "cho to"
+ * ════════════════════════════════════════════════════════════════════════════
+ * Trần 50 sinh ra khi `canhThietKe` chỉ nhận MỘT nhà máy (28 tầng). Task 18 nới
+ * đầu vào thành DANH SÁCH mã nhà máy, và ba nhà máy QATD = 12 toà × 7 tầng =
+ * **84 tầng** — tức trần cũ giết tính năng ngay lượt dùng đầu tiên: hoặc client
+ * cắt 34 tầng (17c đã bắt nó phải KÊU, nhưng kêu về một sản phẩm cụt vẫn là sản
+ * phẩm cụt), hoặc Zod ném `BAD_REQUEST` và cảnh trắng.
+ *
+ * Căn cứ để nâng KHÔNG phải "84 < 300". Nó là chi phí ĐO ĐƯỢC sau Task 17b: cổng
+ * tầng nay phân giải phạm vi **một lần** cho cả danh sách (`locTangTrongPhamVi`),
+ * nên 84 tầng tốn **3–4 câu SQL** thay vì `4N+1 = 337`. Trần này vì thế chặn
+ * KÍCH THƯỚC đầu vào, **không mua thêm rủi ro SQL** — số câu không còn tăng theo
+ * số tầng. 300 ≈ 84 nhân hơn ba lần, tức trần *của cái đã đo*, để một tập đoàn
+ * to gấp ba hôm nay vẫn vào lọt mà không ai phải sửa hai con số nữa.
+ *
+ * ⚠ Hàm `tangIdsDeHoi` và banner "bị cắt" **KHÔNG được gỡ** cùng lượt nâng trần.
+ *   Với dữ liệu hôm nay `biCat` sẽ luôn bằng 0 — và đó chính là lý do phải giữ:
+ *   một `.slice()` câm quay lại lúc dữ liệu phình qua 300 là đúng lớp lỗi mà
+ *   17c vá. Trần lớn hơn không phải trần bỏ đi.
  */
-export const TRAN_TANG_MOI_LUOT = 50;
+export const TRAN_TANG_MOI_LUOT = 300;
 
 /** Kết quả áp trần: cái GỬI ĐI, và cái BỊ BỎ LẠI — vế thứ hai không được giấu. */
 export interface TangDeHoi {

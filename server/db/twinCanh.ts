@@ -958,18 +958,86 @@ export async function traDatChoTheoTang(tangIds: readonly number[], scope?: Pham
  *   `stations → production_lines → workshops.factoryId`). Viết `machines.factoryId`
  *   là lỗi biên dịch, nhưng suy nhầm đường JOIN thì KHÔNG — nó chỉ trả về ít máy
  *   hơn thực tế, và cây trái thiếu máy mà không ai biết.
+ *
+ * ★★★ Task 18 — ĐƯỜNG MỘT MÃ NAY LÀ **Ô ĐẶC BIỆT HOÁ** của đường danh sách.
+ *   Ba mươi mốt chỗ gọi cũ giữ nguyên TỪNG BYTE hợp đồng (một số vào, cùng năm
+ *   mảng ra, ngoài phạm vi ⇒ cây rỗng chứ không ném). Uỷ quyền thay vì chép:
+ *   hai bản cài đặt của cùng một hàng rào là lớp lỗi G12 — và ở đây bản yếu hơn
+ *   sẽ quyết định ai thấy gì.
  */
 export async function traCayPhanCapNhaMay(factoryId: number, scope?: PhamViNguoiXem) {
+  return traCayPhanCapNhieuNhaMay([factoryId], scope);
+}
+
+/**
+ * Cây phân cấp phẳng của **một TẬP nhà máy** — nền của cảnh Twin nhiều nhà máy.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ Task 18 — BA BẤT BIẾN HÀNG RÀO (thiết kế §4.1), viết thành mã
+ * ════════════════════════════════════════════════════════════════════════════
+ * Nới đầu vào từ MỘT mã thành một DANH SÁCH đổi câu hỏi của cổng, và mọi lối
+ * viết tắt ở chỗ ấy đều là một lỗ tenant. Ba điều dưới đây KHÔNG được đổi nghĩa:
+ *
+ *   **BB-1 (LỌC TỪNG MÃ).** Tập được phục vụ là `factoryIds ∩ phamVi(người gọi)`
+ *     — giao TỪNG PHẦN TỬ, cưỡng chế bằng **một phép `filter` trên tập id đã
+ *     phân giải**. KHÔNG có đường nào để `if (có ít nhất một mã hợp lệ)` kéo cả
+ *     danh sách qua cổng. Đó là dòng `ids.filter(...)` bên dưới, và ablation gỡ
+ *     đúng dòng ấy làm L1/L2/L7 ĐỎ trong khi L3/L5/L6 vẫn XANH — tức lưới đang
+ *     đo "lọc TỪNG mã", không phải "có cổng hay không".
+ *
+ *   **BB-2 (IM LẶNG BỎ, KHÔNG NÉM LỖI).** Mã ngoài phạm vi rơi khỏi danh sách và
+ *     thủ tục trả về phần còn lại. Không `FORBIDDEN`, không thông điệp nêu đích
+ *     danh, không ô đếm "đã bỏ N mã". Lý do là G82: một lỗi riêng cho *"anh không
+ *     được xem nhà máy 42"* **vẫn xác nhận nhà máy 42 có thật**. Đo được bằng một
+ *     phát biểu mạnh: `[A,B]` và `[A]` cho phản hồi GIỐNG HỆT TỪNG BYTE.
+ *
+ *   **BB-3 (TOÀN NGOÀI ⇒ RỖNG, KHÔNG RÒ TÊN).** `hopLe` rỗng ⇒ năm mảng rỗng,
+ *     và vì không câu đọc nào chạy nên không mã/tên nhà máy nào có đường ra.
+ *
+ * ★ **CHỈ MỘT BỘ PHÂN GIẢI.** Tập nhà máy lấy từ `idsTrongPhamVi("factory")` —
+ *   CHÍNH hàm mà `trongPhamVi` gọi bên trong — nên `null` (vai toàn quyền / lối
+ *   không mang danh tính) và `[]` (chưa được gán) giữ nguyên nghĩa cũ. Viết một
+ *   mệnh đề `IN (...)` tay trong SQL "cho nhanh" là đẻ ra bộ luật thứ hai, lớp
+ *   lỗi `mqttOeeRouters.getScopeLabels`.
+ *
+ * ★ **CỔNG TẦNG KHÔNG ĐI QUA ĐÂY.** `traDatChoTheoTang`/`traVungAnToan` vẫn kiểm
+ *   tầng bằng `twin_tang → twin_toa_nha → factoryId` THẬT (`locTangTrongPhamVi`),
+ *   **không** nhận `factoryIds` của phía gọi. Hai cổng đứng độc lập là có chủ ý:
+ *   lọc tầng theo một danh sách client tự khai là mở lại đúng lỗ
+ *   `pham-vi-tenant-dot-lon`.
+ *
+ * ★ **CHI PHÍ KHÔNG TĂNG THEO SỐ NHÀ MÁY.** Bốn câu đọc dùng `inArray` cho CẢ tập
+ *   (không phải ba lượt gọi giấu trong một thủ tục) + một lần phân giải phạm vi ⇒
+ *   3 nhà máy tốn đúng chừng ấy câu như 1. Thiết kế §2.3 K2 đo được đường cũ tốn
+ *   611 câu / 667 ms cho ba nhà máy; bất biến này là thứ chặn nó quay lại.
+ *
+ * ⚠ `[]` vào ⇒ cây RỖNG, **không phải "không lọc"**. Một `if (!ids.length) return
+ *   tatCa` sẽ mở toang cổng, cùng bẫy đã ghi ở `locTangTrongPhamVi`.
+ */
+export async function traCayPhanCapNhieuNhaMay(
+  factoryIds: readonly number[],
+  scope?: PhamViNguoiXem,
+) {
   const d = await getDb();
   if (!d) throw new DbUnavailableError();
-  if (!(await trongPhamVi("factory", factoryId, scope))) {
-    return { xuong: [], chuyen: [], tram: [], may: [] };
-  }
+
+  // Rác (âm/0/không nguyên) rơi im lặng ở đây — cùng luật "id lạ biến mất, không
+  // lỗi" mà `locTangTrongPhamVi` áp cho tầng. Thủ tục còn có Zod chặn ở biên.
+  const ids = [...new Set(factoryIds)].filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length === 0) return { xuong: [], chuyen: [], tram: [], may: [] };
+
+  // MỘT lần phân giải phạm vi cho CẢ danh sách — `null` = vai toàn quyền / lối
+  // không mang danh tính ⇒ KHÔNG thêm cổng nào (chiều dương chống vá quá tay).
+  const nhaMayChoPhep = await idsTrongPhamVi("factory", scope);
+  const choPhep = nhaMayChoPhep === null ? null : new Set(nhaMayChoPhep);
+  // ★★★ BB-1 — DÒNG LỌC. Đây là chỗ ablation gỡ ra để chứng minh cổng lọc TỪNG mã.
+  const hopLe = choPhep === null ? ids : ids.filter((n) => choPhep.has(n));
+  if (hopLe.length === 0) return { xuong: [], chuyen: [], tram: [], may: [] };
 
   const xuong = await d
     .select({ id: workshops.id, ma: workshops.code, ten: workshops.name, factoryId: workshops.factoryId })
     .from(workshops)
-    .where(eq(workshops.factoryId, factoryId));
+    .where(inArray(workshops.factoryId, hopLe));
   const xuongIds = xuong.map((x) => x.id);
   if (xuongIds.length === 0) return { xuong: [], chuyen: [], tram: [], may: [] };
 
