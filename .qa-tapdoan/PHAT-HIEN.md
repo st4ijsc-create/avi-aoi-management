@@ -514,3 +514,15 @@ Ablation **SÁU** lượt, **sáu tập đỏ RỜI NHAU** (1 · 8 · 2 · 1 · 
 
 ⚠ `Offline = 1108` trong ảnh: mọi máy QATD đọc "offline" vì dữ liệu cũ 8 h (`SHADOW`). Trước vá cũng vậy với 371. **Ngoài phạm vi PH-45/48**; muốn ảnh có máy đang chạy thì phải chạy mô phỏng trước.
 ⚠ `Machines w/ andon` 15 → 55 nay **trùng** `Alarms (55)`. Đó là **trùng hợp của bộ dữ liệu này** (55 sự kiện trên 55 máy khác nhau), **không phải bất biến** — đừng ghim.
+
+## V-30 ★★★ V-21(1) có hiệu lực THẬT — mô phỏng DỰ ĐOÁN đúng, không phải khớp số
+Chủ đợt sinh lại bộ QATD (`--go` rồi `--ghi`) sau khi cả hai agent xong, rồi đo **trực tiếp trên CSDL sống**:
+| hạng | soMay | coNG | tỉ lệ % | NG/lượt kiểm % |
+|---|---|---|---|---|
+| 1 xấu (<55) | 279 | 228 | **81,7** | 23,5 |
+| 2 (55-69) | 277 | 167 | 60,3 | 14,7 |
+| 3 (70-84) | 284 | 118 | 41,5 | 8,6 |
+| 4 tốt (≥85) | 268 | 43 | **16,0** | 3,0 |
+| | | | đơn điệu **CÓ** · **5,09×** | |
+★★★ **Trùng KHÍT bảng mô phỏng `_v21-sim.mjs` ở cả bốn hạng, cả bốn cỡ mẫu, và cả tỉ số 5,09×.** Mô phỏng ấy được viết **trước khi** dữ liệu tồn tại ⇒ nó **DỰ ĐOÁN**, không phải khớp số. Đây là kiểu bằng chứng mạnh hơn hẳn "chạy xong thấy số đẹp".
+Tiêu chí (đơn điệu giảm + xấu/tốt ≥ 2×) **ĐẠT trên dữ liệu sống**. ⚠ Mã định danh QATD nay **đã khác** lần trước — mọi harness phải đọc lại từ `.qa-tapdoan/sinh-summary.json`.

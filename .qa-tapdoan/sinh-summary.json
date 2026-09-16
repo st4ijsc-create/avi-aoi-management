@@ -1,18 +1,18 @@
 {
-  "chayLuc": "2026-09-16T00:44:45.054Z",
+  "chayLuc": "2026-09-16T09:05:42.280Z",
   "tienTo": "QATD",
   "zMay": "caoDoMm(tang)",
   "tapDoan": {
-    "id": 5,
+    "id": 6,
     "code": "QATD"
   },
   "congTys": [
     {
-      "id": 44,
+      "id": 48,
       "code": "QATD-A",
       "ten": "Công ty A",
-      "lineDauId": 413,
-      "mayDauId": 6413,
+      "lineDauId": 529,
+      "mayDauId": 8070,
       "lineDauMa": "QATD-A-T1-X1-L1",
       "mayDauMa": "QATD-A-T1-X1-L1-M01",
       "tongMay": 371,
@@ -52,11 +52,11 @@
       }
     },
     {
-      "id": 45,
+      "id": 49,
       "code": "QATD-B",
       "ten": "Công ty B",
-      "lineDauId": 445,
-      "mayDauId": 6784,
+      "lineDauId": 561,
+      "mayDauId": 8441,
       "lineDauMa": "QATD-B-T1-X1-L1",
       "mayDauMa": "QATD-B-T1-X1-L1-M01",
       "tongMay": 409,
@@ -96,11 +96,11 @@
       }
     },
     {
-      "id": 46,
+      "id": 50,
       "code": "QATD-C",
       "ten": "Công ty C",
-      "lineDauId": 480,
-      "mayDauId": 7193,
+      "lineDauId": 596,
+      "mayDauId": 8850,
       "lineDauMa": "QATD-C-T1-X1-L1",
       "mayDauMa": "QATD-C-T1-X1-L1-M01",
       "tongMay": 328,
@@ -142,716 +142,716 @@
   ],
   "toas": [
     {
-      "id": 78,
+      "id": 91,
       "ma": "QATD-A-T1",
-      "factoryId": 44
+      "factoryId": 48
     },
     {
-      "id": 79,
+      "id": 92,
       "ma": "QATD-A-T2",
-      "factoryId": 44
+      "factoryId": 48
     },
     {
-      "id": 80,
+      "id": 93,
       "ma": "QATD-A-T3",
-      "factoryId": 44
+      "factoryId": 48
     },
     {
-      "id": 81,
+      "id": 94,
       "ma": "QATD-A-T4",
-      "factoryId": 44
+      "factoryId": 48
     },
     {
-      "id": 82,
+      "id": 95,
       "ma": "QATD-B-T1",
-      "factoryId": 45
+      "factoryId": 49
     },
     {
-      "id": 83,
+      "id": 96,
       "ma": "QATD-B-T2",
-      "factoryId": 45
+      "factoryId": 49
     },
     {
-      "id": 84,
+      "id": 97,
       "ma": "QATD-B-T3",
-      "factoryId": 45
+      "factoryId": 49
     },
     {
-      "id": 85,
+      "id": 98,
       "ma": "QATD-B-T4",
-      "factoryId": 45
+      "factoryId": 49
     },
     {
-      "id": 86,
+      "id": 99,
       "ma": "QATD-C-T1",
-      "factoryId": 46
+      "factoryId": 50
     },
     {
-      "id": 87,
+      "id": 100,
       "ma": "QATD-C-T2",
-      "factoryId": 46
+      "factoryId": 50
     },
     {
-      "id": 88,
+      "id": 101,
       "ma": "QATD-C-T3",
-      "factoryId": 46
+      "factoryId": 50
     },
     {
-      "id": 89,
+      "id": 102,
       "ma": "QATD-C-T4",
-      "factoryId": 46
+      "factoryId": 50
     }
   ],
   "tangs": [
     {
-      "id": 333,
-      "toaNhaId": 78,
+      "id": 420,
+      "toaNhaId": 91,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 334,
-      "toaNhaId": 78,
+      "id": 421,
+      "toaNhaId": 91,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 335,
-      "toaNhaId": 78,
+      "id": 422,
+      "toaNhaId": 91,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 336,
-      "toaNhaId": 78,
+      "id": 423,
+      "toaNhaId": 91,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 337,
-      "toaNhaId": 78,
+      "id": 424,
+      "toaNhaId": 91,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 338,
-      "toaNhaId": 78,
+      "id": 425,
+      "toaNhaId": 91,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 339,
-      "toaNhaId": 78,
+      "id": 426,
+      "toaNhaId": 91,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 340,
-      "toaNhaId": 79,
+      "id": 427,
+      "toaNhaId": 92,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 341,
-      "toaNhaId": 79,
+      "id": 428,
+      "toaNhaId": 92,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 342,
-      "toaNhaId": 79,
+      "id": 429,
+      "toaNhaId": 92,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 343,
-      "toaNhaId": 79,
+      "id": 430,
+      "toaNhaId": 92,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 344,
-      "toaNhaId": 79,
+      "id": 431,
+      "toaNhaId": 92,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 345,
-      "toaNhaId": 79,
+      "id": 432,
+      "toaNhaId": 92,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 346,
-      "toaNhaId": 79,
+      "id": 433,
+      "toaNhaId": 92,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 347,
-      "toaNhaId": 80,
+      "id": 434,
+      "toaNhaId": 93,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 348,
-      "toaNhaId": 80,
+      "id": 435,
+      "toaNhaId": 93,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 349,
-      "toaNhaId": 80,
+      "id": 436,
+      "toaNhaId": 93,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 350,
-      "toaNhaId": 80,
+      "id": 437,
+      "toaNhaId": 93,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 351,
-      "toaNhaId": 80,
+      "id": 438,
+      "toaNhaId": 93,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 352,
-      "toaNhaId": 80,
+      "id": 439,
+      "toaNhaId": 93,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 353,
-      "toaNhaId": 80,
+      "id": 440,
+      "toaNhaId": 93,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 354,
-      "toaNhaId": 81,
+      "id": 441,
+      "toaNhaId": 94,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 355,
-      "toaNhaId": 81,
+      "id": 442,
+      "toaNhaId": 94,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 356,
-      "toaNhaId": 81,
+      "id": 443,
+      "toaNhaId": 94,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 357,
-      "toaNhaId": 81,
+      "id": 444,
+      "toaNhaId": 94,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 358,
-      "toaNhaId": 81,
+      "id": 445,
+      "toaNhaId": 94,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 359,
-      "toaNhaId": 81,
+      "id": 446,
+      "toaNhaId": 94,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 360,
-      "toaNhaId": 81,
+      "id": 447,
+      "toaNhaId": 94,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 361,
-      "toaNhaId": 82,
+      "id": 448,
+      "toaNhaId": 95,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 362,
-      "toaNhaId": 82,
+      "id": 449,
+      "toaNhaId": 95,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 363,
-      "toaNhaId": 82,
+      "id": 450,
+      "toaNhaId": 95,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 364,
-      "toaNhaId": 82,
+      "id": 451,
+      "toaNhaId": 95,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 365,
-      "toaNhaId": 82,
+      "id": 452,
+      "toaNhaId": 95,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 366,
-      "toaNhaId": 82,
+      "id": 453,
+      "toaNhaId": 95,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 367,
-      "toaNhaId": 82,
+      "id": 454,
+      "toaNhaId": 95,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 368,
-      "toaNhaId": 83,
+      "id": 455,
+      "toaNhaId": 96,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 369,
-      "toaNhaId": 83,
+      "id": 456,
+      "toaNhaId": 96,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 370,
-      "toaNhaId": 83,
+      "id": 457,
+      "toaNhaId": 96,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 371,
-      "toaNhaId": 83,
+      "id": 458,
+      "toaNhaId": 96,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 372,
-      "toaNhaId": 83,
+      "id": 459,
+      "toaNhaId": 96,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 373,
-      "toaNhaId": 83,
+      "id": 460,
+      "toaNhaId": 96,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 374,
-      "toaNhaId": 83,
+      "id": 461,
+      "toaNhaId": 96,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 375,
-      "toaNhaId": 84,
+      "id": 462,
+      "toaNhaId": 97,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 376,
-      "toaNhaId": 84,
+      "id": 463,
+      "toaNhaId": 97,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 377,
-      "toaNhaId": 84,
+      "id": 464,
+      "toaNhaId": 97,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 378,
-      "toaNhaId": 84,
+      "id": 465,
+      "toaNhaId": 97,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 379,
-      "toaNhaId": 84,
+      "id": 466,
+      "toaNhaId": 97,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 380,
-      "toaNhaId": 84,
+      "id": 467,
+      "toaNhaId": 97,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 381,
-      "toaNhaId": 84,
+      "id": 468,
+      "toaNhaId": 97,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 382,
-      "toaNhaId": 85,
+      "id": 469,
+      "toaNhaId": 98,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 383,
-      "toaNhaId": 85,
+      "id": 470,
+      "toaNhaId": 98,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 384,
-      "toaNhaId": 85,
+      "id": 471,
+      "toaNhaId": 98,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 385,
-      "toaNhaId": 85,
+      "id": 472,
+      "toaNhaId": 98,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 386,
-      "toaNhaId": 85,
+      "id": 473,
+      "toaNhaId": 98,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 387,
-      "toaNhaId": 85,
+      "id": 474,
+      "toaNhaId": 98,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 388,
-      "toaNhaId": 85,
+      "id": 475,
+      "toaNhaId": 98,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 389,
-      "toaNhaId": 86,
+      "id": 476,
+      "toaNhaId": 99,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 390,
-      "toaNhaId": 86,
+      "id": 477,
+      "toaNhaId": 99,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 391,
-      "toaNhaId": 86,
+      "id": 478,
+      "toaNhaId": 99,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 392,
-      "toaNhaId": 86,
+      "id": 479,
+      "toaNhaId": 99,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 393,
-      "toaNhaId": 86,
+      "id": 480,
+      "toaNhaId": 99,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 394,
-      "toaNhaId": 86,
+      "id": 481,
+      "toaNhaId": 99,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 395,
-      "toaNhaId": 86,
+      "id": 482,
+      "toaNhaId": 99,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 396,
-      "toaNhaId": 87,
+      "id": 483,
+      "toaNhaId": 100,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 397,
-      "toaNhaId": 87,
+      "id": 484,
+      "toaNhaId": 100,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 398,
-      "toaNhaId": 87,
+      "id": 485,
+      "toaNhaId": 100,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 399,
-      "toaNhaId": 87,
+      "id": 486,
+      "toaNhaId": 100,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 400,
-      "toaNhaId": 87,
+      "id": 487,
+      "toaNhaId": 100,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 401,
-      "toaNhaId": 87,
+      "id": 488,
+      "toaNhaId": 100,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 402,
-      "toaNhaId": 87,
+      "id": 489,
+      "toaNhaId": 100,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 403,
-      "toaNhaId": 88,
+      "id": 490,
+      "toaNhaId": 101,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 404,
-      "toaNhaId": 88,
+      "id": 491,
+      "toaNhaId": 101,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 405,
-      "toaNhaId": 88,
+      "id": 492,
+      "toaNhaId": 101,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 406,
-      "toaNhaId": 88,
+      "id": 493,
+      "toaNhaId": 101,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 407,
-      "toaNhaId": 88,
+      "id": 494,
+      "toaNhaId": 101,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 408,
-      "toaNhaId": 88,
+      "id": 495,
+      "toaNhaId": 101,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 409,
-      "toaNhaId": 88,
+      "id": 496,
+      "toaNhaId": 101,
       "capSo": 7,
       "caoDoMm": 36000
     },
     {
-      "id": 410,
-      "toaNhaId": 89,
+      "id": 497,
+      "toaNhaId": 102,
       "capSo": 1,
       "caoDoMm": 0
     },
     {
-      "id": 411,
-      "toaNhaId": 89,
+      "id": 498,
+      "toaNhaId": 102,
       "capSo": 2,
       "caoDoMm": 6000
     },
     {
-      "id": 412,
-      "toaNhaId": 89,
+      "id": 499,
+      "toaNhaId": 102,
       "capSo": 3,
       "caoDoMm": 12000
     },
     {
-      "id": 413,
-      "toaNhaId": 89,
+      "id": 500,
+      "toaNhaId": 102,
       "capSo": 4,
       "caoDoMm": 18000
     },
     {
-      "id": 414,
-      "toaNhaId": 89,
+      "id": 501,
+      "toaNhaId": 102,
       "capSo": 5,
       "caoDoMm": 24000
     },
     {
-      "id": 415,
-      "toaNhaId": 89,
+      "id": 502,
+      "toaNhaId": 102,
       "capSo": 6,
       "caoDoMm": 30000
     },
     {
-      "id": 416,
-      "toaNhaId": 89,
+      "id": 503,
+      "toaNhaId": 102,
       "capSo": 7,
       "caoDoMm": 36000
     }
   ],
   "xuongs": [
     {
-      "id": 102,
+      "id": 129,
       "ma": "QATD-A-T1-X1",
-      "tangId": 333,
-      "factoryId": 44
+      "tangId": 420,
+      "factoryId": 48
     },
     {
-      "id": 103,
+      "id": 130,
       "ma": "QATD-A-T1-X2",
-      "tangId": 334,
-      "factoryId": 44
+      "tangId": 421,
+      "factoryId": 48
     },
     {
-      "id": 104,
+      "id": 131,
       "ma": "QATD-A-T2-X1",
-      "tangId": 340,
-      "factoryId": 44
+      "tangId": 427,
+      "factoryId": 48
     },
     {
-      "id": 105,
+      "id": 132,
       "ma": "QATD-A-T2-X2",
-      "tangId": 341,
-      "factoryId": 44
+      "tangId": 428,
+      "factoryId": 48
     },
     {
-      "id": 106,
+      "id": 133,
       "ma": "QATD-A-T3-X1",
-      "tangId": 347,
-      "factoryId": 44
+      "tangId": 434,
+      "factoryId": 48
     },
     {
-      "id": 107,
+      "id": 134,
       "ma": "QATD-A-T3-X2",
-      "tangId": 348,
-      "factoryId": 44
+      "tangId": 435,
+      "factoryId": 48
     },
     {
-      "id": 108,
+      "id": 135,
       "ma": "QATD-A-T4-X1",
-      "tangId": 354,
-      "factoryId": 44
+      "tangId": 441,
+      "factoryId": 48
     },
     {
-      "id": 109,
+      "id": 136,
       "ma": "QATD-A-T4-X2",
-      "tangId": 355,
-      "factoryId": 44
+      "tangId": 442,
+      "factoryId": 48
     },
     {
-      "id": 110,
+      "id": 137,
       "ma": "QATD-B-T1-X1",
-      "tangId": 361,
-      "factoryId": 45
+      "tangId": 448,
+      "factoryId": 49
     },
     {
-      "id": 111,
+      "id": 138,
       "ma": "QATD-B-T1-X2",
-      "tangId": 362,
-      "factoryId": 45
+      "tangId": 449,
+      "factoryId": 49
     },
     {
-      "id": 112,
+      "id": 139,
       "ma": "QATD-B-T2-X1",
-      "tangId": 368,
-      "factoryId": 45
+      "tangId": 455,
+      "factoryId": 49
     },
     {
-      "id": 113,
+      "id": 140,
       "ma": "QATD-B-T2-X2",
-      "tangId": 369,
-      "factoryId": 45
+      "tangId": 456,
+      "factoryId": 49
     },
     {
-      "id": 114,
+      "id": 141,
       "ma": "QATD-B-T3-X1",
-      "tangId": 375,
-      "factoryId": 45
+      "tangId": 462,
+      "factoryId": 49
     },
     {
-      "id": 115,
+      "id": 142,
       "ma": "QATD-B-T3-X2",
-      "tangId": 376,
-      "factoryId": 45
+      "tangId": 463,
+      "factoryId": 49
     },
     {
-      "id": 116,
+      "id": 143,
       "ma": "QATD-B-T4-X1",
-      "tangId": 382,
-      "factoryId": 45
+      "tangId": 469,
+      "factoryId": 49
     },
     {
-      "id": 117,
+      "id": 144,
       "ma": "QATD-B-T4-X2",
-      "tangId": 383,
-      "factoryId": 45
+      "tangId": 470,
+      "factoryId": 49
     },
     {
-      "id": 118,
+      "id": 145,
       "ma": "QATD-C-T1-X1",
-      "tangId": 389,
-      "factoryId": 46
+      "tangId": 476,
+      "factoryId": 50
     },
     {
-      "id": 119,
+      "id": 146,
       "ma": "QATD-C-T1-X2",
-      "tangId": 390,
-      "factoryId": 46
+      "tangId": 477,
+      "factoryId": 50
     },
     {
-      "id": 120,
+      "id": 147,
       "ma": "QATD-C-T2-X1",
-      "tangId": 396,
-      "factoryId": 46
+      "tangId": 483,
+      "factoryId": 50
     },
     {
-      "id": 121,
+      "id": 148,
       "ma": "QATD-C-T2-X2",
-      "tangId": 397,
-      "factoryId": 46
+      "tangId": 484,
+      "factoryId": 50
     },
     {
-      "id": 122,
+      "id": 149,
       "ma": "QATD-C-T3-X1",
-      "tangId": 403,
-      "factoryId": 46
+      "tangId": 490,
+      "factoryId": 50
     },
     {
-      "id": 123,
+      "id": 150,
       "ma": "QATD-C-T3-X2",
-      "tangId": 404,
-      "factoryId": 46
+      "tangId": 491,
+      "factoryId": 50
     },
     {
-      "id": 124,
+      "id": 151,
       "ma": "QATD-C-T4-X1",
-      "tangId": 410,
-      "factoryId": 46
+      "tangId": 497,
+      "factoryId": 50
     },
     {
-      "id": 125,
+      "id": 152,
       "ma": "QATD-C-T4-X2",
-      "tangId": 411,
-      "factoryId": 46
+      "tangId": 498,
+      "factoryId": 50
     }
   ],
   "ghi": {
@@ -1008,13 +1008,13 @@
       "dat": true
     },
     "nen khong doi: nguoiDung": {
-      "thucTe": 10,
-      "kyVong": 10,
+      "thucTe": 17,
+      "kyVong": 17,
       "dat": true
     },
     "nen khong doi: nhaMayKhac": {
-      "thucTe": 2,
-      "kyVong": 2,
+      "thucTe": 3,
+      "kyVong": 3,
       "dat": true
     },
     "nen khong doi: tapDoanKhac": {
@@ -1023,34 +1023,34 @@
       "dat": true
     },
     "nen khong doi: mayKhac": {
-      "thucTe": 43,
-      "kyVong": 43,
+      "thucTe": 592,
+      "kyVong": 592,
       "dat": true
     },
     "nen khong doi: datChoKhac": {
-      "thucTe": 82,
-      "kyVong": 82,
+      "thucTe": 1201,
+      "kyVong": 1201,
       "dat": true
     }
   },
   "urlMau": [
     {
       "congTy": "QATD-A",
-      "twin": "/twin?nm=44",
-      "line": "/twin/line/413",
-      "may": "/twin/may/6413"
+      "twin": "/twin?nm=48",
+      "line": "/twin/line/529",
+      "may": "/twin/may/8070"
     },
     {
       "congTy": "QATD-B",
-      "twin": "/twin?nm=45",
-      "line": "/twin/line/445",
-      "may": "/twin/may/6784"
+      "twin": "/twin?nm=49",
+      "line": "/twin/line/561",
+      "may": "/twin/may/8441"
     },
     {
       "congTy": "QATD-C",
-      "twin": "/twin?nm=46",
-      "line": "/twin/line/480",
-      "may": "/twin/may/7193"
+      "twin": "/twin?nm=50",
+      "line": "/twin/line/596",
+      "may": "/twin/may/8850"
     }
   ]
 }
