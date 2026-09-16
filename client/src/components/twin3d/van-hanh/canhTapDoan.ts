@@ -144,6 +144,45 @@ export function nhaMayDeNap(
   };
 }
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ PH-48 — NHÃN CỦA THẺ `Metrics` KHI TẬP ĐO LÀ **NHIỀU NHÀ MÁY**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đo được (`.qa-tapdoan/anh/t21-sau/qatd_giamdoc-2-canvas.png`): ở `?pv=tapdoan`
+ * thẻ `Metrics` in `"371 machines / Công ty A · Toà 1 · Tầng 1"` trong khi cảnh
+ * nói về **ba** công ty và `dem-may` = 1.108. Hai nửa của khuyết tật ấy:
+ *   · MẪU SỐ sai — vá ở server (PH-45, `overview` nhận `factoryIds`);
+ *   · NHÃN sai — `nhanPhamViKpi` dựng từ BA Ô CHỌN (nhà máy · toà · tầng), và ba
+ *     ô ấy chỉ mô tả được **một** nhà máy. Vá mẫu số mà giữ nhãn cũ là đổi chiều
+ *     nói dối: con số nói ba, chữ nói một.
+ *
+ * ⇒ Ở cấp Tập đoàn, nhãn nói **TÊN CỦA TỪNG NHÀ MÁY ĐANG NẠP** — đúng tập mà mẫu
+ *   số đếm trên. Không phải "Tập đoàn" (một tính từ: người đọc không biết nó gồm
+ *   mấy nhà máy, và nó vẫn đúng khi chỉ nạp được một), không phải một con số
+ *   ("3 nhà máy": nói SỐ LƯỢNG chứ không nói TẬP, nên vẫn hợp với một tập khác).
+ *
+ * ★ **0 khoá i18n mới** — mọi mảnh ở đây là DỮ LIỆU (tên nhà máy do người dùng
+ *   đặt, đã nằm sẵn trong `mucNhaMay`), cùng luật RB-8.3 mà `nhanPhamViKpi` đang
+ *   theo. Dấu nối `" · "` là CÙNG dấu nhãn ấy đang dùng, không phải dấu thứ hai.
+ *
+ * ⚠ Mã không tra được tên bị BỎ, không thay bằng `#id`: nhãn là thứ người đọc
+ *   dùng để nhận ra nhà máy, và `#41` không nhận ra được gì. Bỏ hết ⇒ `null` ⇒
+ *   `BangKpiNoi` không in dòng nhãn nào (NT-3.5: rỗng khác 0).
+ *
+ * Hàm THUẦN, giữ nguyên thứ tự `gui`, không sửa đầu vào.
+ */
+export function nhanTapNhaMay(
+  gui: readonly number[],
+  muc: readonly { id: number; nhan: string }[],
+): string | null {
+  const ten: string[] = [];
+  for (const id of gui) {
+    const t = muc.find((m) => m.id === id)?.nhan;
+    if (t) ten.push(t);
+  }
+  return ten.length > 0 ? ten.join(" · ") : null;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* 2. KHUÔN VIÊN — ĐẶT CÁC KHỐI NHÀ MÁY Ở ĐÂU                                  */
 /* ═══════════════════════════════════════════════════════════════════════════ */

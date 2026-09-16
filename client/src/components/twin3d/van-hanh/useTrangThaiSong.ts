@@ -62,8 +62,37 @@ export const TRAN_NHIP_AN_TOAN_MS = 20_000;
 export const TRAN_NHIP_SUC_KHOE_MS = 60_000;
 
 export interface ThamSoTrangThaiSong {
-  /** Nhà máy đang xem; `null` ⇒ ba truy vấn theo nhà máy TẮT. */
+  /**
+   * Nhà máy đang xem; `null` ⇒ ba truy vấn theo nhà máy TẮT.
+   *
+   * ★★★ PH-45 — ô này VẪN là cửa bật/tắt của cả hai đường, kể cả đường danh sách.
+   *   Nó không phải tàn dư: `factoryId` là "đã phân giải được một nhà máy để xem
+   *   chưa", và ở cấp Tập đoàn nó vẫn có giá trị (nhà máy đang chọn ở ô Nhà máy).
+   *   Giữ MỘT cửa cho cả hai đường là thứ làm cho ô lưới "ba truy vấn theo nhà
+   *   máy TẮT khi chưa chọn nhà máy" còn đo đúng cái nó tự khai.
+   */
   factoryId: number | null;
+  /**
+   * ★★★ PH-45 — TẬP nhà máy của cảnh cấp Tập đoàn. `null`/rỗng ⇒ đường MỘT MÃ cũ.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * VÌ SAO Ô NÀY PHẢI CÓ (đo được, `.qa-tapdoan/t21-sau.json`)
+   * ════════════════════════════════════════════════════════════════════════
+   * Sau Task 19/20 cảnh `?pv=tapdoan` nạp cả ba nhà máy QATD (**1.108 máy**) trong
+   * khi ba truy vấn dưới hỏi **một** ⇒ **737 máy** được vẽ đúng chỗ mà không có
+   * lời khai trạng thái, và chúng nhận màu "chưa rõ". 737 khối xám không lời giải
+   * thích bị đọc là 737 máy hỏng (PH-45); cùng lúc thẻ `Metrics` in mẫu số của
+   * một nhà máy cạnh một cảnh nói về ba (PH-48).
+   *
+   * ⚠ Rỗng (`[]`) rơi về đường một mã, KHÔNG gửi `factoryIds: []`: Zod `.min(1)`
+   *   sẽ ném `BAD_REQUEST` và cả ba lớp trạng thái tắt câm. Đây là chỗ một cảnh
+   *   trắng đi ra từ một đầu vào "rỗng" — cùng bẫy `tangIdsDeHoi` đã vá.
+   *
+   * ⚠ Hook KHÔNG tự lọc phạm vi trên danh sách này: hàng rào nằm ở server
+   *   (BB-1/2/3 của `traCayPhanCapNhieuNhaMay`), và một bộ lọc thứ hai ở client là
+   *   bộ luật thứ hai — lớp lỗi `mqttOeeRouters.getScopeLabels`.
+   */
+  factoryIds?: readonly number[] | null;
   /**
    * Có luồng đẩy (socket) khoẻ hay không — đầu vào của nhịp thích nghi.
    *
@@ -75,7 +104,26 @@ export interface ThamSoTrangThaiSong {
   nhipTongQuanMs: number;
 }
 
-export function useTrangThaiSong({ factoryId, coLuongDay, nhipTongQuanMs }: ThamSoTrangThaiSong) {
+export function useTrangThaiSong({
+  factoryId,
+  factoryIds,
+  coLuongDay,
+  nhipTongQuanMs,
+}: ThamSoTrangThaiSong) {
+  /*
+   * ★★★ PH-45 — MỘT chỗ dựng đối số nhà máy, BA chỗ dùng (G12).
+   *
+   * Ba truy vấn dưới đây phải hỏi CÙNG MỘT tập nhà máy với nhau và với truy vấn
+   * hình học của trang; ba biểu thức ternary chép ba lần chỉ đồng ý tới lần sửa
+   * đầu tiên, rồi cho ra một cảnh mà trạng thái và hình học nói về hai tập khác
+   * nhau — chính hình dạng của PH-45, chỉ nhỏ hơn.
+   *
+   * ⚠ Mảng dựng lại mỗi lượt render là AN TOÀN: khoá truy vấn của react-query băm
+   *   theo CẤU TRÚC (`hashKey` → `JSON.stringify`), không theo danh tính tham
+   *   chiếu. Một `useMemo` ở đây chỉ thêm một lời hứa không ai kiểm.
+   */
+  const doiSoNhaMay =
+    factoryIds != null && factoryIds.length > 0 ? { factoryIds: [...factoryIds] } : null;
   /*
    * Trạng thái sống + OEE + andon (hợp đồng `factoryCommand.overview`).
    *
@@ -85,7 +133,7 @@ export function useTrangThaiSong({ factoryId, coLuongDay, nhipTongQuanMs }: Tham
    *   cảnh báo.
    */
   const overviewQ = trpc.factoryCommand.overview.useQuery(
-    { factoryId: factoryId ?? undefined },
+    doiSoNhaMay ?? { factoryId: factoryId ?? undefined },
     { enabled: factoryId !== null, retry: false, refetchInterval: nhipTongQuanMs },
   );
 
@@ -112,7 +160,7 @@ export function useTrangThaiSong({ factoryId, coLuongDay, nhipTongQuanMs }: Tham
    *   trôi lên 30 s.
    */
   const anToanQ = trpc.twinCanh.anToanRobot.useQuery(
-    { factoryId: factoryId ?? 0 },
+    doiSoNhaMay ?? { factoryId: factoryId ?? 0 },
     {
       enabled: factoryId !== null,
       retry: false,
@@ -127,7 +175,7 @@ export function useTrangThaiSong({ factoryId, coLuongDay, nhipTongQuanMs }: Tham
    *   chậm hơn trạng thái nhiều, nên 60 s là đủ và nó không đua với luồng đẩy.
    */
   const sucKhoeQ = trpc.twinCanh.sucKhoeMay.useQuery(
-    { factoryId: factoryId ?? 0 },
+    doiSoNhaMay ?? { factoryId: factoryId ?? 0 },
     {
       enabled: factoryId !== null,
       retry: false,

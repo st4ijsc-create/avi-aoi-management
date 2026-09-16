@@ -485,3 +485,32 @@ Tiêu chí (đơn điệu giảm + xấu/tốt ≥ 2×) **ĐẠT**. Hình dạng
 
 ⚠ **CHƯA CÓ HIỆU LỰC TRÊN DỮ LIỆU ĐANG CHẠY** — bản vá chỉ tác dụng ở lượt `--go` + `--ghi` kế tiếp. Bảng "SAU" là **mô phỏng tất định đã tự kiểm**, không phải đo trên CSDL sống. Agent cố ý không sinh lại vì một agent khác đang đo sống.
 ⚠ Chưa truy ra **vì sao bộ bơm chỉ phủ 51/575 máy đủ điều kiện** — không đổi kết luận, nhưng là một lý do nữa để đừng dùng `predictive_alerts` làm thước.
+
+## V-29 ★★★ PH-45 + PH-48 ĐÓNG — và dự đoán của chủ đợt "PH-48 tự đóng theo" bị BÁC BỎ
+Gốc chung: `useTrangThaiSong` có 4 truy vấn, **3** nhận đúng **một** `factoryId`. Mở cả ba theo khuôn Task 18.
+| vai `qatd_giamdoc` @ `?pv=tapdoan` | TRƯỚC | SAU |
+|---|---|---|
+| `Metrics` mẫu số | **371/1108** | **1108/1108** |
+| nhãn thẻ `Metrics` | `Công ty A · Toà 1 · Tầng 1` | `Công ty A · Công ty B · Công ty C` |
+| vòng sức khoẻ panel trái | 124+133+62+52 = **371** | 370+381+185+172 = **1108** |
+| `banner-trang-thai-mot-nha-may` | CÓ | **GỠ** (khoá i18n 3→0) |
+| API `overview` `[1 nm]` \| `[3 nm]` | `1108\|1108` (**bỏ qua danh sách**) | `371\|1108` |
+Chủ đợt **tự xem** `anh/ph45-sau/qatd_giamdoc-canvas.png`: mẫu số 1108, nhãn ba công ty, bốn hạng sức khoẻ cộng đúng 1108, sa bàn vẫn đọc được cả ba tên.
+
+★★★ **PH-48 KHÔNG tự đóng theo — dự đoán của tôi SAI.** Nửa **mẫu số** đóng theo PH-45; nửa **nhãn** thì không, vì `nhanPhamViKpi` dựng từ ba ô chọn (nhà máy·toà·tầng). Vá mẫu số mà giữ nhãn chỉ **đổi chiều nói dối**. Bằng chứng sắc nhất ở vai `qatd_quanly`: mẫu số vốn đã 371/371 ĐẠT từ trước, **nhưng nhãn vẫn sai** ⇒ hai nửa độc lập thật.
+Đối chứng âm: `/twin` một nhà máy **giống BYTE** bản chuẩn, cả hai vai.
+Ablation **SÁU** lượt, **sáu tập đỏ RỜI NHAU** (1 · 8 · 2 · 1 · 1 · 1), `md5sum -c` OK. Chi phí: `overview` 18→18 câu · `sucKhoeMay` 15→15 · `anToanRobot` phần-theo-nhà-máy 9→9; đối chứng khuôn "gộp bằng vòng lặp" = **27** ⇒ vỡ đúng ô ấy.
+
+### ★★★ BA LẦN PHẢI SỬA CHÍNH THIẾT BỊ ĐO — in cả số cũ lẫn mới, không đổi thước sau khi thấy đỏ
+1. **`k.includes("bo")`** chép từ lưới Task 18 ⇒ đỏ vì `ro**bo**t` chứa "bo". Đổi sang tách TỪ theo camelCase, kèm đối chứng dương 7 tên phải kêu / 6 tên không được kêu.
+2. **Thước số câu sai ĐƠN VỊ (G9)**: `anToanRobot` 3 nhà máy = 16 câu vs 1 nhà máy = 10 ⇒ thước `≤ 1+1` ĐỎ. Đọc mã: Đợt 50 phát **một `LIMIT 1` mỗi ROBOT**; 10 = 9+1, 16 = 9+7 ⇒ phần **theo nhà máy** là **hằng 9**. Thước mới trừ phần theo-robot rồi hỏi lại, kèm ô chứng minh nó vẫn bắt được khuôn lặp.
+3. ★★ **Mẫu số sống `dsMay` trả `-1`** ở cấp tập đoàn — vì Task 20 thay lô khối máy bằng sa bàn nên `LoBatchMay` **không mount**. Chuyển mẫu số sang `sinh-summary.json` (ngoài sản phẩm), đối chiếu chéo `dem-may`. Và **một lượt gọi API là KHÔNG ĐỦ**: bản chưa vá **bỏ qua** `factoryIds` rồi vẫn trả 1108 — **đúng số vì lý do sai**. Phải so **HAI** lượt (`[1 nm]` và `[3 nm]`) mới phân biệt được.
+
+### Một ca đã xanh bị đỏ — do chính agent, xử đúng luật
+`nguonKpiTheoTang.unit.test.ts:64` đếm chuỗi `may={mayVeTatCa}` trên mã nguồn **THÔ (không tước chú thích)**; docblock agent vừa viết nhắc nguyên văn cặp ấy ⇒ **2 → 3**, ĐỎ. Agent **không đụng ca cũ**, chỉ viết lại câu chú thích của mình. Bài học: **một phép đếm văn bản coi chú thích là dữ liệu của nó**.
+
+### Một chỗ LỆCH KHUÔN Task 18 — cố ý, ghim riêng
+`overview` dùng **"không được khai CẢ HAI"** thay vì `.refine` ĐÚNG-MỘT, vì `input` của nó vốn `.optional()` và `FactoryCommandView.tsx:232` gọi **không mã** với nghĩa *"mọi nhà máy trong phạm vi"*. Ép đúng-một là đổi hành vi một màn khác. Nửa nguy hiểm (*"mọi nhà máy"* trượt thành *"mọi nhà máy CÓ THẬT"*) có ô riêng: vắng cả hai vẫn phải lọc phạm vi, và người 0 gán vẫn rỗng. `anToanRobot`/`sucKhoeMay` thì ĐÚNG khuôn.
+
+⚠ `Offline = 1108` trong ảnh: mọi máy QATD đọc "offline" vì dữ liệu cũ 8 h (`SHADOW`). Trước vá cũng vậy với 371. **Ngoài phạm vi PH-45/48**; muốn ảnh có máy đang chạy thì phải chạy mô phỏng trước.
+⚠ `Machines w/ andon` 15 → 55 nay **trùng** `Alarms (55)`. Đó là **trùng hợp của bộ dữ liệu này** (55 sự kiện trên 55 máy khác nhau), **không phải bất biến** — đừng ghim.

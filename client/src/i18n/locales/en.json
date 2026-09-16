@@ -19954,7 +19954,6 @@
       "nhaMayVuotTran": "Your scope has {{tong}} factories but one scene can load only {{tran}} — {{thieu}} factories are NOT in the scene.",
       "viTriSoDo": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and {{soToa}} buildings across {{soKhoi}} factories are grouped into clusters so they can be read. The real campus is {{rongThat}} m wide; the model compresses it to {{rongSoDo}} m — positions and distances on screen are NOT real values.",
       "toaKhongTen": "Building #{{id}}",
-      "trangThaiMotNhaMay": "{{so}} machines in this scene belong to a factory other than the selected one — live status is not loaded for them, so they show as “unknown”, not as faulty.",
       "tangVuotTran": "This building has {{tong}} floors but one load can only request {{tran}} — {{thieu}} floors were NOT loaded, and machines on them are missing from the scene.",
       "mayTangKhac": "{{so}} more machines are placed on another floor of this building — change the Floor box to see them",
       "mayToaKhac": "{{so}} machines are outside this load (other buildings were not queried) — whether they are placed is not known yet",

@@ -1789,17 +1789,45 @@ export interface AnToanRobot {
   capNhatLuc: number | null;
 }
 
+/**
+ * ★★★ PH-45 — ĐƯỜNG MỘT MÃ NAY LÀ **Ô ĐẶC BIỆT HOÁ** của đường danh sách.
+ *
+ * Uỷ quyền thay vì chép, cùng khuôn `traCayPhanCapNhaMay` → `…NhieuNhaMay` của
+ * Task 18: hai bản cài đặt của cùng một hàng rào là lớp lỗi G12, và ở đây bản
+ * yếu hơn sẽ quyết định ai thấy tín hiệu E-STOP của ai. Hợp đồng giữ NGUYÊN
+ * TỪNG BYTE (một số vào, cùng mảng ra, ngoài phạm vi ⇒ `[]` chứ không ném).
+ */
 export async function traAnToanRobot(
   factoryId: number,
+  scope?: PhamViNguoiXem,
+): Promise<AnToanRobot[]> {
+  return traAnToanRobotNhieuNhaMay([factoryId], scope);
+}
+
+/**
+ * An toàn robot của **một TẬP nhà máy** — nguồn của dải E-STOP ở cảnh tập đoàn.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ PH-45 — BA BẤT BIẾN HÀNG RÀO KHÔNG ĐƯỢC CÀI LẠI Ở ĐÂY
+ * ════════════════════════════════════════════════════════════════════════════
+ * BB-1 (lọc TỪNG mã) · BB-2 (im lặng bỏ) · BB-3 (toàn ngoài ⇒ rỗng, không rò)
+ * đều nằm TRONG `traCayPhanCapNhieuNhaMay`, và hàm này KHÔNG được dựng cổng thứ
+ * hai: hai cổng nối tiếp che mất chỗ cổng thật sự được áp — nguyên văn lý lẽ đã
+ * ghi ở `traTrangThaiHangLoat`. Nhà máy ngoài phạm vi ⇒ cây rỗng ⇒ 0 robot.
+ *
+ * ★ **CHI PHÍ KHÔNG TĂNG THEO SỐ NHÀ MÁY**: một lượt tra cây (4 câu + 1 phân
+ *   giải) + MỘT câu `robots` dùng `inArray` cho CẢ tập chuyền/trạm. Số câu
+ *   telemetry tăng theo số ROBOT (một `LIMIT 1` mỗi robot, Đợt 50 mục B) —
+ *   theo robot, KHÔNG theo nhà máy, và đó là hai đại lượng khác nhau.
+ */
+export async function traAnToanRobotNhieuNhaMay(
+  factoryIds: readonly number[],
   scope?: PhamViNguoiXem,
 ): Promise<AnToanRobot[]> {
   const d = await getDb();
   if (!d) throw new DbUnavailableError();
 
-  // Cổng phạm vi nằm TRONG `traCayPhanCapNhaMay` (nhà máy ngoài phạm vi ⇒ cây
-  // rỗng ⇒ không robot nào). Không đặt cổng thứ hai: hai cổng nối tiếp che mất
-  // chỗ cổng thật sự được áp — cùng lý lẽ đã ghi ở `traTrangThaiHangLoat`.
-  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  const cay = await traCayPhanCapNhieuNhaMay(factoryIds, scope);
   const chuyenIds = cay.chuyen.map((c) => c.id);
   const tramIds = cay.tram.map((t) => t.id);
   if (chuyenIds.length === 0 && tramIds.length === 0) return [];
@@ -2552,10 +2580,28 @@ export async function traSucKhoeMay(
   factoryId: number,
   scope?: PhamViNguoiXem,
 ): Promise<SucKhoeMayRa[]> {
+  return traSucKhoeMayNhieuNhaMay([factoryId], scope);
+}
+
+/**
+ * Sức khoẻ MỚI NHẤT của mỗi máy trong **một TẬP nhà máy**.
+ *
+ * ★★★ PH-45 — cùng lý lẽ uỷ quyền như `traAnToanRobotNhieuNhaMay`: hàng rào
+ *   (BB-1/2/3) ở TRONG `traCayPhanCapNhieuNhaMay`, KHÔNG cài lại ở đây.
+ *
+ * ★ **CHI PHÍ KHÔNG TĂNG THEO SỐ NHÀ MÁY**: đúng 2 phép đọc (cây + một câu
+ *   `DISTINCT ON` cho CẢ tập máy), hệt như đường một nhà máy. Một bản "gộp"
+ *   bằng cách lặp `traSucKhoeMay` ba lần sẽ qua mọi ô hàng rào và vỡ ô chi phí
+ *   của `trangThaiNhieuNhaMayPhamVi.db.test.ts`.
+ */
+export async function traSucKhoeMayNhieuNhaMay(
+  factoryIds: readonly number[],
+  scope?: PhamViNguoiXem,
+): Promise<SucKhoeMayRa[]> {
   const d = await getDb();
   if (!d) throw new DbUnavailableError();
 
-  const cay = await traCayPhanCapNhaMay(factoryId, scope);
+  const cay = await traCayPhanCapNhieuNhaMay(factoryIds, scope);
   if (cay.may.length === 0) return [];
 
   const ids = cay.may.map((m) => m.id);

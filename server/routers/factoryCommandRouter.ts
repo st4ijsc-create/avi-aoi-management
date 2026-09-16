@@ -49,10 +49,50 @@ export const factoryCommandRouter = router({
    */
   overview: protectedProcedure
     .use(requirePermission("machine_status", "canView"))
-    .input(z.object({ factoryId: z.number().int().positive().optional() }).optional())
+    .input(
+      z
+        .object({
+          factoryId: z.number().int().positive().optional(),
+          /**
+           * ★★★ PH-45 — DANH SÁCH MÃ NHÀ MÁY, trần **8** (CÙNG con số
+           * `twinCanhRouter.TRAN_NHA_MAY_MOT_LUOT`).
+           *
+           * Cảnh cấp Tập đoàn nạp cả ba nhà máy QATD (1.108 máy) trong khi thủ tục
+           * này hỏi đúng MỘT ⇒ 737 máy được vẽ mà **không có lời khai trạng thái**
+           * và nhận màu "chưa rõ" (PH-45), còn thẻ `Metrics` in mẫu số của một nhà
+           * máy cạnh một cảnh nói về ba (PH-48). Hai triệu chứng, một gốc.
+           *
+           * ⚠⚠ Vượt trần ⇒ Zod `BAD_REQUEST`. TUYỆT ĐỐI KHÔNG `slice`/`take`: một
+           *   danh sách bị cắt câm cho ra đúng lớp lỗi vừa vá, chỉ nhỏ hơn.
+           */
+          factoryIds: z.array(z.number().int().positive()).min(1).max(8).optional(),
+        })
+        /**
+         * ★★★ KHÔNG ĐƯỢC KHAI CẢ HAI — nhưng **vắng cả hai VẪN HỢP LỆ**, và đó là
+         * chỗ thủ tục này CỐ Ý khác `twinCanh.canhThietKe` (vốn đòi ĐÚNG MỘT).
+         *
+         * `input` của `overview` vốn `.optional()` và `FactoryCommandView.tsx:232`
+         * gọi `{ factoryId: undefined }` khi chưa chọn bộ lọc, với nghĩa **"mọi nhà
+         * máy TRONG PHẠM VI"** — một hợp đồng đang chạy, không phải một kẽ hở. Ép
+         * "đúng một" ở đây là đổi hành vi của một màn khác để cho gọn một bộ luật.
+         *
+         * ⚠ Nửa nguy hiểm của ngoại lệ ấy ("mọi nhà máy" trượt thành "mọi nhà máy
+         *   CÓ THẬT") được ghim bằng ô riêng ở
+         *   `trangThaiNhieuNhaMayPhamVi.db.test.ts`: vắng cả hai vẫn phải lọc phạm vi.
+         */
+        .refine((v) => v.factoryId === undefined || v.factoryIds === undefined, {
+          message: "Khai `factoryId` (một nhà máy) HOẶC `factoryIds` (danh sách), không phải cả hai.",
+          path: ["factoryIds"],
+        })
+        .optional(),
+    )
     .query(async ({ input, ctx }) => {
-      // ★ Đợt 40 — `factoryId` là lời TỰ KHAI của client; phạm vi thật lấy từ `ctx` (G113).
-      return getFactoryCommandOverview({ factoryId: input?.factoryId, scope: phamViCua(ctx) });
+      // ★ Đợt 40 — `factoryId`/`factoryIds` là lời TỰ KHAI của client; phạm vi thật lấy từ `ctx` (G113).
+      return getFactoryCommandOverview({
+        factoryId: input?.factoryId,
+        factoryIds: input?.factoryIds,
+        scope: phamViCua(ctx),
+      });
     }),
 
   /**

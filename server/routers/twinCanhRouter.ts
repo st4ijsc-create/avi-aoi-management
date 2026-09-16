@@ -92,8 +92,10 @@ import {
   traAnhLichSu,
   LICH_SU_LA_XAP_XI,
   // ── Đóng nợ #26 (§11) — E-STOP nổi lên Twin ──
-  traAnToanRobot,
-  traSucKhoeMay,
+  //    ★ PH-45: hai thủ tục dưới nay đi đường DANH SÁCH; đường một mã
+  //    (`traAnToanRobot`/`traSucKhoeMay`) vẫn sống ở tầng db cho mọi nơi gọi khác.
+  traAnToanRobotNhieuNhaMay,
+  traSucKhoeMayNhieuNhaMay,
 } from "../db/twinCanh";
 
 /**
@@ -147,6 +149,61 @@ function quyenVanHanh(hanhDong: "canView" | "canEdit") {
     { module: "analytics_oee", action: hanhDong },
     { module: "machine_status", action: hanhDong },
   ]);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ PH-45 — HAI Ô NHÀ MÁY, ĐÚNG MỘT ĐƯỢC KHAI (dùng chung, khai MỘT lần)    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Trần **8 nhà máy** một lượt — CÙNG con số `canhThietKe` (§6.2 thiết kế Task 18).
+ *
+ * ⚠⚠ KHÔNG phải "cho giống cho đẹp": ba truy vấn trạng thái và truy vấn hình học
+ *   phục vụ **cùng một khung hình**. Hai trần khác nhau nghĩa là có một khoảng
+ *   trong đó cảnh vẽ đủ 8 khối mà trạng thái chỉ về được 5 — tức PH-45 quay lại
+ *   ở dạng nhỏ hơn và khó thấy hơn. Đổi một bên thì phải đổi cả bốn.
+ */
+const TRAN_NHA_MAY_MOT_LUOT = 8;
+
+/**
+ * Đầu vào của các thủ tục **theo nhà máy** nhận được cả một mã lẫn một danh sách.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ PH-45 — HÌNH DẠNG CHUNG VỚI `canhThietKe`, VÀ VÌ SAO NÓ PHẢI CHUNG
+ * ════════════════════════════════════════════════════════════════════════════
+ * `factoryId` giữ NGUYÊN VẸN cho mọi chỗ gọi cũ; `factoryIds` là đường mới cho
+ * cảnh cấp Tập đoàn. Cả hai chiếu về CÙNG MỘT hàm db (`…NhieuNhaMay`) nên không
+ * có bộ luật hàng rào thứ hai (G12).
+ *
+ * ⚠ Bắt buộc **ĐÚNG MỘT**, không phải "ưu tiên cái này rồi bỏ cái kia": khai cả
+ *   hai là hai nguồn sự thật trong một đầu vào, và người gọi sẽ không bao giờ
+ *   biết ô nào đã thắng. Vắng cả hai KHÔNG có nghĩa "mọi nhà máy" — đây là hai
+ *   thủ tục mà `factoryId` vốn **BẮT BUỘC** (`z.number()` trần), nên "vắng cả
+ *   hai" chưa bao giờ là một câu hỏi hợp lệ, và `BAD_REQUEST` nói đúng thế.
+ *
+ * ⚠⚠ `factoryCommand.overview` CỐ Ý **không** dùng schema này: `input` của nó vốn
+ *   `.optional()` và `FactoryCommandView.tsx` gọi KHÔNG mã với nghĩa "mọi nhà máy
+ *   trong phạm vi". Ép "đúng một" ở đó là đổi hành vi một màn khác cho gọn một bộ
+ *   luật — xem docblock ở `factoryCommandRouter.ts`.
+ */
+const DAU_VAO_MOT_HOAC_NHIEU_NHA_MAY = z
+  .object({
+    factoryId: z.number().int().positive().optional(),
+    factoryIds: z.array(z.number().int().positive()).min(1).max(TRAN_NHA_MAY_MOT_LUOT).optional(),
+  })
+  .refine((v) => (v.factoryId === undefined) !== (v.factoryIds === undefined), {
+    message: "Khai ĐÚNG MỘT trong hai: `factoryId` (một nhà máy) hoặc `factoryIds` (danh sách).",
+    path: ["factoryIds"],
+  });
+
+/**
+ * Danh sách mã ĐI THẲNG xuống tầng db, nơi phép giao với phạm vi xảy ra (BB-1).
+ *
+ * ★ Router KHÔNG tự lọc, KHÔNG tự đếm mã bị bỏ, KHÔNG ném khi có mã ngoài phạm
+ *   vi — cả ba đều là oracle tồn-tại (G82).
+ */
+function dsNhaMayCuaDauVao(input: { factoryId?: number; factoryIds?: number[] }): number[] {
+  return input.factoryIds ?? [input.factoryId as number];
 }
 
 /**
@@ -1218,9 +1275,9 @@ export const twinCanhRouter = router({
    */
   anToanRobot: protectedProcedure
     .use(quyenVanHanh("canView"))
-    .input(z.object({ factoryId: z.number().int().positive() }))
+    .input(DAU_VAO_MOT_HOAC_NHIEU_NHA_MAY)
     .query(async ({ input, ctx }) => {
-      const robot = await traAnToanRobot(input.factoryId, phamViCua(ctx));
+      const robot = await traAnToanRobotNhieuNhaMay(dsNhaMayCuaDauVao(input), phamViCua(ctx));
       /*
        * ★ Trả `bayGio` của SERVER cùng lý lẽ G15 đã ghi ở `trangThaiHangLoat`:
        *   client không được tự khai đồng hồ khi quyết định dữ liệu còn tươi hay
@@ -1304,12 +1361,21 @@ export const twinCanhRouter = router({
 
   sucKhoeMay: protectedProcedure
     .use(quyenVanHanh("canView"))
-    .input(z.object({ factoryId: z.number().int().positive() }))
+    .input(DAU_VAO_MOT_HOAC_NHIEU_NHA_MAY)
     .query(async ({ input, ctx }) => {
       const scope = phamViCua(ctx);
+      /*
+       * ★★★ PH-45 — `tongMayTrongPhamVi` PHẢI ĐI CÙNG TẬP với `khai`.
+       *
+       * Hai lời gọi này là hai nửa của MỘT câu ("6/43"), nên chúng nhận CÙNG
+       * `dsNhaMay`. Để một nửa theo danh sách và nửa kia theo một mã là đúng lớp
+       * lỗi "hai nguồn cho hai nửa một câu" mà docblock `tongCoKhai` bên trên đã
+       * ghi — và nó không làm gì nổ, chỉ in ra một phân số sai mẫu số.
+       */
+      const dsNhaMay = dsNhaMayCuaDauVao(input);
       const [khai, cay] = await Promise.all([
-        traSucKhoeMay(input.factoryId, scope),
-        traCayPhanCapNhaMay(input.factoryId, scope),
+        traSucKhoeMayNhieuNhaMay(dsNhaMay, scope),
+        traCayPhanCapNhieuNhaMay(dsNhaMay, scope),
       ]);
       /*
        * ★ Mốc MỚI NHẤT trong tập — để header khai tuổi của LỚP NÀY, tách khỏi

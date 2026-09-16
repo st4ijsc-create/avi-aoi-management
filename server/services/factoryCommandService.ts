@@ -20,7 +20,7 @@
  *   • NO CONTROL PATH — read-only; nothing here writes to a machine.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import {
   machines,
@@ -169,6 +169,12 @@ const WO_OPEN_STATUSES = ["OPEN", "SCHEDULED", "IN_PROGRESS", "ON_HOLD"] as cons
 export async function getFactoryCommandOverview(params?: {
   factoryId?: number;
   /**
+   * ★★★ PH-45 — TẬP nhà máy (cảnh cấp Tập đoàn). Loại trừ lẫn nhau với `factoryId`
+   * (Zod `.refine` ở router cưỡng chế); **vắng cả hai** giữ nguyên nghĩa cũ "mọi
+   * nhà máy trong phạm vi" vì `FactoryCommandView` gọi đúng hình dạng ấy.
+   */
+  factoryIds?: readonly number[];
+  /**
    * ★★★ Đợt 40 — phạm vi NGƯỜI XEM (`phamViCua(ctx)` ở router). Bỏ trống = KHÔNG lọc — hình dạng có thật của
    * lối đi không mang danh tính (tác vụ nền, REST máy-với-máy), và là chiều DƯƠNG chống "vá quá tay thành chặn
    * tất cả": mọi nơi gọi cũ giữ nguyên từng byte. Router tRPC PHẢI truyền (lưới `phamViTwinCanh.unit.test.ts`).
@@ -202,6 +208,35 @@ export async function getFactoryCommandOverview(params?: {
   }
   const congPhamVi = nhaMayDuocXem === null ? undefined : inArray(factories.id, nhaMayDuocXem);
 
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-45 — ĐƯỜNG DANH SÁCH, CÙNG BA BẤT BIẾN BB-1/2/3 CỦA TASK 18
+   * ════════════════════════════════════════════════════════════════════════
+   * **BB-1 (LỌC TỪNG MÃ)** — `hopLe = factoryIds ∩ phamVi`, giao TỪNG PHẦN TỬ
+   *   bằng một phép `filter` trên tập ĐÃ PHÂN GIẢI. Không có đường nào để "có ít
+   *   nhất một mã hợp lệ" kéo cả danh sách qua cổng.
+   * **BB-2 (IM LẶNG BỎ)** — mã ngoài phạm vi rơi khỏi danh sách; không ném,
+   *   không nêu đích danh, không ô đếm. Đo được: `[A,B]` ≡ `[A]` TỪNG BYTE.
+   * **BB-3 (TOÀN NGOÀI ⇒ RỖNG)** — `RONG`, **CÙNG hình dạng** với đường một mã ở
+   *   ngay trên (`factoryId` ngoài phạm vi ⇒ `RONG`). Đây là nửa mà một bản vá
+   *   "chỉ thêm `inArray`" bỏ sót: `congPhamVi` một mình đã chặn đủ MÁY, nhưng
+   *   `factories[]` (danh sách cho bộ lọc FE) vẫn ra đầy và hai đường khai khác
+   *   nhau cho cùng một câu hỏi.
+   *
+   * ⚠ `[]` KHÔNG tới được đây (Zod `.min(1)`), nhưng nếu tới thì nó phải là
+   *   "phạm vi rỗng", **không phải "không lọc"** — cùng bẫy đã ghi ở
+   *   `traCayPhanCapNhieuNhaMay`.
+   */
+  const dsKhai = params?.factoryIds;
+  let congDanhSach: SQL | undefined;
+  if (dsKhai !== undefined) {
+    const ids = [...new Set(dsKhai)].filter((n) => Number.isInteger(n) && n > 0);
+    // ★★★ BB-1 — DÒNG LỌC. Ablation gỡ đúng dòng này làm ca BB-3 của `overview` ĐỎ.
+    const hopLe = nhaMayDuocXem === null ? ids : ids.filter((n) => nhaMayDuocXem.includes(n));
+    if (hopLe.length === 0) return RONG;
+    congDanhSach = inArray(factories.id, hopLe);
+  }
+
   // 1) Danh sách factory (cho bộ lọc trên FE) — chỉ những nhà máy người xem được thấy.
   const factoryRows = await db
     .select({ id: factories.id, name: factories.name, code: factories.code })
@@ -213,6 +248,8 @@ export async function getFactoryCommandOverview(params?: {
   const baseWhere = and(
     eq(machines.isActive, true),
     factoryId != null ? eq(factories.id, factoryId) : undefined,
+    // ★ PH-45 — cùng chỗ, cùng cột: danh sách là dạng NHIỀU của `eq` ở dòng trên.
+    congDanhSach,
     congPhamVi,
   );
   const machineRows = await db

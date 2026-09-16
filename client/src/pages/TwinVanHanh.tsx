@@ -150,6 +150,8 @@ import {
 // ── Task 19 (Giai đoạn 6) — cảnh phạm vi TẬP ĐOÀN: chọn nhà máy + khuôn viên ──
 import {
   nhaMayDeNap,
+  // ★ PH-48 — nhãn thẻ `Metrics` khi tập đo là NHIỀU nhà máy (hàm thuần, có lưới).
+  nhanTapNhaMay,
   saBanTapDoan,
   type ToaNhaKhuonVien,
 } from "@/components/twin3d/van-hanh/canhTapDoan";
@@ -907,8 +909,32 @@ export function ThanTwinVanHanh() {
    *   thay vì đếm chính tả một dòng mã — phép đo cũ chết khi mã dời nhà và mù
    *   với cách viết khác.
    */
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-45 — TRẠNG THÁI SỐNG ĐI THEO **CÙNG TẬP NHÀ MÁY** VỚI HÌNH HỌC
+   * ════════════════════════════════════════════════════════════════════════
+   * `canhQ` (`:884`) và `khuonVienQ` (`:706`) đã hỏi `napNhaMay.gui` từ Task
+   * 19/20; ba truy vấn trạng thái thì chưa, và đó là **toàn bộ** PH-45: cảnh vẽ
+   * 1.108 khối mà chỉ 371 có lời khai ⇒ 737 khối "chưa rõ" bị đọc là 737 máy
+   * hỏng. Cùng gốc ấy in ra mẫu số 371 của thẻ `Metrics` (PH-48).
+   *
+   * ⇒ MỘT biểu thức, dùng cho CẢ BA truy vấn, và nó đọc CHÍNH `napNhaMay.gui` —
+   *   cùng mảng mà hình học hỏi. Dựng một danh sách thứ hai ở đây (kể cả một
+   *   `factories.map(f => f.id)` trông vô hại) là hai nguồn sự thật cho cùng một
+   *   câu hỏi, và chúng chỉ đồng ý tới lần sửa trần đầu tiên (G12).
+   *
+   * ⚠ `null` ở cấp thường — KHÔNG phải `[factoryId]`: đường một mã còn giữ
+   *   `placeholderData`/khoá truy vấn cũ của Đợt 40, và ba màn một nhà máy
+   *   (`/twin` cấp thường, `TwinLine`, `TwinMay`) phải chạy Y NGUYÊN.
+   */
+  const dsNhaMayTrangThai = useMemo(
+    () => (napNhaMay.gopKhuonVien && napNhaMay.gui.length > 0 ? napNhaMay.gui : null),
+    [napNhaMay],
+  );
+
   const { overviewQ, andonQ, anToanQ, sucKhoeQ } = useTrangThaiSong({
     factoryId,
+    factoryIds: dsNhaMayTrangThai,
     coLuongDay,
     nhipTongQuanMs,
   });
@@ -1500,24 +1526,26 @@ export function ThanTwinVanHanh() {
     [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, gocToa, phamVi, factoryId, mauNenCanh],
   );
 
-  /**
-   * ★★★ Task 19 — SỐ MÁY ĐANG VẼ MÀ **KHÔNG CÓ LỜI KHAI TRẠNG THÁI SỐNG**.
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ PH-45 — `soMayChuaCoTrangThaiSong` VÀ BANNER CỦA NÓ ĐÃ GỠ, CÙNG LƯỢT
+   * ════════════════════════════════════════════════════════════════════════
+   * Task 19 dựng một phép đếm "máy đang vẽ mà KHÔNG có lời khai trạng thái" để
+   * nuôi `banner-trang-thai-mot-nha-may` — một **lời khai hạn chế**, đúng ở thời
+   * điểm ấy: cảnh nạp ba nhà máy còn trạng thái chỉ hỏi một, nên 737 khối xám có
+   * thật và cần được nói ra.
    *
-   * Đếm trên `mayVe` (tập ĐÃ VẼ), không trên `mayVanHanh`: con số phải nói về
-   * đúng những khối người dùng nhìn thấy. Máy không tra được nhà máy KHÔNG bị
-   * tính — "chưa tra được" không phải "thuộc nhà máy khác" (G9).
+   * Từ lượt này ba truy vấn trạng thái hỏi **CÙNG `napNhaMay.gui`** với truy vấn
+   * hình học (xem `dsNhaMayTrangThai` ở `:910`), nên tập "được vẽ mà không có
+   * trạng thái" là RỖNG trên MỌI đường đi: cấp thường cả hai dùng `factoryId`;
+   * cấp Tập đoàn cả hai dùng `gui` (kể cả khi `gui` bị cắt vì vượt trần 8 — cắt
+   * thì cắt cho cả hai). Phép đếm không còn ra số khác 0 được nữa.
    *
-   * Nuôi `banner-trang-thai-mot-nha-may`; docblock lý do nằm ở chỗ banner ấy.
+   * ⇒ Cùng QĐ-18 mà `banner-ha-cap` đã theo ở Task 19: **một lời khai không bao
+   *   giờ đúng thì phải GỠ, không phải tắt.** Để lại một banner `hien: false`
+   *   vĩnh viễn là để lại một câu chờ sẵn cho lần hồi quy sau tự bật lên và nói
+   *   sai. Ba khoá i18n `twin3d.vanHanh.trangThaiMotNhaMay` (vi/en/zh) gỡ theo.
    */
-  const soMayChuaCoTrangThaiSong = useMemo(() => {
-    if (factoryId === null) return 0;
-    let n = 0;
-    for (const m of mayVe) {
-      const f = nhaMayCuaMay.get(m.machineId);
-      if (f !== undefined && f !== factoryId) n += 1;
-    }
-    return n;
-  }, [mayVe, nhaMayCuaMay, factoryId]);
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -2523,6 +2551,29 @@ export function ThanTwinVanHanh() {
    *   theo `phamVi`. Đó cũng là thước mà chủ đợt QA đã chuẩn hoá ở PH-08:
    *   "số máy của một tầng đo bằng SỐ KHỐI TRONG CẢNH 3D".
    *
+   * ⚠⚠ **CHỮ "CẢNH THẬT SỰ VẼ" Ở TRÊN CHỈ CÒN ĐÚNG MỘT NỬA SAU TASK 20 — ĐỌC KỸ.**
+   *   Task 20 đổi cảnh cấp Tập đoàn thành **SA BÀN SƠ ĐỒ**: `mayVeTatCa` vẫn mang
+   *   đủ 1.108 máy và vẫn được TRUYỀN xuống `CanhVanHanh`, nhưng thứ hiện lên màn
+   *   ở cấp ấy là **12 biểu tượng toà nhà** (`khuonVien.bieuTuong`), không phải
+   *   1.108 khối máy. Nên `idMayTrongCanh` đúng nghĩa là *"tập máy cảnh NHẬN để
+   *   vẽ"*, **không** phải *"số khối đếm được trên ảnh"*.
+   *
+   *   Và đó là nghĩa ĐÚNG cho việc nó đang làm: thẻ `Metrics` trả lời *"khu vực
+   *   này có bao nhiêu máy đang chạy"*, không trả lời *"tôi đang nhìn thấy mấy
+   *   hình khối"*. Ở cấp tầng hai nghĩa TRÙNG NHAU (mỗi máy một khối) nên PH-06
+   *   vá được bằng chính tập này; ở cấp Tập đoàn chúng TÁCH RA, và lấy "số khối
+   *   thấy được" làm mẫu số sẽ in **12** cạnh một sa bàn của ba nhà máy — một lời
+   *   khai sai tệ hơn cái PH-06 đã vá.
+   *
+   * ⛔ **ĐỪNG đổi hai chỗ truyền `mayVeTatCa` xuống cảnh (`:4108`/`:4120`)** cho
+   *   "khớp với ảnh". ⚠ Và đừng viết lại NGUYÊN VĂN cặp thuộc-tính-JSX ấy trong
+   *   một chú thích: `nguonKpiTheoTang.unit.test.ts:64` ĐẾM chuỗi ấy trên mã
+   *   nguồn THÔ (không tước chú thích), nên một dòng docblock nhắc nó biến thành
+   *   chỗ gọi thứ ba và ô census ĐỎ — đo được trong chính lượt vá này (2 → 3).
+   *   Một phép đếm văn bản coi chú thích là dữ liệu của nó.
+   *   `nguonKpiTheoTang.unit.test.ts:59,64` ghim ĐÚNG hai chỗ ấy, và bản thân cảnh
+   *   cần đủ tập máy để `LopSaBan` gom số cho từng biểu tượng toà.
+   *
    * ⚠⚠ `null` (chưa biết cảnh vẽ gì) KHÁC `new Set()` (đã biết, tầng rỗng). Khi
    *   `canhThietKe` đang tải hoặc bị 403 ta chưa biết tầng có máy nào; trả tập
    *   rỗng ở đó sẽ làm bảng KPI câm đúng ca docblock `kpiChuaDo` ngay trên bảo
@@ -2885,6 +2936,22 @@ export function ThanTwinVanHanh() {
    *   THỨ ĐƯỢC ĐO, không phải đường đi tới nó.
    */
   const nhanPhamViKpi = ((): string | null => {
+    /*
+     * ════════════════════════════════════════════════════════════════════════
+     * ★★★ PH-48 (nửa NHÃN) — BA Ô CHỌN KHÔNG MÔ TẢ NỔI MỘT TẬP NHIỀU NHÀ MÁY
+     * ════════════════════════════════════════════════════════════════════════
+     * Ba mảnh dưới đây (nhà máy · toà · tầng) đọc `factoryId`/`toaNhaId`/`tangId`
+     * — tức BA Ô CHỌN, và ba ô ấy chỉ nói được về **một** nhà máy. Ở `?pv=tapdoan`
+     * cảnh nạp `napNhaMay.gui` (ba công ty QATD) nên nhãn in "Công ty A · Toà 1 ·
+     * Tầng 1" cạnh một mẫu số của ba công ty — đo được ở ảnh
+     * `.qa-tapdoan/anh/t21-sau/qatd_giamdoc-2-canvas.png`.
+     *
+     * ⇒ Ở cấp Tập đoàn nhãn nói TÊN TỪNG NHÀ MÁY ĐANG NẠP, đúng tập mà mẫu số
+     *   đếm trên (`nhanTapNhaMay`, hàm thuần có lưới). KHÔNG nối thêm toà/tầng:
+     *   ở cấp ấy cảnh nạp MỌI toà MỌI tầng, nên một mắt xích "Toà 1" là lời khai
+     *   sai y như cũ, chỉ ngắn hơn.
+     */
+    if (napNhaMay.gopKhuonVien) return nhanTapNhaMay(napNhaMay.gui, mucNhaMay);
     const manh: string[] = [];
     const nhaMay = mucNhaMay.find((m) => m.id === factoryId)?.nhan;
     const toa = mucToaNha.find((m) => m.id === toaNhaId)?.nhan;
@@ -3143,33 +3210,24 @@ export function ThanTwinVanHanh() {
     });
 
     /*
-     * ── ★★★ Task 19 — HẠN CHẾ ĐO ĐƯỢC CỦA CẢNH TẬP ĐOÀN, GHI RA CHỨ KHÔNG GIẤU.
+     * ── ★★★ PH-45 — `banner-trang-thai-mot-nha-may` ĐÃ CHẾT, VÀ GỠ NÓ LÀ PHẦN
+     *   BẮT BUỘC CỦA BẢN VÁ.
      *
-     * Hình học gộp được; **trạng thái sống thì chưa**. Ba trong bốn truy vấn của
-     * `useTrangThaiSong` nhận ĐÚNG MỘT `factoryId`: `factoryCommand.overview`
-     * (:87), `twinCanh.anToanRobot` (:114), `twinCanh.sucKhoeMay` (:129) — chỉ
-     * `andon.active` (:100) phủ cả phạm vi. Nên máy của nhà máy KHÔNG được chọn
-     * vẫn được VẼ đúng chỗ nhưng **không có lời khai trạng thái**, và chúng nhận
-     * màu "chưa rõ".
+     * Banner cũ nói: *"N máy trên cảnh thuộc nhà máy khác nhà máy đang chọn —
+     * trạng thái sống chưa nạp cho chúng"*. Câu ấy ĐÚNG từ Task 19 tới lượt này
+     * (đo được: 737/1.108). Từ lượt này ba truy vấn trạng thái hỏi CÙNG
+     * `napNhaMay.gui` với truy vấn hình học, nên tập ấy RỖNG trên mọi đường đi và
+     * câu trên thành **lời khai sai theo chiều ngược** — sản phẩm nói dối về hạn
+     * chế nó vừa hết.
      *
-     * ⚠ Đây KHÔNG phải một `null` để mặc: một cảnh 1.108 khối trong đó 737 khối
-     *   xám mà không lời giải thích sẽ bị đọc là "737 máy hỏng/offline". Banner
-     *   này nêu CON SỐ ĐÃ ĐẾM trên chính tập đang vẽ, không nêu chung chung.
+     * ⇒ Cùng QĐ-18 mà `banner-ha-cap` đã theo: một lời khai không bao giờ đúng
+     *   thì phải GỠ, không phải để `hien: false` vĩnh viễn. Xem docblock ở chỗ
+     *   `soMayChuaCoTrangThaiSong` cũ (`:1527`) để biết phép đếm đã chết thế nào.
      *
-     * ⇒ Nợ có tên: gộp bốn truy vấn trạng thái theo `factoryIds` là việc của một
-     *   lượt sau (đổi ba hợp đồng máy chủ), không phải của Task 19.
+     * ⚠ Đây là lời khai sai cùng lớp THỨ TƯ mà đợt này phải vá (`banner-ha-cap`,
+     *   `CanhVanHanh2D:94`, `banner-vi-tri-tam-sinh`). Mỗi lần nới năng lực của
+     *   màn, phải đi soát lại những câu đang giải thích cái năng lực CŨ.
      */
-    ds.push({
-      testId: "banner-trang-thai-mot-nha-may",
-      nhom: "duLieu",
-      hien: soMayChuaCoTrangThaiSong > 0,
-      noiDung: t(
-        "twin3d.vanHanh.trangThaiMotNhaMay",
-        "{{so}} máy trên cảnh thuộc nhà máy khác nhà máy đang chọn — trạng thái sống chưa nạp cho chúng, nên chúng hiện màu “chưa rõ” chứ không phải đang hỏng.",
-        { so: soMayChuaCoTrangThaiSong },
-      ),
-      dataPhu: { "data-so": soMayChuaCoTrangThaiSong },
-    });
 
     // ── Link cũ trỏ vào thứ không còn.
     ds.push({
