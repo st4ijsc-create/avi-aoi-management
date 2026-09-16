@@ -43,17 +43,24 @@
  * tập chọn nuốt cú bấm") ở tầng raycast.
  *
  * ════════════════════════════════════════════════════════════════════════════
- * ★★★ LỖ HỔNG ĐO ĐƯỢC — ca N6, KHÁC với PH-41
+ * ★★★ LỖ HỔNG ĐO ĐƯỢC — ca N6, KHÁC với PH-41 · **ĐÃ ĐÓNG Ở ĐỢT 64**
  * ════════════════════════════════════════════════════════════════════════════
- * Nhánh `machineId === null ⇒ setChon([])` ở `XuongThietKe.tsx:1088` **không có
- * đường nào gọi tới từ cảnh 3D**: `LoBatchMay` chỉ phát `onChon` khi tia TRÚNG
- * một máy, và census ca N7 đếm được **0** điểm gắn `onPointerMissed` trên toàn
- * cây `twin3d` (mã sản phẩm, bỏ tệp lưới) — `grep` toàn `client/src` cũng 0. Tức "bấm
- * nền để bỏ chọn" — ngữ nghĩa mà `trangThaiThietKe.apChon` docblock (G8) khai là
- * bắt buộc, và `CanhVanHanh2D.tsx:94` còn khai là "cùng hành vi `onPointerMissed`
- * của bản 3D" — KHÔNG tồn tại ở bản 3D. N6 ghim CƠ CHẾ (cú bấm trượt không đi
- * qua `onChon`) chứ không ghim triệu chứng, nên nó vẫn đúng sau khi ai đó vá
- * bằng một đường khác.
+ * Đợt 63 đo được: nhánh `machineId === null ⇒ setChon([])` ở
+ * `XuongThietKe.tsx:1088` **không có đường nào gọi tới từ cảnh 3D** —
+ * `LoBatchMay` chỉ phát `onChon` khi tia TRÚNG một máy, và census N7 đếm được
+ * **0** điểm gắn `onPointerMissed` trên toàn cây `twin3d`. Tức "bấm nền để bỏ
+ * chọn" — ngữ nghĩa mà docblock `trangThaiThietKe.apChon` (G8) khai là bắt
+ * buộc, và `CanhVanHanh2D.tsx:94` còn khai là "cùng hành vi `onPointerMissed`
+ * của bản 3D" — KHÔNG tồn tại ở bản 3D. Đó là mã chết cộng hai lời khai sai.
+ *
+ * ĐỢT 64 vá: `LoBatchMay` nay gắn `onPointerMissed`, gác hai dòng
+ * (`type === "click"` + `initialHits` rỗng). N6 và N7 **đã lật kỳ vọng** —
+ * chúng là bằng chứng của một trạng thái lỗi, không phải yêu cầu sản phẩm, nên
+ * khi lỗi đóng thì kỳ vọng phải đi theo. Cả hai GIỮ NGUYÊN tiền đề đắt nhất
+ * (N6 tự kiểm raycast không trúng khối nào; N7 đòi census đọc > 50 tệp), và N7
+ * còn SIẾT thêm: từ "phải rỗng" thành "phải ĐÚNG MỘT tệp", vì điểm gắn thứ hai
+ * sẽ làm bấm một vùng an toàn âm thầm xoá tập chọn máy (R3F chạy
+ * `onPointerMissed` cả khi một object KHÁC được bấm).
  */
 import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot, events as taoSuKien, extend } from "@react-three/fiber";
@@ -390,7 +397,7 @@ describe("PH-41 — bấm khối trên cảnh Thiết kế khi đang ĐA CHỌN"
     expect(soTay.chon).toEqual([khoaNode("machine", 203)]);
   });
 
-  it("N6 LỖ HỔNG — bấm TRƯỢT mọi khối không đi qua `onChon`, nên nhánh `machineId === null` ở XuongThietKe:1088 không tới được từ cảnh", async () => {
+  it("N6 ĐÃ ĐÓNG — bấm TRƯỢT mọi khối nay đi qua `onChon(null)`, nên nhánh `machineId === null` ở XuongThietKe:1088 thôi là mã chết", async () => {
     const { g, store, soTay } = await dungMan();
 
     // ★ TIỀN ĐỀ: điểm này thật sự KHÔNG trúng khối nào (nếu trúng, ca vô nghĩa).
@@ -404,21 +411,42 @@ describe("PH-41 — bấm khối trên cảnh Thiết kế khi đang ĐA CHỌN"
 
     await bam(store, g.canvas, goc);
 
-    // CƠ CHẾ, không phải triệu chứng: `LoBatchMay` chỉ phát `onChon` khi tia TRÚNG máy.
-    expect(soTay.soLanOnChon).toBe(0);
-    expect(soTay.doiSoCuoi, "chưa từng có ai gọi `onChon(null)` từ cảnh").toBeUndefined();
-    expect(soTay.chon, "tập chọn KHÔNG bị xoá — 'bấm nền để bỏ chọn' không tồn tại ở bản 3D").toHaveLength(3);
+    /* ★★★ ĐỢT 64 — CA NÀY ĐÃ LẬT, VÀ ĐÓ LÀ MỤC ĐÍCH CỦA NÓ.
+     *
+     * Bản Đợt 63 khẳng định sự VẮNG MẶT của hành vi: `soLanOnChon` = 0 và tập
+     * chọn còn 3. Nó là **bằng chứng của PH-41**, không phải một yêu cầu — tôi
+     * viết nó để ghi lại trạng thái lỗi đo được: nhánh `machineId === null` ở
+     * `XuongThietKe:1088` không có nguồn phát, tức mã chết.
+     *
+     * Đợt 64 nối `onPointerMissed` vào `LoBatchMay` nên lỗ hổng ấy đóng. Ca giữ
+     * nguyên TIỀN ĐỀ đắt nhất của nó (raycast tự kiểm: điểm bấm thật sự không
+     * trúng khối nào) và chỉ đổi kết cục — nên nó vẫn là phép đo, không phải
+     * lời khai chép theo bản vá.
+     */
+    expect(soTay.soLanOnChon, "bấm trượt nay ĐI QUA `onChon` đúng một lần").toBe(1);
+    expect(soTay.doiSoCuoi, "và đối số phải là `null`, không phải một id ma").toBeNull();
+    expect(soTay.chon, "nhánh `machineId === null` ở XuongThietKe:1088 nay tới được").toHaveLength(0);
   });
 
-  it("N7 NGUỒN — `XuongThietKe` nối cảnh bằng ngữ nghĩa THAY THẾ, và `onPointerMissed` vắng mặt trong toàn client", () => {
+  it("N7 NGUỒN — `XuongThietKe` nối cảnh bằng ngữ nghĩa THAY THẾ, và `onPointerMissed` được gắn ĐÚNG MỘT chỗ trong toàn client", () => {
     const ma = docMaNguon(resolve(GOC, "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx"));
     expect(ma).toContain(
       'onChonMay={(machineId) =>\n                setChon(machineId === null ? [] : [khoaNode("machine", machineId)])\n              }',
     );
 
-    // ★ CENSUS trên TOÀN cây `twin3d` (mã sản phẩm, bỏ tệp lưới): 0 điểm gắn
-    //   `onPointerMissed` ⇒ nhánh `null` ở trên KHÔNG có nguồn phát. Đây là dữ
-    //   kiện của PH-41, không phải trang trí — và nó KÊU ngay khi ai đó thêm.
+    /* ★ CENSUS trên TOÀN cây `twin3d` (mã sản phẩm, bỏ tệp lưới).
+     *
+     * ĐỢT 63 khẳng định **0** điểm gắn — dữ kiện của PH-41, và ca này nói rõ
+     * "nó KÊU ngay khi ai đó thêm". Đợt 64 thêm thật, nên nó đã kêu đúng lúc.
+     *
+     * ★★★ ĐỢT 64 siết chứ KHÔNG nới: từ "phải rỗng" thành "phải ĐÚNG MỘT, và
+     *   đúng tệp ấy". Lý do là một mối nguy ĐO ĐƯỢC trong R3F 9.5
+     *   (`dist/events-*.esm.js:880-890`): `onPointerMissed` chạy ở HAI tình
+     *   huống — (a) bấm không trúng gì, và (b) một object **khác** được bấm,
+     *   kể cả trên `pointerdown`. Gắn handler thứ hai ở nơi khác (ví dụ
+     *   `thiet-ke/LopVung.tsx:109` là `<mesh onClick>` thật) sẽ làm **bấm một
+     *   vùng an toàn âm thầm xoá tập chọn máy**. Danh sách cứng giữ cửa đó.
+     */
     const goc3d = resolve(GOC, "client/src/components/twin3d");
     const duyet = (thuMuc: string): string[] =>
       readdirSync(thuMuc, { withFileTypes: true }).flatMap((m) => {
@@ -430,7 +458,12 @@ describe("PH-41 — bấm khối trên cảnh Thiết kế khi đang ĐA CHỌN"
     const tep = duyet(goc3d);
     // Tập rỗng là HỎNG: census không đọc được tệp nào thì nó không chứng minh gì.
     expect(tep.length).toBeGreaterThan(50);
-    const coHandler = tep.filter((p) => docMaNguon(p).includes("onPointerMissed="));
-    expect(coHandler).toEqual([]);
+    const coHandler = tep
+      .filter((p) => docMaNguon(p).includes("onPointerMissed="))
+      .map((p) => p.slice(goc3d.length + 1).replace(/\\/g, "/"))
+      .sort();
+    expect(coHandler, "thêm điểm gắn thứ hai ⇒ bấm vùng an toàn sẽ xoá tập chọn máy").toEqual([
+      "loi/LoBatchMay.tsx",
+    ]);
   });
 });

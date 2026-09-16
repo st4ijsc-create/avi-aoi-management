@@ -192,9 +192,26 @@ describe("LoBatchMay trên reconciler R3F thật — Đợt 47 N2", () => {
     re(store, g.canvas, { x: 5, y: 5 });
     expect(onHover).toHaveBeenLastCalledWith(null);
 
-    // 7) bấm chỗ trống ⇒ không gọi onChon (không có "chọn null" giả).
+    /* 7) bấm chỗ trống ⇒ BỎ CHỌN có chủ ý, và TUYỆT ĐỐI không phát id nào.
+     *
+     * ★★★ Ca này ĐỔI KỲ VỌNG ở Đợt 64 (PH-41), chủ đợt phân xử. Bản Đợt 47 viết
+     *   `toHaveBeenCalledTimes(3)` với chú thích *"không có 'chọn null' GIẢ"* —
+     *   chữ **giả** là điều phải giữ. Thứ ca đó canh là **tia trượt mà vẫn phát
+     *   ra một id ma** sau khi `<primitive object>` bị swap, tức một lỗi raycast.
+     *   Nó KHÔNG đặt luật sản phẩm "bấm nền không bao giờ bỏ chọn" — luật ấy
+     *   ngược với ba dấu vết đo được: nhánh `machineId === null` ở
+     *   `XuongThietKe:1088` là MÃ CHẾT nếu không ai phát null; chú thích
+     *   `CanhVanHanh2D:94` khai "cùng hành vi `onPointerMissed` của bản 3D" khi
+     *   bản 3D không có handler ấy; và bản 2D thì đã bỏ chọn từ trước.
+     *
+     * ★ Hàng rào gốc GIỮ NGUYÊN SỨC: id ma vẫn làm ca này đỏ, vì `null` được
+     *   khẳng định tường minh — `toHaveBeenLastCalledWith(101)` sẽ trượt.
+     */
     bam(store, g.canvas, { x: 5, y: 5 });
-    expect(onChon).toHaveBeenCalledTimes(3);
+    expect(onChon).toHaveBeenCalledTimes(4);
+    expect(onChon, "bấm trượt phải phát ĐÚNG `null`, không bao giờ là một id ma").toHaveBeenLastCalledWith(
+      null,
+    );
   });
 
   it("T2 — bất biến: mọi object trong internal.interaction còn handler và còn trong scene, qua 3 lần đổi lô", async () => {

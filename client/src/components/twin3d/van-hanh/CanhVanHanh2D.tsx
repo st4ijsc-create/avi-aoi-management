@@ -91,7 +91,23 @@ export function CanhVanHanh2D({
       aria-label={ariaLabel}
       data-testid="canh-van-hanh-2d"
       onClick={(e) => {
-        // Click nền = bỏ chọn, cùng hành vi `onPointerMissed` của bản 3D.
+        /*
+         * Click nền = bỏ chọn.
+         *
+         * ⚠ Dòng chú thích cũ khai đây là *"cùng hành vi `onPointerMissed` của
+         *   bản 3D"* — LỜI KHAI SAI suốt từ lúc viết: census lúc phân xử PH-41
+         *   đếm được **0** điểm gắn `onPointerMissed` trên toàn cây `twin3d`.
+         *   Bản 3D mới có hành vi ấy từ bản vá PH-41, ở ĐÚNG MỘT chỗ:
+         *   `loi/LoBatchMay.tsx` (lưới `loi/bamNenBoChon.dom.test.tsx` ghim cả
+         *   hành vi lẫn census "đúng một điểm gắn").
+         *
+         * ⚠ HAI BẢN KHÔNG KHỚP TUYỆT ĐỐI, và chỗ lệch là ngưỡng: bản 2D bỏ chọn
+         *   với MỌI cú click rơi thẳng vào `<svg>` (không có ngưỡng kéo), còn bản
+         *   3D chỉ bỏ chọn khi con trỏ dịch ≤ 2 px giữa pointerdown và click
+         *   (hằng số nội bộ của R3F). Kéo xoay camera là cử chỉ chỉ có ở 3D, nên
+         *   chênh lệch này là có lý do — nhưng nó là chênh lệch, không phải "cùng
+         *   hành vi".
+         */
         if (e.target === e.currentTarget) onChonMay(null);
       }}
     >

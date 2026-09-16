@@ -346,3 +346,9 @@ CHƯA ĐO: trần 8 ở chi phí thật · 300 tầng CÓ dữ liệu · chưa c
 ## V-24 · Bộ sinh dữ liệu tập đoàn còn chạy được sau mọi thay đổi lược đồ
 Chạy khô `node .qa-tapdoan/sinh-tap-doan.mjs --kho` ngày 2026-09-16 sau Task 17b/18 và migration 0357: **"Kiểm kế hoạch: ĐẠT"**, 3 công ty · 12 toà · 7 tầng · 1.108 máy, 24/24 loại máy có mặt. Dựng lại được cho Task 19.
 ⚠ Mã định danh sẽ KHÁC lần trước — mọi harness phải đọc lại từ tệp tóm tắt, không dùng số cũ.
+
+## PH-42 (MỚI, THẤP — do bản vá Đợt 64 phơi ra) · `/factory-command`: bấm nền xoá nhấn sáng nhưng giữ viền và nhãn
+`loi/CanhNhaMay.tsx:407-409` nối `onChon` như sau: `setChon((tt) => apClick(tt, id)); if (id != null) onSelect(id);`. Với `id === null`, `chonVatThe.apClick:77` trả `dangChon: null` (xoá nhấn sáng trong cảnh) nhưng trang **không** được báo, nên `selectedId` giữ nguyên. `:275` `mayDangChon` và `:415` `LopNhan dangChon` đều đọc `selectedId` ⇒ **viền chọn và nhãn vẫn chỉ vào máy cũ trong khi nhấn sáng đã tắt**.
+★ Lệch này CÓ SẴN TỪ TRƯỚC, không do bản vá sinh ra: `apClick:78` cũng trả `dangChon: null` khi bấm LẠI đúng máy đang chọn, cho ra y hệt triệu chứng. Bản vá Đợt 64 chỉ thêm một nguồn kích hoạt mới (bấm nền).
+★ Không vá trong đợt này — có chủ ý. Trang khai `selectMachine = (id: number)` (`FactoryCommandView.tsx:365`) nên truyền `null` lên đòi đổi hợp đồng của trang; và `CanhNhaMay` còn ba người dùng khác (`CanhThietKe`, `CanhVanHanh`, `CanhVanHanh2D`) nên sửa chỗ vẽ dùng chung là thay đổi rộng, nằm ngoài phạm vi twin của đợt. Mức THẤP: tự lành ở cú bấm kế tiếp.
+Hai đường vá khi mở lại: (a) cho `onSelect` nhận `number | null` và sửa trang; (b) cho `:275`/`:415` đọc `chon.dangChon` thay vì `selectedId` (hiệu ứng `:239` đã đồng bộ chiều xuống), rẻ hơn nhưng phải đo cả bốn người dùng.

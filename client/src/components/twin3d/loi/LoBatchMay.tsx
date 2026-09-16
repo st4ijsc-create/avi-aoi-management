@@ -47,9 +47,39 @@
  *
  * ★ BẤM ≠ KÉO: `onClick` chỉ chọn khi `laBam({ lechPx: e.delta, ms })` — xem
  *   `phanBietBamKeo.ts`. Trước đó, xoay camera rồi nhả chuột trên máy = chọn máy.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ BẤM NỀN = BỎ CHỌN — `onPointerMissed` (phân xử PH-41)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Hành vi này được KHAI ở ba chỗ mà cho tới lúc vá **không tồn tại**:
+ * `thiet-ke/XuongThietKe.tsx:1088` có nhánh `machineId === null ⇒ setChon([])`
+ * (không nguồn nào phát), docblock `trangThaiThietKe.apChon` (G8) khai nó là bắt
+ * buộc, và `van-hanh/CanhVanHanh2D.tsx` khai bản 2D làm *"cùng hành vi
+ * `onPointerMissed` của bản 3D"*. Census lúc phân xử: **0** điểm gắn
+ * `onPointerMissed` trên toàn cây `twin3d`. Đây là chỗ DUY NHẤT gắn nó, nên
+ * một bản vá ở đây tới cả ba màn dùng chung tệp này (Studio · `/twin` ·
+ * `/factory-command`). Lưới: `loi/bamNenBoChon.dom.test.tsx`.
+ *
+ * ⚠ R3F gọi `onPointerMissed` ở HAI tình huống KHÁC HẲN nhau (bundle 9.5.0
+ *   `dist/events-5a94e5eb.esm.js`):
+ *     (a) :826-829 — một CLICK không trúng gì (`hits` rỗng **và** `delta ≤ 2` px):
+ *         gọi cho MỌI object trong `internal.interaction`. Đây mới là "bấm nền".
+ *     (b) :880-890 — một object KHÁC được bấm/nhấn: mọi object **không** nằm trong
+ *         `initialHits` đều nhận "missed" — kể cả trên `pointerdown`, kể cả khi
+ *         người dùng đang bấm đúng một thứ mình nhắm.
+ *   Không phân biệt (a) với (b) thì ở Studio, bấm một vùng an toàn
+ *   (`thiet-ke/LopVung.tsx:109` là `<mesh onClick>` thật trong cùng cảnh) sẽ âm
+ *   thầm xoá tập chọn máy. Nên handler dưới đây chỉ nhận (a): `type === "click"`
+ *   loại mọi lượt pointerdown/pointerup, và `initialHits` rỗng loại lượt mà cú
+ *   bấm thuộc về một object khác.
+ *
+ * ⚠ Ngưỡng 2 px của R3F KHÁC `NGUONG_BAM_PX` = 4 của `phanBietBamKeo`: một cú
+ *   bấm nền lệch 3 px KHÔNG bỏ chọn. Đó là hằng số nội bộ của R3F, không chỉnh
+ *   được từ đây; ca B4 của lưới ghim đúng khoảng chênh ấy để không ai kết luận
+ *   sai từ một phép đo lệch vài pixel.
  */
 
-import { useThree, type ThreeEvent } from "@react-three/fiber";
+import { useStore, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
@@ -114,6 +144,14 @@ export function LoBatchMay({
   const invalidate = useThree((s) => s.invalidate);
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
+  /**
+   * ★ `useStore` chứ KHÔNG `useThree((s) => s.internal)`: R3F thay nguyên đối
+   *   tượng `internal` một lần lúc khởi tạo (`react-three-fiber.esm.js:15799`
+   *   `internal: { ...state.internal, active: true }`), nên một selector trỏ
+   *   thẳng vào nó là tham chiếu KHÔNG ỔN ĐỊNH. Đọc lười qua `getState()` trong
+   *   handler luôn thấy đúng giá trị lúc xảy ra sự kiện.
+   */
+  const store = useStore();
   const meshRef = useRef<THREE.BatchedMesh | null>(null);
 
   // ── Bảng tra instanceId ↔ machineId. Dựng từ CÙNG mảng, CÙNG useMemo với lô. ──
@@ -371,6 +409,17 @@ export function LoBatchMay({
     onChon(id === null ? null : (bangTra.mayTheoInstance[id] ?? null));
   };
   const khiPointerOut = () => onHover(null);
+  /**
+   * ★★★ BẤM NỀN ⇒ `onChon(null)`. Xem docblock đầu tệp cho (a) vs (b) và vì sao
+   *   hai dòng gác dưới đây KHÔNG phải phòng thủ thừa: thiếu chúng, mọi cú bấm
+   *   lên một vật thể tương tác KHÁC trong cùng cảnh (vùng an toàn ở Studio) và
+   *   cả lượt `pointerdown` của nó đều xoá tập chọn máy.
+   */
+  const khiBamNen = (e: MouseEvent) => {
+    if (e.type !== "click") return;
+    if (store.getState().internal.initialHits.length > 0) return;
+    onChon(null);
+  };
 
   return (
     /*
@@ -383,6 +432,7 @@ export function LoBatchMay({
       onPointerDown={khiPointerDown}
       onPointerMove={doiHover}
       onPointerOut={khiPointerOut}
+      onPointerMissed={khiBamNen}
     >
       <primitive object={loMoi} />
     </group>

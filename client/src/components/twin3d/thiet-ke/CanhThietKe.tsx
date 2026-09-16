@@ -332,6 +332,36 @@ function useTheoDoiCamera(dat: (v: { x: number; y: number; z: number }) => void)
   });
 }
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★ CÓ GẮN GIZMO KHÔNG — BA ĐIỀU KIỆN, MỘT CHỖ TRẢ LỜI
+ * ════════════════════════════════════════════════════════════════════════════
+ * Trước bản vá PH-41 (lỗi 2), điều kiện gắn gizmo hỏi `mayDangChon !== null` —
+ * tức "CÓ id nào đang chọn không", trong khi hàm đồng bộ vị trí proxy ngay phía
+ * trên lại hỏi `mayChon` — "id ấy có TÌM THẤY trong mảng đang vẽ không".
+ * `XuongThietKe.mayVe` chỉ đưa vào máy có `datCho.hienThi`, nên đổi tầng là máy
+ * tầng cũ BIẾN MẤT khỏi mảng: đồng bộ dừng, gizmo vẫn gắn ⇒ một tay nắm đứng ở
+ * toạ độ của tầng trước, giữa một tầng không chứa máy đó.
+ *
+ * ★ Không hỏng dữ liệu (`onXong` đã tự chặn bằng `if (!mayChon) return;`), nhưng
+ *   người dùng thấy mình đang cầm một máy không có ở đây.
+ *
+ * ⇒ Hai quyết định phải đọc CÙNG MỘT biến. Tách ra thành hàm thuần vì `CanhThietKe`
+ *   dựng `<Canvas>`/WebGL nên không render được trong jsdom — đây là phần đo được
+ *   của quyết định ấy (`ganGizmoTheoTang.unit.test.ts`, kèm ca census ghim rằng
+ *   JSX thật sự gọi hàm này với máy đã lọc theo tầng).
+ */
+export function coGanGizmo(dk: {
+  /** Máy đang chọn ĐÃ tìm thấy trên tầng đang vẽ; `null` = không thuộc tầng này. */
+  mayTrenTang: { machineId: number } | null;
+  /** CHẶN-2 — máy khoá (hoặc không có quyền sửa): gỡ HẲN gizmo, nó không có trạng thái "xám". */
+  daKhoa: boolean;
+  /** CHẶN-3 — proxy đã vào scene graph; attach sớm ⇒ `_parentScale` = (0,0,0) ⇒ NaN. */
+  proxyDaVaoScene: boolean;
+}): boolean {
+  return dk.mayTrenTang !== null && !dk.daKhoa && dk.proxyDaVaoScene;
+}
+
 function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
   const {
     toi,
@@ -476,6 +506,16 @@ function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
     o.rotation.set(0, mayChon.gocXoayRad, 0);
     o.updateMatrixWorld();
   }, [mayChon]);
+
+  /**
+   * ★★ PH-41 (lỗi 2) — điều kiện gắn gizmo đọc `mayChon` (ĐÃ lọc theo tầng đang
+   *   vẽ), KHÔNG đọc `mayDangChon`. Xem docblock của `coGanGizmo`.
+   */
+  const ganGizmo = coGanGizmo({
+    mayTrenTang: mayChon,
+    daKhoa: mayDaKhoa,
+    proxyDaVaoScene: daVaoScene,
+  });
 
   const banKinh = Math.max(sanRongM, sanSauM) / 2;
 
@@ -627,9 +667,10 @@ function NoiDung(props: CanhThietKeProps & { toi: boolean }) {
       {proxy ? <primitive object={proxy} /> : null}
       {/* ★★★ Gizmo — RB-1/RB-2 ở trong `GizmoBienDoi`.
           ★ `daVaoScene` chặn `attach()` chạy TRƯỚC khi `<primitive>` kịp add:
-            attach vào một object chưa có parent tái tạo đúng lỗi NaN ở trên. */}
+            attach vào một object chưa có parent tái tạo đúng lỗi NaN ở trên.
+          ★★ `ganGizmo` (không phải `mayDangChon !== null`) — xem `coGanGizmo`. */}
       <GizmoBienDoi
-        vatThe={mayDangChon !== null && !mayDaKhoa && daVaoScene ? proxy : null}
+        vatThe={ganGizmo ? proxy : null}
         cheDo={cheDo}
         snapBat={snapBat}
         buocLuoiMm={buocLuoiMm}
