@@ -449,3 +449,39 @@ Bản đầu tính khung nhìn **ở trang** ⇒ **đỏ 2 ca** của `cuaVaoTwi
 
 ⚠ **Một lùi tự khai**: `qatd_quanly` khung mặc định, nhãn toà hiện 3/4 → **2/4** (sa bàn neo thấp hơn nên nhãn toà trên cùng rơi dưới thẻ Metrics). Không thuộc ô nghiệm thu nào, nhưng là lùi.
 ⚠ Chỉ đo **1280×720** và **2 vai**. Quy tắc neo đáy **không tự tránh được** thẻ nổi ở góc **dưới-trái** nếu mai này có — đã ghi trong docblock.
+
+## V-28 ★★★ V-21 mục (1) ĐÓNG — lời tự thú của bộ sinh ĐÚNG CƠ CHẾ nhưng SAI CHẨN ĐOÁN
+Bộ sinh tự ghi trong docblock rằng `predictive_alerts` do máy chủ bơm "theo logic riêng, không nhìn `healthScore`". **Nửa đầu đúng, nửa sau sai** — và nửa sai mới là chỗ đáng giá.
+
+**Máy chủ KHÔNG có logic riêng.** `aiSmartAlertRouter.ts:525` đọc `product_inspections` — **đúng dữ liệu bộ sinh viết**. Chính dòng cảnh báo tự khai: `"Defect spike on machine #6413: 1 NG in last 30min"`. Điều kiện kích hoạt đo được là **"máy có ≥1 NG"**:
+| bằng chứng | số |
+|---|---|
+| máy QATD có ≥1 NG | **575 / 1.108 = 51,9 %** |
+| máy có cảnh báo mở tại mốc T3 | **575** — trùng khít |
+| 51 máy đang có cảnh báo, bao nhiêu có ≥1 NG | **51/51** |
+| `corr(healthScore, tỉ lệ NG)` trên 1.108 máy | **−0,032** ≈ 0 |
+
+★★★ **GỐC RỄ THẬT NẰM TRONG CHÍNH BỘ SINH, sâu hơn lời tự thú một tầng**: `tiLeNg = rnd() * 0.25` dùng mầm `kt:<mã máy>` trong khi `health` dùng mầm `sk:<mã máy>` — **hai mầm rời nhau**. Với `rnd()*0.25`, P(≥1 NG trong 6 lần kiểm) ≈ **50,5 %** ở **mọi** hạng sức khoẻ. Bảng 53,5 / 49,6 / 49,7 / 55,8 % **chính là hằng số đó phản chiếu lại** — không phải lỗi bí ẩn của máy chủ.
+
+### ⚠ HAI ĐÍNH CHÍNH CHO BÁO CÁO QA LẦN 11
+1. **Con số 53,5/49,6/49,7/55,8 % là ảo giác của THỜI ĐIỂM ĐO.** Chạy lại đúng truy vấn T3 hôm nay cho **5,4 / 4,5 / 4,3 / 3,5 %**. Lý do: bộ bơm chỉ **nổ một lần** (51 máy, trong 63 giây) rồi tắt. Con số phụ thuộc **máy chủ chạy bao lâu**, không phải thuộc tính của bộ dữ liệu. ⇒ Cùng lớp với PH-38 và PH-41: **thiết bị đo sinh ra phát hiện**, lần thứ ba trong đợt.
+2. **`generatePredictions` KHÔNG phải thủ phạm**: nó gom theo `createdAt::date` và cần ≥ 7 ngày, mà QATD chỉ có **1 ngày** ⇒ tạo 0 dòng.
+
+### Vá THƯỢNG NGUỒN, không vá triệu chứng
+Lời tự thú nói lối (a) đòi "tắt đường bơm của máy chủ" — **sai**, không cần tắt gì. Bộ bơm là **hàm trung thực** của dữ liệu bộ sinh viết, nên vá `tiLeNg` là đủ và nó nằm gọn trong `.qa-tapdoan/`.
+★ Agent **từ chối** ghi thẳng `predictive_alerts` dù được phép: làm thế sẽ dựng cảnh báo "defect spike" trên máy có **0 NG** — chế ra một mâu thuẫn MỚI để che mâu thuẫn cũ.
+Hàm mới `tiLeNgTheoSucKhoe(health, jitter)` giữ **nguyên** tỉ lệ NG trung bình cũ và vẫn đúng **một** lần rút `rnd()` ⇒ 6 lần rút sau **không lệch** ⇒ so trước/sau là so **có đối chứng**.
+
+### Phép đo tự kiểm trước khi được phép nói
+`_v21-sim.mjs` **nhập `tiLeNgTheoSucKhoe` từ chính bộ sinh** (đo mã thật, không đo bản sao), và bước 1 của nó là **kiểm thiết bị đo**: chạy lại công thức **CŨ** phải khớp CSDL ⇒ **lệch 0/1.108 máy**; lệch > 0 thì `exit 1` và không in bảng nào.
+| hạng | TRƯỚC coNG / tỉ lệ | SAU coNG / tỉ lệ |
+|---|---|---|
+| xấu (<55), n=279 | 153 / **54,8 %** | 228 / **81,7 %** |
+| 55-69, n=277 | 142 / 51,3 % | 167 / 60,3 % |
+| 70-84, n=284 | 136 / 47,9 % | 118 / 41,5 % |
+| tốt (≥85), n=268 | 144 / **53,7 %** | 43 / **16,0 %** |
+| | đơn điệu **KHÔNG** · 1,02× | đơn điệu **CÓ** · **5,09×** |
+Tiêu chí (đơn điệu giảm + xấu/tốt ≥ 2×) **ĐẠT**. Hình dạng giữ nguyên: tổng NG 831→832 (0,1 %), số dòng kiểm không đổi. `--kho` vẫn `Kiem ke hoach: DAT`, khối kế hoạch `diff` **rỗng**.
+
+⚠ **CHƯA CÓ HIỆU LỰC TRÊN DỮ LIỆU ĐANG CHẠY** — bản vá chỉ tác dụng ở lượt `--go` + `--ghi` kế tiếp. Bảng "SAU" là **mô phỏng tất định đã tự kiểm**, không phải đo trên CSDL sống. Agent cố ý không sinh lại vì một agent khác đang đo sống.
+⚠ Chưa truy ra **vì sao bộ bơm chỉ phủ 51/575 máy đủ điều kiện** — không đổi kết luận, nhưng là một lý do nữa để đừng dùng `predictive_alerts` làm thước.

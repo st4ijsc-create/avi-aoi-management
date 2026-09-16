@@ -134,6 +134,59 @@ export function bamChuoi(s) {
   }
   return h >>> 0;
 }
+
+/** ★ V-21(1) — TỈ LỆ NG CỦA MỘT MÁY LÀ HÀM CỦA SỨC KHOẺ MÁY ĐÓ.
+ *
+ *  Bản cũ: `const tiLeNg = rnd() * 0.25` với mầm `kt:<mã máy>` — ĐỘC LẬP hoàn toàn
+ *  với `health` (mầm `sk:<mã máy>`). Đo được trên CSDL phát triển: corr(health,
+ *  tỉ_lệ_NG) = **−0,032** trên 1.108 máy ⇒ bằng 0.
+ *
+ *  Vì sao điều đó làm hỏng phép đo cảnh báo dự đoán: bộ sinh KHÔNG ghi
+ *  `predictive_alerts`, máy chủ ghi — nhưng máy chủ ghi chúng TỪ `product_inspections`
+ *  mà chính bộ sinh này viết ("Defect spike on machine #N: 1 NG in last 30min"). Điều
+ *  kiện kích hoạt đo được là "máy có >= 1 NG trong cửa sổ". Với `rnd()*0.25` thì
+ *  P(>=1 NG trong 6 lần kiểm) ≈ 50,5 % ở MỌI hạng sức khoẻ — đúng bằng 51,9 % đo được,
+ *  và đúng bằng 53,5 / 49,6 / 49,7 / 55,8 % mà QA lần 11 đọc ra từ `predictive_alerts`.
+ *  Con số "phẳng và ngược chiều" ấy KHÔNG phải lỗi của máy chủ: nó là tỉ lệ NG của bộ
+ *  sinh phản chiếu lại. ⇒ Vá đúng chỗ là ở ĐÂY, không phải ở `predictive_alerts`, và
+ *  KHÔNG cần tắt đường bơm nào của máy chủ.
+ *
+ *  Hệ số: `health` rải đều 40..99 ⇒ E[100−health] = 30,5. Chọn 0,125/30,5 để tỉ lệ NG
+ *  TRUNG BÌNH giữ nguyên 0,125 của bản cũ (`rnd()*0.25`) — hình dạng bộ dữ liệu không đổi.
+ *  `jitter` ∈ [0,1) là ĐÚNG MỘT lần rút `rnd()` như bản cũ, nên chuỗi rút phía sau
+ *  (6 lần kiểm) không lệch: so sánh trước/sau là so sánh có đối chứng.
+ */
+export const NG_TRUNG_BINH_CU = 0.125;      // = E[rnd()*0.25]
+export const NG_HEALTH_TB_BU = 30.5;        // = E[100 − health], health ~ U{40..99}
+export const tiLeNgTheoSucKhoe = (health, jitter) =>
+  Math.max(0, Math.min(0.5,
+    (NG_TRUNG_BINH_CU / NG_HEALTH_TB_BU) * (100 - health) * (0.7 + 0.6 * jitter)));
+
+/** ★ V-21(1) — LỜI KHAI BẮT BUỘC IN RA MỖI LƯỢT CHẠY.
+ *  Một dòng nằm trong docblock là KHÔNG ĐỦ: mười đợt QA đã đọc số `predictive_alerts`
+ *  mà không biết bộ sinh không ghi bảng đó. Người chạy bộ sinh phải NHÌN THẤY.
+ */
+export function loiKhaiCanhBao() {
+  console.log(`
+  ┌─ LOI KHAI VE \`predictive_alerts\` (V-21 muc 1) ─────────────────────────────
+  │ Bo sinh nay KHONG ghi mot dong nao vao \`predictive_alerts\`. Bang do do MAY CHU
+  │ dang chay ghi (aiSmartAlertRouter), va no chi co dong khi may chu CO CHAY va
+  │ bo bom CO NO trong cua so ~30 phut sau luot sinh. Cung mot bo du lieu, hai luc
+  │ doc khac nhau => hai con so khac nhau (do duoc: 575 may luc T3 vs 51 may sau do).
+  │
+  │ => KHONG dung so dong \`predictive_alerts\` lam thuoc do cua BO SINH, va khong
+  │    ket luan "chi so suc khoe vo nghia" tu no.
+  │ => Muon do tuong quan suc khoe <-> chat luong, hay do thuoc MA BO SINH DAT:
+  │    ti le NG trong \`product_inspections\` (hoac "may co >=1 NG" — do chinh la
+  │    dieu kien kich hoat cua bo bom). Bo sinh nay dat ti le NG = ham cua health
+  │    (tiLeNgTheoSucKhoe), nen tuong quan CO THAT va do duoc.
+  │
+  │ !! Du lieu QATD sinh TRUOC 2026-09-16 khong co quan he do (corr = -0,032).
+  │    Muon bang 4 hang don dieu thi phai SINH LAI (--go roi --ghi).
+  │    Bang mo phong truoc/sau, khong ghi CSDL: node .qa-tapdoan/_v21-sim.mjs
+  └────────────────────────────────────────────────────────────────────────────`);
+}
+
 export const soLineCuaXuong = (maXuong) =>
   LINE_MIN + Math.floor(taoNgauNhien(bamChuoi(`${maXuong}:line`))() * (LINE_MAX - LINE_MIN + 1));
 export const soMayCuaLine = (maLine) =>
@@ -376,6 +429,7 @@ async function cheDoKho() {
     for (const l of t.xuong.lines) for (const m of l.mays)
       if (m.xMm + m.kichThuoc.rongMm / 2 > HH.daiToaMm || m.yMm + m.kichThuoc.sauMm / 2 > HH.rongToaMm) loi.push(`ngoai footprint ${m.ma}`);
   console.log(`\n  Kiem ke hoach: ${loi.length === 0 ? "DAT" : "LOI: " + loi.join("; ")}`);
+  loiKhaiCanhBao();
   console.log("\n  [--kho] KHONG ghi gi. Dung.");
   await sql.end();
   if (loi.length) process.exit(1);
@@ -518,6 +572,25 @@ async function cheDoGhi() {
              *     `healthScore` **và** tắt đường bơm của máy chủ trong lúc sinh, hoặc chấp
              *     nhận rằng hai nguồn độc lập là đặc tính của môi trường thử và nói ra điều
              *     đó khi đọc số. Chưa làm — thuộc đợt vá PH-39.
+             *
+             * ★★★ 2026-09-16, VÒNG SAU — ĐOẠN TRÊN ĐÚNG CƠ CHẾ NHƯNG **SAI CHẨN ĐOÁN**.
+             *   Đã đo lại chỉ-đọc trên CSDL phát triển (`_v21-do*.mjs`):
+             *   · Máy chủ ĐÚNG là nơi ghi `predictive_alerts` (`aiSmartAlertRouter`), bộ sinh
+             *     KHÔNG ghi dòng nào — phần này đúng.
+             *   · NHƯNG máy chủ không "theo logic riêng": nó đọc `product_inspections`, tức
+             *     dữ liệu **chính bộ sinh này viết**. Nội dung dòng cảnh báo nói thẳng ra:
+             *     "Defect spike on machine #N: 1 NG in last 30min (baseline ~0.0/window)".
+             *     Điều kiện kích hoạt đo được là "máy có >= 1 NG": **575/1.108 máy có >=1 NG
+             *     (51,9 %)**, và tại mốc T3 **đúng 575 máy** có cảnh báo mở; 51/51 máy đang
+             *     có cảnh báo đều có >=1 NG.
+             *   · Với `tiLeNg = rnd()*0.25` thì P(>=1 NG trong 6 lần kiểm) ≈ 50,5 % ở MỌI hạng
+             *     sức khoẻ. Bảng "53,5 / 49,6 / 49,7 / 55,8 %" chính là con số đó.
+             *   ⇒ "Phải tắt đường bơm của máy chủ" là **SAI**. Vá đúng chỗ nằm gọn trong tệp
+             *     này: buộc `tiLeNg` phụ thuộc `health` (xem `tiLeNgTheoSucKhoe` ở đầu tệp).
+             *     ĐÃ VÁ. Bảng mô phỏng trước/sau: `node .qa-tapdoan/_v21-sim.mjs`.
+             *   ⚠ Bản vá chỉ có hiệu lực ở LƯỢT SINH KẾ TIẾP. Dữ liệu QATD đang nằm trong CSDL
+             *     được sinh TRƯỚC bản vá ⇒ vẫn còn corr(health, tỉ_lệ_NG) = −0,032. Lượt chạy
+             *     `--ghi` tự in lời khai này ra cuối màn hình (xem `loiKhaiCanhBao()`).
              */
             // Sức khoẻ: 1 hàng/máy; traSucKhoeMay đọc healthScore, predictedFailureRisk,
             // maintenanceUrgency, recommendedMaintenanceDate, createdAt (mới nhất).
@@ -570,10 +643,11 @@ async function cheDoGhi() {
             }
 
             // Kiểm tra sản phẩm: 6 hàng/máy, factoryCode + corporateCode ĐIỀN (trục mã tenant; sinh-tai-twin :586-610).
+            // ★ V-21(1): tỉ lệ NG lấy từ `sk[i].health` — xem docblock `tiLeNgTheoSucKhoe`.
             const ins = [];
             mays.forEach((m, i) => {
               const rnd = taoNgauNhien(bamChuoi(`kt:${m.ma}`));
-              const tiLeNg = rnd() * 0.25;
+              const tiLeNg = tiLeNgTheoSucKhoe(sk[i].health, rnd());
               for (let k = 0; k < 6; k++) ins.push({ m: mIds[i], sn: `QATD-INS-${mIds[i]}-${k}`, kq: rnd() < tiLeNg ? "NG" : "OK", phut: k * 200 });
             });
             const rI = await tx`INSERT INTO product_inspections ("machineId","serialNumber","overallResult","originalResult","inspectionTime","factoryCode","corporateCode")
@@ -595,6 +669,7 @@ async function cheDoGhi() {
   tomTat.urlMau = tomTat.congTys.map((c) => ({ congTy: c.code, twin: `/twin?nm=${c.id}`, line: `/twin/line/${c.lineDauId}`, may: `/twin/may/${c.mayDauId}` }));
   fs.writeFileSync(path.join(__dirname, "sinh-summary.json"), JSON.stringify(tomTat, null, 2));
   console.log(`\n  Tom tat: .qa-tapdoan/sinh-summary.json`);
+  loiKhaiCanhBao();
   await sql.end();
   if (!ok.dat) { console.error("\nLOI: CAU CHI DO. Chay '--go' roi sua."); process.exit(1); }
 }
