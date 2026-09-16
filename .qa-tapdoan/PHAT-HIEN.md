@@ -324,3 +324,25 @@ Xem V-21 mục (2). Màn nói "0 %" trong khi thứ nó biết là "chưa đủ 
 
 ## PH-41 (MỚI, THẤP, chưa phân xử) · Bấm cảnh khi đang chọn nhiều không thu về một
 `XuongThietKe.tsx:1088` có ý định thay thế lựa chọn nhưng đo được là không. Agent đi vòng qua cây phân cấp. Chưa phân xử được là lỗi sản phẩm hay giới hạn của cú bấm tổng hợp.
+
+## V-22 ★★★ PH-39 ĐÓNG — và lỗi chạm DỮ LIỆU THẬT, không riêng dữ liệu thử
+`computeFailureRiskFromInputs` cộng trọng số ở đúng 4 cổng (`mtbf+uptime` · `healthSeries>=5` · `heartbeatSeries>=8` · `tempSeries>=10`). Không cổng nào mở ⇒ `weightSum===0` ⇒ dòng `weightSum > 0 ? … : 0` trả **0**, `urgencyFromRisk(0)` trả LOW, `factors` rỗng. Lối thứ hai: `!db` trả object 0/LOW viết cứng. Hai lối đó KHÔNG phân biệt được với một phép đo ra 0.
+
+★★★ **Cổng "honest null" cũ KHÔNG bắt được** vì nó đòi `uptimeMinutes===0` mà thực tế `uptimeMinutes = 43200`. Đo chỉ-đọc trên CSDL phát triển hiện hành: **42/42 máy** `isActive` có **0** điểm `machine_health_history` trong 14 ngày, 0 cảm biến, 0 nhịp tim, 0 sự cố ⇒ 5/5 máy thử cho `riskMethod: insufficient_data` và `rulNote` ghi đúng chữ **"cold start"**. Tức hệ thống BIẾT là chưa đủ dữ liệu nhưng vẫn in "0 %" — **trước bản vá, lỗi này hiện trên CSDL nền, không riêng bộ dữ liệu QATD.**
+
+Vá: trường `riskMethod` (`measured` | `insufficient_data` | `unavailable`) thêm vào CUỐI `FailureRiskResult`; tầng cockpit null hoá `failureRisk`/`maintenanceUrgency` khi chưa đo được; tầng dịch vụ GIỮ `number` vì 9 chỗ gọi chỉ so ngưỡng nên 0 không sinh cảnh báo giả. Nhánh `catch` của `listRulForecast` trước đây **nuốt lỗi thành `failureRisk: 0`**, nay thành `unavailable`.
+Lưới: 6/6 ĐỎ → xanh · 13/13 (suite mới) · 2 ĐỎ → 21/21. Hai đối chứng dương biết kêu, trong đó có ca **"0 ĐO ĐƯỢC vẫn phải in 0 %"**. Ablation 4 lượt, md5 6/6 OK.
+★ Thay đổi hợp đồng `/v1`: cockpit nay có thể trả `failureRisk: null` thay vì `0`. Chủ đợt duyệt — số 0 đó là giá trị mặc định, không phải phép đo.
+⚠ V-21 mục (1) **VẪN MỞ**: tỉ lệ cảnh báo dự đoán theo hạng sức khoẻ 53,5/49,6/49,7/**55,8 %** vẫn phẳng và ngược chiều. Đó là lỗi bộ sinh, chưa sửa.
+
+## V-23 ★★★ Task 18 ĐẠT — hợp đồng nhận danh sách nhà máy, ablation PHÂN BIỆT
+`canhThietKe` nay nhận `{factoryId}` **hoặc** `{factoryIds}` (`.refine` đúng-một-trong-hai). `factoryId: A` và `factoryIds: [A]` cho phản hồi **giống hệt từng byte**; 4 chỗ gọi client không chỗ nào phải đổi.
+Ba bất biến hàng rào, mỗi cái một ca: lọc TỪNG mã · IM LẶNG bỏ mã ngoài phạm vi · toàn ngoài ⇒ rỗng và **không rò** mã/tên nhà máy khác.
+★★★ Ablation **phân biệt**, không phải ablation "đỏ tất": gỡ dòng lọc `twinCanh.ts:1034` ⇒ **6 đỏ/25 xanh**; gỡ cổng tầng `:1945` ⇒ **1 đỏ/30 xanh**. Hai tập đỏ RỜI NHAU ⇒ từng bất biến được đo riêng. Ba nhà máy fixture cố ý có 2/3/4 máy rời nhau nên phép ĐẾM thành phép NHẬN DẠNG.
+Số câu (bộ đếm sản phẩm): 1 nhà máy **18** · 3 nhà máy một lượt **18** · 3 nhà máy qua 3 lượt gọi đường cũ **54**. Bất biến ghim: 3 nhà máy ≤ 1 nhà máy + 1 câu — mọi bản cài đặt "gộp" bằng cách lặp ba lượt vẫn qua hàng rào nhưng vỡ ô này.
+Trần: `factoryIds` ≤ 8 (vượt ⇒ BAD_REQUEST, KHÔNG `slice`); `tangIds` 50 → **300** vì 3 nhà máy QATD = 84 tầng > 50 nên không nâng thì tính năng chết ngay lượt dùng đầu. Đường GHI không nâng.
+CHƯA ĐO: trần 8 ở chi phí thật · 300 tầng CÓ dữ liệu · chưa có gì trên trình duyệt đi qua `factoryIds` (Task 19 mới nối client).
+
+## V-24 · Bộ sinh dữ liệu tập đoàn còn chạy được sau mọi thay đổi lược đồ
+Chạy khô `node .qa-tapdoan/sinh-tap-doan.mjs --kho` ngày 2026-09-16 sau Task 17b/18 và migration 0357: **"Kiểm kế hoạch: ĐẠT"**, 3 công ty · 12 toà · 7 tầng · 1.108 máy, 24/24 loại máy có mặt. Dựng lại được cho Task 19.
+⚠ Mã định danh sẽ KHÁC lần trước — mọi harness phải đọc lại từ tệp tóm tắt, không dùng số cũ.
