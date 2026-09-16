@@ -1333,5 +1333,5 @@ git commit -m "feat(twin3d): canh pham vi tap doan gop nhieu nha may (muc 26 spe
 - **PH-42** — `/factory-command` bấm nền xoá nhấn sáng nhưng giữ viền và nhãn. Lệch CÓ SẴN; bản vá chỉ thêm một nguồn kích hoạt.
 - **V-21 mục (1)** — tỉ lệ cảnh báo dự đoán theo hạng sức khoẻ 53,5/49,6/49,7/55,8 % vẫn phẳng và ngược chiều. Lỗi bộ sinh.
 - **G134** — luật chọn 30 nhãn trong 1.108 máy qua 3 nhà máy **vẫn chưa tồn tại**; chỉ đo được là không vỡ trần, chưa đo được là chọn đúng.
-- `e2e/twin-lo-f.spec.ts` F3 đã sửa (nó ghim hành vi hạ cấp vừa bị gỡ) nhưng **chưa chạy**.
+- ~~`e2e/twin-lo-f.spec.ts` F3 chưa chạy~~ → **ĐÃ CHẠY 2026-09-16 08:4x, 4/4 xanh** (dựng `dist-t19`, cổng 3064, project `chromium-canh-3d`, dữ liệu `sinh-tai-twin.ts` 549 máy + nhịp tim làm tươi ngay trước khi đo). ★ F3 cho một số liệu **mạnh hơn cả thứ nó được giao kiểm**: tài khoản `e2e_tai_loE` (**supervisor, không-admin**, khác hẳn `qatd_giamdoc`) ở `?pv=tapdoan` thấy ô chọn nhà máy **2 mục**, breadcrumb `Corporate`, `dem-may` = **591**, và `banner ha cap` = **null**. Tức cảnh nhiều nhà máy chạy đúng cho cả một vai bị giới hạn phạm vi, không chỉ cho tài khoản tập đoàn của bộ dữ liệu QATD. F4 đo kèm: canvas 968×489 = **51,4 %** màn ở 1280×720 (lô E trước đây 13 %), 5 lệnh vẽ.
 - `.qa-tapdoan/t19-backup/` (3,3 MB bản sao mã nguồn cho ablation) còn untracked — không commit, và không tự xoá.
