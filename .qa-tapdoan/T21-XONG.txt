@@ -1,0 +1,126 @@
+T21 — PH-46 (thẻ Metrics che trọn một cụm) + PH-47 (sa bàn ~35 % bề rộng canvas)
+nhánh feat/ai-local-L7-hang-rao @ 9238c8f4 (CHƯA commit) · 2026-09-16 · agent SA-BÀN-2
+
+════════════════════════════════════════════════════════════════════════════════
+KẾT CỤC — 1280×720, khung MẶC ĐỊNH, KHÔNG thu panel nào, đo sống cổng 3064
+════════════════════════════════════════════════════════════════════════════════
+vai qatd_giamdoc (3 công ty · 12 toà)      TRƯỚC(dist-t20)  SAU(dist-t21)  trần
+  tên công ty ĐỌC ĐƯỢC                      2/3 ✗            3/3 ✓          3/3
+  cột sa bàn NHÌN THẤY / dải dùng được      193/488 = 39,5 % 432/488 = 88,5 % ≥60 %
+  (bao hình sa bàn / canvas THÔ)            341/968 = 35,2 % 432/968 = 44,6 %  —
+  bề rộng MỖI biểu tượng toà                46,8–64,0 px     56,5–83,0 px    ≥24
+  toà × toà KHÁC công ty chồng nhau         0                0               0
+  1 cụm = 1 nhà máy (dải mã bộ sinh)        3/3              3/3             —
+  nhãn toà hiện / tổng                      7/15             11/15           <30
+  lệnh vẽ · tam giác · khung/s              4 · 182 · 47     4 · 182 · 50    <150·<500k·≥30
+  lỗi trang                                 0                0               0
+
+vai qatd_quanly (1 công ty · 4 toà)         39,5→ n/a        —
+  cột thấy / dải dùng được                  417/488 = 85,5 % 432/488 = 88,5 % ≥60 %
+  tên công ty đọc được                      1/1              1/1
+  nhãn toà hiện                             3/4              2/4   ← LÙI 1 nhãn (xem "CÒN MỞ")
+
+trạng thái THU PANEL (?thu=trai,phai,kpi) — phép thử "không phải khoảng bù cố định"
+  giamdoc: 341/968 = 35,2 %  →  912/968 = 94,2 %   (dải dùng được nở 488 → 968 px)
+  quanly : 430/968 = 44,4 %  →  726/968 = 75,0 %
+
+★★★ ĐỐI CHỨNG ÂM (bắt buộc): /twin MỘT nhà máy — GIỐNG BYTE bản chuẩn Task 19
+    md5(t19-mot-nha-may-t21-sau.json) = md5(t19-mot-nha-may-sau.json)
+                                      = 48af3d358c6f9270df182454303522d8
+    45 máy · 5 lệnh vẽ · 9.998 tam giác · 1 nhãn · 12 hàng · 0 lỗi (cả hai vai).
+
+════════════════════════════════════════════════════════════════════════════════
+BẢN VÁ — 2 tệp mã + 1 tệp lưới. `client/src/pages/TwinVanHanh.tsx` KHÔNG ĐỔI 1 BYTE.
+════════════════════════════════════════════════════════════════════════════════
+  phamViCanh.ts   (+~300) daiNgangDung/daiDocDung/vungDungCanvas · hopNdcCuaDiem ·
+                          hopPxCuaDiem · tiLeNoiDungTrenMan · khungNhinVaoVung
+  CanhVanHanh.tsx (+~110) diemVeSaBan() · useKhungNhinVungDung() · DieuKhien nhận
+                          khung nhìn đã đặt vào vùng dùng được
+  vungDungCanh.unit.test.ts (mới, 23 ca)
+
+QUY TẮC: căn GIỮA theo chiều ngang trong dải cột không bị lớp phủ nào cắt suốt
+chiều cao; NEO ĐÁY (chừa 28 px = 22 px chữ + 6 px khe cho nhãn cụm treo dưới cụm)
+vào dải hàng không bị lớp phủ nào cắt suốt bề ngang. Hướng nhìn/banKinh/fov giữ nguyên.
+
+★★★ `HE_SO_LUI.tapDoan` GIỮ NGUYÊN 2,4 — dù chủ đợt đã cho phép đổi.
+    Lý do là SỐ, không phải e ngại: sau bản vá, khoảng cách camera do phép đặt-vào-vùng
+    quyết định, nên hằng ấy chỉ còn quyết định GÓC NGẨNG. Quét (`_t21-sim.mts`,
+    khung mặc định, 3 công ty) — bề rộng sa bàn SAU vá:
+        lui 1,6 → 84,8 %   2,0 → 88,5 %   2,4 → 88,5 %   3,0 → 88,5 %   3,6 → 88,5 %
+    Từ 2,0 trở lên đã bão hoà (432 px = 488 − 2×28, tức HẾT dải dùng được);
+    hạ xuống 1,6 làm cảnh bớt bẹt ⇒ bề CAO thành ràng buộc ⇒ TỆ ĐI. Đổi hằng mua 0 %.
+    Bảng viết tay [2.4, 1.9, 1.6, 1.35, 1.1] ở phamViCanh.unit.test.ts:166 KHÔNG đụng tới.
+
+★★★ LƯỚI CỤM 2×2 (một ô trống) GIỮ NGUYÊN — "ô thứ tư bỏ trống ăn mất ngân sách
+    pixel" là chẩn đoán SAI, đo được: bao hình trục 45° tỉ lệ THUẦN với (rộng + sâu)
+    theo CẢ HAI chiều màn, và 2×2 cho rộng+sâu = 1.138 m còn hàng 1×3 cho 1.198 m —
+    1×3 KHÔNG rộng hơn, mà còn CAO hơn (ô trống của 2×2 cắt bớt bề cao) ⇒ 2×2 BẸT
+    HƠN, và bẹt hơn là đúng thứ cần khi dải dùng được chỉ cao 172 px.
+
+════════════════════════════════════════════════════════════════════════════════
+ABLATION (hai tầng) + md5sum -c
+════════════════════════════════════════════════════════════════════════════════
+  ① gỡ 1 dòng ở CanhVanHanh (`return khungNhin`) → dựng dist-t21ab → đo sống:
+     39,5 % · 2/3 tên công ty · 46,8–64,0 px — TRÙNG KHÍT số TRƯỚC vá.
+  ② gỡ thân `khungNhinVaoVung` (`return goc`) → lưới mới ĐỎ 5/23 ca.
+  hoàn nguyên ⇒ md5sum -c 4/4 OK (.qa-tapdoan/t21-md5-sau.txt).
+
+════════════════════════════════════════════════════════════════════════════════
+HAI PHƯƠNG ÁN BỊ PHÉP ĐO BÁC BỎ **TRƯỚC KHI** VÀO BẢN (nhờ `_t21-sim.mts`)
+════════════════════════════════════════════════════════════════════════════════
+  · Khớp theo 8 ĐỈNH BBOX: bbox sa bàn cho tỉ lệ rộng/cao 1,86 trong khi 12 biểu
+    tượng THẬT là 2,91 (bbox lấp đầy ô trống lưới 2×2 + dựng "tháp 42 m" ở góc
+    không có toà). Camera khớp theo tỉ lệ sai ⇒ sa bàn NHỎ ĐI còn 168 px.
+  · Ôm vào Ô TRỐNG LỚN NHẤT (tránh HẲN thẻ Metrics): với 3 cụm cho 428 px (tốt),
+    nhưng với MỘT cụm (qatd_quanly, bẹt 1,6:1) chỉ cho 233 px trong khi bản chưa
+    vá đã 430 px — vá thành lùi. Ô trống lớn nhất là tiêu chí của HÌNH CHỮ NHẬT,
+    không phải của NGƯỜI XEM.
+
+════════════════════════════════════════════════════════════════════════════════
+HAZARD DO CHÍNH BẢN VÁ SINH RA — hỏi, rồi ĐO
+════════════════════════════════════════════════════════════════════════════════
+  H1 `setState` trong `useFrame` ⇒ vòng lặp khung? ĐO: đứng yên 20 s trên
+     ?pv=tapdoan = **0 khung R3F**; /twin (không sa bàn) = **0**. Đối chứng cho
+     chính bộ đếm: đang XOAY = **107 khung** ⇒ bộ đếm biết kêu.
+     (bất biến "đứng yên 0 khung/40 s" — Đợt 40 T4 — còn nguyên.)
+  H2 lớp phủ đổi ⇒ camera bị kéo về, vứt cú xoay tay?
+     · BẢN ĐẦU khoá theo bbox MỌI lớp phủ ⇒ viên "Updated 2 h ago" chỉ cần đổi chữ
+       là dựng lại khung nhìn. ĐÃ VÁ: khoá theo `vungDungCanvas` (vùng đã suy ra).
+       Đo lại: chèn một lớp phủ giả rồi phình nó 60→180 px, camera đứng yên trong
+       ±1 px và KHÔNG snap về tư thế chuẩn (nếu dựng lại thì bao hình đã nhảy ~90 px).
+     · CÒN LẠI (cố ý): THU/MỞ panel thì camera dựng lại — đó chính là tính năng,
+       nhưng nó VỨT cú xoay tay trước đó. Đo: [339,617,160,517] → [28,684,172,423].
+
+════════════════════════════════════════════════════════════════════════════════
+CỔNG NỀN — trước / sau
+════════════════════════════════════════════════════════════════════════════════
+  vitest client/src/components/twin3d   125 tệp/2.951 xanh → 126 tệp/2.974 xanh, 0 đỏ
+                                        (+1 tệp/+23 ca = ĐÚNG lưới mới)
+  vitest phamVi                         20/529 → 20/529, 0 đỏ
+  npm run check                         0 → 0
+  npm run i18n:check                    0 → 0 (bản vá KHÔNG thêm chuỗi nào)
+
+★★★ SỰ CỐ ĐÃ BÁO: bản đầu tính khung nhìn Ở TRANG và truyền
+    `khungNhin={khungNhinCanh}` ⇒ **ĐỎ 2 ca ĐANG XANH** của cuaVaoTwin.unit.test.ts
+    (Đợt 36 + Đợt 38/G110: MỌI trang dựng <CanhVanHanh phải truyền đúng
+    `khungNhin={khungNhin}`). KHÔNG đụng vào hai ca ấy: bất biến đúng, chỗ đặt
+    phép tính mới sai ⇒ dời toàn bộ vào trong cây Canvas, hoàn nguyên TwinVanHanh.tsx
+    về đúng byte của 9238c8f4 (git diff rỗng).
+
+════════════════════════════════════════════════════════════════════════════════
+CÒN MỞ / CHƯA LÀM
+════════════════════════════════════════════════════════════════════════════════
+  · qatd_quanly khung mặc định: nhãn toà hiện 3/4 → 2/4 (sa bàn neo thấp hơn nên
+    nhãn toà trên cùng rơi dưới thẻ Metrics). Không thuộc ô nghiệm thu nào; báo ra.
+  · Quy tắc NEO ĐÁY đọc được lớp phủ cắt suốt MỘT chiều, nhưng KHÔNG tự tránh được
+    một thẻ nổi ở góc DƯỚI-TRÁI nếu mai này có. Ghi trong docblock.
+  · PH-48 và ô 2D cấp tập đoàn: KHÔNG chạm (ngoài phạm vi).
+
+ARTEFACT: t21-truoc.json · t21-sau.json · t21-ablation.json · t21-idle-sau.json ·
+  t21-hazard-sau.json · t21-hazard2.json · t21-md5-sau.txt · t19-mot-nha-may-t21-sau.json
+  ảnh: anh/t21-truoc/ · anh/t21-sau/ · anh/t21-ablation/
+  bộ đo: t21-do.mjs · t21-idle.mjs · t21-hazard.mjs · t21-hazard2.mjs
+  phụ trợ: _t21-sim.mts (mô phỏng TRƯỚC khi dựng) · _t21-dims.mjs (đọc kích thước toà
+  từ CSDL) · _t21-build.sh · _t21-backup-*.{ts,tsx} (bản sao lúc ablation — có thể bỏ)
+  ⚠ `_t21-backup-CanhVanHanh.tsx` là bản GIỮA CHỪNG (trước khi vá hazard H2), KHÔNG
+    phải bản cuối — đừng dùng nó để so.

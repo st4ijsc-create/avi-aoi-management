@@ -419,3 +419,33 @@ Hai nguyên nhân đo được: (1) `HE_SO_LUI.tapDoan = 2,4` (`phamViCanh.ts:16
 ## PH-48 (MỚI, THẤP) · Thẻ KPI đếm một nhà máy trong khi cảnh nói về ba
 Ở cấp tập đoàn thẻ `Metrics` vẫn in "371 machines / Công ty A · Toà 1 · Tầng 1" trong khi cảnh vẽ cả ba công ty và `dem-may` = 1.108. Cùng lớp với G1 của PH-38 (hai con số trên một màn tả hai tập khác nhau mà không câu nào nói ra), và chủ dự án đã ra luật cho lớp này: **nói ra, đừng âm thầm thu hẹp**.
 ★ Agent không sửa vì `nguonKpiTheoTang.unit.test.ts` ghim `may={mayVeTatCa}` ở đúng hai chỗ — dừng lại là đúng. Hệ quả phụ họ tự khai: docblock `TwinVanHanh.tsx:2459` nói `idMayTrongCanh` là "tập mà cảnh thật sự vẽ" nay đã thành **nửa đúng** ở cấp tập đoàn, vì cảnh nhận 1.108 máy nhưng vẽ 12 biểu tượng.
+
+## V-27 ★★★ PH-46 + PH-47 ĐÓNG — và agent BÁC BỎ CHỦ ĐỢT hai lần, bằng số
+@1280×720, khung **MẶC ĐỊNH**, **KHÔNG thu panel**, vai `qatd_giamdoc`:
+| | TRƯỚC | SAU | trần |
+|---|---|---|---|
+| tên công ty đọc được | **2/3** ✗ | **3/3** ✓ | 3/3 |
+| cột sa bàn nhìn thấy / dải dùng được | 193/488 = **39,5 %** | 432/488 = **88,5 %** | ≥ 60 % |
+| bề rộng mỗi biểu tượng | 46,8-64,0 px | **56,5-83,0 px** | ≥ 24 |
+| lệnh vẽ · tam giác · khung/s | 4 · 182 · 47 | 4 · 182 · **50** | <150 · <500k · ≥30 |
+Thu panel: 35,2 % → **94,2 %**, dải dùng được nở 488→968 px ⇒ **bằng chứng đây KHÔNG phải khoảng bù cố định**. Đối chứng âm: `/twin` một nhà máy **giống BYTE** bản chuẩn (md5 `48af3d35…`).
+★★★ **Chủ đợt tự xem `anh/t21-sau/qatd_giamdoc-2-canvas.png`**: đọc được cả "Công ty A", "Công ty B", "Công ty C"; sa bàn nằm gọn dưới thẻ Metrics và lấp gần hết dải dùng được.
+
+### ★★★ AGENT BÁC BỎ CHỦ ĐỢT HAI LẦN — cả hai lần bằng phép đo, và cả hai lần agent ĐÚNG
+1. **Tôi CHO PHÉP đổi `HE_SO_LUI.tapDoan`; agent TỪ CHỐI và đưa số.** Sau bản vá, khoảng cách do phép đặt-vào-vùng quyết định chứ không do hằng, nên hằng chỉ còn quyết định góc ngẩng. Quét `lui` = 1,6 / 2,0 / 2,4 / 3,0 / 3,6 ⇒ 84,8 / 88,5 / 88,5 / 88,5 / 88,5 % — **bão hoà từ 2,0**, vì 432 px đã là hết dải (488 − 2×28). Đổi hằng mua **0 %**. Giữ nguyên 2,4, bảng viết tay không đụng.
+2. **Chẩn đoán của tôi "ô thứ tư của lưới 2×2 bỏ trống ăn ngân sách pixel" là SAI.** Đo: bao hình trục 45° tỉ lệ thuần với (rộng + sâu) theo **cả hai** chiều màn ⇒ 2×2 cho 1.138 m, hàng 1×3 cho **1.198 m**. Hàng ngang **không rộng hơn** mà lại **cao hơn**. Ô trống của 2×2 chính là thứ làm cảnh **bẹt** hơn — và bẹt hơn là đúng thứ cần khi dải dùng được chỉ cao 172 px.
+
+### Hai phương án bị phép đo bác bỏ TRƯỚC khi vào mã (`_t21-sim.mts`)
+- **Khớp theo 8 đỉnh bbox**: bbox cho tỉ lệ 1,86 trong khi 12 biểu tượng thật là 2,91 (bbox lấp ô trống + dựng "tháp 42 m" ở góc không có toà) ⇒ camera làm sa bàn **nhỏ đi còn 168 px**.
+- **Ôm vào ô trống lớn nhất (tránh hẳn thẻ Metrics)**: 3 cụm được 428 px nhưng `qatd_quanly` chỉ **233 px** trong khi bản chưa vá đã 430 px ⇒ **vá thành lùi**.
+
+### Sự cố xử đúng luật
+Bản đầu tính khung nhìn **ở trang** ⇒ **đỏ 2 ca** của `cuaVaoTwin.unit.test.ts` (Đợt 36 + G110: mọi trang dựng `<CanhVanHanh` phải truyền `khungNhin={khungNhin}`). Agent **KHÔNG đụng hai ca ấy** — bất biến đúng, chỗ đặt phép tính mới sai — và dời toàn bộ vào trong cây Canvas. Kết quả: `TwinVanHanh.tsx` khác **0 byte** so với `9238c8f4` (chủ đợt đã kiểm bằng `git diff --stat`), hai ca xanh lại.
+
+### Hazard bản vá tự sinh — hỏi rồi đo
+- **H1** `setState` trong `useFrame` ⇒ vòng lặp khung? Đứng yên 20 s: **0 khung R3F** ở cả hai đường. Đối chứng cho chính bộ đếm: đang xoay = **107 khung** ⇒ nó biết kêu.
+- **H2** bản đầu khoá theo bbox **mọi** lớp phủ ⇒ viên "Updated 2 h ago" đổi chữ là dựng lại khung nhìn và **vứt cú xoay tay**. Vá: khoá theo `vungDungCanvas`. Đo lại: phình một lớp phủ giả 60→180 px ⇒ camera đứng yên ±1 px.
+- **Còn lại, cố ý**: thu/mở panel *thì* dựng lại khung nhìn (là tính năng), nhưng vứt cú xoay tay trước đó.
+
+⚠ **Một lùi tự khai**: `qatd_quanly` khung mặc định, nhãn toà hiện 3/4 → **2/4** (sa bàn neo thấp hơn nên nhãn toà trên cùng rơi dưới thẻ Metrics). Không thuộc ô nghiệm thu nào, nhưng là lùi.
+⚠ Chỉ đo **1280×720** và **2 vai**. Quy tắc neo đáy **không tự tránh được** thẻ nổi ở góc **dưới-trái** nếu mai này có — đã ghi trong docblock.

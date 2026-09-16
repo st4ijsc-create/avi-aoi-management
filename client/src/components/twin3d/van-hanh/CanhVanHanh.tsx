@@ -57,8 +57,10 @@ import {
 } from "../loi";
 import { giaiMauCanh, mauChoTrangThai } from "../mauTrangThai";
 import { mauHex, mauThree } from "./mauThree";
-import type { KhungNhin } from "./phamViCanh";
-import { TWEEN_DOI_CAP_MS } from "./phamViCanh";
+import type { KhungNhin, HopCanvas } from "./phamViCanh";
+import { TWEEN_DOI_CAP_MS, khungNhinVaoVung, vungDungCanvas } from "./phamViCanh";
+import { layVungCam } from "../loi/LopNhan";
+import type { DiemScene } from "../heToaDo";
 import { LopCanhBao, type CanhBaoTheGioi } from "./LopCanhBao";
 import { DongChayLine, type DiemDongChay } from "./DongChayLine";
 import type { VienDeMay } from "./sucKhoeMay";
@@ -412,6 +414,142 @@ const EMPTY_VUNG: readonly VungVe[] = [];
 /** Hằng rỗng ổn định cho sa bàn (Task 20) — cùng lý do như {@link EMPTY_VIEN}. */
 const EMPTY_SA_BAN: readonly BieuTuongToaVe[] = [];
 const EMPTY_SA_BAN_CUM: readonly CumSaBanVe[] = [];
+const EMPTY_DIEM_SA_BAN: readonly DiemScene[] = [];
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ PH-46/47 — SA BÀN ĐẶT VÀO **VÙNG CANVAS CÒN DÙNG ĐƯỢC**                  */
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*
+ * ── Khuyết tật ─────────────────────────────────────────────────────────────
+ * Task 20 dựng được sa bàn; phép đo của chính nó phơi ra hậu quả của việc khung
+ * nhìn căn nội dung vào TÂM CANVAS THÔ (`.qa-tapdoan/t21-truoc.json`, vai
+ * `qatd_giamdoc`, 1280×720, khung MẶC ĐỊNH):
+ *   · thẻ `Metrics` [232,59 → 470,279] phủ TRỌN cụm QATD-A ⇒ **2/3** tên công
+ *     ty đọc được — hỏng đúng thứ sa bàn sinh ra để làm;
+ *   · **193/341** cột sa bàn nằm dưới lớp phủ ⇒ dùng **39,5 %** dải canvas.
+ * Tâm canvas thô ở màn này nằm đúng dưới thẻ `Metrics`, nên "căn giữa" là căn
+ * vào chỗ bị che.
+ *
+ * ── Vì sao sửa Ở TRONG CẢNH chứ không ở trang ──────────────────────────────
+ * Thử đầu tiên tính khung nhìn ở `TwinVanHanh.tsx` rồi truyền
+ * `khungNhin={khungNhinCanh}` xuống — và làm **ĐỎ hai ca đang xanh** của
+ * `cuaVaoTwin.unit.test.ts` (Đợt 36 + Đợt 38/G110: *mọi* trang dựng
+ * `<CanhVanHanh` phải truyền đúng bản ổn định `khungNhin={khungNhin}`). Bất
+ * biến ấy vẫn ĐÚNG và không có lý do nào để nới nó ra vì một tính năng; cái sai
+ * là chỗ đặt phép tính. Trong cây Canvas thì kích thước canvas (`useThree.size`)
+ * và vùng cấm (`layVungCam`) đã có sẵn, và `TwinVanHanh.tsx` KHÔNG đổi một byte.
+ *
+ * ── Vì sao không dịch bằng một khoảng bù cố định ───────────────────────────
+ * Ba panel bật/tắt được (`?thu=trai,phai,kpi`) và thẻ KPI tự đổi cỡ khi số về.
+ * Đo được: dải ngang dùng được là **488 px** khi mở panel và **968 px** khi thu.
+ * Một hằng số sẽ đúng ở trạng thái này và sai ở trạng thái kia.
+ */
+
+/**
+ * 8 đỉnh mỗi biểu tượng toà + 4 góc mỗi tấm nền cụm — **tập điểm THẬT SỰ ĐƯỢC
+ * VẼ**, không phải bbox của chúng.
+ *
+ * ★★★ Khác biệt ấy đã BÁC BỎ bản đầu của khối này: 8 đỉnh bbox sa bàn QATD cho
+ *   tỉ lệ rộng/cao trên màn **1,86**, còn 12 biểu tượng thật đo được **2,91** —
+ *   bbox lấp đầy cả Ô TRỐNG của lưới cụm 2×2 và dựng một "tháp 42 m" ở góc
+ *   không có toà nào. Camera khớp theo tỉ lệ sai làm sa bàn NHỎ ĐI (168 px)
+ *   thay vì to lên. Bắt được bằng `.qa-tapdoan/_t21-sim.mts` chạy TRƯỚC khi
+ *   dựng bản, không phải bằng ảnh.
+ */
+function diemVeSaBan(
+  toa: readonly BieuTuongToaVe[],
+  cum: readonly CumSaBanVe[],
+): readonly DiemScene[] {
+  if (toa.length === 0) return EMPTY_DIEM_SA_BAN;
+  const ra: DiemScene[] = [];
+  for (const v of toa)
+    for (const x of [v.viTri.x - v.co.rong / 2, v.viTri.x + v.co.rong / 2])
+      for (const y of [v.viTri.y - v.co.cao / 2, v.viTri.y + v.co.cao / 2])
+        for (const z of [v.viTri.z - v.co.sau / 2, v.viTri.z + v.co.sau / 2]) ra.push({ x, y, z });
+  for (const c of cum)
+    for (const x of [c.viTri.x - c.co.rong / 2, c.viTri.x + c.co.rong / 2])
+      for (const z of [c.viTri.z - c.co.sau / 2, c.viTri.z + c.co.sau / 2]) ra.push({ x, y: 0, z });
+  return ra;
+}
+
+/**
+ * Khoá GIÁ TRỊ của (VÙNG DÙNG ĐƯỢC + khung nhìn gốc).
+ *
+ * ★★★ KHOÁ THEO **VÙNG ĐÃ SUY RA**, KHÔNG THEO DANH SÁCH LỚP PHỦ THÔ — và đây
+ *   là một hazard do CHÍNH bản vá này sinh ra, bắt được bằng phép đo H2
+ *   (`.qa-tapdoan/t21-hazard-*.json`). Bản đầu khoá theo bbox của MỌI lớp phủ,
+ *   nên viên `cum-trang-thai-du-lieu` chỉ cần đổi chữ ("Updated 2 h ago" →
+ *   "3 h ago") là bbox rộng thêm vài px ⇒ khoá đổi ⇒ khung nhìn dựng lại ⇒
+ *   `DieuKhien` tween lại và **vứt cú xoay tay của người dùng** — trong khi
+ *   viên ấy không chạm một pixel nào của vùng dùng được (nó không cắt suốt
+ *   chiều nào). Khoá theo `vungDungCanvas` làm phép dựng lại chỉ xảy ra khi
+ *   vùng THẬT SỰ đổi: thu/mở panel, đổi cỡ cửa sổ.
+ */
+function khoaVungVaKhung(
+  rongPx: number,
+  caoPx: number,
+  vung: HopCanvas | null,
+  kn: KhungNhin | null,
+): string {
+  const a = vung ? `${vung.trai},${vung.tren},${vung.phai},${vung.duoi}` : "-";
+  const b = kn ? `${kn.viTri.map((v) => v.toFixed(3)).join(",")}|${kn.muc.map((v) => v.toFixed(3)).join(",")}` : "";
+  return `${rongPx}x${caoPx}|${a}|${b}`;
+}
+
+/**
+ * Khung nhìn ĐEM CHO `DieuKhien`: có sa bàn ⇒ đặt sa bàn vào vùng canvas còn
+ * dùng được; không có sa bàn ⇒ trả NGUYÊN `khungNhin` và không làm gì cả.
+ *
+ * ⚠ `diem.length === 0` phải thoát ở dòng ĐẦU của `useFrame`: bốn cấp phạm vi
+ *   kia và hai màn Line/Máy dùng chung component này, và đối chứng âm của đợt
+ *   này là "/twin MỘT nhà máy giống BYTE bản chuẩn Task 19". Không một phép đo
+ *   DOM nào được chạy trên đường ấy.
+ *
+ * ⚠ `setState` trong `useFrame` — nhưng CHỈ khi khoá giá trị đổi (thu/mở panel,
+ *   thẻ KPI lớn lên khi số về, đổi cỡ cửa sổ). Đứng yên ⇒ 0 lần, nên bất biến
+ *   "idle 0 khung/40 s" (Đợt 40 T4) không bị mua mất.
+ */
+function useKhungNhinVungDung(
+  khungNhin: KhungNhin | null,
+  diem: readonly DiemScene[],
+): KhungNhin | null {
+  const gl = useThree((s) => s.gl);
+  const size = useThree((s) => s.size);
+  const invalidate = useThree((s) => s.invalidate);
+  const [daKhop, datDaKhop] = useState<KhungNhin | null>(null);
+  const khoaRef = useRef("");
+
+  /* Đầu vào đổi ⇒ XIN một khung để `useFrame` dưới đây đo lại (`frameloop="demand"`). */
+  useEffect(() => {
+    if (diem.length === 0) {
+      khoaRef.current = "";
+      datDaKhop(null);
+      return;
+    }
+    invalidate();
+  }, [diem, khungNhin, size.width, size.height, invalidate]);
+
+  useFrame(() => {
+    if (diem.length === 0 || khungNhin === null) return;
+    const phu: HopCanvas[] = layVungCam(gl.domElement).map((h) => ({
+      trai: Math.round(h.trai),
+      phai: Math.round(h.phai),
+      tren: Math.round(h.tren),
+      duoi: Math.round(h.duoi),
+    }));
+    const vung = vungDungCanvas(size.width, size.height, phu);
+    const khoa = khoaVungVaKhung(size.width, size.height, vung, khungNhin);
+    if (khoa === khoaRef.current) return;
+    khoaRef.current = khoa;
+    datDaKhop(
+      vung === null
+        ? khungNhin
+        : khungNhinVaoVung(diem, khungNhin, { rongPx: size.width, caoPx: size.height }, vung),
+    );
+  });
+
+  return diem.length === 0 ? khungNhin : daKhop;
+}
 
 function LopVienSucKhoe({ vien }: { vien: readonly VienDeMay[] }) {
   const ref = useRef<THREE.InstancedMesh | null>(null);
@@ -525,6 +663,10 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
   const saBanCum = props.saBanCum ?? EMPTY_SA_BAN_CUM;
   /** ★ Task 20 — sa bàn THAY cảnh máy, không đứng cạnh (xem docblock prop `saBan`). */
   const veSaBan = saBan.length > 0;
+  /* ★ PH-46/47 — xem docblock `useKhungNhinVungDung`. Không sa bàn ⇒ hai dòng này
+     trả hằng rỗng + chính `khungNhin`, không một phép đo DOM nào chạy. */
+  const diemSaBan = useMemo(() => diemVeSaBan(saBan, saBanCum), [saBan, saBanCum]);
+  const khungNhinVe = useKhungNhinVungDung(khungNhin, diemSaBan);
 
   const controlsRef = useRef<OrbitControls | null>(null);
   const [chon, setChon] = useState<TrangThaiChon>(TRANG_THAI_CHON_RONG);
@@ -590,7 +732,7 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
   return (
     <>
       <DieuKhien
-        khungNhin={khungNhin}
+        khungNhin={khungNhinVe}
         banKinhToiDa={banKinh}
         controlsRef={controlsRef}
         onCameraDoi={camDoi}

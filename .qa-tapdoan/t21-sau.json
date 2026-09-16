@@ -1,0 +1,1158 @@
+{
+ "nhan": "sau",
+ "luc": "2026-09-16T03:57:41.699Z",
+ "tran": {
+  "calls": 150,
+  "triangles": 500000,
+  "nhan": 30,
+  "fps": 30,
+  "rongPx": 24,
+  "tiLeDung": 0.6
+ },
+ "vai": {
+  "qatd_giamdoc": {
+   "moTa": "cap tap doan (gan TD QATD) - 3 cong ty",
+   "trangThai": {
+    "macDinh": {
+     "canvas": {
+      "w": 968,
+      "h": 489
+     },
+     "chuaChoDai": "51",
+     "lopPhu": [
+      {
+       "testid": "panel-trai",
+       "trai": 0,
+       "phai": 224,
+       "tren": 0,
+       "duoi": 489
+      },
+      {
+       "testid": "bang-kpi-noi",
+       "trai": 232,
+       "phai": 470,
+       "tren": 59,
+       "duoi": 279
+      },
+      {
+       "testid": "cum-trang-thai-du-lieu",
+       "trai": 400,
+       "phai": 704,
+       "tren": 59,
+       "duoi": 88
+      },
+      {
+       "testid": "nut-thu-trai",
+       "trai": 224,
+       "phai": 245,
+       "tren": 224,
+       "duoi": 266
+      },
+      {
+       "testid": "nut-thu-phai",
+       "trai": 691,
+       "phai": 712,
+       "tren": 224,
+       "duoi": 266
+      },
+      {
+       "testid": "lop-phu-dong-thoi-gian",
+       "trai": 0,
+       "phai": 968,
+       "tren": 451,
+       "duoi": 489
+      },
+      {
+       "testid": "panel-phai",
+       "trai": 712,
+       "phai": 968,
+       "tren": 0,
+       "duoi": 489
+      }
+     ],
+     "beRongVungDung": 488,
+     "vungDung": {
+      "tu": 224,
+      "den": 712
+     },
+     "soBieuTuong": 12,
+     "cotSaBanThay": 432,
+     "cotSaBanTong": 432,
+     "nhanCum": [
+      {
+       "factoryId": 44,
+       "chu": "Công ty A",
+       "display": "block",
+       "hien": true,
+       "hop": {
+        "trai": 390,
+        "phai": 460,
+        "tren": 307,
+        "duoi": 329
+       },
+       "tiLeChe": 0,
+       "trongCanvas": true
+      },
+      {
+       "factoryId": 45,
+       "chu": "Công ty B",
+       "display": "block",
+       "hien": true,
+       "hop": {
+        "trai": 532,
+        "phai": 601,
+        "tren": 393,
+        "duoi": 415
+       },
+       "tiLeChe": 0,
+       "trongCanvas": true
+      },
+      {
+       "factoryId": 46,
+       "chu": "Công ty C",
+       "display": "block",
+       "hien": true,
+       "hop": {
+        "trai": 252,
+        "phai": 321,
+        "tren": 377,
+        "duoi": 399
+       },
+       "tiLeChe": 0,
+       "trongCanvas": true
+      }
+     ],
+     "soNhanCumDocDuoc": 3,
+     "nhanToa": {
+      "hien": 11,
+      "tong": 12
+     },
+     "soNhanDomTong": 15,
+     "soNhanSaBan": {
+      "ve": 14,
+      "an": 1,
+      "tong": 15
+     },
+     "soMayVe": -1,
+     "demMay": "1108",
+     "breadcrumb": "Corporate",
+     "thongKe": {
+      "calls": 4,
+      "triangles": 182,
+      "matContext": 0,
+      "khoiPhuc": 0
+     },
+     "bieuTuong": [
+      {
+       "toaNhaId": 78,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 56.5,
+       "caoPx": 43.2,
+       "hop": {
+        "trai": 424,
+        "phai": 481,
+        "tren": 239,
+        "duoi": 282
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 79,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 60.6,
+       "caoPx": 47.5,
+       "hop": {
+        "trai": 462,
+        "phai": 523,
+        "tren": 257,
+        "duoi": 305
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 80,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 59.3,
+       "caoPx": 46.4,
+       "hop": {
+        "trai": 389,
+        "phai": 449,
+        "tren": 253,
+        "duoi": 299
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 81,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 63.2,
+       "caoPx": 51.3,
+       "hop": {
+        "trai": 427,
+        "phai": 490,
+        "tren": 273,
+        "duoi": 325
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 82,
+       "factoryId": 45,
+       "chiSoCum": 1,
+       "rongPx": 71.6,
+       "caoPx": 58.1,
+       "hop": {
+        "trai": 550,
+        "phai": 621,
+        "tren": 300,
+        "duoi": 358
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 83,
+       "factoryId": 45,
+       "chiSoCum": 1,
+       "rongPx": 79.2,
+       "caoPx": 65.3,
+       "hop": {
+        "trai": 605,
+        "phai": 684,
+        "tren": 327,
+        "duoi": 393
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 84,
+       "factoryId": 45,
+       "chiSoCum": 1,
+       "rongPx": 74.7,
+       "caoPx": 63.6,
+       "hop": {
+        "trai": 515,
+        "phai": 590,
+        "tren": 321,
+        "duoi": 384
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 85,
+       "factoryId": 45,
+       "chiSoCum": 1,
+       "rongPx": 83,
+       "caoPx": 72.1,
+       "hop": {
+        "trai": 571,
+        "phai": 654,
+        "tren": 351,
+        "duoi": 423
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 86,
+       "factoryId": 46,
+       "chiSoCum": 2,
+       "rongPx": 66.3,
+       "caoPx": 55.2,
+       "hop": {
+        "trai": 300,
+        "phai": 366,
+        "tren": 289,
+        "duoi": 344
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 87,
+       "factoryId": 46,
+       "chiSoCum": 2,
+       "rongPx": 71.1,
+       "caoPx": 61.9,
+       "hop": {
+        "trai": 336,
+        "phai": 407,
+        "tren": 315,
+        "duoi": 376
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 88,
+       "factoryId": 46,
+       "chiSoCum": 2,
+       "rongPx": 70,
+       "caoPx": 60.2,
+       "hop": {
+        "trai": 252,
+        "phai": 322,
+        "tren": 308,
+        "duoi": 369
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 89,
+       "factoryId": 46,
+       "chiSoCum": 2,
+       "rongPx": 75.5,
+       "caoPx": 68,
+       "hop": {
+        "trai": 286,
+        "phai": 362,
+        "tren": 337,
+        "duoi": 405
+       },
+       "trongKhung": true
+      }
+     ],
+     "theoNhaMay": {
+      "QATD-A": {
+       "soToa": 4,
+       "chiSoCum": [
+        0
+       ],
+       "rongPxMin": 56.5,
+       "hop": {
+        "trai": 389,
+        "phai": 523,
+        "tren": 239,
+        "duoi": 325
+       }
+      },
+      "QATD-B": {
+       "soToa": 4,
+       "chiSoCum": [
+        1
+       ],
+       "rongPxMin": 71.6,
+       "hop": {
+        "trai": 515,
+        "phai": 684,
+        "tren": 300,
+        "duoi": 423
+       }
+      },
+      "QATD-C": {
+       "soToa": 4,
+       "chiSoCum": [
+        2
+       ],
+       "rongPxMin": 66.3,
+       "hop": {
+        "trai": 252,
+        "phai": 407,
+        "tren": 289,
+        "duoi": 405
+       }
+      }
+     },
+     "soCum": 3,
+     "nhaMayLanCum": [],
+     "capToaChongKhacNhaMay": 0,
+     "capToaChongTen": [],
+     "capBaoHinhCumChong": 2,
+     "rongPxMin": 56.5,
+     "rongPxMax": 83,
+     "soToaDuoiTran": 0,
+     "soNgoaiKhung": 0,
+     "ngoaiKhung": [],
+     "baoSaBan": {
+      "trai": 252,
+      "phai": 684,
+      "rong": 432
+     },
+     "tiLeDung": 0.885,
+     "tiLeThoCanvas": 0.446,
+     "xoay": {
+      "khung": 159,
+      "ms": 3159,
+      "fps": 50,
+      "thongKe": {
+       "calls": 4,
+       "triangles": 182,
+       "matContext": 0,
+       "khoiPhuc": 0
+      },
+      "soBieuTuong": 12
+     },
+     "soCongTy": 3,
+     "DAT": {
+      "①a moi bieu tuong >= 24px": true,
+      "①b toan bo sa ban trong khung": true,
+      "② quan he dung": true,
+      "④ moi ten cong ty doc duoc": true,
+      "⑤ sa ban >= 60% vung canvas khong bi che": true,
+      "③ ngan sach ve": true
+     }
+    },
+    "thuPanel": {
+     "canvas": {
+      "w": 968,
+      "h": 489
+     },
+     "chuaChoDai": "51",
+     "lopPhu": [
+      {
+       "testid": "bang-kpi-noi",
+       "trai": 8,
+       "phai": 216,
+       "tren": 59,
+       "duoi": 87
+      },
+      {
+       "testid": "cum-trang-thai-du-lieu",
+       "trai": 656,
+       "phai": 960,
+       "tren": 59,
+       "duoi": 88
+      },
+      {
+       "testid": "nut-thu-trai",
+       "trai": 0,
+       "phai": 21,
+       "tren": 224,
+       "duoi": 266
+      },
+      {
+       "testid": "nut-thu-phai",
+       "trai": 947,
+       "phai": 968,
+       "tren": 224,
+       "duoi": 266
+      },
+      {
+       "testid": "lop-phu-dong-thoi-gian",
+       "trai": 0,
+       "phai": 968,
+       "tren": 451,
+       "duoi": 489
+      }
+     ],
+     "beRongVungDung": 968,
+     "vungDung": {
+      "tu": 0,
+      "den": 968
+     },
+     "soBieuTuong": 12,
+     "cotSaBanThay": 912,
+     "cotSaBanTong": 912,
+     "nhanCum": [
+      {
+       "factoryId": 44,
+       "chu": "Công ty A",
+       "display": "block",
+       "hien": true,
+       "hop": {
+        "trai": 353,
+        "phai": 423,
+        "tren": 208,
+        "duoi": 230
+       },
+       "tiLeChe": 0,
+       "trongCanvas": true
+      },
+      {
+       "factoryId": 45,
+       "chu": "Công ty B",
+       "display": "block",
+       "hien": true,
+       "hop": {
+        "trai": 652,
+        "phai": 721,
+        "tren": 349,
+        "duoi": 371
+       },
+       "tiLeChe": 0,
+       "trongCanvas": true
+      },
+      {
+       "factoryId": 46,
+       "chu": "Công ty C",
+       "display": "block",
+       "hien": true,
+       "hop": {
+        "trai": 43,
+        "phai": 112,
+        "tren": 318,
+        "duoi": 340
+       },
+       "tiLeChe": 0,
+       "trongCanvas": true
+      }
+     ],
+     "soNhanCumDocDuoc": 3,
+     "nhanToa": {
+      "hien": 12,
+      "tong": 12
+     },
+     "soNhanDomTong": 15,
+     "soNhanSaBan": {
+      "ve": 15,
+      "an": 0,
+      "tong": 15
+     },
+     "soMayVe": -1,
+     "demMay": "1108",
+     "breadcrumb": "Corporate",
+     "thongKe": {
+      "calls": 4,
+      "triangles": 182,
+      "matContext": 0,
+      "khoiPhuc": 0
+     },
+     "bieuTuong": [
+      {
+       "toaNhaId": 78,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 96,
+       "caoPx": 59.8,
+       "hop": {
+        "trai": 393,
+        "phai": 489,
+        "tren": 118,
+        "duoi": 178
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 79,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 108.6,
+       "caoPx": 69.7,
+       "hop": {
+        "trai": 457,
+        "phai": 565,
+        "tren": 137,
+        "duoi": 207
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 80,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 104,
+       "caoPx": 67.2,
+       "hop": {
+        "trai": 329,
+        "phai": 433,
+        "tren": 132,
+        "duoi": 200
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 81,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 117.2,
+       "caoPx": 79.5,
+       "hop": {
+        "trai": 391,
+        "phai": 509,
+        "tren": 155,
+        "duoi": 235
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 82,
+       "factoryId": 45,
+       "chiSoCum": 1,
+       "rongPx": 149.8,
+       "caoPx": 100,
+       "hop": {
+        "trai": 626,
+        "phai": 776,
+        "tren": 189,
+        "duoi": 289
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 83,
+       "factoryId": 45,
+       "chiSoCum": 1,
+       "rongPx": 185.5,
+       "caoPx": 126.6,
+       "hop": {
+        "trai": 754,
+        "phai": 940,
+        "tren": 227,
+        "duoi": 354
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 84,
+       "factoryId": 45,
+       "chiSoCum": 1,
+       "rongPx": 164,
+       "caoPx": 119.5,
+       "hop": {
+        "trai": 564,
+        "phai": 729,
+        "tren": 218,
+        "duoi": 337
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 85,
+       "factoryId": 45,
+       "chiSoCum": 1,
+       "rongPx": 208.6,
+       "caoPx": 157.1,
+       "hop": {
+        "trai": 699,
+        "phai": 908,
+        "tren": 266,
+        "duoi": 423
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 86,
+       "factoryId": 46,
+       "chiSoCum": 2,
+       "rongPx": 127.8,
+       "caoPx": 91,
+       "hop": {
+        "trai": 143,
+        "phai": 271,
+        "tren": 175,
+        "duoi": 265
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 87,
+       "factoryId": 46,
+       "chiSoCum": 2,
+       "rongPx": 147.2,
+       "caoPx": 113.1,
+       "hop": {
+        "trai": 193,
+        "phai": 340,
+        "tren": 209,
+        "duoi": 322
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 88,
+       "factoryId": 46,
+       "chiSoCum": 2,
+       "rongPx": 142.5,
+       "caoPx": 107.3,
+       "hop": {
+        "trai": 28,
+        "phai": 171,
+        "tren": 200,
+        "duoi": 307
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 89,
+       "factoryId": 46,
+       "chiSoCum": 2,
+       "rongPx": 167.1,
+       "caoPx": 137.8,
+       "hop": {
+        "trai": 65,
+        "phai": 232,
+        "tren": 242,
+        "duoi": 380
+       },
+       "trongKhung": true
+      }
+     ],
+     "theoNhaMay": {
+      "QATD-A": {
+       "soToa": 4,
+       "chiSoCum": [
+        0
+       ],
+       "rongPxMin": 96,
+       "hop": {
+        "trai": 329,
+        "phai": 565,
+        "tren": 118,
+        "duoi": 235
+       }
+      },
+      "QATD-B": {
+       "soToa": 4,
+       "chiSoCum": [
+        1
+       ],
+       "rongPxMin": 149.8,
+       "hop": {
+        "trai": 564,
+        "phai": 940,
+        "tren": 189,
+        "duoi": 423
+       }
+      },
+      "QATD-C": {
+       "soToa": 4,
+       "chiSoCum": [
+        2
+       ],
+       "rongPxMin": 127.8,
+       "hop": {
+        "trai": 28,
+        "phai": 340,
+        "tren": 175,
+        "duoi": 380
+       }
+      }
+     },
+     "soCum": 3,
+     "nhaMayLanCum": [],
+     "capToaChongKhacNhaMay": 0,
+     "capToaChongTen": [],
+     "capBaoHinhCumChong": 2,
+     "rongPxMin": 96,
+     "rongPxMax": 208.6,
+     "soToaDuoiTran": 0,
+     "soNgoaiKhung": 0,
+     "ngoaiKhung": [],
+     "baoSaBan": {
+      "trai": 28,
+      "phai": 940,
+      "rong": 912
+     },
+     "tiLeDung": 0.942,
+     "tiLeThoCanvas": 0.942,
+     "xoay": null,
+     "soCongTy": 3,
+     "DAT": {
+      "①a moi bieu tuong >= 24px": true,
+      "①b toan bo sa ban trong khung": true,
+      "② quan he dung": true,
+      "④ moi ten cong ty doc duoc": true,
+      "⑤ sa ban >= 60% vung canvas khong bi che": true
+     }
+    }
+   },
+   "loi": []
+  },
+  "qatd_quanly": {
+   "moTa": "chi gan QATD-A - 1 cong ty",
+   "trangThai": {
+    "macDinh": {
+     "canvas": {
+      "w": 968,
+      "h": 489
+     },
+     "chuaChoDai": "26",
+     "lopPhu": [
+      {
+       "testid": "panel-trai",
+       "trai": 0,
+       "phai": 224,
+       "tren": 0,
+       "duoi": 489
+      },
+      {
+       "testid": "bang-kpi-noi",
+       "trai": 232,
+       "phai": 470,
+       "tren": 34,
+       "duoi": 254
+      },
+      {
+       "testid": "cum-trang-thai-du-lieu",
+       "trai": 400,
+       "phai": 704,
+       "tren": 34,
+       "duoi": 63
+      },
+      {
+       "testid": "nut-thu-trai",
+       "trai": 224,
+       "phai": 245,
+       "tren": 224,
+       "duoi": 266
+      },
+      {
+       "testid": "nut-thu-phai",
+       "trai": 691,
+       "phai": 712,
+       "tren": 224,
+       "duoi": 266
+      },
+      {
+       "testid": "lop-phu-dong-thoi-gian",
+       "trai": 0,
+       "phai": 968,
+       "tren": 451,
+       "duoi": 489
+      },
+      {
+       "testid": "panel-phai",
+       "trai": 712,
+       "phai": 968,
+       "tren": 0,
+       "duoi": 489
+      }
+     ],
+     "beRongVungDung": 488,
+     "vungDung": {
+      "tu": 224,
+      "den": 712
+     },
+     "soBieuTuong": 4,
+     "cotSaBanThay": 432,
+     "cotSaBanTong": 432,
+     "nhanCum": [
+      {
+       "factoryId": 44,
+       "chu": "Công ty A",
+       "display": "block",
+       "hien": true,
+       "hop": {
+        "trai": 318,
+        "phai": 388,
+        "tren": 329,
+        "duoi": 351
+       },
+       "tiLeChe": 0,
+       "trongCanvas": true
+      }
+     ],
+     "soNhanCumDocDuoc": 1,
+     "nhanToa": {
+      "hien": 2,
+      "tong": 4
+     },
+     "soNhanDomTong": 5,
+     "soNhanSaBan": {
+      "ve": 3,
+      "an": 2,
+      "tong": 5
+     },
+     "soMayVe": -1,
+     "demMay": "371",
+     "breadcrumb": "Corporate",
+     "thongKe": {
+      "calls": 4,
+      "triangles": 62,
+      "matContext": 0,
+      "khoiPhuc": 0
+     },
+     "bieuTuong": [
+      {
+       "toaNhaId": 78,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 163.4,
+       "caoPx": 112.1,
+       "hop": {
+        "trai": 369,
+        "phai": 532,
+        "tren": 148,
+        "duoi": 260
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 79,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 203.4,
+       "caoPx": 148.6,
+       "hop": {
+        "trai": 481,
+        "phai": 684,
+        "tren": 187,
+        "duoi": 336
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 80,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 185.8,
+       "caoPx": 138.6,
+       "hop": {
+        "trai": 252,
+        "phai": 438,
+        "tren": 177,
+        "duoi": 316
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 81,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 236.1,
+       "caoPx": 194.5,
+       "hop": {
+        "trai": 356,
+        "phai": 592,
+        "tren": 229,
+        "duoi": 423
+       },
+       "trongKhung": true
+      }
+     ],
+     "theoNhaMay": {
+      "QATD-A": {
+       "soToa": 4,
+       "chiSoCum": [
+        0
+       ],
+       "rongPxMin": 163.4,
+       "hop": {
+        "trai": 252,
+        "phai": 684,
+        "tren": 148,
+        "duoi": 423
+       }
+      }
+     },
+     "soCum": 1,
+     "nhaMayLanCum": [],
+     "capToaChongKhacNhaMay": 0,
+     "capToaChongTen": [],
+     "capBaoHinhCumChong": 0,
+     "rongPxMin": 163.4,
+     "rongPxMax": 236.1,
+     "soToaDuoiTran": 0,
+     "soNgoaiKhung": 0,
+     "ngoaiKhung": [],
+     "baoSaBan": {
+      "trai": 252,
+      "phai": 684,
+      "rong": 432
+     },
+     "tiLeDung": 0.885,
+     "tiLeThoCanvas": 0.446,
+     "xoay": {
+      "khung": 154,
+      "ms": 2764,
+      "fps": 56,
+      "thongKe": {
+       "calls": 4,
+       "triangles": 62,
+       "matContext": 0,
+       "khoiPhuc": 0
+      },
+      "soBieuTuong": 4
+     },
+     "soCongTy": 1,
+     "DAT": {
+      "①a moi bieu tuong >= 24px": true,
+      "①b toan bo sa ban trong khung": true,
+      "② quan he dung": true,
+      "④ moi ten cong ty doc duoc": true,
+      "⑤ sa ban >= 60% vung canvas khong bi che": true,
+      "③ ngan sach ve": true
+     }
+    },
+    "thuPanel": {
+     "canvas": {
+      "w": 968,
+      "h": 489
+     },
+     "chuaChoDai": "26",
+     "lopPhu": [
+      {
+       "testid": "bang-kpi-noi",
+       "trai": 8,
+       "phai": 216,
+       "tren": 34,
+       "duoi": 62
+      },
+      {
+       "testid": "cum-trang-thai-du-lieu",
+       "trai": 656,
+       "phai": 960,
+       "tren": 34,
+       "duoi": 63
+      },
+      {
+       "testid": "nut-thu-trai",
+       "trai": 0,
+       "phai": 21,
+       "tren": 224,
+       "duoi": 266
+      },
+      {
+       "testid": "nut-thu-phai",
+       "trai": 947,
+       "phai": 968,
+       "tren": 224,
+       "duoi": 266
+      },
+      {
+       "testid": "lop-phu-dong-thoi-gian",
+       "trai": 0,
+       "phai": 968,
+       "tren": 451,
+       "duoi": 489
+      }
+     ],
+     "beRongVungDung": 968,
+     "vungDung": {
+      "tu": 0,
+      "den": 968
+     },
+     "soBieuTuong": 4,
+     "cotSaBanThay": 726,
+     "cotSaBanTong": 726,
+     "nhanCum": [
+      {
+       "factoryId": 44,
+       "chu": "Công ty A",
+       "display": "block",
+       "hien": true,
+       "hop": {
+        "trai": 232,
+        "phai": 302,
+        "tren": 249,
+        "duoi": 271
+       },
+       "tiLeChe": 0,
+       "trongCanvas": true
+      }
+     ],
+     "soNhanCumDocDuoc": 1,
+     "nhanToa": {
+      "hien": 4,
+      "tong": 4
+     },
+     "soNhanDomTong": 5,
+     "soNhanSaBan": {
+      "ve": 5,
+      "an": 0,
+      "tong": 5
+     },
+     "soMayVe": -1,
+     "demMay": "371",
+     "breadcrumb": "Corporate",
+     "thongKe": {
+      "calls": 4,
+      "triangles": 62,
+      "matContext": 0,
+      "khoiPhuc": 0
+     },
+     "bieuTuong": [
+      {
+       "toaNhaId": 78,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 248.1,
+       "caoPx": 135.7,
+       "hop": {
+        "trai": 322,
+        "phai": 570,
+        "tren": 28,
+        "duoi": 164
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 79,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 354,
+       "caoPx": 207,
+       "hop": {
+        "trai": 493,
+        "phai": 847,
+        "tren": 55,
+        "duoi": 262
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 80,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 302.4,
+       "caoPx": 185.4,
+       "hop": {
+        "trai": 121,
+        "phai": 423,
+        "tren": 48,
+        "duoi": 233
+       },
+       "trongKhung": true
+      },
+      {
+       "toaNhaId": 81,
+       "factoryId": 44,
+       "chiSoCum": 0,
+       "rongPx": 465.8,
+       "caoPx": 333.6,
+       "hop": {
+        "trai": 261,
+        "phai": 727,
+        "tren": 89,
+        "duoi": 423
+       },
+       "trongKhung": true
+      }
+     ],
+     "theoNhaMay": {
+      "QATD-A": {
+       "soToa": 4,
+       "chiSoCum": [
+        0
+       ],
+       "rongPxMin": 248.1,
+       "hop": {
+        "trai": 121,
+        "phai": 847,
+        "tren": 28,
+        "duoi": 423
+       }
+      }
+     },
+     "soCum": 1,
+     "nhaMayLanCum": [],
+     "capToaChongKhacNhaMay": 0,
+     "capToaChongTen": [],
+     "capBaoHinhCumChong": 0,
+     "rongPxMin": 248.1,
+     "rongPxMax": 465.8,
+     "soToaDuoiTran": 0,
+     "soNgoaiKhung": 0,
+     "ngoaiKhung": [],
+     "baoSaBan": {
+      "trai": 121,
+      "phai": 847,
+      "rong": 726
+     },
+     "tiLeDung": 0.75,
+     "tiLeThoCanvas": 0.75,
+     "xoay": null,
+     "soCongTy": 1,
+     "DAT": {
+      "①a moi bieu tuong >= 24px": true,
+      "①b toan bo sa ban trong khung": true,
+      "② quan he dung": true,
+      "④ moi ten cong ty doc duoc": true,
+      "⑤ sa ban >= 60% vung canvas khong bi che": true
+     }
+    }
+   },
+   "loi": []
+  }
+ }
+}

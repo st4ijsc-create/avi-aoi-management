@@ -633,3 +633,360 @@ export function dichKhungDoc(
   }
   return tai(lo);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ PH-46/47 — KHUNG NHÌN BIẾT **VÙNG DÙNG ĐƯỢC** CỦA CANVAS                 */
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*
+ * ── Khuyết tật mà khối này đóng ────────────────────────────────────────────
+ * Task 20 dựng được sa bàn 12 biểu tượng; phép đo của chính nó phơi ra hai điều
+ * ở khung MẶC ĐỊNH 1280×720 (`.qa-tapdoan/t21-truoc.json`, vai `qatd_giamdoc`):
+ *   · thẻ `Metrics` (`bang-kpi-noi`, z-30, ô [232,59 → 470,279]) phủ TRỌN cụm
+ *     QATD-A ⇒ **2/3** tên công ty đọc được — hỏng đúng thứ sa bàn sinh ra để
+ *     làm ("nhìn ra cụm nào thuộc công ty nào");
+ *   · **193/341** cột của sa bàn nằm dưới lớp phủ ⇒ sa bàn dùng **39,5 %** dải
+ *     canvas không bị che.
+ * Gốc chung của cả hai: `khungNhinCho` căn nội dung vào TÂM CANVAS THÔ, mà tâm
+ * canvas thô ở màn này nằm đúng dưới thẻ `Metrics`.
+ *
+ * ── Vì sao KHÔNG dịch tâm bằng một khoảng bù cố định ───────────────────────
+ * Lớp phủ trên `/twin` bật/tắt được (`?thu=trai,phai,kpi`) và thẻ `Metrics` tự
+ * đổi cỡ khi KPI về. Đo được: cùng một cảnh, dải ngang dùng được là **488 px**
+ * khi mở panel và **968 px** khi thu. Một khoảng bù cố định đúng ở trạng thái
+ * này thì sai ở trạng thái kia.
+ *
+ * ── Ba hàm, và ranh giới giữa chúng ────────────────────────────────────────
+ *   ① {@link daiNgangDung} / {@link daiDocDung} / {@link vungDungCanvas} —
+ *      canvas còn lại BAO NHIÊU sau khi trừ những lớp phủ cắt HẲN một chiều.
+ *   ② {@link tiLeNoiDungTrenMan} — nội dung này, nhìn từ hướng này, TRÔNG bẹt
+ *      cỡ nào. Chỉ phụ thuộc HƯỚNG nhìn nên tính được trước khi chọn khoảng cách.
+ *   ③ {@link khungNhinVaoVung} — dời camera + mục theo hai trục MÀN HÌNH rồi
+ *      tiến/lùi dọc hướng nhìn, cho nội dung **căn giữa theo chiều ngang** và
+ *      **neo đáy** vào vùng ấy. Hướng nhìn, `banKinh`, `fov` GIỮ NGUYÊN.
+ *
+ * ★★★ VÌ SAO **NEO ĐÁY** CHỨ KHÔNG CĂN GIỮA — và đây là chỗ dễ sai nhất.
+ *   Mọi thẻ nổi của màn này neo ở NỬA TRÊN canvas (`bang-kpi-noi` trên-trái,
+ *   `cum-trang-thai-du-lieu` trên-phải, dải hợp nhất sát mép trên); lớp phủ duy
+ *   nhất ở dưới là thanh thời gian, và nó CHẠY SUỐT bề ngang nên đã bị trừ khỏi
+ *   {@link daiDocDung}. Căn giữa theo chiều dọc ném nội dung trở lại đúng dải
+ *   mà thẻ `Metrics` chiếm (đo: nội dung cao 145 px căn giữa [0,423] rơi vào
+ *   139–284, tức nằm trọn trong ô thẻ 59–279). Neo đáy còn trả đúng thứ nhãn
+ *   cần: nhãn cụm treo DƯỚI cụm, nên lề dưới `lePx` là lề DUY NHẤT bắt buộc.
+ *   ⚠ Giới hạn phải nói ra: quy tắc này đọc được lớp phủ chạy suốt một chiều,
+ *     nhưng KHÔNG tự tránh được một thẻ nổi ở góc DƯỚI-TRÁI nếu mai này có.
+ *
+ * ★★★ HAI PHÉP ĐO ĐÃ BÁC BỎ HAI PHƯƠNG ÁN "HIỂN NHIÊN" (giữ lại để đừng thử lại):
+ *   · *Ôm nội dung vào Ô TRỐNG LỚN NHẤT (tránh hẳn thẻ Metrics)* — ô trống lớn
+ *     nhất ở khung mặc định là 488×172 dưới thẻ. Với cảnh 3 cụm (bẹt ~3:1) nó
+ *     cho 428 px, TỐT; nhưng với cảnh MỘT cụm (`qatd_quanly`, bẹt ~1,6:1) nó
+ *     cho **233 px** trong khi bản chưa vá đã đạt **430 px** — vá thành lùi.
+ *     Bài học: ô trống lớn nhất là tiêu chí của HÌNH CHỮ NHẬT, không phải của
+ *     NGƯỜI XEM; nội dung thò xuống dưới thẻ vẫn đọc được phần dưới.
+ *   · *Bỏ ô trống của lưới cụm 2×2, xếp 3 cụm thành hàng 1×3* — đo bằng chính
+ *     phép chiếu này: bề rộng trên màn **bằng nhau** (bao hình trục 45° tỉ lệ
+ *     với `rộng + sâu`, và `4c+2g` ở cả hai bố cục), còn ô trống lại LÀM GIẢM
+ *     bề cao ⇒ 2×2 BẸT HƠN và do đó rộng hơn khi bị chặn bởi bề cao. Xem
+ *     `.qa-tapdoan/_t21-sim.mts`.
+ */
+
+/** Hộp pixel trên canvas, gốc trái-trên — cùng quy ước `layVungCam()` của `LopNhan`. */
+export interface HopCanvas {
+  trai: number;
+  phai: number;
+  tren: number;
+  duoi: number;
+}
+
+/** Một đoạn `[tu, den)` trên một trục pixel. */
+export interface DoanPx {
+  tu: number;
+  den: number;
+}
+
+/**
+ * Lề pixel chừa quanh vùng dùng được.
+ *
+ * KHÔNG phải trang trí: nhãn cụm của sa bàn là DOM cao **22 px** neo DƯỚI mép
+ * cụm (`LopSaBan`: `py = đáy + 6`). Ôm nội dung sát mép vùng ⇒ nhãn rơi ra
+ * ngoài vùng, bị lớp phủ nuốt và `LopSaBan` ẩn nó đi — tức mua bề rộng bằng
+ * đúng thứ PH-46 đang đòi. 28 = 22 (chữ) + 6 (khe).
+ */
+export const LE_VUNG_DUNG_PX = 28;
+
+/** Cắt một hộp về trong khung canvas; `null` nếu không còn phần nào. */
+function kepHopCanvas(h: HopCanvas, rongPx: number, caoPx: number): HopCanvas | null {
+  const o = {
+    trai: Math.max(0, Math.min(rongPx, h.trai)),
+    phai: Math.max(0, Math.min(rongPx, h.phai)),
+    tren: Math.max(0, Math.min(caoPx, h.tren)),
+    duoi: Math.max(0, Math.min(caoPx, h.duoi)),
+  };
+  return o.phai > o.trai && o.duoi > o.tren ? o : null;
+}
+
+/** Đoạn TRỐNG dài nhất của `[0, tong)` sau khi bỏ các đoạn bị chặn; `null` nếu không còn. */
+function doanTrongDaiNhat(tong: number, chan: readonly DoanPx[]): DoanPx | null {
+  if (!(tong > 0)) return null;
+  const ds = chan
+    .filter((d) => d.den > d.tu)
+    .map((d) => ({ tu: Math.max(0, d.tu), den: Math.min(tong, d.den) }))
+    .filter((d) => d.den > d.tu)
+    .sort((a, b) => a.tu - b.tu);
+  let tot: DoanPx | null = null;
+  let moc = 0;
+  const xet = (tu: number, den: number) => {
+    if (den - tu > (tot ? tot.den - tot.tu : 0)) tot = { tu, den };
+  };
+  for (const d of ds) {
+    if (d.tu > moc) xet(moc, d.tu);
+    if (d.den > moc) moc = d.den;
+  }
+  if (moc < tong) xet(moc, tong);
+  return tot;
+}
+
+/**
+ * Dải CỘT dùng được: khoảng ngang dài nhất không có lớp phủ nào **cắt suốt
+ * chiều cao** canvas. Ở `/twin` đây chính là khoảng giữa hai panel bên.
+ *
+ * ⚠ Thẻ chỉ phủ một dải giữa chừng (`bang-kpi-noi`) KHÔNG bị trừ ở đây — nó
+ *   không lấy mất bề rộng, nó lấy mất một mảng; bước ③ lo phần ấy bằng cách
+ *   neo đáy.
+ */
+export function daiNgangDung(
+  rongPx: number,
+  caoPx: number,
+  lopPhu: readonly HopCanvas[],
+): DoanPx | null {
+  if (!(rongPx > 0) || !(caoPx > 0)) return null;
+  const chan: DoanPx[] = [];
+  for (const h of lopPhu) {
+    const k = kepHopCanvas(h, rongPx, caoPx);
+    if (k && k.tren <= 0 && k.duoi >= caoPx) chan.push({ tu: k.trai, den: k.phai });
+  }
+  return doanTrongDaiNhat(rongPx, chan);
+}
+
+/** Dải HÀNG dùng được: khoảng dọc dài nhất không có lớp phủ nào cắt suốt bề ngang. */
+export function daiDocDung(
+  rongPx: number,
+  caoPx: number,
+  lopPhu: readonly HopCanvas[],
+): DoanPx | null {
+  if (!(rongPx > 0) || !(caoPx > 0)) return null;
+  const chan: DoanPx[] = [];
+  for (const h of lopPhu) {
+    const k = kepHopCanvas(h, rongPx, caoPx);
+    if (k && k.trai <= 0 && k.phai >= rongPx) chan.push({ tu: k.tren, den: k.duoi });
+  }
+  return doanTrongDaiNhat(caoPx, chan);
+}
+
+/** Giao của hai dải — hình chữ nhật mà cảnh 3D còn được nhìn thấy trọn vẹn theo cả hai chiều. */
+export function vungDungCanvas(
+  rongPx: number,
+  caoPx: number,
+  lopPhu: readonly HopCanvas[],
+): HopCanvas | null {
+  const ng = daiNgangDung(rongPx, caoPx, lopPhu);
+  const dc = daiDocDung(rongPx, caoPx, lopPhu);
+  if (!ng || !dc) return null;
+  return { trai: ng.tu, phai: ng.den, tren: dc.tu, duoi: dc.den };
+}
+
+/** Trục NGANG của camera (right′, cùng quy ước {@link chieuNdc}). */
+function trucNgangCamera(
+  viTri: readonly [number, number, number],
+  muc: readonly [number, number, number],
+): [number, number, number] | null {
+  const fx0 = muc[0] - viTri[0];
+  const fz0 = muc[2] - viTri[2];
+  const fl = Math.hypot(fx0, muc[1] - viTri[1], fz0);
+  if (!(fl > 0) || !Number.isFinite(fl)) return null;
+  const rx = -fz0;
+  const rz = fx0;
+  const rl = Math.hypot(rx, rz);
+  if (rl < 1e-9) return [1, 0, 0];
+  return [rx / rl, 0, rz / rl];
+}
+
+/**
+ * Hộp NDC + độ sâu trung bình của **một tập điểm cảnh** từ một tư thế camera.
+ *
+ * ★★★ TẬP ĐIỂM, KHÔNG PHẢI BBOX — và đây là một phép đo đã BÁC BỎ bản đầu của
+ *   chính khối này. Lấy 8 đỉnh bbox của sa bàn QATD cho tỉ lệ **1,86** trong
+ *   khi bao hình THẬT của 12 biểu tượng trên màn là **2,97**: bbox lấp đầy cả
+ *   Ô TRỐNG của lưới cụm 2×2 và dựng một "tháp 42 m" ở góc không có toà nào.
+ *   Camera khớp theo tỉ lệ sai ⇒ sa bàn **nhỏ đi** 168 px thay vì to lên. Vào
+ *   được bằng đúng cái lưới `_t21-sim.mts` chạy TRƯỚC khi dựng bản.
+ */
+export function hopNdcCuaDiem(
+  diem: readonly DiemScene[],
+  viTri: readonly [number, number, number],
+  muc: readonly [number, number, number],
+  khung: KhungKhop,
+): { minX: number; maxX: number; minY: number; maxY: number; sauTB: number } | null {
+  if (diem.length === 0) return null;
+  if (!(khung.rongPx > 0) || !(khung.caoPx > 0)) return null;
+  const tiLe = khung.rongPx / khung.caoPx;
+  const fov = khung.fovDoc ?? FOV_DOC_MAC_DINH;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let sau = 0;
+  for (const d of diem) {
+    const p = chieuNdc(d, viTri, muc, fov, tiLe);
+    if (!p) return null;
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+    sau += p.sau;
+  }
+  return { minX, maxX, minY, maxY, sauTB: sau / diem.length };
+}
+
+/**
+ * Tỉ lệ **rộng/cao TRÊN MÀN** của tập điểm khi nhìn từ tư thế `goc`.
+ *
+ * ★ Bất biến khiến bước ② hợp lệ: tỉ lệ ấy gần như KHÔNG đổi khi camera tiến/lùi
+ *   dọc hướng nhìn (phối cảnh phóng to gần đều), nên tính một lần từ `goc` rồi
+ *   dùng để chọn cỡ là được — không có vòng lặp "cần cỡ để biết tỉ lệ".
+ */
+export function tiLeNoiDungTrenMan(
+  diem: readonly DiemScene[],
+  goc: KhungNhin,
+  khung: KhungKhop,
+): number | null {
+  const h = hopNdcCuaDiem(diem, goc.viTri, goc.muc, khung);
+  if (!h) return null;
+  const rong = ((h.maxX - h.minX) / 2) * khung.rongPx;
+  const cao = ((h.maxY - h.minY) / 2) * khung.caoPx;
+  if (!(rong > 0) || !(cao > 0)) return null;
+  return rong / cao;
+}
+
+/** Bao hình của tập điểm trên màn, quy về PIXEL canvas (gốc trái-trên). */
+export function hopPxCuaDiem(
+  diem: readonly DiemScene[],
+  k: KhungNhin,
+  khung: KhungKhop,
+): HopCanvas | null {
+  const h = hopNdcCuaDiem(diem, k.viTri, k.muc, khung);
+  if (!h) return null;
+  return {
+    trai: ((h.minX + 1) / 2) * khung.rongPx,
+    phai: ((h.maxX + 1) / 2) * khung.rongPx,
+    tren: ((1 - h.maxY) / 2) * khung.caoPx,
+    duoi: ((1 - h.minY) / 2) * khung.caoPx,
+  };
+}
+
+/**
+ * Đặt tập điểm vào `vung`: **căn giữa theo chiều ngang**, **neo đáy** (chừa
+ * `lePx` cho nhãn cụm), cỡ lớn nhất còn lọt cả hai chiều của vùng đã trừ lề.
+ *
+ * `khopKhungNhin` (Đợt 35) không thay được việc này: nó giữ `muc` ở TÂM bbox
+ * nên nội dung luôn bị căn giữa canvas THÔ — chính là chỗ thẻ `Metrics` ngồi.
+ *
+ * Vòng lặp: ① đổi khoảng cách theo `min(nửaX/nửa hiện, nửaY/…)` (NDC tỉ lệ
+ * nghịch với khoảng cách), ② dời `muc` (camera đi theo) cho tâm ngang và mép
+ * đáy về đúng chỗ. Hai bước xen kẽ vì ① làm lệch tâm khi nội dung lệch tâm.
+ * Tất định. Thiếu dữ kiện ở bất kỳ bước nào ⇒ trả `goc` NGUYÊN VẸN (G8) —
+ * tức rơi về đúng hành vi trước bản vá, không bịa một tư thế "gần đúng".
+ */
+export function khungNhinVaoVung(
+  diem: readonly DiemScene[],
+  goc: KhungNhin,
+  khung: KhungKhop,
+  vung: HopCanvas,
+  lePx: number = LE_VUNG_DUNG_PX,
+): KhungNhin {
+  if (diem.length === 0) return goc;
+  if (!(khung.rongPx > 0) || !(khung.caoPx > 0)) return goc;
+  const len = trucLenCamera(goc.viTri, goc.muc);
+  const ngang = trucNgangCamera(goc.viTri, goc.muc);
+  if (!len || !ngang) return goc;
+
+  const le = Math.max(0, Number.isFinite(lePx) ? lePx : 0);
+  const rongDung = vung.phai - vung.trai - 2 * le;
+  const caoDung = vung.duoi - vung.tren - 2 * le;
+  if (!(rongDung > 0) || !(caoDung > 0)) return goc;
+  /** Nửa bề rộng/cao ĐÍCH, theo NDC (NDC trải [−1, 1] trên cả canvas). */
+  const nuaX = rongDung / khung.rongPx;
+  const nuaY = caoDung / khung.caoPx;
+  /** Tâm ngang đích (NDC) và mép ĐÁY đích (NDC y, càng nhỏ càng thấp). */
+  const tamXNdc = ((vung.trai + vung.phai) / 2 / khung.rongPx) * 2 - 1;
+  const dayNdc = 1 - (2 * (vung.duoi - le)) / khung.caoPx;
+
+  const t = Math.tan(((khung.fovDoc ?? FOV_DOC_MAC_DINH) * Math.PI) / 360);
+  const tiLe = khung.rongPx / khung.caoPx;
+  const ux = goc.viTri[0] - goc.muc[0];
+  const uy = goc.viTri[1] - goc.muc[1];
+  const uz = goc.viTri[2] - goc.muc[2];
+  const d0 = Math.hypot(ux, uy, uz);
+  if (!(d0 > 0) || !Number.isFinite(d0)) return goc;
+
+  let mx = goc.muc[0];
+  let my = goc.muc[1];
+  let mz = goc.muc[2];
+  let d = d0;
+  const tuThe = (): KhungNhin => ({
+    viTri: [mx + (ux / d0) * d, my + (uy / d0) * d, mz + (uz / d0) * d],
+    muc: [mx, my, mz],
+    banKinh: goc.banKinh,
+  });
+
+  for (let i = 0; i < 24; i += 1) {
+    const k0 = tuThe();
+    const a = hopNdcCuaDiem(diem, k0.viTri, k0.muc, khung);
+    if (!a) return goc;
+    const nx = (a.maxX - a.minX) / 2;
+    const ny = (a.maxY - a.minY) / 2;
+    if (!(nx > 0) || !(ny > 0)) return goc;
+    const he = Math.min(nuaX / nx, nuaY / ny);
+    if (!(he > 0) || !Number.isFinite(he)) return goc;
+    d /= he;
+    if (!(d > 0) || !Number.isFinite(d)) return goc;
+
+    const k1 = tuThe();
+    const b = hopNdcCuaDiem(diem, k1.viTri, k1.muc, khung);
+    if (!b) return goc;
+    const sNgang = ((b.minX + b.maxX) / 2 - tamXNdc) * b.sauTB * t * tiLe;
+    const sDoc = (b.minY - dayNdc) * b.sauTB * t;
+    mx += ngang[0] * sNgang + len[0] * sDoc;
+    my += ngang[1] * sNgang + len[1] * sDoc;
+    mz += ngang[2] * sNgang + len[2] * sDoc;
+    if (Math.abs(1 - he) < 1e-5 && Math.abs(sNgang) + Math.abs(sDoc) < 1e-5) break;
+  }
+
+  /*
+   * Nới dần khoảng cách (1 %/bước, tối đa 64 bước) nếu bao hình còn thò khỏi
+   * vùng: phép lặp trên tối ưu "vừa khít", nên sai số cuối vài phần nghìn NDC
+   * đủ làm một đỉnh thò ra. Nới là hướng AN TOÀN (nhỏ lại thì chắc chắn lọt).
+   */
+  for (let i = 0; i < 64; i += 1) {
+    const k = tuThe();
+    const h = hopPxCuaDiem(diem, k, khung);
+    if (!h) return goc;
+    const eps = 0.5;
+    if (
+      h.trai >= vung.trai - eps &&
+      h.phai <= vung.phai + eps &&
+      h.tren >= vung.tren - eps &&
+      h.duoi <= vung.duoi - le + eps
+    )
+      return k;
+    d *= 1.01;
+    const k2 = tuThe();
+    const b = hopNdcCuaDiem(diem, k2.viTri, k2.muc, khung);
+    if (!b) return goc;
+    const sNgang = ((b.minX + b.maxX) / 2 - tamXNdc) * b.sauTB * t * tiLe;
+    const sDoc = (b.minY - dayNdc) * b.sauTB * t;
+    mx += ngang[0] * sNgang + len[0] * sDoc;
+    my += ngang[1] * sNgang + len[1] * sDoc;
+    mz += ngang[2] * sNgang + len[2] * sDoc;
+  }
+  return goc;
+}
