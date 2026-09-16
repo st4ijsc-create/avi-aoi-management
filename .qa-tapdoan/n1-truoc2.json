@@ -1,0 +1,3429 @@
+{
+ "nhan": "truoc2",
+ "luc": "2026-09-16T13:58:57.632Z",
+ "khung": "1280x720 mặc định, không thu panel",
+ "vai": {
+  "qatd_giamdoc": {
+   "ba3D": {
+    "hopCanvas": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soNhan": {
+     "ve": 15,
+     "an": 0,
+     "tong": 15
+    },
+    "soBieuTuong": 12,
+    "rongPxBieuTuong": [
+     56.5,
+     60.6,
+     59.3,
+     63.2,
+     71.6,
+     79.2,
+     74.7,
+     83,
+     66.3,
+     71.1,
+     70,
+     75.5
+    ],
+    "cumTheoFactory": [
+     48,
+     49,
+     50
+    ],
+    "toaTheoFactory": {
+     "48": 4,
+     "49": 4,
+     "50": 4
+    },
+    "hopBieuTuong": [
+     {
+      "toaNhaId": 91,
+      "factoryId": 48,
+      "hop": {
+       "trai": 424.1,
+       "phai": 480.6,
+       "tren": 238.9,
+       "duoi": 282.1
+      }
+     },
+     {
+      "toaNhaId": 92,
+      "factoryId": 48,
+      "hop": {
+       "trai": 462,
+       "phai": 522.7,
+       "tren": 257.4,
+       "duoi": 304.8
+      }
+     },
+     {
+      "toaNhaId": 93,
+      "factoryId": 48,
+      "hop": {
+       "trai": 389.4,
+       "phai": 448.7,
+       "tren": 253,
+       "duoi": 299.4
+      }
+     },
+     {
+      "toaNhaId": 94,
+      "factoryId": 48,
+      "hop": {
+       "trai": 427,
+       "phai": 490.3,
+       "tren": 273.3,
+       "duoi": 324.5
+      }
+     },
+     {
+      "toaNhaId": 95,
+      "factoryId": 49,
+      "hop": {
+       "trai": 549.7,
+       "phai": 621.3,
+       "tren": 300.3,
+       "duoi": 358.4
+      }
+     },
+     {
+      "toaNhaId": 96,
+      "factoryId": 49,
+      "hop": {
+       "trai": 604.8,
+       "phai": 684,
+       "tren": 327.2,
+       "duoi": 392.6
+      }
+     },
+     {
+      "toaNhaId": 97,
+      "factoryId": 49,
+      "hop": {
+       "trai": 515.3,
+       "phai": 590,
+       "tren": 320.8,
+       "duoi": 384.3
+      }
+     },
+     {
+      "toaNhaId": 98,
+      "factoryId": 49,
+      "hop": {
+       "trai": 571.1,
+       "phai": 654,
+       "tren": 350.9,
+       "duoi": 423
+      }
+     },
+     {
+      "toaNhaId": 99,
+      "factoryId": 50,
+      "hop": {
+       "trai": 299.9,
+       "phai": 366.1,
+       "tren": 289.2,
+       "duoi": 344.4
+      }
+     },
+     {
+      "toaNhaId": 100,
+      "factoryId": 50,
+      "hop": {
+       "trai": 335.6,
+       "phai": 406.8,
+       "tren": 314.5,
+       "duoi": 376.4
+      }
+     },
+     {
+      "toaNhaId": 101,
+      "factoryId": 50,
+      "hop": {
+       "trai": 252,
+       "phai": 322,
+       "tren": 308.5,
+       "duoi": 368.7
+      }
+     },
+     {
+      "toaNhaId": 102,
+      "factoryId": 50,
+      "hop": {
+       "trai": 286.2,
+       "phai": 361.7,
+       "tren": 336.7,
+       "duoi": 404.6
+      }
+     }
+    ],
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Công ty A",
+      "factoryId": 48,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 677.7,
+       "y": 514.4,
+       "w": 70,
+       "h": 22
+      },
+      "transform": "translate(-50%, 0px) translate(424.648px, 307.38px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty B",
+      "factoryId": 49,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 819.5,
+       "y": 600.3,
+       "w": 69.1,
+       "h": 22
+      },
+      "transform": "translate(-50%, 0px) translate(566.077px, 393.316px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty C",
+      "factoryId": 50,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 540.1,
+       "y": 584.5,
+       "w": 69.3,
+       "h": 22
+      },
+      "transform": "translate(-50%, 0px) translate(286.795px, 377.476px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 91,
+      "an": false,
+      "hop": {
+       "x": 721.5,
+       "y": 448.8,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(452.325px, 260.328px)",
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 65.4,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 92,
+      "an": false,
+      "hop": {
+       "x": 761.5,
+       "y": 441.9,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(492.351px, 253.374px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 93,
+      "an": false,
+      "hop": {
+       "x": 688.2,
+       "y": 448.8,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(419.034px, 260.328px)",
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 67.6,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 94,
+      "an": false,
+      "hop": {
+       "x": 727.8,
+       "y": 457.8,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(458.651px, 269.269px)",
+      "cheTam": [],
+      "tyLeChe": 15.2,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 95,
+      "an": false,
+      "hop": {
+       "x": 854.7,
+       "y": 484.8,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(585.496px, 296.285px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 96,
+      "an": false,
+      "hop": {
+       "x": 913.5,
+       "y": 511.7,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(644.39px, 323.239px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 97,
+      "an": false,
+      "hop": {
+       "x": 821.8,
+       "y": 505.3,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(552.627px, 316.773px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 98,
+      "an": false,
+      "hop": {
+       "x": 881.7,
+       "y": 535.4,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(612.554px, 346.927px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 99,
+      "an": false,
+      "hop": {
+       "x": 602.2,
+       "y": 473.7,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(333px, 285.211px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 100,
+      "an": false,
+      "hop": {
+       "x": 640.4,
+       "y": 499,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(371.199px, 310.515px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 101,
+      "an": false,
+      "hop": {
+       "x": 556.2,
+       "y": 493,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(287.015px, 304.454px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 102,
+      "an": false,
+      "hop": {
+       "x": 593.1,
+       "y": 521.2,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(323.924px, 332.661px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 241,
+      "w": 238,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 241,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "thongKe": {
+     "calls": 4,
+     "triangles": 182,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "demMay": "1108",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0",
+    "banner": [],
+    "coNutChe2D": true,
+    "nutChe2DTat": false,
+    "chuaGan": false
+   },
+   "ba2D": {
+    "coSvg": true,
+    "donViVe": "toa-nha",
+    "demNhan": {
+     "ve": 0,
+     "an": 0,
+     "tong": 0
+    },
+    "viewBox": "-22.44 -22.44 718.08 598.08",
+    "hopSvg": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soToa2D": 12,
+    "rongToa2D": [
+     89.9,
+     89.9,
+     89.9,
+     89.9,
+     89.9,
+     89.9,
+     89.9,
+     89.9,
+     89.9,
+     89.9,
+     89.9,
+     89.9
+    ],
+    "toaTheoFactory": {
+     "48": 4,
+     "49": 4,
+     "50": 4
+    },
+    "soMay2D": 0,
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Công ty A",
+      "factoryId": 48,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 588,
+       "y": 226.2,
+       "w": 51.8,
+       "h": 15
+      },
+      "cheTam": [],
+      "tyLeChe": 1.3,
+      "hitTest": "rect",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty B",
+      "factoryId": 49,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 904.9,
+       "y": 226.2,
+       "w": 50.8,
+       "h": 15
+      },
+      "cheTam": [],
+      "tyLeChe": 1.3,
+      "hitTest": "rect",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty C",
+      "factoryId": 50,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 588.2,
+       "y": 493.7,
+       "w": 51,
+       "h": 15
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect",
+      "hitTrongSvg": true
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 91,
+      "an": false,
+      "hop": {
+       "x": 548.4,
+       "y": 269.2,
+       "w": 21.7,
+       "h": 12
+      },
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 92,
+      "an": false,
+      "hop": {
+       "x": 656.3,
+       "y": 269.2,
+       "w": 21.9,
+       "h": 12
+      },
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 93,
+      "an": false,
+      "hop": {
+       "x": 548.4,
+       "y": 352.6,
+       "w": 21.9,
+       "h": 12
+      },
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 94,
+      "an": false,
+      "hop": {
+       "x": 656.3,
+       "y": 352.6,
+       "w": 21.9,
+       "h": 12
+      },
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 95,
+      "an": false,
+      "hop": {
+       "x": 865,
+       "y": 269.2,
+       "w": 21.7,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 6.7,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 96,
+      "an": false,
+      "hop": {
+       "x": 972.9,
+       "y": 269.2,
+       "w": 21.9,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 5.8,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 97,
+      "an": false,
+      "hop": {
+       "x": 865,
+       "y": 352.6,
+       "w": 21.9,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 98,
+      "an": false,
+      "hop": {
+       "x": 972.9,
+       "y": 352.6,
+       "w": 21.9,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 99,
+      "an": false,
+      "hop": {
+       "x": 548.4,
+       "y": 536.8,
+       "w": 21.7,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 100,
+      "an": false,
+      "hop": {
+       "x": 656.3,
+       "y": 536.8,
+       "w": 21.9,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 101,
+      "an": false,
+      "hop": {
+       "x": 548.4,
+       "y": 620.2,
+       "w": 21.9,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 102,
+      "an": false,
+      "hop": {
+       "x": 656.3,
+       "y": 620.2,
+       "w": 21.9,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 241,
+      "w": 238,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 241,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "soCanvas": 0,
+    "demMay": "1108",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0"
+   },
+   "lopPhuTruocBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "lopPhuSauBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "bamCoTuBatLopPhu": false,
+   "tomTat": {
+    "soCum3D": 3,
+    "tenCongTyDocDuoc3D": 3,
+    "soNhan3D": {
+     "ve": 15,
+     "an": 0,
+     "tong": 15
+    },
+    "soCum2D": 3,
+    "tenCongTyDocDuoc2D": 3
+   },
+   "loi": []
+  },
+  "qatd_quanly": {
+   "ba3D": {
+    "hopCanvas": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soNhan": {
+     "ve": 3,
+     "an": 2,
+     "tong": 5
+    },
+    "soBieuTuong": 4,
+    "rongPxBieuTuong": [
+     163.4,
+     203.4,
+     185.8,
+     236.1
+    ],
+    "cumTheoFactory": [
+     48
+    ],
+    "toaTheoFactory": {
+     "48": 4
+    },
+    "hopBieuTuong": [
+     {
+      "toaNhaId": 91,
+      "factoryId": 48,
+      "hop": {
+       "trai": 368.9,
+       "phai": 532.3,
+       "tren": 148.2,
+       "duoi": 260.3
+      }
+     },
+     {
+      "toaNhaId": 92,
+      "factoryId": 48,
+      "hop": {
+       "trai": 480.6,
+       "phai": 684,
+       "tren": 187.2,
+       "duoi": 335.8
+      }
+     },
+     {
+      "toaNhaId": 93,
+      "factoryId": 48,
+      "hop": {
+       "trai": 252,
+       "phai": 437.8,
+       "tren": 177.2,
+       "duoi": 315.8
+      }
+     },
+     {
+      "toaNhaId": 94,
+      "factoryId": 48,
+      "hop": {
+       "trai": 356.4,
+       "phai": 592.4,
+       "tren": 228.5,
+       "duoi": 423
+      }
+     }
+    ],
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Công ty A",
+      "factoryId": 48,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 606.2,
+       "y": 535.9,
+       "w": 70,
+       "h": 22
+      },
+      "transform": "translate(-50%, 0px) translate(353.139px, 328.88px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 91,
+      "an": true,
+      "hop": null,
+      "transform": "translate(-50%, -100%) translate(472.1px, 125.711px)",
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 92,
+      "an": false,
+      "hop": {
+       "x": 851.4,
+       "y": 371.7,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(582.288px, 183.205px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 93,
+      "an": true,
+      "hop": null,
+      "transform": "translate(-50%, -100%) translate(226.164px, 182.51px)",
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 94,
+      "an": false,
+      "hop": {
+       "x": 743.6,
+       "y": 413,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(474.413px, 224.51px)",
+      "cheTam": [],
+      "tyLeChe": 38.2,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 241,
+      "w": 238,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 241,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "thongKe": {
+     "calls": 4,
+     "triangles": 62,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "demMay": "371",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0",
+    "banner": [],
+    "coNutChe2D": true,
+    "nutChe2DTat": false,
+    "chuaGan": false
+   },
+   "ba2D": {
+    "coSvg": true,
+    "donViVe": "toa-nha",
+    "demNhan": {
+     "ve": 0,
+     "an": 0,
+     "tong": 0
+    },
+    "viewBox": "-9.533333333333333 -9.533333333333333 305.06666666666666 245.06666666666666",
+    "hopSvg": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soToa2D": 4,
+    "rongToa2D": [
+     219.5,
+     219.5,
+     219.5,
+     219.5
+    ],
+    "toaTheoFactory": {
+     "48": 4
+    },
+    "soMay2D": 0,
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Công ty A",
+      "factoryId": 48,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 745.3,
+       "y": 251.6,
+       "w": 54.4,
+       "h": 16
+      },
+      "cheTam": [
+       "DIV#cum-trang-thai-du-lieu"
+      ],
+      "tyLeChe": 123.3,
+      "hitTest": "SPAN#co-che-giao-so",
+      "hitTrongSvg": false
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 91,
+      "an": false,
+      "hop": {
+       "x": 628.6,
+       "y": 343,
+       "w": 22.5,
+       "h": 12
+      },
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 92,
+      "an": false,
+      "hop": {
+       "x": 892,
+       "y": 343,
+       "w": 22.5,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 93,
+      "an": false,
+      "hop": {
+       "x": 628.6,
+       "y": 546.6,
+       "w": 22.5,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 94,
+      "an": false,
+      "hop": {
+       "x": 892,
+       "y": 546.6,
+       "w": 22.5,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 241,
+      "w": 238,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 241,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "soCanvas": 0,
+    "demMay": "371",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0"
+   },
+   "lopPhuTruocBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "lopPhuSauBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "bamCoTuBatLopPhu": false,
+   "tomTat": {
+    "soCum3D": 1,
+    "tenCongTyDocDuoc3D": 1,
+    "soNhan3D": {
+     "ve": 3,
+     "an": 2,
+     "tong": 5
+    },
+    "soCum2D": 1,
+    "tenCongTyDocDuoc2D": 0
+   },
+   "loi": []
+  },
+  "qatd_kythuat": {
+   "ba3D": {
+    "hopCanvas": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soNhan": {
+     "ve": 6,
+     "an": 4,
+     "tong": 10
+    },
+    "soBieuTuong": 8,
+    "rongPxBieuTuong": [
+     81.3,
+     88.7,
+     87,
+     95.6,
+     110.5,
+     129.4,
+     119.4,
+     139.7
+    ],
+    "cumTheoFactory": [
+     48,
+     49
+    ],
+    "toaTheoFactory": {
+     "48": 4,
+     "49": 4
+    },
+    "hopBieuTuong": [
+     {
+      "toaNhaId": 91,
+      "factoryId": 48,
+      "hop": {
+       "trai": 310.7,
+       "phai": 392,
+       "tren": 162.5,
+       "duoi": 217.4
+      }
+     },
+     {
+      "toaNhaId": 92,
+      "factoryId": 48,
+      "hop": {
+       "trai": 356.3,
+       "phai": 445.1,
+       "tren": 182.7,
+       "duoi": 245.3
+      }
+     },
+     {
+      "toaNhaId": 93,
+      "factoryId": 48,
+      "hop": {
+       "trai": 252,
+       "phai": 339,
+       "tren": 177.8,
+       "duoi": 238.5
+      }
+     },
+     {
+      "toaNhaId": 94,
+      "factoryId": 48,
+      "hop": {
+       "trai": 295.3,
+       "phai": 390.9,
+       "tren": 200.9,
+       "duoi": 270.9
+      }
+     },
+     {
+      "toaNhaId": 95,
+      "factoryId": 49,
+      "hop": {
+       "trai": 473.6,
+       "phai": 584,
+       "tren": 233.7,
+       "duoi": 318.2
+      }
+     },
+     {
+      "toaNhaId": 96,
+      "factoryId": 49,
+      "hop": {
+       "trai": 554.6,
+       "phai": 684,
+       "tren": 269.2,
+       "duoi": 371.1
+      }
+     },
+     {
+      "toaNhaId": 97,
+      "factoryId": 49,
+      "hop": {
+       "trai": 409.2,
+       "phai": 528.6,
+       "tren": 260.4,
+       "duoi": 357.9
+      }
+     },
+     {
+      "toaNhaId": 98,
+      "factoryId": 49,
+      "hop": {
+       "trai": 492,
+       "phai": 631.7,
+       "tren": 302.9,
+       "duoi": 423
+      }
+     }
+    ],
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Công ty A",
+      "factoryId": 48,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 548.8,
+       "y": 467.3,
+       "w": 70,
+       "h": 22
+      },
+      "transform": "translate(-50%, 0px) translate(295.786px, 260.328px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty B",
+      "factoryId": 49,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 737.9,
+       "y": 575.6,
+       "w": 69.1,
+       "h": 22
+      },
+      "transform": "translate(-50%, 0px) translate(484.452px, 368.616px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 91,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 92,
+      "an": true,
+      "hop": null,
+      "transform": "translate(-50%, -100%) translate(473.024px, 190.149px)",
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 93,
+      "an": true,
+      "hop": null,
+      "transform": "translate(-50%, -100%) translate(-289.022px, 195.013px)",
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 94,
+      "an": true,
+      "hop": null,
+      "transform": "translate(-50%, -100%) translate(339.274px, 260.328px)",
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 95,
+      "an": false,
+      "hop": {
+       "x": 798,
+       "y": 418.2,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(528.816px, 229.699px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 96,
+      "an": false,
+      "hop": {
+       "x": 888.4,
+       "y": 453.7,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(619.292px, 265.178px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 97,
+      "an": false,
+      "hop": {
+       "x": 738,
+       "y": 444.9,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(468.869px, 256.402px)",
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 47,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 98,
+      "an": false,
+      "hop": {
+       "x": 831,
+       "y": 487.4,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(561.836px, 298.868px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 241,
+      "w": 238,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 241,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "thongKe": {
+     "calls": 4,
+     "triangles": 122,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "demMay": "780",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0",
+    "banner": [],
+    "coNutChe2D": true,
+    "nutChe2DTat": false,
+    "chuaGan": false
+   },
+   "ba2D": {
+    "coSvg": true,
+    "donViVe": "toa-nha",
+    "demNhan": {
+     "ve": 0,
+     "an": 0,
+     "tong": 0
+    },
+    "viewBox": "-22.44 -22.44 718.08 270.88",
+    "hopSvg": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soToa2D": 8,
+    "rongToa2D": [
+     148.3,
+     148.3,
+     148.3,
+     148.3,
+     148.3,
+     148.3,
+     148.3,
+     148.3
+    ],
+    "toaTheoFactory": {
+     "48": 4,
+     "49": 4
+    },
+    "soMay2D": 0,
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Công ty A",
+      "factoryId": 48,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 468.5,
+       "y": 300.3,
+       "w": 85.3,
+       "h": 25
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 90.6,
+      "hitTest": "DIV#panel-trai",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty B",
+      "factoryId": 49,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 991.1,
+       "y": 300.3,
+       "w": 83.7,
+       "h": 25
+      },
+      "cheTam": [
+       "DIV#panel-phai"
+      ],
+      "tyLeChe": 89.4,
+      "hitTest": "SECTION#nhom-mo-chuc-nang",
+      "hitTrongSvg": false
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 91,
+      "an": false,
+      "hop": {
+       "x": 405,
+       "y": 372,
+       "w": 34.2,
+       "h": 20
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "SPAN",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 92,
+      "an": false,
+      "hop": {
+       "x": 582.9,
+       "y": 372,
+       "w": 34.3,
+       "h": 20
+      },
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 93,
+      "an": false,
+      "hop": {
+       "x": 405,
+       "y": 509.5,
+       "w": 34.3,
+       "h": 20
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "BUTTON#mo-cay-phan-cap",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 94,
+      "an": false,
+      "hop": {
+       "x": 582.9,
+       "y": 509.5,
+       "w": 34.3,
+       "h": 20
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 95,
+      "an": false,
+      "hop": {
+       "x": 926.9,
+       "y": 372,
+       "w": 34.2,
+       "h": 20
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 96,
+      "an": false,
+      "hop": {
+       "x": 1104.9,
+       "y": 372,
+       "w": 34.3,
+       "h": 20
+      },
+      "cheTam": [
+       "DIV#panel-phai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "BUTTON#nut-dieu-huong-andon",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 97,
+      "an": false,
+      "hop": {
+       "x": 926.9,
+       "y": 509.5,
+       "w": 34.3,
+       "h": 20
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 98,
+      "an": false,
+      "hop": {
+       "x": 1104.9,
+       "y": 509.5,
+       "w": 34.3,
+       "h": 20
+      },
+      "cheTam": [
+       "DIV#panel-phai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "ASIDE#ngan-xu-ly",
+      "hitTrongSvg": false
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 241,
+      "w": 238,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 241,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "soCanvas": 0,
+    "demMay": "780",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0"
+   },
+   "lopPhuTruocBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "lopPhuSauBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "bamCoTuBatLopPhu": false,
+   "tomTat": {
+    "soCum3D": 2,
+    "tenCongTyDocDuoc3D": 2,
+    "soNhan3D": {
+     "ve": 6,
+     "an": 4,
+     "tong": 10
+    },
+    "soCum2D": 2,
+    "tenCongTyDocDuoc2D": 0
+   },
+   "loi": []
+  },
+  "qatd_congnhan": {
+   "ba3D": {
+    "hopCanvas": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soNhan": {
+     "ve": 3,
+     "an": 2,
+     "tong": 5
+    },
+    "soBieuTuong": 4,
+    "rongPxBieuTuong": [
+     163.4,
+     203.4,
+     185.8,
+     236.1
+    ],
+    "cumTheoFactory": [
+     50
+    ],
+    "toaTheoFactory": {
+     "50": 4
+    },
+    "hopBieuTuong": [
+     {
+      "toaNhaId": 99,
+      "factoryId": 50,
+      "hop": {
+       "trai": 368.9,
+       "phai": 532.3,
+       "tren": 148.2,
+       "duoi": 260.3
+      }
+     },
+     {
+      "toaNhaId": 100,
+      "factoryId": 50,
+      "hop": {
+       "trai": 480.6,
+       "phai": 684,
+       "tren": 187.2,
+       "duoi": 335.8
+      }
+     },
+     {
+      "toaNhaId": 101,
+      "factoryId": 50,
+      "hop": {
+       "trai": 252,
+       "phai": 437.8,
+       "tren": 177.2,
+       "duoi": 315.8
+      }
+     },
+     {
+      "toaNhaId": 102,
+      "factoryId": 50,
+      "hop": {
+       "trai": 356.4,
+       "phai": 592.4,
+       "tren": 228.5,
+       "duoi": 423
+      }
+     }
+    ],
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Công ty C",
+      "factoryId": 50,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 606.5,
+       "y": 535.9,
+       "w": 69.3,
+       "h": 22
+      },
+      "transform": "translate(-50%, 0px) translate(353.139px, 328.88px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 99,
+      "an": true,
+      "hop": null,
+      "transform": "translate(-50%, -100%) translate(472.266px, 125.61px)",
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 100,
+      "an": false,
+      "hop": {
+       "x": 851.4,
+       "y": 371.7,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(582.288px, 183.205px)",
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 101,
+      "an": true,
+      "hop": null,
+      "transform": "translate(-50%, -100%) translate(-1386.97px, 194.461px)",
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 102,
+      "an": false,
+      "hop": {
+       "x": 743.6,
+       "y": 413,
+       "w": 37.7,
+       "h": 18.5
+      },
+      "transform": "translate(-50%, -100%) translate(474.413px, 224.51px)",
+      "cheTam": [],
+      "tyLeChe": 38.2,
+      "hitTest": "CANVAS",
+      "hitLaNhan": false
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 241,
+      "w": 238,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 241,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "thongKe": {
+     "calls": 4,
+     "triangles": 62,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "demMay": "328",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0",
+    "banner": [],
+    "coNutChe2D": true,
+    "nutChe2DTat": false,
+    "chuaGan": false
+   },
+   "ba2D": {
+    "coSvg": true,
+    "donViVe": "toa-nha",
+    "demNhan": {
+     "ve": 0,
+     "an": 0,
+     "tong": 0
+    },
+    "viewBox": "-9.533333333333333 -9.533333333333333 305.06666666666666 245.06666666666666",
+    "hopSvg": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soToa2D": 4,
+    "rongToa2D": [
+     219.5,
+     219.5,
+     219.5,
+     219.5
+    ],
+    "toaTheoFactory": {
+     "50": 4
+    },
+    "soMay2D": 0,
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Công ty C",
+      "factoryId": 50,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 745.6,
+       "y": 251.6,
+       "w": 53.4,
+       "h": 16
+      },
+      "cheTam": [
+       "DIV#cum-trang-thai-du-lieu"
+      ],
+      "tyLeChe": 123.2,
+      "hitTest": "SPAN#co-che-giao-so",
+      "hitTrongSvg": false
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 99,
+      "an": false,
+      "hop": {
+       "x": 628.6,
+       "y": 343,
+       "w": 22.5,
+       "h": 12
+      },
+      "cheTam": [
+       "DIV#bang-kpi-noi"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 100,
+      "an": false,
+      "hop": {
+       "x": 892,
+       "y": 343,
+       "w": 22.5,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 101,
+      "an": false,
+      "hop": {
+       "x": 628.6,
+       "y": 546.6,
+       "w": 22.5,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 102,
+      "an": false,
+      "hop": {
+       "x": 892,
+       "y": 546.6,
+       "w": 22.5,
+       "h": 12
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 241,
+      "w": 238,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 241,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "soCanvas": 0,
+    "demMay": "328",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0"
+   },
+   "lopPhuTruocBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "lopPhuSauBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "bamCoTuBatLopPhu": false,
+   "tomTat": {
+    "soCum3D": 1,
+    "tenCongTyDocDuoc3D": 1,
+    "soNhan3D": {
+     "ve": 3,
+     "an": 2,
+     "tong": 5
+    },
+    "soCum2D": 1,
+    "tenCongTyDocDuoc2D": 0
+   },
+   "loi": []
+  },
+  "qatd_admin": {
+   "ba3D": {
+    "hopCanvas": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soNhan": {
+     "ve": 0,
+     "an": 0,
+     "tong": 19
+    },
+    "soBieuTuong": 0,
+    "rongPxBieuTuong": [],
+    "cumTheoFactory": [],
+    "toaTheoFactory": {},
+    "hopBieuTuong": [],
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Nhà máy ảo (SIM)",
+      "factoryId": 1,
+      "toaNhaId": null,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "cum",
+      "chu": "FUYU-F (tai tong hop)",
+      "factoryId": 47,
+      "toaNhaId": null,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty A",
+      "factoryId": 48,
+      "toaNhaId": null,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty B",
+      "factoryId": 49,
+      "toaNhaId": null,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty C",
+      "factoryId": 50,
+      "toaNhaId": null,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Xuong lap rap ao (SIM)",
+      "factoryId": null,
+      "toaNhaId": 24,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "FUYU-F (tai tong hop) — toa chinh",
+      "factoryId": null,
+      "toaNhaId": 90,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 91,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 92,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 93,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 94,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 95,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 96,
+      "an": true,
+      "hop": null,
+      "transform": "translate(-50%, -100%) translate(-2686.83px, 3259.44px)",
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 97,
+      "an": true,
+      "hop": null,
+      "transform": "translate(-50%, -100%) translate(-3083.18px, 1946.21px)",
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 98,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 99,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 100,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 101,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 102,
+      "an": true,
+      "hop": null,
+      "transform": null,
+      "cheTam": null,
+      "tyLeChe": null,
+      "hitTest": null,
+      "hitLaNhan": null
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 266,
+      "w": 320,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 266,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "thongKe": {
+     "calls": 2,
+     "triangles": 228,
+     "matContext": 0,
+     "khoiPhuc": 0
+    },
+    "demMay": "1700",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0",
+    "banner": [],
+    "coNutChe2D": true,
+    "nutChe2DTat": false,
+    "chuaGan": false
+   },
+   "ba2D": {
+    "coSvg": true,
+    "donViVe": "toa-nha",
+    "demNhan": {
+     "ve": 0,
+     "an": 0,
+     "tong": 0
+    },
+    "viewBox": "-964 -964 30848 16288",
+    "hopSvg": {
+     "x": 288,
+     "y": 207,
+     "w": 968,
+     "h": 489
+    },
+    "soToa2D": 14,
+    "rongToa2D": [
+     1.2,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     90.1
+    ],
+    "toaTheoFactory": {
+     "1": 1,
+     "47": 1,
+     "48": 4,
+     "49": 4,
+     "50": 4
+    },
+    "soMay2D": 0,
+    "nhanCum": [
+     {
+      "loai": "cum",
+      "chu": "Nhà máy ảo (SIM)",
+      "factoryId": 1,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 381.2,
+       "y": 225.8,
+       "w": 147.5,
+       "h": 25
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 88.7,
+      "hitTest": "DIV#hang-tong-quan",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "cum",
+      "chu": "FUYU-F (tai tong hop)",
+      "factoryId": 47,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 682.1,
+       "y": 225.8,
+       "w": 179.8,
+       "h": 25
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty A",
+      "factoryId": 48,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 1048.4,
+       "y": 225.8,
+       "w": 82.1,
+       "h": 25
+      },
+      "cheTam": [
+       "DIV#panel-phai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "P#ngan-chua-chon",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty B",
+      "factoryId": 49,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 414.9,
+       "y": 482.8,
+       "w": 80.1,
+       "h": 25
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "SPAN#danh-tinh-andon-398",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "cum",
+      "chu": "Công ty C",
+      "factoryId": 50,
+      "toaNhaId": null,
+      "an": false,
+      "hop": {
+       "x": 731.8,
+       "y": 482.8,
+       "w": 80.4,
+       "h": 25
+      },
+      "cheTam": [],
+      "tyLeChe": 14,
+      "hitTest": "rect",
+      "hitTrongSvg": true
+     }
+    ],
+    "nhanToa": [
+     {
+      "loai": "toa",
+      "chu": "Xuong lap rap ao (SIM)",
+      "factoryId": null,
+      "toaNhaId": 24,
+      "an": false,
+      "hop": {
+       "x": 328.7,
+       "y": 274,
+       "w": 143.4,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "SPAN",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "FUYU-F (tai tong hop) — toa chinh",
+      "factoryId": null,
+      "toaNhaId": 90,
+      "an": false,
+      "hop": {
+       "x": 610.9,
+       "y": 274,
+       "w": 214.2,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#bang-kpi-noi",
+       "DIV#cum-trang-thai-du-lieu"
+      ],
+      "tyLeChe": 164.1,
+      "hitTest": "SPAN#trang-thai-ket-noi",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 91,
+      "an": false,
+      "hop": {
+       "x": 1018.6,
+       "y": 274,
+       "w": 32.7,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#panel-phai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "ASIDE#ngan-xu-ly",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 92,
+      "an": false,
+      "hop": {
+       "x": 1126.7,
+       "y": 274,
+       "w": 33.1,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#panel-phai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "ASIDE#ngan-xu-ly",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 93,
+      "an": false,
+      "hop": {
+       "x": 1018.6,
+       "y": 352.1,
+       "w": 32.7,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#panel-phai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "BUTTON#nut-dieu-huong-sanXuat",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 94,
+      "an": false,
+      "hop": {
+       "x": 1126.7,
+       "y": 352.1,
+       "w": 33.1,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#panel-phai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "BUTTON#nut-dieu-huong-sanXuat",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 95,
+      "an": false,
+      "hop": {
+       "x": 384.6,
+       "y": 531,
+       "w": 32.7,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "DIV",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 96,
+      "an": false,
+      "hop": {
+       "x": 492.7,
+       "y": 531,
+       "w": 33.1,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 58.3,
+      "hitTest": "DIV",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 97,
+      "an": false,
+      "hop": {
+       "x": 384.6,
+       "y": 609.1,
+       "w": 32.7,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 100,
+      "hitTest": "SPAN",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 98,
+      "an": false,
+      "hop": {
+       "x": 492.7,
+       "y": 609.1,
+       "w": 33.1,
+       "h": 19
+      },
+      "cheTam": [
+       "DIV#panel-trai"
+      ],
+      "tyLeChe": 58.3,
+      "hitTest": "UL",
+      "hitTrongSvg": false
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 1",
+      "factoryId": null,
+      "toaNhaId": 99,
+      "an": false,
+      "hop": {
+       "x": 701.6,
+       "y": 531,
+       "w": 32.7,
+       "h": 19
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 2",
+      "factoryId": null,
+      "toaNhaId": 100,
+      "an": false,
+      "hop": {
+       "x": 809.7,
+       "y": 531,
+       "w": 33.1,
+       "h": 19
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 3",
+      "factoryId": null,
+      "toaNhaId": 101,
+      "an": false,
+      "hop": {
+       "x": 701.6,
+       "y": 609.1,
+       "w": 32.7,
+       "h": 19
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     },
+     {
+      "loai": "toa",
+      "chu": "Toà 4",
+      "factoryId": null,
+      "toaNhaId": 102,
+      "an": false,
+      "hop": {
+       "x": 809.7,
+       "y": 609.1,
+       "w": 33.1,
+       "h": 19
+      },
+      "cheTam": [],
+      "tyLeChe": 0,
+      "hitTest": "rect#toa-2d-sa-ban",
+      "hitTrongSvg": true
+     }
+    ],
+    "lopPhu": [
+     {
+      "ten": "DIV#panel-trai",
+      "x": 288,
+      "y": 207,
+      "w": 224,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     },
+     {
+      "ten": "DIV#bang-kpi-noi",
+      "x": 520,
+      "y": 266,
+      "w": 320,
+      "h": 220.3,
+      "pe": "none",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#cum-trang-thai-du-lieu",
+      "x": 687.9,
+      "y": 266,
+      "w": 304.1,
+      "h": 29,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-trai",
+      "x": 512,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "BUTTON#nut-thu-phai",
+      "x": 979,
+      "y": 430.5,
+      "w": 21,
+      "h": 42,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#lop-phu-dong-thoi-gian",
+      "x": 288,
+      "y": 658,
+      "w": 968,
+      "h": 38,
+      "pe": "auto",
+      "z": "30"
+     },
+     {
+      "ten": "DIV#panel-phai",
+      "x": 1000,
+      "y": 207,
+      "w": 256,
+      "h": 489,
+      "pe": "auto",
+      "z": "20"
+     }
+    ],
+    "soCanvas": 0,
+    "demMay": "1700",
+    "panelTraiThu": "0",
+    "panelPhaiThu": "0"
+   },
+   "lopPhuTruocBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "lopPhuSauBam": [
+    "BUTTON#nut-thu-phai",
+    "BUTTON#nut-thu-trai",
+    "DIV#bang-kpi-noi",
+    "DIV#cum-trang-thai-du-lieu",
+    "DIV#lop-phu-dong-thoi-gian",
+    "DIV#panel-phai",
+    "DIV#panel-trai"
+   ],
+   "bamCoTuBatLopPhu": false,
+   "tomTat": {
+    "soCum3D": 5,
+    "tenCongTyDocDuoc3D": 0,
+    "soNhan3D": {
+     "ve": 0,
+     "an": 0,
+     "tong": 19
+    },
+    "soCum2D": 5,
+    "tenCongTyDocDuoc2D": 2
+   },
+   "loi": []
+  },
+  "qatd_khonggan": {
+   "ba3D": {
+    "hopCanvas": null,
+    "soNhan": null,
+    "soBieuTuong": 0,
+    "rongPxBieuTuong": [],
+    "cumTheoFactory": [],
+    "toaTheoFactory": {},
+    "hopBieuTuong": [],
+    "nhanCum": [],
+    "nhanToa": [],
+    "lopPhu": [],
+    "thongKe": null,
+    "demMay": null,
+    "panelTraiThu": null,
+    "panelPhaiThu": null,
+    "banner": [],
+    "coNutChe2D": false,
+    "nutChe2DTat": null,
+    "chuaGan": true
+   },
+   "ba2D": {
+    "BO_QUA": "không có nút chế độ 2D"
+   },
+   "lopPhuTruocBam": [],
+   "lopPhuSauBam": [],
+   "bamCoTuBatLopPhu": false,
+   "tomTat": {
+    "soCum3D": 0,
+    "tenCongTyDocDuoc3D": 0,
+    "soNhan3D": null,
+    "soCum2D": 0,
+    "tenCongTyDocDuoc2D": 0
+   },
+   "loi": []
+  },
+  "qatd_khongquyen": {
+   "ba3D": {
+    "hopCanvas": null,
+    "soNhan": null,
+    "soBieuTuong": 0,
+    "rongPxBieuTuong": [],
+    "cumTheoFactory": [],
+    "toaTheoFactory": {},
+    "hopBieuTuong": [],
+    "nhanCum": [],
+    "nhanToa": [],
+    "lopPhu": [],
+    "thongKe": null,
+    "demMay": null,
+    "panelTraiThu": null,
+    "panelPhaiThu": null,
+    "banner": [],
+    "coNutChe2D": false,
+    "nutChe2DTat": null,
+    "chuaGan": false
+   },
+   "ba2D": {
+    "BO_QUA": "không có nút chế độ 2D"
+   },
+   "lopPhuTruocBam": [],
+   "lopPhuSauBam": [],
+   "bamCoTuBatLopPhu": false,
+   "tomTat": {
+    "soCum3D": 0,
+    "tenCongTyDocDuoc3D": 0,
+    "soNhan3D": null,
+    "soCum2D": 0,
+    "tenCongTyDocDuoc2D": 0
+   },
+   "loi": []
+  }
+ }
+}

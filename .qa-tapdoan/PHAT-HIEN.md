@@ -571,3 +571,35 @@ một nhà máy 3D => { ariaTrenCanvas: null, ... soPhanTuCoAriaTrongMan: 19 }
 **Đã vá:** `tenKhaTruyCapCuaCanh.unit.test.ts` (6 ca) ghim **cả hai** lối, bốn khoá i18n × ba ngôn ngữ, và luật "bốn khoá xuất hiện ĐÚNG MỘT LẦN" (dùng lại một khoá cho hai nhánh là cách im lặng nhất để một chế độ mô tả chế độ kia — đúng lớp lỗi `CanhVanHanh2D:94`). Một ca cố ý đọc mã **THÔ** để giữ luôn câu giải thích: không có nó, người sau đọc đoạn `sr-only` sẽ tưởng là rác và dọn đi, đúng thứ vừa xảy ra với nhánh `machineId === null` ở `XuongThietKe:1088`.
 **Đối chứng biết kêu — bốn đột biến, bốn lần đỏ:** gỡ `sr-only` ⇒ 1 đỏ · xoá hẳn đoạn tóm tắt ⇒ **2** đỏ (mất cả ca docblock) · gỡ `aria-label` khỏi `<svg>` 2D ⇒ 1 đỏ · cho nhánh sa-bàn-2D dùng lại khoá của nhánh 3D ⇒ 1 đỏ. `md5sum -c` 2/2 OK sau hoàn nguyên, 6/6 xanh lại.
 ⚠ Còn mở: prop `ariaLabel` vẫn được chuyền vào cây `<Canvas>` nơi nó **không thể** có tác dụng. Vô hại nhưng là một hợp đồng trông như đang làm việc. Không gỡ trong lượt này vì cơ chế ghim "mọi prop phải được chuyền" của `CanhVanHanhOnDinh` sẽ đỏ theo.
+
+## V-33 ★★★ Nhãn cụm — brief của chủ đợt SAI 5 chỗ, agent sửa cả 5 bằng số
+Đo 7 vai, 1280×720, khung mặc định, cả hai chế độ. Chống bẫy đã dính hai lần trước: **không bấm gì trước khi đo 3D**, và cú bấm duy nhất (`nut-che-2d`, vì `epChe2D` là `useState` nội bộ, không ép được qua URL) được kèm **bản đồ lớp phủ trước vs sau** — giống hệt nhau ở cả 7 vai.
+
+| vai | cụm | 3D tên cty | `soNhan()` 3D | 2D tên cty | bị **cái gì** che |
+|---|---|---|---|---|---|
+| giamdoc | 3 | **3/3** | `{ve:15,an:0}` | **1/3** | `DIV#bang-kpi-noi` liếm mép |
+| quanly | 1 | **1/1** | `{ve:3,an:2}` | **0/1** | `SPAN#co-che-giao-so`, che **123 %** |
+| kythuat | 2 | **2/2** | `{ve:6,an:4}` | **0/2** | `panel-trai` 90,6 % · `panel-phai` 89,4 % |
+| congnhan | 1 | **1/1** | `{ve:3,an:2}` | **0/1** | `SPAN#co-che-giao-so` |
+| admin | 5 | **0/5** | `{ve:0,an:0,tong:19}` | 1/5 | canvas 3D **ĐEN HOÀN TOÀN** |
+
+**NĂM ĐÍNH CHÍNH CHO BRIEF CỦA TÔI:**
+1. ★★★ **Tiền đề của tôi SAI**: `qatd_quanly` ở **3D KHÔNG hỏng** tên công ty (1/1, agent tự xem ảnh). `{ve:3, an:2}` là **2 nhãn TOÀ** nằm dưới thẻ `Metrics`, không phải tên công ty. Câu *"vai một nhà máy không đọc được tên công ty nào"* **chỉ đúng ở 2D**.
+2. **Hai vai tôi không biết cũng hỏng ở 2D**: `kythuat` 0/2 (nặng nhất — hai tên nằm trọn dưới hai panel), `congnhan` 0/1.
+3. **`giamdoc` 2D thật ra 1/3**, không phải 3/3 như tôi tưởng.
+4. ★★★ **Lời khai sai đang SỐNG ở 3D**: `giamdoc` "Toà 1"/"Toà 3" được `soNhan()` đếm là **"vẽ"** trong khi bị thẻ `Metrics` phủ **65,4 %** và **67,6 %**. Gốc: luật cũ kiểm che trên **ĐIỂM NEO** (đáy nhãn) rồi trượt đáy xuống `che.duoi+6`, nên 18,5 px chữ vẫn nằm **trên** thẻ.
+5. ★★★ **`qatd_admin` — hai khuyết tật CÓ TRƯỚC, agent dừng và hỏi**: (a) 3D canvas đen, 19/19 nhãn ẩn mà bộ đếm khai `{ve:0, an:0}`; (b) 2D biểu tượng nhỏ nhất **1,2 px**. Gốc (b): `saBanTapDoan` lấy **ô đơn vị = cạnh lớn nhất TOÀN TẬP**, nên một toà FUYU **3.000 m** ép mọi toà QATD **110 m** còn 1,2 px; khuôn viên thành **30,8 km**.
+
+**Mô phỏng BA hướng trên hình học đã đo, TRƯỚC khi sửa một dòng** (`n3-sim.mjs`): (A) bê lớp né 3D nguyên si ⇒ **kythuat vẫn 0/2** vì `panel-trai`/`panel-phai` **cao suốt khung**, trượt dọc bao nhiêu cũng không thoát; (C) ép vào `vungDungCanvas` ⇒ admin 5/5 nhưng **không cứu nổi chính admin theo tiêu chí cỡ** (1,2 → **0,6 px**) và lấy pixel của bốn vai kia; (D) "một cụm thì tên lên thanh tiêu đề" chỉ phủ 2/4 vai. ⇒ **Chọn B**: gốc chung của cả hai chế độ là **đặt theo một ĐIỂM NEO trong khi thứ người ta đọc là CẢ HỘP CHỮ**.
+
+**Kết cục:** 4 vai QATD, **cả hai chế độ, cả hai thước**: 3/3 · 1/1 · 2/2 · 1/1. Toàn cục 108 nhãn: **hiện-mà-bị-che-một-phần 39 → 4**. Mọi nhãn ẩn đều **đếm ra** (`ve + an === tong` ở mọi vai). Biểu tượng 56,5-236,1 px; quan hệ cụm×toà **0 lệch**. Đối chứng âm `/twin` một nhà máy **giống BYTE** ở **cả hai** chế độ. Ablation "gỡ dây nối hook 2D" **dựng lại và đo sống**: 2D quay về **đúng số TRƯỚC** trong khi **3D giữ số đã vá** ⇒ phân biệt được hai chế độ.
+Chủ đợt **tự xem** `anh/n1-v2/qatd_kythuat-2d-toan-man.png`: đọc rõ "Công ty A" và "Công ty B", trước là 0/2.
+
+### ★★★ BA LẦN SỬA THIẾT BỊ ĐO / BẢN VÁ — in cả số cũ lẫn mới
+1. **Harness đứng yên trên TẬP RỖNG**: điều kiện "hai lượt đọc cùng khoá" khớp `""` với `""` ⇒ khai `giamdoc` **0 biểu tượng / 15 nhãn ẩn**; số đúng **12 / 15 hiện**. Thêm chốt "khác rỗng + qua 8 s". (G146 lần nữa.)
+2. ★★★ **Thước "sạch tâm" chấm ĐẠT trong khi ảnh đọc ra "ng ty A"** — thẻ `Metrics` ăn **24,3 %** bên trái = đúng hai chữ đầu. Agent **KHÔNG đổi thước**, mà **thêm thước "SẠCH TRỌN" và in cả hai** — và theo thước mới thì **bản TRƯỚC cũng tụt** (giamdoc 2D 3/3 → 1/3). Luật sản phẩm nay tách hai câu: *đặt ở đâu* theo hộp chữ sạch hẳn; *khi nào ẩn* vẫn theo tâm.
+3. **Hai lỗi do chính bản vá sinh ra, tự bắt**: (a) đo cỡ chữ trong `useEffect` lúc `ref` còn rỗng (drei `<Html>` portal con ở commit sau) ⇒ `co={0,0}` ⇒ trượt thiếu nửa dòng **mà mọi ô lưới vẫn xanh**; (b) ★★★ **hazard tự sinh**: cứu được nhiều nhãn hơn ⇒ va chạm **nhãn-đè-nhãn dính TÊN CÔNG TY tăng 1 → 5 cặp** (nặng nhất 437 px²) — agent thấy **trên ảnh trước khi phép đo thấy**. Vá: đặt **cụm trước, toà sau**, nhãn đã đặt thành vùng cấm ⇒ còn **1 cặp, chỉ ở admin**.
+
+## PH-50 (MỚI, CAO) · Ô đơn vị sa bàn lấy cạnh lớn nhất TOÀN TẬP ⇒ một toà lớn bóp nát cả cảnh
+`saBanTapDoan` chọn ô đơn vị bằng **cạnh lớn nhất trong toàn bộ tập toà nhà**. Với `qatd_admin` (thấy cả QATD lẫn `FUYU-F`), một toà FUYU **3.000 m** ép mọi toà QATD **110 m** xuống **1,2 px** và kéo khuôn viên thành **30,8 km** ⇒ 2D còn 1,2 px (trần 24) và **3D đen hoàn toàn**, 19/19 nhãn ẩn mà bộ đếm khai `{ve:0, an:0}`.
+★ Chủ dự án đã chốt *"không nhất thiết phải vẽ đúng tỉ lệ kích thước của từng toà nhà"* ⇒ **chuẩn hoá cỡ biểu tượng nằm TRONG quyết định ấy**. Nhưng nó đổi cảnh QATD mà chủ dự án đã nghiệm thu bằng mắt, nên agent **dừng và hỏi** — đúng luật.

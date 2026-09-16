@@ -1,0 +1,226 @@
+{
+ "qatd_giamdoc": {
+  "soBieuTuong": 12,
+  "soTrongKhung": 12,
+  "rongPx": [
+   56.5,
+   59.3,
+   60.6,
+   63.2,
+   66.3,
+   70,
+   71.1,
+   71.6,
+   74.7,
+   75.5,
+   79.2,
+   83
+  ],
+  "toaTheoNhaMay": {
+   "48": 4,
+   "49": 4,
+   "50": 4
+  },
+  "soNhan": {
+   "ve": 15,
+   "an": 0,
+   "anVungCam": 0,
+   "anNgoaiKhung": 0,
+   "tong": 15
+  },
+  "soNhanDom": 15,
+  "thongKe": {
+   "calls": 4,
+   "triangles": 182,
+   "matContext": 0,
+   "khoiPhuc": 0
+  },
+  "soCanvas": 1,
+  "fps": {
+   "khung": 154,
+   "ms": 3789,
+   "fps": 41,
+   "thongKe": {
+    "calls": 4,
+    "triangles": 182,
+    "matContext": 0,
+    "khoiPhuc": 0
+   }
+  },
+  "kyVongToaTheoNhaMay": {
+   "48": 4,
+   "49": 4,
+   "50": 4
+  },
+  "lechQuanHe": []
+ },
+ "qatd_quanly": {
+  "soBieuTuong": 4,
+  "soTrongKhung": 4,
+  "rongPx": [
+   163.4,
+   185.8,
+   203.4,
+   236.1
+  ],
+  "toaTheoNhaMay": {
+   "48": 4
+  },
+  "soNhan": {
+   "ve": 5,
+   "an": 0,
+   "anVungCam": 0,
+   "anNgoaiKhung": 0,
+   "tong": 5
+  },
+  "soNhanDom": 5,
+  "thongKe": {
+   "calls": 4,
+   "triangles": 62,
+   "matContext": 0,
+   "khoiPhuc": 0
+  },
+  "soCanvas": 1,
+  "fps": {
+   "khung": 151,
+   "ms": 2836,
+   "fps": 53,
+   "thongKe": {
+    "calls": 4,
+    "triangles": 62,
+    "matContext": 0,
+    "khoiPhuc": 0
+   }
+  },
+  "kyVongToaTheoNhaMay": {
+   "48": 4
+  },
+  "lechQuanHe": []
+ },
+ "qatd_kythuat": {
+  "soBieuTuong": 8,
+  "soTrongKhung": 8,
+  "rongPx": [
+   81.3,
+   87,
+   88.7,
+   95.6,
+   110.5,
+   119.4,
+   129.4,
+   139.7
+  ],
+  "toaTheoNhaMay": {
+   "48": 4,
+   "49": 4
+  },
+  "soNhan": {
+   "ve": 7,
+   "an": 3,
+   "anVungCam": 3,
+   "anNgoaiKhung": 0,
+   "tong": 10
+  },
+  "soNhanDom": 10,
+  "thongKe": {
+   "calls": 4,
+   "triangles": 122,
+   "matContext": 0,
+   "khoiPhuc": 0
+  },
+  "soCanvas": 1,
+  "fps": {
+   "khung": 149,
+   "ms": 3315,
+   "fps": 45,
+   "thongKe": {
+    "calls": 4,
+    "triangles": 122,
+    "matContext": 0,
+    "khoiPhuc": 0
+   }
+  },
+  "kyVongToaTheoNhaMay": {
+   "48": 4,
+   "49": 4
+  },
+  "lechQuanHe": []
+ },
+ "qatd_congnhan": {
+  "soBieuTuong": 4,
+  "soTrongKhung": 4,
+  "rongPx": [
+   163.4,
+   185.8,
+   203.4,
+   236.1
+  ],
+  "toaTheoNhaMay": {
+   "50": 4
+  },
+  "soNhan": {
+   "ve": 5,
+   "an": 0,
+   "anVungCam": 0,
+   "anNgoaiKhung": 0,
+   "tong": 5
+  },
+  "soNhanDom": 5,
+  "thongKe": {
+   "calls": 4,
+   "triangles": 62,
+   "matContext": 0,
+   "khoiPhuc": 0
+  },
+  "soCanvas": 1,
+  "fps": {
+   "khung": 145,
+   "ms": 2597,
+   "fps": 56,
+   "thongKe": {
+    "calls": 4,
+    "triangles": 62,
+    "matContext": 0,
+    "khoiPhuc": 0
+   }
+  },
+  "kyVongToaTheoNhaMay": {
+   "50": 4
+  },
+  "lechQuanHe": []
+ },
+ "qatd_admin": {
+  "soBieuTuong": 0,
+  "soTrongKhung": 0,
+  "rongPx": [],
+  "toaTheoNhaMay": {},
+  "soNhan": {
+   "ve": 0,
+   "an": 19,
+   "anVungCam": 0,
+   "anNgoaiKhung": 19,
+   "tong": 19
+  },
+  "soNhanDom": 19,
+  "thongKe": {
+   "calls": 2,
+   "triangles": 228,
+   "matContext": 0,
+   "khoiPhuc": 0
+  },
+  "soCanvas": 1,
+  "fps": {
+   "khung": 144,
+   "ms": 3104,
+   "fps": 46,
+   "thongKe": {
+    "calls": 2,
+    "triangles": 228,
+    "matContext": 0,
+    "khoiPhuc": 0
+   }
+  },
+  "kyVongToaTheoNhaMay": {},
+  "lechQuanHe": []
+ }
+}

@@ -62,7 +62,16 @@ const Z_INDEX_NHAN: [number, number] = [20, 0];
 /** Lớp nhãn là chỉ báo, không nhận chuột — `pointer-events: none` để kéo xoay camera xuyên qua. */
 const KIEU_LOP_NHAN = { pointerEvents: "none", userSelect: "none" } as const;
 
-export function layVungCam(canvas: HTMLCanvasElement | null | undefined): HinhChuNhat[] {
+/**
+ * ★ THAM SỐ LÀ `Element`, KHÔNG PHẢI `HTMLCanvasElement` — mở đúng một bậc, có lý do
+ *   đo được: từ bản vá NHÃN-CỤM, bản **2D** (`<svg>`) dùng CHÍNH hàm này để biết
+ *   lớp phủ nào đang che nhãn sa bàn. Hẹp kiểu lại thì bề mặt 2D buộc phải chép
+ *   một bộ luật thứ hai — và hai bộ luật là cách chắc chắn nhất để hai chế độ nói
+ *   khác nhau về cùng một màn (đúng lớp lỗi mà `hopNhatCanh` đã phải gom bảng màu
+ *   về một chỗ để tránh). Thân hàm chỉ dùng `getBoundingClientRect()`, có ở mọi
+ *   `Element`, nên không có gì mất đi.
+ */
+export function layVungCam(canvas: Element | null | undefined): HinhChuNhat[] {
   if (!canvas || typeof document === "undefined") return [];
   const cv = canvas.getBoundingClientRect();
   if (cv.width <= 0 || cv.height <= 0) return [];

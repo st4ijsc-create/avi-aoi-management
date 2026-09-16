@@ -42,12 +42,13 @@
  * `saBan2D.dom.test.tsx` (hành vi) và `saBanHaiCheDo.unit.test.ts` (khớp nối).
  */
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 import { useOptionalTheme } from "@/components/factory-scene/useOptionalTheme";
 
 import { giaiMauCanh, mauChoTrangThai } from "../mauTrangThai";
 import { mmSangMet } from "../heToaDo";
+import { useDatNhanSaBan2D, type MucNhan2D } from "./nhanSaBan2D";
 import {
   MAU_BIEU_TUONG_TOA,
   NEN_CUM_SANG,
@@ -170,8 +171,77 @@ export function CanhVanHanh2D({
     return m;
   }, [trangThaiTheoMay]);
 
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ NHÃN SA BÀN PHẢI BIẾT LỚP PHỦ DOM — ĐO TRƯỚC, SỐ Ở `nhanSaBan2D.ts`
+   * ════════════════════════════════════════════════════════════════════════
+   * Trước bản vá, nhãn cụm nằm cứng ở mép TRÊN tấm nền, và mép trên ấy là đúng
+   * chỗ thẻ `Metrics` + dải trạng thái ngồi. Đo @1280×720 khung mặc định: tên
+   * công ty đọc được `qatd_quanly` **0/1** · `qatd_congnhan` **0/1** ·
+   * `qatd_kythuat` **0/2** — ba trong bốn vai không đọc được tên nào.
+   *
+   * ⚠ KHÔNG bê nguyên lớp né của `LopSaBan` sang: nó chỉ trượt DỌC, mà hai nhãn
+   *   của `qatd_kythuat` nằm dưới `panel-trai`/`panel-phai` **cao suốt khung** —
+   *   mô phỏng cho 0/2, y như chưa vá. Xem `.qa-tapdoan/n3-sim.mjs`.
+   */
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const nhanRef = useRef<Map<string, SVGTextElement | null>>(new Map());
+  const mucNhan = useMemo<MucNhan2D[]>(() => {
+    if (!veSaBan) return [];
+    return [
+      ...saBanCum.map((c) => ({
+        khoa: `cum-${c.factoryId}`,
+        hopMo: {
+          trai: c.viTri.x - c.co.rong / 2,
+          phai: c.viTri.x + c.co.rong / 2,
+          tren: c.viTri.z - c.co.sau / 2,
+          duoi: c.viTri.z + c.co.sau / 2,
+        },
+        // Neo mặc định = mép TRÊN tấm nền, đúng chỗ bản chưa vá đặt.
+        uuTien: "tren" as const,
+      })),
+      ...saBan.map((v) => ({
+        khoa: `toa-${v.toaNhaId}`,
+        hopMo: {
+          trai: v.viTri.x - v.co.rong / 2,
+          phai: v.viTri.x + v.co.rong / 2,
+          tren: v.viTri.z - v.co.sau / 2,
+          duoi: v.viTri.z + v.co.sau / 2,
+        },
+        // Nhãn toà vốn nằm GIỮA khối — giữ nguyên.
+        uuTien: "trong" as const,
+      })),
+    ];
+  }, [veSaBan, saBan, saBanCum]);
+  const oNhin = useMemo(() => ({ x: -le, y: -le, rong, sau }), [le, rong, sau]);
+  const datNhan = useDatNhanSaBan2D(svgRef, nhanRef, mucNhan, oNhin);
+  /** Ghi `ref` của `<text>` theo khoá — hook đo hộp chữ bằng `getBBox()` trên chính nó. */
+  const ghiNhan = (khoa: string) => (el: SVGTextElement | null) => {
+    if (el) nhanRef.current.set(khoa, el);
+    else nhanRef.current.delete(khoa);
+  };
+  /** Thuộc tính đặt/ẩn cho một nhãn — một chỗ, để hai loại nhãn không lệch nhau. */
+  const theNhan = (khoa: string) => {
+    const d = datNhan.doi.get(khoa);
+    const an = datNhan.an.has(khoa);
+    return {
+      ref: ghiNhan(khoa),
+      /*
+       * ẨN bằng `visibility`, KHÔNG bằng `display`/không render: `getBBox()` của
+       * một phần tử `display:none` trả 0 ở nhiều bộ dựng, và mất hộp chữ thì lượt
+       * đo sau không bao giờ đặt lại được nhãn ấy — nó sẽ ở lì trạng thái ẩn kể
+       * cả khi lớp phủ đã đi chỗ khác.
+       */
+      visibility: an ? ("hidden" as const) : undefined,
+      "aria-hidden": an ? true : undefined,
+      "data-an": an ? "1" : "0",
+      transform: d ? `translate(${d.dx} ${d.dy})` : undefined,
+    };
+  };
+
   return (
     <svg
+      ref={svgRef}
       viewBox={`${-le} ${-le} ${rong} ${sau}`}
       className="h-full w-full"
       role="img"
@@ -254,7 +324,21 @@ export function CanhVanHanh2D({
           `LopSaBan.tsx` cho bản 3D).
       */}
       {veSaBan ? (
-        <g data-testid="lop-sa-ban-2d" data-so-toa={saBan.length} data-so-cum={saBanCum.length}>
+        <g
+          data-testid="lop-sa-ban-2d"
+          data-so-toa={saBan.length}
+          data-so-cum={saBanCum.length}
+          /*
+            ★★★ NHÃN BỊ ẨN PHẢI ĐƯỢC ĐẾM RA — cùng hợp đồng `__demSaBan.soNhan()`
+              của bản 3D, nhưng ở đây là THUỘC TÍNH DOM chứ không phải cửa sổ đo:
+              số của bản 2D chỉ đổi khi bố cục đổi (không phải mỗi khung), và một
+              thuộc tính đọc được KHÔNG cần `?do=1` thì mọi phép đo đều thấy.
+              Một nhãn biến mất im lặng là lời khai sai (§4).
+          */
+          data-nhan-ve={datNhan.dem.ve}
+          data-nhan-an={datNhan.dem.an}
+          data-nhan-tong={datNhan.dem.tong}
+        >
           {/* Nền cụm TRƯỚC — vẽ sau biểu tượng thì tấm nền đè mất chính thứ nó nền cho. */}
           {saBanCum.map((c) => (
             <rect
@@ -298,6 +382,7 @@ export function CanhVanHanh2D({
           {saBanCum.map((c) => (
             <text
               key={`nhan-cum-${c.factoryId}`}
+              {...theNhan(`cum-${c.factoryId}`)}
               data-testid="nhan-cum-sa-ban-2d"
               data-factory-id={c.factoryId}
               x={c.viTri.x}
@@ -317,6 +402,7 @@ export function CanhVanHanh2D({
           {saBan.map((v) => (
             <text
               key={`nhan-toa-${v.toaNhaId}`}
+              {...theNhan(`toa-${v.toaNhaId}`)}
               data-testid="nhan-toa-sa-ban-2d"
               data-toa-nha-id={v.toaNhaId}
               x={v.viTri.x}

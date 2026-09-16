@@ -184,7 +184,21 @@ export interface CuaSoDoTwin3d {
       caoPx: number;
       trongKhung: boolean;
     }>;
-    soNhan: () => { ve: number; an: number; tong: number };
+    /**
+     * `{ve, an, tong}` — và từ bản vá NHÃN-CỤM, `ve + an === tong` LUÔN đúng, kèm
+     * hai lý do ẩn tách riêng. Trước đó nhánh "không chiếu được" ẩn nhãn mà không
+     * cộng vào `an`, nên ở vai `qatd_admin` (khuôn viên 30,8 km) bộ đếm trả
+     * `{ve:0, an:0, tong:19}` giữa lúc **cả 19 nhãn** đều `display:none`.
+     */
+    soNhan: () => {
+      ve: number;
+      an: number;
+      /** Ẩn vì không chỗ nào thoát lớp phủ DOM. */
+      anVungCam: number;
+      /** Ẩn vì không chiếu được ra khung (sau lưng/ngoài mặt phẳng xa). */
+      anNgoaiKhung: number;
+      tong: number;
+    };
   };
 }
 
