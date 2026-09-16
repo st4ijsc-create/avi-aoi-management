@@ -352,3 +352,18 @@ Chạy khô `node .qa-tapdoan/sinh-tap-doan.mjs --kho` ngày 2026-09-16 sau Task
 ★ Lệch này CÓ SẴN TỪ TRƯỚC, không do bản vá sinh ra: `apClick:78` cũng trả `dangChon: null` khi bấm LẠI đúng máy đang chọn, cho ra y hệt triệu chứng. Bản vá Đợt 64 chỉ thêm một nguồn kích hoạt mới (bấm nền).
 ★ Không vá trong đợt này — có chủ ý. Trang khai `selectMachine = (id: number)` (`FactoryCommandView.tsx:365`) nên truyền `null` lên đòi đổi hợp đồng của trang; và `CanhNhaMay` còn ba người dùng khác (`CanhThietKe`, `CanhVanHanh`, `CanhVanHanh2D`) nên sửa chỗ vẽ dùng chung là thay đổi rộng, nằm ngoài phạm vi twin của đợt. Mức THẤP: tự lành ở cú bấm kế tiếp.
 Hai đường vá khi mở lại: (a) cho `onSelect` nhận `number | null` và sửa trang; (b) cho `:275`/`:415` đọc `chon.dangChon` thay vì `selectedId` (hiệu ứng `:239` đã đồng bộ chiều xuống), rẻ hơn nhưng phải đo cả bốn người dùng.
+
+## PH-43 (MỚI, CAO cho PHÉP ĐO) · `dist/BUILD-INFO.txt` khai SAI, không phải khai thiếu — và không khôi phục được
+Đo 2026-09-16 07:2x, khi phát hiện cổng 3000 đang phục vụ:
+| tệp | mtime | nội dung |
+|---|---|---|
+| `dist/index.js` | **2026-09-16 06:12:46** | — |
+| `dist/BUILD-INFO.txt` | 2026-09-14 09:38:22 | `commit=e780bcab` · `built=2026-09-14 09:38:22` |
+
+Bản dựng được làm lại sáng 16/09 mà tệp lai lịch KHÔNG cập nhật. Đây **nặng hơn** "bản dựng không lai lịch" (G141): lai lịch thiếu thì người đo còn nghi ngờ, **lai lịch sai thì người đo yên tâm mà sai**. Ai đọc tệp này sẽ tin mình đang đo `e780bcab` trong khi thứ đang phục vụ được dựng từ một commit **không ai biết**.
+
+★★★ KHÔNG KHÔI PHỤC ĐƯỢC: không có đường nào suy ra bản 06:12:46 dựng từ commit nào. ⛔ **Cấm "sửa" BUILD-INFO bằng cách đoán** — làm thế biến một lời khai sai thành một lời khai sai TRÔNG NHƯ ĐÃ KIỂM. Hai lối sạch duy nhất: (a) dựng lại từ một commit biết rõ rồi ghi lai lịch thật; (b) xoá tệp để nó IM LẶNG thay vì nói dối. Lối (b) là xoá tệp ⇒ **phải hỏi chủ dự án**, chưa làm.
+
+★ HỆ QUẢ NGƯỢC VỀ SỔ CŨ (phiên `-fe` chỉ ra): phép đo chéo rò tenant ngày 14/09 (`operator1` ⇒ 0 máy · đối chứng ⇒ 41 máy) chạy trên PID 37052 bản `e780bcab`, tiến trình đó đã chết. **Con số ấy không nói gì về bản 06:12 đang phục vụ** và không được mang sang.
+
+Chủ sở hữu cổng 3000: KHÔNG phiên Claude nào. Chuỗi cha `24872 → 10944 cross-env → 13488 cmd → 18012 pnpm → 29564 cmd → 32100 pnpm start → 37528 powershell -noexit → 10216 Code.exe`; con DUY NHẤT của 37528 là 32100, và **0** `claude.exe` trong chuỗi (mọi `claude.exe` sống đều có cha `30108 Code.exe` hoặc `12780 python.exe`). Phiên `-fe` xác nhận độc lập bằng cùng phép đo. ⇒ Đã tắt theo quyết định chủ dự án "3000 để tắt tới khi xong kế hoạch". Xác nhận hai đường: `Get-NetTCPConnection` rỗng **và** HTTP không nối được. 3001/3008/3064/5173 cũng tắt.
