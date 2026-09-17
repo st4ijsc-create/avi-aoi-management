@@ -1,0 +1,34 @@
+{
+ "so": [
+  {
+   "ten": "1-chua-chon",
+   "chon": null,
+   "sheetMo": false,
+   "nhanChon": [],
+   "rongKhoiPx": null
+  },
+  {
+   "ten": "2-da-chon",
+   "chon": null,
+   "sheetMo": true,
+   "nhanChon": [
+    8834
+   ],
+   "rongKhoiPx": null
+  },
+  {
+   "ten": "3-sau-bo-chon",
+   "chon": null,
+   "sheetMo": false,
+   "nhanChon": [],
+   "rongKhoiPx": null
+  }
+ ],
+ "loi": [],
+ "muc": {
+  "machineId": 8717,
+  "x": 86.66252922500037,
+  "y": 138.343120178873,
+  "trongKhung": true
+ }
+}

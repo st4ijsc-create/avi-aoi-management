@@ -1,0 +1,49 @@
+{
+ "so": [
+  {
+   "ten": "1-chua-chon",
+   "chon": {
+    "trang": null,
+    "nhanSang": null,
+    "vien": null,
+    "nhan": null
+   },
+   "sheetMo": false,
+   "nhanChon": [],
+   "rongKhoiPx": null
+  },
+  {
+   "ten": "2-da-chon",
+   "chon": {
+    "trang": 8834,
+    "nhanSang": 8834,
+    "vien": 8834,
+    "nhan": 8834
+   },
+   "sheetMo": true,
+   "nhanChon": [
+    8834
+   ],
+   "rongKhoiPx": null
+  },
+  {
+   "ten": "3-sau-bo-chon",
+   "chon": {
+    "trang": null,
+    "nhanSang": null,
+    "vien": null,
+    "nhan": null
+   },
+   "sheetMo": false,
+   "nhanChon": [],
+   "rongKhoiPx": null
+  }
+ ],
+ "loi": [],
+ "muc": {
+  "machineId": 8717,
+  "x": 86.66252922500044,
+  "y": 138.343120178873,
+  "trongKhung": true
+ }
+}

@@ -362,9 +362,21 @@ export default function FactoryCommandView() {
     return { running, idle, down, oee, openIssues: issues.length };
   }, [machines, issues]);
 
-  const selectMachine = (id: number) => {
+  /**
+   * ★ PH-42 — nhận `null` = "không còn máy nào được chọn".
+   *
+   * Cảnh 3D (`CanhNhaMay`) là nơi DUY NHẤT phát `null`: kit `twin3d/loi` bỏ chọn khi
+   * bấm nền hoặc bấm lại đúng máy đang chọn, và trước đây quyết định ấy bị nuốt ở
+   * ranh giới cảnh↔trang nên nhấn sáng tắt mà ngăn chi tiết + viền + nhãn vẫn chỉ vào
+   * máy cũ. `FactoryScene2D` không phát `null` (hợp đồng của nó vẫn hẹp), nên đường 2D
+   * không đổi một hành vi nào — cùng một hàm này phục vụ cả hai.
+   *
+   * `setFocusId(null)` là vô hại: `BayToi` thoát sớm khi `focusId == null`, tức bỏ chọn
+   * KHÔNG làm camera bay đi đâu cả.
+   */
+  const selectMachine = (id: number | null) => {
     setSelectedId(id);
-    setFocusId(id); // camera bay tới
+    setFocusId(id); // camera bay tới (id = null ⇒ không bay)
   };
 
   const activeFactoryValue = factoryId != null ? String(factoryId) : "all";

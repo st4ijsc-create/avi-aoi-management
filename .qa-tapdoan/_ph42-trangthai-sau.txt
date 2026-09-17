@@ -1,0 +1,15 @@
+ M client/src/components/twin3d/loi/CanhNhaMay.tsx
+ M client/src/components/twin3d/loi/KhungCanh.tsx
+ M client/src/components/twin3d/loi/index.ts
+ M client/src/components/twin3d/van-hanh/CanhVanHanh.tsx
+ M client/src/pages/FactoryCommandView.tsx
+?? client/src/components/twin3d/loi/catCanh.ts
+?? client/src/components/twin3d/loi/catCanh.unit.test.ts
+?? client/src/components/twin3d/loi/catCanhDongBo.dom.test.tsx
+?? client/src/components/twin3d/loi/chonNhatQuanChiHuy.dom.test.tsx
+ client/src/components/twin3d/loi/CanhNhaMay.tsx    | 132 +++++++++++++++++++--
+ client/src/components/twin3d/loi/KhungCanh.tsx     | 101 +++++++++++++++-
+ client/src/components/twin3d/loi/index.ts          |  24 +++-
+ .../src/components/twin3d/van-hanh/CanhVanHanh.tsx |   8 +-
+ client/src/pages/FactoryCommandView.tsx            |  16 ++-
+ 5 files changed, 266 insertions(+), 15 deletions(-)

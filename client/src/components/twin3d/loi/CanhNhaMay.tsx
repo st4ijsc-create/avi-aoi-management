@@ -46,6 +46,44 @@ import { noiInvalidate } from "./dieuKhienQuay";
 import { taoVienHopBao, giaiPhongVien } from "./vienNoiBat";
 import { TheoDoiMatDoKhungHinh, docBacDaLuu } from "./matDoKhungHinh";
 import { apClick, apHover, TRANG_THAI_CHON_RONG, type TrangThaiChon } from "./chonVatThe";
+import { laCheDoDo } from "./cheDoDo";
+
+/* ═════════════════════════════════════════════════════════════════════════ */
+/* PH-42 — CỬA SỔ ĐO "BA BỀ MẶT CHỌN"                                        */
+/* ═════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ★★★ PH-42 — `window.__demChonChiHuy` — BA BỀ MẶT CHỌN CỦA MỘT CẢNH, ĐỌC CÙNG LÚC.
+ *
+ * Vì sao phải có: tiêu chí nghiệm thu của PH-42 là *"nhấn sáng, viền chọn và nhãn
+ * cùng nói MỘT điều"*, mà trước cửa sổ này **không phép đo nào nói được câu đó**:
+ *   · nhấn sáng — màu một instance trong `BatchedMesh`; `preserveDrawingBuffer` tắt
+ *     nên `toDataURL()` trả 0 điểm khác nền (cùng lý do đã ghi ở `__demVien`).
+ *   · viền chọn — `LineSegments` trong buffer WebGL, không có mặt trong DOM.
+ *   · nhãn      — CÓ trong DOM, nên suốt các đợt trước người đo chỉ thấy **một**
+ *     trong ba bề mặt và kết luận "màn hình nhất quán" từ đúng bề mặt duy nhất
+ *     mình nhìn được.
+ *
+ * Bốn số trả về là **CHÍNH các biểu thức mà JSX dùng**, không phải bản chép lại:
+ * `mayDangChon` và `idChoNhan` được tính MỘT lần rồi dùng cho cả cửa sổ đo lẫn
+ * `<VienChon>`/`<LopNhan>`. Một bản sao ở đây sẽ đo được "cái tôi định vẽ" thay vì
+ * "cái tôi đang vẽ" — đúng lớp lỗi `wip={[]}` mà `vienSucKhoeDoDuoc.dom.test.tsx` canh.
+ *
+ * Chỉ gắn khi `laCheDoDo()` (build DEV hoặc URL `?do=1`), dọn khi rời màn — cùng
+ * khuôn `__demTuongTac`/`__demVien`; sản phẩm không đổi một byte khi cờ tắt.
+ */
+export interface CuaSoDoChonChiHuy extends Window {
+  __demChonChiHuy?: () => {
+    /** `selectedId` — thứ TRANG đang giữ (Sheet chi tiết, vòng `ring-primary` ở rail phải). */
+    trang: number | null;
+    /** `chon.dangChon` — thứ CẢNH tô nhấn sáng (`LoBatchMay`). */
+    nhanSang: number | null;
+    /** Máy mà `<VienChon>` đang vẽ khung trắng quanh. */
+    vien: number | null;
+    /** Giá trị `dangChon` mà `<LopNhan>` nhận — quyết định nhãn nào viền primary. */
+    nhan: number | null;
+  };
+}
 
 /* ═════════════════════════════════════════════════════════════════════════ */
 /* OrbitControls thuần + RB-3 (nối `invalidate`)                             */
@@ -212,7 +250,13 @@ function TheoDoiFps({ onDoiBac }: { onDoiBac: (chiHopBao: boolean, coNhan: boole
 /* Nội dung cảnh                                                             */
 /* ═════════════════════════════════════════════════════════════════════════ */
 
-function NoiDungCanh({
+/**
+ * ★ EXPORT cho LƯỚI: `chonNhatQuanChiHuy.dom.test.tsx` phải dựng **đúng cây này**
+ *   dưới một gốc R3F có `gl` giả (jsdom không có WebGL, nên `<KhungCanh>` — tức
+ *   `<Canvas>` thật — không dựng được). Dựng lại một bản chép trong lưới sẽ đo bản
+ *   chép, không đo sản phẩm; đó là lý do export thay vì nhân bản.
+ */
+export function NoiDungCanh({
   machines,
   selectedId,
   onSelect,
@@ -220,7 +264,9 @@ function NoiDungCanh({
   focusId,
   theme,
   nhanTrangThai,
-}: Required<Omit<FactorySceneProps, "className">> & {
+}: Omit<Required<Omit<FactorySceneProps, "className">>, "onSelect"> & {
+  /** ★ PH-42 — RỘNG HƠN `FactorySceneProps.onSelect`; lý do ở {@link CanhNhaMayProps}. */
+  onSelect: (id: number | null) => void;
   nhanTrangThai: (m: PlacedMachine) => string;
 }) {
   const palette = scenePalette(theme);
@@ -272,7 +318,30 @@ function NoiDungCanh({
   );
 
   const byId = layout.byId;
+
+  /**
+   * ── BA BỀ MẶT CHỌN, MỖI BỀ MẶT MỘT BIỂU THỨC CÓ TÊN ──
+   * Đặt tên để `<VienChon>`, `<LopNhan>` và `window.__demChonChiHuy` dùng CHUNG một
+   * giá trị. Trước đây hai chỗ vẽ đọc thẳng `selectedId` ở hai nơi khác nhau nên
+   * không ai đối chiếu được chúng với `chon.dangChon` (nhấn sáng) — xem PH-42.
+   */
   const mayDangChon = selectedId != null ? (byId.get(selectedId) ?? null) : null;
+  const idVien = mayDangChon?.node.id ?? null;
+  const idChoNhan = selectedId;
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !laCheDoDo()) return;
+    const w = window as CuaSoDoChonChiHuy;
+    w.__demChonChiHuy = () => ({
+      trang: selectedId,
+      nhanSang: chon.dangChon,
+      vien: idVien,
+      nhan: idChoNhan,
+    });
+    return () => {
+      delete w.__demChonChiHuy;
+    };
+  }, [selectedId, chon.dangChon, idVien, idChoNhan]);
 
   /**
    * Tập nhãn: giữ NGUYÊN luật của màn cũ (chọn ∪ hover ∪ andon ∪ pdm, hoặc TẤT CẢ
@@ -376,6 +445,41 @@ function NoiDungCanh({
     setCoNhan(nhanBat);
   }, []);
 
+  /**
+   * ★★★ PH-42 — MỘT CÚ BẤM, **MỘT** QUYẾT ĐỊNH, BÁO CHO CẢ CẢNH LẪN TRANG.
+   *
+   * Cách nối CŨ tách quyết định làm hai nửa và hai nửa ấy không đồng ý với nhau:
+   *
+   *     setChon((tt) => apClick(tt, id));   // cảnh: có thể về `null`
+   *     if (id != null) onSelect(id);        // trang: KHÔNG BAO GIỜ nhận `null`
+   *
+   * `apClick` trả `dangChon: null` ở HAI nhánh — bấm nền (`chonVatThe.ts:77`) và bấm
+   * LẠI đúng máy đang chọn (`:78`). Nhánh đầu bị chặn bởi `id != null`; nhánh sau còn
+   * tệ hơn vì `onSelect(id)` gửi lên trang **chính id vừa bị bỏ chọn**. Hậu quả: nhấn
+   * sáng tắt trong khi `selectedId` giữ nguyên, mà `<VienChon>` + `<LopNhan>` + ngăn
+   * chi tiết của trang đều đọc `selectedId` ⇒ bốn bề mặt nói một đằng, lô máy nói một
+   * nẻo (đo được: `{trang:202, nhanSang:null, vien:202, nhan:202}`).
+   *
+   * Nay `apClick` được gọi ĐÚNG MỘT LẦN và kết quả của nó đi cả hai đường. Luật
+   * chọn/bỏ chọn vẫn nằm nguyên trong `chonVatThe.ts` — ở đây không có bản sao nào
+   * của luật ấy để trôi khỏi nhau.
+   *
+   * ⚠ Đọc `chon` của vòng render hiện tại (không dùng dạng cập nhật hàm) là CỐ Ý:
+   *   giá trị báo lên trang phải là CHÍNH giá trị đặt vào state, mà một updater chạy
+   *   trễ thì không trả được gì ra ngoài. An toàn vì `onHover` đi từ sự kiện `pointer
+   *   move` — một sự kiện rời, React đã flush xong trước khi cú `click` chạy — nên
+   *   `chon` trong closure luôn là bản mới nhất; ca N3 canh đúng chỗ này (chọn máy
+   *   khác sau khi đã hover/chọn máy cũ).
+   */
+  const khiChonTrenCanh = useCallback(
+    (id: number | null) => {
+      const sau = apClick(chon, id);
+      setChon(sau);
+      onSelect(sau.dangChon);
+    },
+    [chon, onSelect],
+  );
+
   return (
     <>
       <fog attach="fog" args={[palette.fog, banKinh * 2.4, banKinh * 6]} />
@@ -404,15 +508,12 @@ function NoiDungCanh({
         may={may}
         chon={chon}
         chiHopBao={chiHopBao}
-        onChon={(id) => {
-          setChon((tt) => apClick(tt, id));
-          if (id != null) onSelect(id);
-        }}
+        onChon={khiChonTrenCanh}
         onHover={(id) => setChon((tt) => apHover(tt, id))}
       />
 
       <VienChon may={mayDangChon} />
-      <LopNhan nhan={nhan} dangChon={selectedId} dangHover={chon.dangHover} tat={!coNhan} />
+      <LopNhan nhan={nhan} dangChon={idChoNhan} dangHover={chon.dangHover} tat={!coNhan} />
 
       <DieuKhien banKinh={banKinh} controlsRef={controlsRef} onDoiKhoangCach={doiKhoangCach} />
       <BayToi byId={byId} focusId={focusId} controlsRef={controlsRef} />
@@ -425,7 +526,22 @@ function NoiDungCanh({
 /* Component xuất khẩu — CÙNG chữ ký `FactorySceneProps`                     */
 /* ═════════════════════════════════════════════════════════════════════════ */
 
-export interface CanhNhaMayProps extends FactorySceneProps {
+export interface CanhNhaMayProps extends Omit<FactorySceneProps, "onSelect"> {
+  /**
+   * ★★★ PH-42 — RỘNG HƠN `FactorySceneProps.onSelect` MỘT CÁCH CÓ CHỦ Ý: `null` nghĩa là
+   * **không còn máy nào được chọn**.
+   *
+   * Hợp đồng chung `(id: number) => void` không có từ nào để nói "bỏ chọn", trong khi
+   * `apClick` của kit BỎ CHỌN ở hai nhánh (bấm nền, bấm lại máy đang chọn). Thiếu từ ấy,
+   * cảnh buộc phải nuốt quyết định của chính mình và màn hình tự mâu thuẫn — xem
+   * docblock `khiChonTrenCanh`.
+   *
+   * ⚠ Chỉ nới ở ĐÂY, không nới `sceneTypes.FactorySceneProps`: `FactoryScene2D` dùng
+   *   chung hợp đồng ấy và không nằm trong phạm vi đợt này. Một hàm `(id: number | null)
+   *   => void` vẫn gán được vào chỗ đòi `(id: number) => void`, nên trang dùng CÙNG một
+   *   `selectMachine` cho cả 2D lẫn 3D — không sinh hai đường xử lý.
+   */
+  onSelect: (id: number | null) => void;
   /** Nhãn trạng thái đã qua `t()` — trang truyền vào để chuỗi không bị cứng ở đây. */
   nhanTrangThai?: (status: string) => string;
   /** Chữ khi mất WebGL context, đã qua `t()` (`twin3d.loi.matContext`). */

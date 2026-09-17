@@ -1,0 +1,1304 @@
+{
+ "b0_banDau": {
+  "sheetMo": false,
+  "sheetTieuDe": null,
+  "soRingRailPhai": 0,
+  "soLopPhuSheet": 0,
+  "nhan": [
+   {
+    "id": 9140,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T4-X2-L1-M08 · Offline"
+   },
+   {
+    "id": 9153,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T4-X2-L2-M07 · Offline"
+   },
+   {
+    "id": 9173,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T4-X2-L4-M05 · Offline"
+   },
+   {
+    "id": 9115,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T4-X1-L4-M08 · Offline"
+   },
+   {
+    "id": 9103,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T4-X1-L3-M05 · Offline"
+   },
+   {
+    "id": 9095,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T4-X1-L2-M05 · Offline"
+   },
+   {
+    "id": 9064,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T3-X2-L2-M06 · Offline"
+   },
+   {
+    "id": 9053,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T3-X2-L1-M06 · Offline"
+   },
+   {
+    "id": 9017,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T3-X1-L1-M06 · Offline"
+   },
+   {
+    "id": 8870,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-C-T1-X1-L3-M05 · Offline"
+   },
+   {
+    "id": 8806,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T4-X2-L1-M05 · Offline"
+   },
+   {
+    "id": 8629,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X2-L1-M05 · Offline"
+   },
+   {
+    "id": 8448,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L1-M08 · Offline"
+   },
+   {
+    "id": 8353,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X1-L1-M07 · Offline"
+   }
+  ],
+  "hopNhanDaVe": [
+   {
+    "machineId": 9140,
+    "hop": {
+     "trai": 62.04344826120254,
+     "phai": 250.34032326120254,
+     "tren": 261.5954460849018,
+     "duoi": 285.5954460849018
+    }
+   },
+   {
+    "machineId": 9153,
+    "hop": {
+     "trai": 55.08049496925997,
+     "phai": 244.98674496925997,
+     "tren": 236.20992072595544,
+     "duoi": 260.20992072595544
+    }
+   },
+   {
+    "machineId": 9173,
+    "hop": {
+     "trai": 42.46221219647174,
+     "phai": 232.85283719647174,
+     "tren": 211.4448133008005,
+     "duoi": 235.4448133008005
+    }
+   },
+   {
+    "machineId": 9115,
+    "hop": {
+     "trai": 70.45266486074735,
+     "phai": 258.99953986074735,
+     "tren": 309.949606332901,
+     "duoi": 333.949606332901
+    }
+   },
+   {
+    "machineId": 9103,
+    "hop": {
+     "trai": 277.2733985577031,
+     "phai": 465.5702735577031,
+     "tren": 252.6093545614441,
+     "duoi": 276.6093545614441
+    }
+   },
+   {
+    "machineId": 9095,
+    "hop": {
+     "trai": 281.4268457334002,
+     "phai": 469.7237207334002,
+     "tren": 224.86257760057862,
+     "duoi": 248.86257760057862
+    }
+   },
+   {
+    "machineId": 9064,
+    "hop": {
+     "trai": 294.6868597327724,
+     "phai": 484.6087347327724,
+     "tren": 194.8496302887911,
+     "duoi": 218.8496302887911
+    }
+   },
+   {
+    "machineId": 9053,
+    "hop": {
+     "trai": 297.6144668710839,
+     "phai": 485.6925918710839,
+     "tren": 297.156200383868,
+     "duoi": 321.156200383868
+    }
+   },
+   {
+    "machineId": 9017,
+    "hop": {
+     "trai": 108.189132714957,
+     "phai": 294.439132714957,
+     "tren": 186.5356543473494,
+     "duoi": 210.5356543473494
+    }
+   },
+   {
+    "machineId": 8870,
+    "hop": {
+     "trai": 357.5151189986963,
+     "phai": 543.7338689986964,
+     "tren": 165.6175803011391,
+     "duoi": 189.6175803011391
+    }
+   },
+   {
+    "machineId": 8806,
+    "hop": {
+     "trai": 69.63046289050214,
+     "phai": 257.72421289050214,
+     "tren": 157.1841407439938,
+     "duoi": 181.1841407439938
+    }
+   },
+   {
+    "machineId": 8629,
+    "hop": {
+     "trai": 324.6482147059081,
+     "phai": 512.4919647059081,
+     "tren": 136.6217671753138,
+     "duoi": 160.6217671753138
+    }
+   },
+   {
+    "machineId": 8448,
+    "hop": {
+     "trai": 67.82727409013177,
+     "phai": 251.99914909013177,
+     "tren": 121.71075522980686,
+     "duoi": 145.71075522980686
+    }
+   },
+   {
+    "machineId": 8353,
+    "hop": {
+     "trai": 288.8364551565784,
+     "phai": 475.6802051565784,
+     "tren": 111.52243329838242,
+     "duoi": 135.52243329838242
+    }
+   }
+  ],
+  "soMayVe": 1108,
+  "thongKe": {
+   "calls": 3,
+   "triangles": 66484,
+   "matContext": 0,
+   "khoiPhuc": 0,
+   "near": 0.1,
+   "far": 6666.815,
+   "camXa": 974.906,
+   "tiLeFarNear": 66668
+  },
+  "canvasHop": {
+   "trai": 289,
+   "tren": 194.5,
+   "rong": 634,
+   "cao": 529.5
+  }
+ },
+ "mayThu": {
+  "machineId": 8070,
+  "x": 420.2573552336986,
+  "y": 183.36668687615062,
+  "trongKhung": true
+ },
+ "diemMay": {
+  "x": 420.2573552336986,
+  "y": 183.36668687615062
+ },
+ "b1_sauBamMay": {
+  "sheetMo": true,
+  "sheetTieuDe": "ICT-07QATD-A-T2-X2-L4-M07",
+  "soRingRailPhai": 1,
+  "soLopPhuSheet": 1,
+  "nhan": [
+   {
+    "id": 8260,
+    "vienStyle": "1px solid var(--primary, #3b82f6)",
+    "chu": "QATD-A-T2-X2-L4-M07 · Offline"
+   },
+   {
+    "id": 8629,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X2-L1-M05 · Offline"
+   },
+   {
+    "id": 8607,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L4-M06 · Offline"
+   },
+   {
+    "id": 8547,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L4-M07 · Offline"
+   },
+   {
+    "id": 8569,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L1-M05 · Offline"
+   },
+   {
+    "id": 8535,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L3-M06 · Offline"
+   },
+   {
+    "id": 8524,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L2-M06 · Offline"
+   },
+   {
+    "id": 8477,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L3-M07 · Offline"
+   },
+   {
+    "id": 8405,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X2-L2-M07 · Offline"
+   },
+   {
+    "id": 8353,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X1-L1-M07 · Offline"
+   },
+   {
+    "id": 8284,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T3-X1-L2-M06 · Offline"
+   },
+   {
+    "id": 8261,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T2-X2-L4-M08 · Offline"
+   },
+   {
+    "id": 8201,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T2-X1-L4-M07 · Offline"
+   },
+   {
+    "id": 8076,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T1-X1-L1-M07 · Offline"
+   }
+  ],
+  "hopNhanDaVe": [
+   {
+    "machineId": 8260,
+    "hop": {
+     "trai": 222.21632474976758,
+     "phai": 412.7163247497676,
+     "tren": 203.31693910923988,
+     "duoi": 227.31693910923988
+    }
+   },
+   {
+    "machineId": 8629,
+    "hop": {
+     "trai": 40.32739464609355,
+     "phai": 228.17114464609355,
+     "tren": 278.09734060226884,
+     "duoi": 302.09734060226884
+    }
+   },
+   {
+    "machineId": 8607,
+    "hop": {
+     "trai": 56.51248089181277,
+     "phai": 244.63748089181277,
+     "tren": 248.13968957324357,
+     "duoi": 272.1396895732436
+    }
+   },
+   {
+    "machineId": 8547,
+    "hop": {
+     "trai": 91.7180941744289,
+     "phai": 279.57746917442887,
+     "tren": 313.8003404447381,
+     "duoi": 337.8003404447381
+    }
+   },
+   {
+    "machineId": 8569,
+    "hop": {
+     "trai": 278.3448971893448,
+     "phai": 464.3448971893448,
+     "tren": 263.6485138424335,
+     "duoi": 287.6485138424335
+    }
+   },
+   {
+    "machineId": 8535,
+    "hop": {
+     "trai": 301.0005443884857,
+     "phai": 488.8755443884857,
+     "tren": 231.2563544683145,
+     "duoi": 255.2563544683145
+    }
+   },
+   {
+    "machineId": 8524,
+    "hop": {
+     "trai": 307.07925430543634,
+     "phai": 494.95425430543634,
+     "tren": 306.58115371062644,
+     "duoi": 330.58115371062644
+    }
+   },
+   {
+    "machineId": 8477,
+    "hop": {
+     "trai": 26.528853524565847,
+     "phai": 212.31010352456587,
+     "tren": 219.92965598312435,
+     "duoi": 243.92965598312435
+    }
+   },
+   {
+    "machineId": 8353,
+    "hop": {
+     "trai": 186.44873047589675,
+     "phai": 373.29248047589675,
+     "tren": 167.996880242665,
+     "duoi": 191.996880242665
+    }
+   },
+   {
+    "machineId": 8327,
+    "hop": {
+     "trai": 407.3761898509613,
+     "phai": 597.8605648509613,
+     "tren": 165.09936153829125,
+     "duoi": 189.09936153829125
+    }
+   },
+   {
+    "machineId": 8284,
+    "hop": {
+     "trai": 419.0993281907483,
+     "phai": 607.7868281907483,
+     "tren": 205.98324570667236,
+     "duoi": 229.98324570667236
+    }
+   },
+   {
+    "machineId": 8201,
+    "hop": {
+     "trai": 140.8240496653312,
+     "phai": 329.4959246653312,
+     "tren": 141.69219940352863,
+     "duoi": 165.69219940352863
+    }
+   },
+   {
+    "machineId": 8148,
+    "hop": {
+     "trai": 368.2733247210993,
+     "phai": 556.9295747210992,
+     "tren": 135.5853377385585,
+     "duoi": 159.5853377385585
+    }
+   }
+  ],
+  "soMayVe": 1108,
+  "thongKe": {
+   "calls": 4,
+   "triangles": 56224,
+   "matContext": 0,
+   "khoiPhuc": 0,
+   "near": 0.1,
+   "far": 6666.815,
+   "camXa": 548.506,
+   "tiLeFarNear": 66668
+  },
+  "canvasHop": {
+   "trai": 289,
+   "tren": 194.5,
+   "rong": 634,
+   "cao": 529.5
+  }
+ },
+ "diemNen": {
+  "fx": 0.05,
+  "fy": 0.05,
+  "clientX": 320.7,
+  "clientY": 220.975
+ },
+ "b1_elTaiDiemNen": {
+  "the": "DIV",
+  "testid": null,
+  "slot": "sheet-overlay",
+  "lop": "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]"
+ },
+ "b1_elTaiDiemMay": {
+  "the": "DIV",
+  "testid": null,
+  "slot": "sheet-overlay",
+  "lop": "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]"
+ },
+ "b2_sauBamNen": {
+  "sheetMo": false,
+  "sheetTieuDe": null,
+  "soRingRailPhai": 0,
+  "soLopPhuSheet": 0,
+  "nhan": [
+   {
+    "id": 8629,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X2-L1-M05 · Offline"
+   },
+   {
+    "id": 8607,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L4-M06 · Offline"
+   },
+   {
+    "id": 8547,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L4-M07 · Offline"
+   },
+   {
+    "id": 8569,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L1-M05 · Offline"
+   },
+   {
+    "id": 8535,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L3-M06 · Offline"
+   },
+   {
+    "id": 8524,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L2-M06 · Offline"
+   },
+   {
+    "id": 8477,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L3-M07 · Offline"
+   },
+   {
+    "id": 8463,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L2-M08 · Offline"
+   },
+   {
+    "id": 8437,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X2-L5-M05 · Offline"
+   },
+   {
+    "id": 8353,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X1-L1-M07 · Offline"
+   },
+   {
+    "id": 8284,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T3-X1-L2-M06 · Offline"
+   },
+   {
+    "id": 8201,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T2-X1-L4-M07 · Offline"
+   },
+   {
+    "id": 8076,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T1-X1-L1-M07 · Offline"
+   }
+  ],
+  "hopNhanDaVe": [
+   {
+    "machineId": 8629,
+    "hop": {
+     "trai": 39.21386484986965,
+     "phai": 227.05761484986965,
+     "tren": 278.64858509116937,
+     "duoi": 302.64858509116937
+    }
+   },
+   {
+    "machineId": 8607,
+    "hop": {
+     "trai": 55.45760236990887,
+     "phai": 243.58260236990887,
+     "tren": 248.67385981173675,
+     "duoi": 272.67385981173675
+    }
+   },
+   {
+    "machineId": 8547,
+    "hop": {
+     "trai": 90.79522745835416,
+     "phai": 278.65460245835413,
+     "tren": 210.28275742815777,
+     "duoi": 234.28275742815777
+    }
+   },
+   {
+    "machineId": 8569,
+    "hop": {
+     "trai": 73.36559486176415,
+     "phai": 259.3655948617642,
+     "tren": 316.1385395238402,
+     "duoi": 340.1385395238402
+    }
+   },
+   {
+    "machineId": 8535,
+    "hop": {
+     "trai": 300.0977965210559,
+     "phai": 487.9727965210559,
+     "tren": 257.72027838909304,
+     "duoi": 281.72027838909304
+    }
+   },
+   {
+    "machineId": 8524,
+    "hop": {
+     "trai": 306.1997362453302,
+     "phai": 494.0747362453302,
+     "tren": 229.0343323817699,
+     "duoi": 253.0343323817699
+    }
+   },
+   {
+    "machineId": 8477,
+    "hop": {
+     "trai": 331.7410992028151,
+     "phai": 517.5223492028151,
+     "tren": 194.34880662704205,
+     "duoi": 218.34880662704205
+    }
+   },
+   {
+    "machineId": 8463,
+    "hop": {
+     "trai": 340.28676814171286,
+     "phai": 526.2867681417129,
+     "tren": 297.502172149478,
+     "duoi": 321.502172149478
+    }
+   },
+   {
+    "machineId": 8437,
+    "hop": {
+     "trai": 136.26957167858728,
+     "phai": 327.0039466785873,
+     "tren": 183.63743507632677,
+     "duoi": 207.63743507632677
+    }
+   },
+   {
+    "machineId": 8353,
+    "hop": {
+     "trai": 391.8637624868023,
+     "phai": 578.7075124868022,
+     "tren": 168.32063569720282,
+     "duoi": 192.32063569720282
+    }
+   },
+   {
+    "machineId": 8284,
+    "hop": {
+     "trai": 106.60012595097407,
+     "phai": 295.2876259509741,
+     "tren": 154.25957141218953,
+     "duoi": 178.25957141218953
+    }
+   },
+   {
+    "machineId": 8201,
+    "hop": {
+     "trai": 348.4219875093681,
+     "phai": 537.0938625093681,
+     "tren": 141.9293042658098,
+     "duoi": 165.9293042658098
+    }
+   },
+   {
+    "machineId": 8076,
+    "hop": {
+     "trai": 82.25150985739424,
+     "phai": 267.00150985739424,
+     "tren": 124.23728197684648,
+     "duoi": 148.23728197684648
+    }
+   }
+  ],
+  "soMayVe": 1108,
+  "thongKe": {
+   "calls": 3,
+   "triangles": 56044,
+   "matContext": 0,
+   "khoiPhuc": 0,
+   "near": 0.1,
+   "far": 6666.815,
+   "camXa": 547.312,
+   "tiLeFarNear": 66668
+  },
+  "canvasHop": {
+   "trai": 289,
+   "tren": 194.5,
+   "rong": 634,
+   "cao": 529.5
+  }
+ },
+ "b3_truocBamLai": {
+  "sheetMo": false,
+  "sheetTieuDe": null,
+  "soRingRailPhai": 0,
+  "soLopPhuSheet": 0,
+  "nhan": [
+   {
+    "id": 8629,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X2-L1-M05 · Offline"
+   },
+   {
+    "id": 8607,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L4-M06 · Offline"
+   },
+   {
+    "id": 8547,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L4-M07 · Offline"
+   },
+   {
+    "id": 8569,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L1-M05 · Offline"
+   },
+   {
+    "id": 8535,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L3-M06 · Offline"
+   },
+   {
+    "id": 8524,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L2-M06 · Offline"
+   },
+   {
+    "id": 8477,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L3-M07 · Offline"
+   },
+   {
+    "id": 8463,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L2-M08 · Offline"
+   },
+   {
+    "id": 8437,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X2-L5-M05 · Offline"
+   },
+   {
+    "id": 8353,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X1-L1-M07 · Offline"
+   },
+   {
+    "id": 8284,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T3-X1-L2-M06 · Offline"
+   },
+   {
+    "id": 8201,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T2-X1-L4-M07 · Offline"
+   },
+   {
+    "id": 8076,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T1-X1-L1-M07 · Offline"
+   }
+  ],
+  "hopNhanDaVe": [
+   {
+    "machineId": 8629,
+    "hop": {
+     "trai": 39.21386484986965,
+     "phai": 227.05761484986965,
+     "tren": 278.64858509116937,
+     "duoi": 302.64858509116937
+    }
+   },
+   {
+    "machineId": 8607,
+    "hop": {
+     "trai": 55.45760236990887,
+     "phai": 243.58260236990887,
+     "tren": 248.67385981173675,
+     "duoi": 272.67385981173675
+    }
+   },
+   {
+    "machineId": 8547,
+    "hop": {
+     "trai": 90.79522745835416,
+     "phai": 278.65460245835413,
+     "tren": 210.28275742815777,
+     "duoi": 234.28275742815777
+    }
+   },
+   {
+    "machineId": 8569,
+    "hop": {
+     "trai": 73.36559486176415,
+     "phai": 259.3655948617642,
+     "tren": 316.1385395238402,
+     "duoi": 340.1385395238402
+    }
+   },
+   {
+    "machineId": 8535,
+    "hop": {
+     "trai": 300.0977965210559,
+     "phai": 487.9727965210559,
+     "tren": 257.72027838909304,
+     "duoi": 281.72027838909304
+    }
+   },
+   {
+    "machineId": 8524,
+    "hop": {
+     "trai": 306.1997362453302,
+     "phai": 494.0747362453302,
+     "tren": 229.0343323817699,
+     "duoi": 253.0343323817699
+    }
+   },
+   {
+    "machineId": 8477,
+    "hop": {
+     "trai": 331.7410992028151,
+     "phai": 517.5223492028151,
+     "tren": 194.34880662704205,
+     "duoi": 218.34880662704205
+    }
+   },
+   {
+    "machineId": 8463,
+    "hop": {
+     "trai": 340.28676814171286,
+     "phai": 526.2867681417129,
+     "tren": 297.502172149478,
+     "duoi": 321.502172149478
+    }
+   },
+   {
+    "machineId": 8437,
+    "hop": {
+     "trai": 136.26957167858728,
+     "phai": 327.0039466785873,
+     "tren": 183.63743507632677,
+     "duoi": 207.63743507632677
+    }
+   },
+   {
+    "machineId": 8353,
+    "hop": {
+     "trai": 391.8637624868023,
+     "phai": 578.7075124868022,
+     "tren": 168.32063569720282,
+     "duoi": 192.32063569720282
+    }
+   },
+   {
+    "machineId": 8284,
+    "hop": {
+     "trai": 106.60012595097407,
+     "phai": 295.2876259509741,
+     "tren": 154.25957141218953,
+     "duoi": 178.25957141218953
+    }
+   },
+   {
+    "machineId": 8201,
+    "hop": {
+     "trai": 348.4219875093681,
+     "phai": 537.0938625093681,
+     "tren": 141.9293042658098,
+     "duoi": 165.9293042658098
+    }
+   },
+   {
+    "machineId": 8076,
+    "hop": {
+     "trai": 82.25150985739424,
+     "phai": 267.00150985739424,
+     "tren": 124.23728197684648,
+     "duoi": 148.23728197684648
+    }
+   }
+  ],
+  "soMayVe": 1108,
+  "thongKe": {
+   "calls": 3,
+   "triangles": 56044,
+   "matContext": 0,
+   "khoiPhuc": 0,
+   "near": 0.1,
+   "far": 6666.815,
+   "camXa": 547.312,
+   "tiLeFarNear": 66668
+  },
+  "canvasHop": {
+   "trai": 289,
+   "tren": 194.5,
+   "rong": 634,
+   "cao": 529.5
+  }
+ },
+ "b4_sauBamLai1": {
+  "sheetMo": false,
+  "sheetTieuDe": null,
+  "soRingRailPhai": 0,
+  "soLopPhuSheet": 0,
+  "nhan": [
+   {
+    "id": 8629,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X2-L1-M05 · Offline"
+   },
+   {
+    "id": 8607,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L4-M06 · Offline"
+   },
+   {
+    "id": 8547,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L4-M07 · Offline"
+   },
+   {
+    "id": 8569,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L1-M05 · Offline"
+   },
+   {
+    "id": 8535,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L3-M06 · Offline"
+   },
+   {
+    "id": 8524,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L2-M06 · Offline"
+   },
+   {
+    "id": 8477,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L3-M07 · Offline"
+   },
+   {
+    "id": 8463,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L2-M08 · Offline"
+   },
+   {
+    "id": 8437,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X2-L5-M05 · Offline"
+   },
+   {
+    "id": 8353,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X1-L1-M07 · Offline"
+   },
+   {
+    "id": 8284,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T3-X1-L2-M06 · Offline"
+   },
+   {
+    "id": 8201,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T2-X1-L4-M07 · Offline"
+   },
+   {
+    "id": 8076,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T1-X1-L1-M07 · Offline"
+   }
+  ],
+  "hopNhanDaVe": [
+   {
+    "machineId": 8629,
+    "hop": {
+     "trai": 39.21386484986965,
+     "phai": 227.05761484986965,
+     "tren": 278.64858509116937,
+     "duoi": 302.64858509116937
+    }
+   },
+   {
+    "machineId": 8607,
+    "hop": {
+     "trai": 55.45760236990887,
+     "phai": 243.58260236990887,
+     "tren": 248.67385981173675,
+     "duoi": 272.67385981173675
+    }
+   },
+   {
+    "machineId": 8547,
+    "hop": {
+     "trai": 90.79522745835416,
+     "phai": 278.65460245835413,
+     "tren": 210.28275742815777,
+     "duoi": 234.28275742815777
+    }
+   },
+   {
+    "machineId": 8569,
+    "hop": {
+     "trai": 73.36559486176415,
+     "phai": 259.3655948617642,
+     "tren": 316.1385395238402,
+     "duoi": 340.1385395238402
+    }
+   },
+   {
+    "machineId": 8535,
+    "hop": {
+     "trai": 300.0977965210559,
+     "phai": 487.9727965210559,
+     "tren": 257.72027838909304,
+     "duoi": 281.72027838909304
+    }
+   },
+   {
+    "machineId": 8524,
+    "hop": {
+     "trai": 306.1997362453302,
+     "phai": 494.0747362453302,
+     "tren": 229.0343323817699,
+     "duoi": 253.0343323817699
+    }
+   },
+   {
+    "machineId": 8477,
+    "hop": {
+     "trai": 331.7410992028151,
+     "phai": 517.5223492028151,
+     "tren": 194.34880662704205,
+     "duoi": 218.34880662704205
+    }
+   },
+   {
+    "machineId": 8463,
+    "hop": {
+     "trai": 340.28676814171286,
+     "phai": 526.2867681417129,
+     "tren": 297.502172149478,
+     "duoi": 321.502172149478
+    }
+   },
+   {
+    "machineId": 8437,
+    "hop": {
+     "trai": 136.26957167858728,
+     "phai": 327.0039466785873,
+     "tren": 183.63743507632677,
+     "duoi": 207.63743507632677
+    }
+   },
+   {
+    "machineId": 8353,
+    "hop": {
+     "trai": 391.8637624868023,
+     "phai": 578.7075124868022,
+     "tren": 168.32063569720282,
+     "duoi": 192.32063569720282
+    }
+   },
+   {
+    "machineId": 8284,
+    "hop": {
+     "trai": 106.60012595097407,
+     "phai": 295.2876259509741,
+     "tren": 154.25957141218953,
+     "duoi": 178.25957141218953
+    }
+   },
+   {
+    "machineId": 8201,
+    "hop": {
+     "trai": 348.4219875093681,
+     "phai": 537.0938625093681,
+     "tren": 141.9293042658098,
+     "duoi": 165.9293042658098
+    }
+   },
+   {
+    "machineId": 8076,
+    "hop": {
+     "trai": 82.25150985739424,
+     "phai": 267.00150985739424,
+     "tren": 124.23728197684648,
+     "duoi": 148.23728197684648
+    }
+   }
+  ],
+  "soMayVe": 1108,
+  "thongKe": {
+   "calls": 3,
+   "triangles": 56044,
+   "matContext": 0,
+   "khoiPhuc": 0,
+   "near": 0.1,
+   "far": 6666.815,
+   "camXa": 547.312,
+   "tiLeFarNear": 66668
+  },
+  "canvasHop": {
+   "trai": 289,
+   "tren": 194.5,
+   "rong": 634,
+   "cao": 529.5
+  }
+ },
+ "b5_sauBamLai2": {
+  "sheetMo": false,
+  "sheetTieuDe": null,
+  "soRingRailPhai": 0,
+  "soLopPhuSheet": 0,
+  "nhan": [
+   {
+    "id": 8629,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X2-L1-M05 · Offline"
+   },
+   {
+    "id": 8607,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L4-M06 · Offline"
+   },
+   {
+    "id": 8547,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L4-M07 · Offline"
+   },
+   {
+    "id": 8569,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T2-X1-L1-M05 · Offline"
+   },
+   {
+    "id": 8535,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L3-M06 · Offline"
+   },
+   {
+    "id": 8524,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X2-L2-M06 · Offline"
+   },
+   {
+    "id": 8477,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L3-M07 · Offline"
+   },
+   {
+    "id": 8463,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-B-T1-X1-L2-M08 · Offline"
+   },
+   {
+    "id": 8437,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X2-L5-M05 · Offline"
+   },
+   {
+    "id": 8353,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T4-X1-L1-M07 · Offline"
+   },
+   {
+    "id": 8284,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T3-X1-L2-M06 · Offline"
+   },
+   {
+    "id": 8201,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T2-X1-L4-M07 · Offline"
+   },
+   {
+    "id": 8076,
+    "vienStyle": "1px solid var(--destructive, #ef4444)",
+    "chu": "QATD-A-T1-X1-L1-M07 · Offline"
+   }
+  ],
+  "hopNhanDaVe": [
+   {
+    "machineId": 8629,
+    "hop": {
+     "trai": 39.21386484986965,
+     "phai": 227.05761484986965,
+     "tren": 278.64858509116937,
+     "duoi": 302.64858509116937
+    }
+   },
+   {
+    "machineId": 8607,
+    "hop": {
+     "trai": 55.45760236990887,
+     "phai": 243.58260236990887,
+     "tren": 248.67385981173675,
+     "duoi": 272.67385981173675
+    }
+   },
+   {
+    "machineId": 8547,
+    "hop": {
+     "trai": 90.79522745835416,
+     "phai": 278.65460245835413,
+     "tren": 210.28275742815777,
+     "duoi": 234.28275742815777
+    }
+   },
+   {
+    "machineId": 8569,
+    "hop": {
+     "trai": 73.36559486176415,
+     "phai": 259.3655948617642,
+     "tren": 316.1385395238402,
+     "duoi": 340.1385395238402
+    }
+   },
+   {
+    "machineId": 8535,
+    "hop": {
+     "trai": 300.0977965210559,
+     "phai": 487.9727965210559,
+     "tren": 257.72027838909304,
+     "duoi": 281.72027838909304
+    }
+   },
+   {
+    "machineId": 8524,
+    "hop": {
+     "trai": 306.1997362453302,
+     "phai": 494.0747362453302,
+     "tren": 229.0343323817699,
+     "duoi": 253.0343323817699
+    }
+   },
+   {
+    "machineId": 8477,
+    "hop": {
+     "trai": 331.7410992028151,
+     "phai": 517.5223492028151,
+     "tren": 194.34880662704205,
+     "duoi": 218.34880662704205
+    }
+   },
+   {
+    "machineId": 8463,
+    "hop": {
+     "trai": 340.28676814171286,
+     "phai": 526.2867681417129,
+     "tren": 297.502172149478,
+     "duoi": 321.502172149478
+    }
+   },
+   {
+    "machineId": 8437,
+    "hop": {
+     "trai": 136.26957167858728,
+     "phai": 327.0039466785873,
+     "tren": 183.63743507632677,
+     "duoi": 207.63743507632677
+    }
+   },
+   {
+    "machineId": 8353,
+    "hop": {
+     "trai": 391.8637624868023,
+     "phai": 578.7075124868022,
+     "tren": 168.32063569720282,
+     "duoi": 192.32063569720282
+    }
+   },
+   {
+    "machineId": 8284,
+    "hop": {
+     "trai": 106.60012595097407,
+     "phai": 295.2876259509741,
+     "tren": 154.25957141218953,
+     "duoi": 178.25957141218953
+    }
+   },
+   {
+    "machineId": 8201,
+    "hop": {
+     "trai": 348.4219875093681,
+     "phai": 537.0938625093681,
+     "tren": 141.9293042658098,
+     "duoi": 165.9293042658098
+    }
+   },
+   {
+    "machineId": 8076,
+    "hop": {
+     "trai": 82.25150985739424,
+     "phai": 267.00150985739424,
+     "tren": 124.23728197684648,
+     "duoi": 148.23728197684648
+    }
+   }
+  ],
+  "soMayVe": 1108,
+  "thongKe": {
+   "calls": 3,
+   "triangles": 56044,
+   "matContext": 0,
+   "khoiPhuc": 0,
+   "near": 0.1,
+   "far": 6666.815,
+   "camXa": 547.312,
+   "tiLeFarNear": 66668
+  },
+  "canvasHop": {
+   "trai": 289,
+   "tren": 194.5,
+   "rong": 634,
+   "cao": 529.5
+  }
+ },
+ "loi": []
+}
