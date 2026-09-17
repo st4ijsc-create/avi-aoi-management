@@ -1,0 +1,66 @@
+PH-51 — SỔ ABLATION (đường TUYỆT ĐỐI: D:\SOURCES\avi-aoi-management)
+════════════════════════════════════════════════════════════════════════
+Bộ dựng: Chromium --use-angle=default --enable-gpu --ignore-gpu-blocklist (ANGLE/GPU thật,
+KHÔNG SwiftShader). Ảnh = screenshot PHẦN TỬ canvas (đi qua trình duyệt nên
+`preserveDrawingBuffer` tắt không thành 0 pixel). Cổng 3064. Viewport 1280×720.
+Thước: % pixel có |ΔR|+|ΔG|+|ΔB| > 6 trong một VÙNG SÀN THUẦN 3D (chọn bằng mắt
+trên ảnh phóng ×3..×6). In kèm ngưỡng >0 và >24 ở `zf/tho/bang-*.json`.
+
+① THIẾT BỊ ĐO — NHIỄU ĐỘ SÂU THUẦN, KHÔNG DỰNG LẠI
+   Biến thể tạo bằng cách vá ĐÚNG MỘT chuỗi trong chunk đã dựng, với ràng buộc
+   "chuỗi phải khớp ĐÚNG 1 lần" (`zf/bien.mjs`) ⇒ mọi byte khác GIỐNG HỆT.
+     near01 : NEAR_TOI_DA_M  .5→.1  (chỉ đổi `near` ở cảnh LỚN, far ≥ 10.000)
+     near04 : NEAR_TOI_THIEU_M .1→.4 (chỉ đổi `near` ở cảnh NHỎ, far = sàn 2000)
+   Harness TỰ BÁC BỎ khi camXa hai bên lệch (phép chiếu x/y đã đổi) hoặc khi
+   near/far KHÔNG đổi (số 0 sẽ là tự thoả). Cả 8 cặp: camXa khớp tới 3 chữ số thập phân.
+
+② TÁCH Z-FIGHTING KHỎI RĂNG CƯA LƯỚI  ← câu hỏi mở của PH-50b
+   ĐỐI CHỨNG `luoicao5`: nâng gridHelper lên y=5 m ⇒ z-fighting BẤT KHẢ, mật độ
+   lưới GIỮ NGUYÊN (ô 5 m trên sàn 1.060 m, đường lưới vẫn ~2 px — đã soi ×6).
+   | vùng (tập đoàn)            | chưa vá + nhiễu near | lưới cao 5 m + CÙNG nhiễu |
+   |----------------------------|----------------------|---------------------------|
+   | TD-A  (450,375–550,446)    | 42,20 %              | 0,30 %                    |
+   | TD-A' (300,395–520,450)*   | 22,36 %              | 0,23 %                    |
+   | TD-B  zoom, lưới đọc được  |  0,99 %              | 0,00 %                    |
+   | TD-E  xiên 83,7°           |  3,97 %              | 0,00 %                    |
+   * TD-A' = ĐÚNG vùng của agent PH-50b ⇒ TÁI HIỆN 22,36 % khớp tuyệt đối con số họ ghi.
+   ⇒ Độ nhạy sụp ×97..×141 khi bỏ khả năng tranh chấp mà GIỮ mật độ lưới.
+     Thứ đo được là HAI MẶT TRANH NHAU, không phải lưới quá dày. CÂU HỎI ĐÃ ĐÓNG.
+
+③ NHIỄU THIẾT BỊ ĐO
+   Hai lượt chụp CÙNG bản dựng, cách nhau ~40 phút: 0,00 % ở CẢ HAI vùng sàn
+   (và 0,02 % trên toàn canvas — 3 mảng, đều nằm ở chữ "Updated N h ago"/panel DOM).
+
+④ BA ỨNG VIÊN, ĐO TRÊN CÙNG BUNDLE (tập đoàn, khung mặc định, vùng TD-A)
+   | ứng viên                          | đổi bên thắng | hệ quả khác (ĐO, không suy)          |
+   |-----------------------------------|---------------|--------------------------------------|
+   | (chưa vá)                         | 42,20 %       | —                                    |
+   | (A) khe hở `canh/400`             |  0,34 %       | DỊCH ĐƯỜNG BAO TẤM SÀN: 2,13 % khung |
+   |                                   |               | màn Máy, mảng liền 2.006 px ở mép sàn |
+   | (B) polygonOffset 1/1  ← CHỌN     |  0,34 %       | 0 thay đổi hình học                  |
+   | (C) lưới depthTest:false          |  0,00 %       | LƯỚI VẼ ĐÈ KHỐI MÁY + vòng an toàn:  |
+   |                                   |               | 1,77 % khung màn Nhà máy, thấy rõ ×3 |
+   (A) và (B) cho ảnh GIỐNG HỆT trong vùng sàn (0,00 %) — khác nhau ở MÉP sàn.
+   polygonOffsetUnits 4 vs 1: 0,00 % lệch trên toàn canvas ⇒ 1 là đủ.
+
+⑤ THƯỚC THỨ HAI (thêm, KHÔNG thay) — KHOẢNG CÁCH TỚI ORACLE "LƯỚI VẼ ĐỦ"
+   Thước ① đo ĐỘ BẤT ỔN. Ở cảnh nhỏ nó ~0 mà lưới VẪN bị ăn (thua ổn định, không
+   knife-edge) ⇒ cần thước đo ĐỘ ĐÚNG. Oracle = chính ứng viên (C): depthTest tắt
+   ⇒ lưới không thể bị sàn ăn, và trong VÙNG SÀN THUẦN thì hazard "đè máy" của (C)
+   không tồn tại.
+   | vùng                  | TRƯỚC   | SAU     |
+   |-----------------------|---------|---------|
+   | TD-A tập đoàn         | 74,07 % |  0,77 % |
+   | TD-E tập đoàn xiên    | 15,78 % |  0,00 % |
+   | NM-A nhà máy          |  5,11 % |  0,00 % |
+   | NM-E nhà máy xiên     |  4,55 % |  0,02 % |
+   Dư 0,77 % ở TD-A đã soi ×6: nằm TRỌN trên MỘT đường chéo — mép ô cụm sa bàn mà
+   oracle (depthTest tắt) vẽ đè lên; ở đó bản vá ĐÚNG HƠN oracle. Không phải sàn.
+
+⑥ CHÉO NGUỒN ↔ MÔ PHỎNG
+   dist-zfva (dựng THẬT từ nguồn đã vá) vs biến thể bundle `polyoff`:
+   0,00 % trên toàn canvas ở tập đoàn (3 khung) và màn Máy; 0,00 % trong mọi vùng sàn.
+   ⇒ thứ đã chọn bằng mô phỏng ĐÚNG LÀ thứ đã giao.
+
+md5 NGUỒN SAU VÁ: xem `zf/tho/md5-nguon-SAU.txt`
+md5 CHUNK THIẾT BỊ ĐO (đã trả về gốc): `md5sum -c zf/tho/md5-goc-chunk.txt` → OK 2/2

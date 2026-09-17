@@ -678,3 +678,42 @@ Không hồi quy: mọi ô giống hệt (tên công ty 3/3·1/1·2/2·1/1, admi
 Nhiễu thiết bị đo **bằng 0** ⇒ độ nhạy ấy là **thật**. Bản vá làm bước z **mịn hơn 5 lần** (tốt lên) nhưng **không đóng** khuyết tật.
 ★ Agent **KHÔNG tự vá**: nâng khe hở sàn/lưới hoặc `polygonOffset` là thay đổi **THỊ GIÁC** trên màn chủ dự án đã nghiệm thu bằng mắt. Chờ chốt.
 ⚠ Chưa tách được z-fighting khỏi **răng cưa lưới** ở cỡ tập đoàn: `gridHelper` chia ô 5 m trên sàn 1.060 m ⇒ đường lưới cách nhau ~2 px. Ở cỡ zoom mà lưới đọc được thì trước↔sau lệch **16 px (0,003 %)** và lưới nhìn sạch.
+
+## V-36 ★★★ PH-51 ĐÓNG — và câu hỏi mở "không tách được z-fighting khỏi răng cưa lưới" ĐÃ ĐÓNG
+**Tách được, bằng lập luận CỘNG đối chứng.** Lập luận: `near`/`far` chỉ nằm ở **cột z** của ma trận phối cảnh; hai ô quyết định x/y là `f/aspect` và `f`, chỉ phụ thuộc fov/aspect ⇒ bóp riêng `near` là **nhiễu ĐỘ SÂU THUẦN**, không dịch một pixel nào, mọi đường lưới rơi đúng chỗ cũ, răng cưa lặp lại y hệt. Pixel nào đổi màu là đổi vì **phép so độ sâu lật**.
+Lập luận ấy chỉ là lời khai cho tới khi có **đối chứng**: nâng `gridHelper` lên `y = 5 m` (z-fighting **bất khả**, mật độ lưới **giữ nguyên** — đã soi ×6, vẫn cùng một dither ~2 px).
+| vùng sàn thuần 3D | chưa vá + nhiễu `near` | lưới cao 5 m + **cùng** nhiễu |
+|---|---|---|
+| TD-A | **42,20 %** | 0,30 % |
+| TD-A′ = **đúng vùng của PH-50b** | **22,36 %** | 0,23 % |
+| TD-B (zoom, lưới đọc được) | 0,99 % | 0,00 % |
+| TD-E (xiên 83,7°) | 3,97 % | 0,00 % |
+Độ nhạy sụp **×97…×141**. Tái hiện **22,36 %** khớp tuyệt đối con số PH-50b ghi. Nhiễu thiết bị đo: hai lượt chụp cùng bản dựng cách nhau 40 phút = **0,00 %**.
+★ Biến thể tạo bằng vá **đúng một chuỗi** trong chunk đã dựng (ràng buộc "khớp đúng 1 lần") ⇒ "hai bản chỉ khác `near`" là **đo được**, không phải lời khai. Harness **tự bác bỏ** khi `camXa` lệch hoặc khi `near/far` KHÔNG đổi (chặn số 0 tự thoả) — và nó đã bác bỏ thật một khung thay vì trả 0 %.
+★ **Census bằng `import`, không bằng tên**: `CanhVanHanh` **3** người dùng (`TwinVanHanh`/`TwinLine`/`TwinMay`); `CanhThietKe` **1**; `CanhNhaMay` **1**.
+
+**Chọn `polygonOffset`, bác bỏ hai cách kia bằng số:**
+| ứng viên | đổi bên thắng | hệ quả khác (đo) |
+|---|---|---|
+| chưa vá | 42,20 % | — |
+| (A) khe hở `canh/400` | 0,34 % | **dịch đường bao tấm sàn** — mảng liền **2.006 px** ở mép |
+| **(B) `polygonOffset` 1/1 ← CHỌN** | **0,34 %** | **0** thay đổi hình học |
+| (C) lưới `depthTest:false` | 0,00 % | **lưới vẽ đè khối máy + vòng an toàn** |
+★★★ **(A) không đóng được ở MỌI CỠ — đây là lý lẽ đúng/sai, không phải khẩu vị**: khe hở tính bằng **mét**, bước z tỉ lệ **z²**, mà `z` là thứ người dùng đổi bằng con lăn. Đủ ở khung mặc định (cần > 0,48 m) thì **thiếu ở trần zoom** (`camXa` đo được 8.975 m ⇒ cần > 9,6 m); đủ ở trần zoom thì thành khe **nhìn thấy được** khi zoom vào. `units` đếm theo bước z **tại chính độ sâu ấy** nên **tự co giãn**. `units` 4 vs 1: **0,00 % lệch** ⇒ 1 là đủ.
+
+★ **Agent THÊM thước thứ hai vì thước thứ nhất chưa đủ** (không thay): ở cảnh nhỏ thước 1 ≈ 0 mà lưới **vẫn bị ăn** (thua ổn định, không phải knife-edge). Oracle "lưới vẽ đủ" = chính ứng viên (C). TRƯỚC→SAU: TD-A **74,07 → 0,77 %**, TD-E 15,78 → 0,00, **NM-A 5,11 → 0,00**, NM-E 4,55 → 0,02. Dư 0,77 % soi ×6: nằm **trọn trên một đường chéo** = mép ô cụm sa bàn mà oracle vẽ đè — ở đó **bản vá đúng hơn oracle**.
+★★★ **Phát hiện ngoài brief: PH-51 KHÔNG chỉ ở cỡ tập đoàn** — màn Nhà máy ăn **5,11 %** pixel sàn (đường lưới đứt quãng, mờ). **Thước "đổi bên thắng" một mình MÙ chỗ đó.**
+Chủ đợt **tự xem cặp `3p-vungSan-{TRUOC,SAU}-x5.png`**: đường lưới từ **đứt quãng** thành **liền và rõ**.
+Không hồi quy: 7 vai, mọi ô giống hệt; trần zoom **13/13 ca, 182 ô, 0 lệch**; `/twin` một nhà máy **giống BYTE** (`b2-mot-nha-may-p50b-cuoi.json`, md5 `637f81e1…`).
+
+### ★★★ HAI Ô ĐỎ — agent báo, CHỦ ĐỢT PHÂN XỬ
+1. **`phamVi` 1/561 đỏ ở lượt đầu** — `phamViDocPatch.db.test.ts › mqttClient.getAllMachineHealth`, **Test timed out in 5000ms**, KHÔNG phải sai khẳng định. Log PH-50b: cùng ca ấy **xanh ở 3.425 ms** trên trần 5.000 (biên **1,46×**). Agent chạy lại 3/3 xanh một mình; lượt hai cả suite 21/561 xanh. **Chủ đợt chạy lại: 21 tệp / 561 xanh.** Tệp ấy có **0** tham chiếu tới `twin3d`. ⇒ **Nhận là chập chờn CÓ SẴN, không phải hồi quy. KHÔNG nâng trần** — nâng trần là giấu một ca mong manh thật.
+2. **fps `qatd_admin` = 27 (trần ≥30) ở lượt đầu sau vá.** Agent **hỏi trước** (`polygonOffset` có thể tắt early-Z — hazard thật), rồi A/B xen kẽ trên **CÙNG một dist** (chỉ khác đúng chuỗi polygonOffset), n=8 mỗi bên:
+   | | khung dựng | thời gian trôi | fps |
+   |---|---|---|---|
+   | chưa vá | 148-162 (TB **157,5**) | 3.940-4.344 ms | 35-40 |
+   | đã vá | 144-162 (TB **156,1**) | 3.335-**5.535** ms | **27**-48 |
+   Số khung **gần như không đổi (−0,9 %)**; dao động nằm ở **MẪU SỐ** — thời gian Playwright giao xong 40 sự kiện chuột. Thước mới **cửa sổ thời gian CỐ ĐỊNH 5.000 ms**: chưa vá **300/299/300 khung**, đã vá **300/302/303** — **60 fps, chạm trần vsync ở cả hai**.
+   ⇒ **CHỦ ĐỢT NHẬN BẢN VÁ.** Chi phí dựng hình gần như bằng 0; thước fps theo-sự-kiện đang đo **tốc độ giao sự kiện của Playwright**, không đo tốc độ dựng. ⇒ **Thước chuẩn từ nay là CỬA SỔ CỐ ĐỊNH**, thước theo-sự-kiện bị loại. ⚠ Ghi thẳng phần chưa chắc: **2/8 lượt sau vá rơi dưới 30, 0/8 lượt trước vá** — với n=8 thì bất đối xứng ấy chưa đủ ý nghĩa, nhưng nó không bằng 0.
+
+**Còn mở, có tên:** `CanhThietKe` (Studio) **cùng khuyết tật** — oracle đo **57,30 %** pixel vùng sàn, nhưng `calls` giữa hai lượt chụp là 3 vs 2 và agent **không giải thích được** ⇒ coi là *chỉ dấu*, chưa phải kết luận. `CanhNhaMay` (`/factory-command`) **chưa đo**, đọc mã thấy sàn `y=-0.02` + drei `Grid` `y=0` ⇒ **cùng lớp lỗi**. Và ở khung mặc định tập đoàn, sàn vẫn là một tấm **dither dày** (ô lưới 5 m trên sàn 1.060 m ⇒ ~2 px/ô) — đó là **"lưới quá dày"**, một khuyết tật KHÁC.

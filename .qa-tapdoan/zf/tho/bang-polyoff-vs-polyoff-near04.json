@@ -1,0 +1,73 @@
+[
+ {
+  "khoa": "tapdoan/a-macdinh",
+  "phan": "—",
+  "ghiChu": "thiếu ảnh"
+ },
+ {
+  "khoa": "tapdoan/b-zoom",
+  "phan": "—",
+  "ghiChu": "thiếu ảnh"
+ },
+ {
+  "khoa": "tapdoan/e-nghieng",
+  "phan": "—",
+  "ghiChu": "thiếu ảnh"
+ },
+ {
+  "khoa": "nhamay/a-macdinh",
+  "vung": "NM-A",
+  "near": "0.1→0.4",
+  "far": "2000→2000",
+  "camXa": 106.344,
+  "px": 12000,
+  "pct0": 0,
+  "pct6": 0,
+  "pct24": 0,
+  "mang": 0,
+  "mangLon": 0,
+  "ghiChu": ""
+ },
+ {
+  "khoa": "nhamay/e-nghieng",
+  "vung": "NM-E (xiên)",
+  "near": "0.1→0.4",
+  "far": "2000→2000",
+  "camXa": 107.807,
+  "px": 11000,
+  "pct0": 0,
+  "pct6": 0,
+  "pct24": 0,
+  "mang": 0,
+  "mangLon": 0,
+  "ghiChu": ""
+ },
+ {
+  "khoa": "line/a-macdinh",
+  "vung": "LN-A",
+  "near": "0.1→0.4",
+  "far": "2000→2000",
+  "camXa": 50.097,
+  "px": 21000,
+  "pct0": 0,
+  "pct6": 0,
+  "pct24": 0,
+  "mang": 0,
+  "mangLon": 0,
+  "ghiChu": ""
+ },
+ {
+  "khoa": "may/a-macdinh",
+  "vung": "MY-A",
+  "near": "0.1→0.4",
+  "far": "2000→2000",
+  "camXa": 19.407,
+  "px": 26100,
+  "pct0": 0,
+  "pct6": 0,
+  "pct24": 0,
+  "mang": 0,
+  "mangLon": 0,
+  "ghiChu": ""
+ }
+]

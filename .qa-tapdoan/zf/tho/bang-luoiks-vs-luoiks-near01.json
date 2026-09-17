@@ -1,0 +1,78 @@
+[
+ {
+  "khoa": "tapdoan/a-macdinh",
+  "vung": "TD-A",
+  "near": "0.5→0.1",
+  "far": "12478.54→12478.54",
+  "camXa": 2005.681,
+  "px": 7100,
+  "pct0": 0,
+  "pct6": 0,
+  "pct24": 0,
+  "mang": 0,
+  "mangLon": 0,
+  "ghiChu": ""
+ },
+ {
+  "khoa": "tapdoan/a-macdinh",
+  "vung": "TD-A' (vùng agent PH-50b)",
+  "near": "0.5→0.1",
+  "far": "12478.54→12478.54",
+  "camXa": 2005.681,
+  "px": 12100,
+  "pct0": 0,
+  "pct6": 0,
+  "pct24": 0,
+  "mang": 0,
+  "mangLon": 0,
+  "ghiChu": ""
+ },
+ {
+  "khoa": "tapdoan/b-zoom",
+  "vung": "TD-B (lưới ĐỌC ĐƯỢC)",
+  "near": "0.5→0.1",
+  "far": "12478.54→12478.54",
+  "camXa": 563.773,
+  "px": 38400,
+  "pct0": 0.01,
+  "pct6": 0.01,
+  "pct24": 0.01,
+  "mang": 2,
+  "mangLon": 1,
+  "ghiChu": ""
+ },
+ {
+  "khoa": "tapdoan/e-nghieng",
+  "vung": "TD-E (xiên 83,7°)",
+  "near": "0.5→0.1",
+  "far": "12478.54→12478.54",
+  "camXa": 1992.54,
+  "px": 11340,
+  "pct0": 0,
+  "pct6": 0,
+  "pct24": 0,
+  "mang": 0,
+  "mangLon": 0,
+  "ghiChu": ""
+ },
+ {
+  "khoa": "nhamay/a-macdinh",
+  "phan": "—",
+  "ghiChu": "thiếu ảnh"
+ },
+ {
+  "khoa": "nhamay/e-nghieng",
+  "phan": "—",
+  "ghiChu": "thiếu ảnh"
+ },
+ {
+  "khoa": "line/a-macdinh",
+  "phan": "—",
+  "ghiChu": "thiếu ảnh"
+ },
+ {
+  "khoa": "may/a-macdinh",
+  "phan": "—",
+  "ghiChu": "thiếu ảnh"
+ }
+]

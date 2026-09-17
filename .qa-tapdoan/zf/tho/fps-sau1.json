@@ -1,0 +1,11 @@
+{
+ "nhan": "sau1",
+ "vai": "qatd_admin",
+ "cuaSoMs": 5000,
+ "troiMs": 5000,
+ "soBuoc": 297,
+ "khung": 300,
+ "fps": 60,
+ "calls": 4,
+ "tris": null
+}

@@ -1,0 +1,100 @@
+[
+ {
+  "canh": "nhamay",
+  "khung": "a-macdinh",
+  "anh": ".qa-tapdoan/zf/anh/near04/nhamay-a-macdinh.png",
+  "near": 0.4,
+  "far": 2000,
+  "camXa": 106.344,
+  "calls": 5,
+  "tris": 9998,
+  "ycNear": 0.4,
+  "ycFar": 2000,
+  "tuThe": {
+   "x": 73.87531287276369,
+   "y": 25.930488490929573,
+   "z": 71.96531287276369,
+   "mucX": 29.91,
+   "mucZ": 28
+  },
+  "cvW": 968,
+  "cvH": 489
+ },
+ {
+  "canh": "nhamay",
+  "khung": "c-nghieng",
+  "anh": ".qa-tapdoan/zf/anh/near04/nhamay-c-nghieng.png",
+  "near": 0.4,
+  "far": 2000,
+  "camXa": 79.487,
+  "calls": 5,
+  "tris": 9998,
+  "ycNear": 0.4,
+  "ycFar": 2000,
+  "tuThe": {
+   "x": 29.910047315402,
+   "y": 68.11408321867323,
+   "z": 28.000047315402,
+   "mucX": 29.91,
+   "mucZ": 28
+  },
+  "cvW": 968,
+  "cvH": 489
+ },
+ {
+  "canh": "line",
+  "khung": "a-macdinh",
+  "anh": ".qa-tapdoan/zf/anh/near04/line-a-macdinh.png",
+  "near": 0.4,
+  "far": 2000,
+  "camXa": 50.097,
+  "calls": 6,
+  "tris": 1202,
+  "ycNear": 0.4,
+  "ycFar": 2000,
+  "tuThe": {
+   "x": 29.985,
+   "y": 28.565836274241686,
+   "z": 28.18932515776078,
+   "mucX": 29.985,
+   "mucZ": 7.233784406889003
+  },
+  "cvW": 968,
+  "cvH": 478
+ },
+ {
+  "canh": "may",
+  "khung": "a-macdinh",
+  "anh": ".qa-tapdoan/zf/anh/near04/may-a-macdinh.png",
+  "near": 0.4,
+  "far": 2000,
+  "camXa": 19.407,
+  "calls": 5,
+  "tris": 314,
+  "ycNear": 0.4,
+  "ycFar": 2000,
+  "tuThe": {
+   "x": 13.935312072623331,
+   "y": 2.9270167734875794,
+   "z": 13.185312072623333,
+   "mucX": 10.749999999999998,
+   "mucZ": 10
+  },
+  "cvW": 680,
+  "cvH": 280
+ },
+ {
+  "canh": "nhamay",
+  "khung": "e-nghieng",
+  "anh": ".qa-tapdoan/zf/anh/near04/nhamay-e-nghieng.png",
+  "near": 0.4,
+  "far": 2000,
+  "camXa": 107.807,
+  "calls": 5,
+  "tris": 9998,
+  "ycNear": 0.4,
+  "ycFar": 2000,
+  "cvW": 968,
+  "cvH": 489
+ }
+]

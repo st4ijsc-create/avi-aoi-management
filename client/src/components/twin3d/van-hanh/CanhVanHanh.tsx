@@ -285,13 +285,75 @@ function DieuKhien({
 /** Xoay mặt sàn nằm ngang — hằng module (★ Đợt 40: không literal mỗi render). */
 const XOAY_SAN: [number, number, number] = [-Math.PI / 2, 0, 0];
 
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ PH-51 — MỘT CENTIMET ĐẤU VỚI NỬA MÉT: SÀN VÀ LƯỚI TRANH NHAU PIXEL
+ * ════════════════════════════════════════════════════════════════════════════
+ * Tấm sàn ở `y = -0.01`, `gridHelper` ở `y = 0` — **cách nhau đúng 1 cm**. Khe
+ * hở ấy là thứ DUY NHẤT bảo đảm "lưới nằm trên sàn", và nó chỉ có hiệu lực khi
+ * z-buffer còn phân biệt nổi 1 cm ở chỗ đó. Ở cỡ TẬP ĐOÀN thì không:
+ *
+ *     Δz ≈ z² × (1/near − 1/far) / (2²⁴ − 1)
+ *        ≈ 2005² × (1/0,5 − 1/12478,5) / 16.777.215 ≈ **0,48 m**
+ *
+ * tức bước z lớn gấp ~48 lần khe hở. Hai mặt rơi vào CÙNG một nấc z ⇒ mặt nào
+ * thắng là chuyện của số dư làm tròn, mà số dư ấy đổi theo góc nhìn.
+ *
+ * ★ ĐO chứ không suy (cổng 3064, bundle dựng từ chính cây này). Bóp RIÊNG `near`
+ *   0,5 → 0,1 là một nhiễu **ĐỘ SÂU THUẦN** — `near`/`far` chỉ nằm ở cột z của ma
+ *   trận phối cảnh nên KHÔNG dịch một pixel nào của phép chiếu x/y: mọi đường lưới
+ *   rơi đúng chỗ cũ, răng cưa lặp lại y hệt. Pixel nào đổi màu thì đổi vì phép so
+ *   độ sâu lật.
+ *
+ *   | vùng sàn thuần 3D, tập đoàn | TRƯỚC   | SAU    |
+ *   |-----------------------------|---------|--------|
+ *   | khung mặc định              | 42,20 % | 0,34 % |
+ *   | nhìn xiên 83,7°             |  3,97 % | 0,00 % |
+ *   | chụp 2 lần CÙNG bản dựng    |  0,00 % (nhiễu thiết bị đo) |
+ *   | ĐỐI CHỨNG lưới nâng 5 m     |  0,30 % (mức sàn vật lý)    |
+ *
+ *   Dòng ĐỐI CHỨNG tách z-fighting khỏi **răng cưa lưới**: nâng lưới 5 m làm
+ *   z-fighting bất khả mà GIỮ NGUYÊN mật độ lưới (ô 5 m trên sàn 1.060 m, đường
+ *   lưới vẫn cách nhau ~2 px). Độ nhạy sụp 42,20 % → 0,30 % ⇒ thứ đo được là hai
+ *   mặt tranh nhau, không phải lưới quá dày.
+ *
+ * ★★★ VÌ SAO `polygonOffset` CHỨ KHÔNG PHẢI NÂNG KHE HỞ
+ * Khe hở tính bằng MÉT; bước z cũng bằng mét NHƯNG tỉ lệ `z²`, mà `z` là thứ
+ * người dùng đổi bằng con lăn chuột. Khe hở đủ ở khung mặc định (cần > 0,48 m)
+ * KHÔNG đủ ở trần zoom (`camXa` đo được 8.975 m ⇒ cần > 9,6 m); khe hở đủ ở trần
+ * zoom lại là một khe NHÌN THẤY ĐƯỢC khi zoom vào. **Không hằng số mét nào đúng ở
+ * mọi nấc zoom.** `polygonOffset` nói bằng đúng đơn vị của vấn đề: `units` đếm
+ * theo bước z nhỏ nhất còn phân biệt được TẠI CHÍNH độ sâu ấy, nên nó tự co giãn
+ * theo `z`, theo `near`/`far` (`loi/catCanh.ts` đổi số cũng không phải chỉnh lại)
+ * và theo góc nghiêng qua `factor` × độ dốc.
+ *
+ * ★ Hai ứng viên kia bị BÁC BỎ BẰNG SỐ, không bằng khẩu vị:
+ *   · khe hở theo cỡ cảnh (`canh/400`): cùng 0,34 % nhưng **dịch đường bao tấm
+ *     sàn** — 2.006 px liền khối đổi ở màn Máy, vì hạ sàn là đổi HÌNH HỌC.
+ *   · lưới `depthTest:false` + `renderOrder`: 0,00 % nhưng **lưới vẽ đè lên khối
+ *     máy và vòng an toàn** (1,77 % khung hình màn Nhà máy đổi; thấy rõ bằng mắt).
+ * ★ `polygonOffsetUnits` 4 cho ảnh GIỐNG HỆT 1 (0,00 % lệch) ⇒ 1 là đủ, không
+ *   trả thêm để mua 0 pixel.
+ * ⚠ Khe hở 1 cm GIỮ NGUYÊN: đây là hàng rào THỨ HAI, không phải bản thay thế —
+ *   hai cơ chế che nhau thì lần gỡ sau không ai biết cái nào đang gánh.
+ *
+ * Lưới: `zFightingSan.unit.test.ts`.
+ */
+const SAN_DAY_SAU_HE_SO = 1;
+const SAN_DAY_SAU_DON_VI = 1;
+
 function San({ rongM, sauM, toi }: { rongM: number; sauM: number; toi: boolean }) {
   const canh = Math.max(rongM, sauM, 10);
   return (
     <group>
       <mesh rotation={XOAY_SAN} position={[rongM / 2, -0.01, sauM / 2]}>
         <planeGeometry args={[rongM, sauM]} />
-        <meshStandardMaterial color={toi ? "#1e293b" : "#e2e8f0"} />
+        <meshStandardMaterial
+          color={toi ? "#1e293b" : "#e2e8f0"}
+          polygonOffset
+          polygonOffsetFactor={SAN_DAY_SAU_HE_SO}
+          polygonOffsetUnits={SAN_DAY_SAU_DON_VI}
+        />
       </mesh>
       <gridHelper
         args={[canh, Math.max(4, Math.round(canh / 5)), toi ? "#475569" : "#94a3b8", toi ? "#334155" : "#cbd5e1"]}
