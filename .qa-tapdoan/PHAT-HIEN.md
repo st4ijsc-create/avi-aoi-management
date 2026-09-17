@@ -717,3 +717,37 @@ Không hồi quy: 7 vai, mọi ô giống hệt; trần zoom **13/13 ca, 182 ô,
    ⇒ **CHỦ ĐỢT NHẬN BẢN VÁ.** Chi phí dựng hình gần như bằng 0; thước fps theo-sự-kiện đang đo **tốc độ giao sự kiện của Playwright**, không đo tốc độ dựng. ⇒ **Thước chuẩn từ nay là CỬA SỔ CỐ ĐỊNH**, thước theo-sự-kiện bị loại. ⚠ Ghi thẳng phần chưa chắc: **2/8 lượt sau vá rơi dưới 30, 0/8 lượt trước vá** — với n=8 thì bất đối xứng ấy chưa đủ ý nghĩa, nhưng nó không bằng 0.
 
 **Còn mở, có tên:** `CanhThietKe` (Studio) **cùng khuyết tật** — oracle đo **57,30 %** pixel vùng sàn, nhưng `calls` giữa hai lượt chụp là 3 vs 2 và agent **không giải thích được** ⇒ coi là *chỉ dấu*, chưa phải kết luận. `CanhNhaMay` (`/factory-command`) **chưa đo**, đọc mã thấy sàn `y=-0.02` + drei `Grid` `y=0` ⇒ **cùng lớp lỗi**. Và ở khung mặc định tập đoàn, sàn vẫn là một tấm **dither dày** (ô lưới 5 m trên sàn 1.060 m ⇒ ~2 px/ô) — đó là **"lưới quá dày"**, một khuyết tật KHÁC.
+
+## V-37 ★★ Hai nhãn còn sót — MỘT cứu được, MỘT bất khả và có PHÉP CHIA chứng minh
+**`admin` 2D 2/5: HẾT CHỖ, không phải luật sai.** Giả thuyết chủ đợt đúng. Mọi ứng viên trong `datNhanSaBan` bám vào hộp của **chính thứ nó gọi tên**; `panel-trai`/`panel-phai` cao **đúng bằng** khung cảnh (207..696 px) ⇒ **không phép trượt DỌC nào thoát**. Chỉ còn trục ngang, bị chặn bởi bề rộng tấm nền. Điều kiện cần thuần số học — *bề rộng nhãn ≤ dải ngang của tấm nền không nằm dưới panel*:
+| cụm | dải sạch | nhãn | kết |
+|---|---|---|---|
+| Nhà máy ảo (SIM) | 51,4 px | 141,2 px | **THIẾU 89,8** |
+| Công ty A | 19,4 px | 78,2 px | **THIẾU 58,8** |
+| Công ty B | 51,4 px | 76,7 px | **THIẾU 25,3** |
+| FUYU-F | 189,6 px | 172,1 px | còn 17,5 ✓ |
+| Công ty C | 189,6 px | 77,2 px | còn 112,4 ✓ |
+⇒ **Trần là 2/5.** Ba đường thoát còn lại đều bị bác **bằng đo**: dời bố cục sa bàn (bóp biểu tượng **mọi** vai), thu chữ còn 25-36 % (hết đọc được), cho nhãn rời nền (phá bất biến chống gọi nhầm tên).
+★ **Không vá**, thay bằng `<title>` trên tấm nền + khối toà ⇒ di chuột đọc lại được. Đo sống: "Nhà máy ảo (SIM)" **110 điểm** di chuột được, "Công ty A" **29 điểm**. (Khối toà phải mang kèm tên cụm — dải thò ra của "Công ty A" chỉ 19,4 px và bị chính khối toà phủ kín; thiếu nó thì **0 điểm**.)
+
+**`kythuat` 3D "Toà 2": KHÔNG phải hết chỗ — trần trượt ĐO SAI GỐC.** Chỗ thoát sạch hẳn ở `y = 269,55`, cách `duoi-giua` **9,0 px**. Nhưng luật cũ chỉ sinh ứng viên trượt cho *neo ưu tiên* và đo quãng từ `yDau = 167,45` ⇒ thành **102,1 px** > trần 40 ⇒ ứng viên **không bao giờ được sinh ra**. Riêng cú lật `tren`→`duoi` đã tiêu 93,1 px trần mà chưa né được gì. Vá: mỗi neo chính tự sinh ứng viên trượt, trần đo từ **chính nó**.
+
+★★★ **Bản vá tự sinh hazard, và agent bắt bằng ĐO chứ không bằng lý lẽ**: ứng viên trượt mới đẩy 1 nhãn lên `y = 1,4` — **tâm** trong khung nên được nhận, nhưng hộp chữ trải từ **−7,1** và `<svg> overflow:hidden` **cắt 41,8 %** chiều cao. Thước "% bị lớp phủ DOM che" báo **0 %** — **nó mù với mép khung**. Nền 0/38 nhãn thò khung → sau vá 1/41 → vá tiếp → **0/41**.
+★★★ **Agent suýt tự lừa và tự bắt được**: mô phỏng nạp `datNhanSaBan.ts` **từ cây làm việc**, nên sau khi sửa tệp thì cột "V0" không còn là luật cũ. Đã dựng lại ablation **lấy bản cũ từ git**.
+
+| ô | nền `de1dc50a` | sau |
+|---|---|---|
+| che-một-phần toàn cục | 5/108 = **4,63 %** | 4/108 = **3,70 %** |
+| `kythuat` 3D che-một-phần | 1 | **0** |
+| nhãn vẽ | 89 | **93** (cứu 4, mất 0) |
+Không hồi quy: tên công ty 3/3·1/1·2/2·1/1, admin 3D 5/5, biểu tượng 41,1-236,1 px, cụm×toà 0 lệch, `/twin` một nhà máy **giống BYTE**. fps cửa sổ cố định: 59,9-60,5 → **57,8-60,8** (≥30 ✓).
+
+### ★★★ CHỦ ĐỢT PHÂN XỬ — hai khẳng định của ca ⑦ ghi ĐƯỜNG THOÁT, không ghi TÍNH CHẤT
+`datNhanSaBan.unit.test.ts` ca ⑦ sinh ra từ một lần **tự xem ảnh** (ảnh đọc ra *"ng ty A"*: tâm sạch mà thẻ ăn 24,3 % bên trái). Hai khẳng định cũ: `d.x − CO.rong/2 ≥ THE.phai` và `d.x ≠ tamGiua` — cả hai bảo *"phải chạy sang PHẢI"*.
+Luật mới tìm được chỗ `(490, 415)` — **nằm DƯỚI thẻ** (`THE.duoi = 400`) nên hộp chữ giao thẻ **đúng 0 px²**, sạch hẳn y như chỗ cũ `(530, 285)`. Nhưng `x = 490` chính là `tamGiua` và `490 − 30 = 460 < 470` ⇒ **cả hai đỏ trong khi tính chất chúng bảo vệ vẫn nguyên**.
+⇒ **Thay bằng phép đo DIỆN TÍCH GIAO.** Đây là **SIẾT, không phải nới**: nó đo đúng mối nguy (một pixel nào đó của hộp chữ bị ăn) thay vì đo một hướng chạy trốn cụ thể. **Tiền đề đắt nhất của ca giữ nguyên** (chỗ xấu có tồn tại), và thêm một khẳng định **dương** rằng chỗ xấu ấy đo được là xấu.
+Đối chứng: ép luật trả thẳng tâm khối ⇒ **15/16 ca ĐỎ**; hoàn nguyên ⇒ 16/16 xanh, 0 dấu vết.
+★ Agent đã thử phương án giữ nguyên thứ tự cũ (dồn trượt xuống cuối) — nó giữ ca ⑦ xanh **và** vá được "Toà 2", nhưng **bị phép đo bác bỏ**: nó dời **11 nhãn thật** ngoài ý định. Nên nó **không phải phương án nhỏ hơn, chỉ trông có vẻ thế**.
+
+**Còn mở, có tên:** `admin` 2D "Toà 4" (che 24,5 %) là ô **DUY NHẤT còn cứu được** (dải sạch 51,4 ≥ nhãn 32,3) nhưng bị chặn bởi **một nhãn anh em đã đặt**, không phải lớp phủ ⇒ **lớp lỗi khác** (xếp chỗ giữa các toà cùng cụm). Không đụng, vì tiền lệ *"cứu thêm nhãn ⇒ nhãn đè nhãn 1→5 cặp"* nằm đúng ở đây. Ba ô còn lại bất khả (thiếu 25,3 / 12,9 / 12,9 px).
+⚠ `<title>` là **đường duy nhất** đọc tên bị ẩn, và người dùng phải **biết mà rê chuột** — không có tín hiệu thị giác nào mời họ. Agent cố ý không thêm chip "còn N tên bị ẩn" vì đó là **một lớp phủ MỚI trong đúng cảnh vừa chứng minh là hết chỗ**.

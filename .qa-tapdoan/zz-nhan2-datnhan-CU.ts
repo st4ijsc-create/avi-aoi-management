@@ -33,33 +33,6 @@
  *   cụm, trong khi luật dưới đây đóng cả bốn vai bằng cùng một lượng công.
  *
  * ════════════════════════════════════════════════════════════════════════════
- * ★★★ TRẦN CỦA LUẬT NÀY LÀ MỘT PHÉP CHIA — `qatd_admin` 2D KHÔNG THỂ QUÁ 2/5
- * ════════════════════════════════════════════════════════════════════════════
- * Mọi ứng viên dưới đây đều **bám vào hộp của chính thứ nó gọi tên** (cố ý: một
- * nhãn sai chỗ còn tệ hơn một nhãn vắng mặt). Hệ quả là một điều kiện CẦN thuần
- * số học: nhãn chỉ có chỗ sạch hẳn khi **bề rộng nhãn ≤ bề rộng dải ngang của
- * chính tấm nền nó mà không nằm dưới panel cao suốt khung**.
- *
- * `panel-trai` và `panel-phai` cao ĐÚNG BẰNG khung cảnh (207..696 px trên khung
- * 1280×720), nên không phép trượt DỌC nào thoát khỏi chúng — chỉ còn trục ngang,
- * và trục ngang bị chặn bởi bề rộng tấm nền. Đo @1280×720 khung mặc định
- * (`.qa-tapdoan/zz-nhan2-do1-truoc.json`, 5 cụm — vai duy nhất có 5):
- *
- *   "Nhà máy ảo (SIM)"      dải sạch  51,4 px · nhãn 141,2 px ⇒ THIẾU  89,8 px
- *   "Công ty A"             dải sạch  19,4 px · nhãn  78,2 px ⇒ THIẾU  58,8 px
- *   "Công ty B"             dải sạch  51,4 px · nhãn  76,7 px ⇒ THIẾU  25,3 px
- *   "FUYU-F (tai tong hop)" dải sạch 189,6 px · nhãn 172,1 px ⇒ còn    17,5 px ✓
- *   "Công ty C"             dải sạch 189,6 px · nhãn  77,2 px ⇒ còn   112,4 px ✓
- *
- * ⇒ **Trần là 2/5, không phải một khuyết tật của luật đặt.** Ba tên kia chỉ cứu
- *   được bằng cách đổi thứ khác: (a) dời bố cục sa bàn ra khỏi gầm panel — đã đo
- *   và BÁC BỎ ở trên vì nó bóp bề rộng biểu tượng ở MỌI vai; (b) thu nhỏ chữ
- *   xuống 25–36 % cỡ hiện tại — hết đọc được, tự mâu thuẫn với mục đích; hoặc
- *   (c) cho nhãn rời khỏi nền của nó — phá chính bất biến đang giữ nhãn khỏi
- *   gọi nhầm tên. ⇒ GIỮ "ẩn", nhưng ẩn phải ĐẾM RA **và** có đường đọc lại tên:
- *   xem `<title>` trên tấm nền/khối ở `CanhVanHanh2D.tsx`.
- *
- * ════════════════════════════════════════════════════════════════════════════
  * LUẬT
  * ════════════════════════════════════════════════════════════════════════════
  * Thử một DANH SÁCH ỨNG VIÊN có thứ tự, lấy chỗ đầu tiên còn trống:
@@ -67,10 +40,6 @@
  *      cảnh KHÔNG bị dời một pixel nào khi chẳng có gì che);
  *   ② trượt dọc ra khỏi ĐÚNG lớp phủ đang chắn ① (giữ nguyên luật cũ của
  *      `LopSaBan`, chỉ đổi phép thử từ điểm neo sang tâm hộp chữ);
- *   ②' **mỗi neo chính** — không chỉ neo ưu tiên — tự sinh ứng viên trượt của
- *      mình, với trần đo TỪ CHÍNH NÓ (xem §TRẦN TRƯỢT trong thân hàm: đo từ neo
- *      ưu tiên làm hụt một chỗ thoát cách đích 9,0 px vì cú lật trên→dưới đã
- *      tiêu 93,1 px trần);
  *   ③ phía đối diện, rồi TRONG hộp, rồi bốn góc của chính hộp ấy.
  * Hết ứng viên ⇒ `null` ⇒ người gọi **ẩn VÀ ĐẾM RA**. Một nhãn biến mất im lặng
  * là lời khai sai; một nhãn sai chỗ còn tệ hơn một nhãn vắng mặt, nên mọi ứng
@@ -145,16 +114,11 @@ function giaoLopPhu(
   return vungCam.find((z) => z.trai < phai && z.phai > trai && z.tren < duoi && z.duoi > tren) ?? null;
 }
 
-/**
- * Ứng viên tách làm HAI phần, và sự tách ấy là một phép đo chứ không phải gu code:
- * chỉ **neo chính** (`dau`) mới được sinh ứng viên TRƯỢT, vì trượt là phép "né ĐÚNG
- * lớp phủ đang chắn neo này", và trần trượt phải đo TỪ CHÍNH NEO ẤY (xem §TRƯỢT).
- */
 function danhSachUngVien(
   hop: HopNhanPx,
   co: CoNhanPx,
   uuTien: UuTienNhan,
-): { dau: Array<[MaChoDat, number, number]>; phu: Array<[MaChoDat, number, number]> } {
+): Array<[MaChoDat, number, number]> {
   const giuaX = (hop.trai + hop.phai) / 2;
   const giuaY = (hop.tren + hop.duoi) / 2;
   const nuaCao = co.cao / 2;
@@ -166,17 +130,15 @@ function danhSachUngVien(
   const oTrong: [MaChoDat, number, number] = ["trong-giua", giuaX, giuaY];
   const dau: Array<[MaChoDat, number, number]> =
     uuTien === "tren" ? [oTren, oDuoi] : uuTien === "duoi" ? [oDuoi, oTren] : [oTrong, oTren, oDuoi];
-  return {
-    dau,
-    phu: [
-      ["trong-duoi", giuaX, hop.duoi - KHE_NHAN_PX - nuaCao],
-      ["trong-tren", giuaX, hop.tren + KHE_NHAN_PX + nuaCao],
-      ["tren-phai", hop.phai - nuaRong, yTren],
-      ["tren-trai", hop.trai + nuaRong, yTren],
-      ["duoi-phai", hop.phai - nuaRong, yDuoi],
-      ["duoi-trai", hop.trai + nuaRong, yDuoi],
-    ],
-  };
+  return [
+    ...dau,
+    ["trong-duoi", giuaX, hop.duoi - KHE_NHAN_PX - nuaCao],
+    ["trong-tren", giuaX, hop.tren + KHE_NHAN_PX + nuaCao],
+    ["tren-phai", hop.phai - nuaRong, yTren],
+    ["tren-trai", hop.trai + nuaRong, yTren],
+    ["duoi-phai", hop.phai - nuaRong, yDuoi],
+    ["duoi-trai", hop.trai + nuaRong, yDuoi],
+  ];
 }
 
 /**
@@ -195,8 +157,8 @@ export function datNhanSaBan(
   khung: { rong: number; cao: number },
   uuTien: UuTienNhan,
 ): ChoDatNhan | null {
-  const { dau, phu } = danhSachUngVien(hop, co, uuTien);
-  const [maDau, xDau, yDau] = dau[0];
+  const ungVien = danhSachUngVien(hop, co, uuTien);
+  const [maDau, xDau, yDau] = ungVien[0];
   // G8 — thiếu dữ kiện thì KHÔNG được ẩn ai, cũng không được bịa một chỗ "gần đúng".
   if (!(khung.rong > 0) || !(khung.cao > 0)) return { x: xDau, y: yDau, ma: maDau };
 
@@ -207,33 +169,6 @@ export function datNhanSaBan(
    *   dưới thẻ `Metrics`. Chỗ nào không nhìn thấy thì không phải một chỗ đặt.
    */
   const trongKhung = (x: number, y: number) => x >= 0 && x <= khung.rong && y >= 0 && y <= khung.cao;
-  /*
-   * ★★★ LƯỢT ① PHẢI HỎI **CẢ HỘP CHỮ** CÓ TRONG KHUNG KHÔNG — HAZARD DO CHÍNH
-   *   BẢN VÁ "TRẦN TRƯỢT" NÀY SINH RA, BẮT ĐƯỢC BẰNG PHÉP ĐO CHỨ KHÔNG BẰNG LÝ LẼ.
-   *
-   * Ý ĐỊNH của phép thử "trong khung" vốn đã là *"chỗ nào không nhìn thấy thì
-   * không phải một chỗ đặt"* — nhưng nó chỉ hỏi TÂM. Chừng nào chưa có ứng viên
-   * nào rơi ra rìa thì khe hở ấy không lộ. Bản vá trần trượt sinh thêm ứng viên
-   * đúng ở rìa, và khe hở lộ ngay:
-   *
-   *   `qatd_admin` 2D, nhãn "FUYU-F (tai tong hop) — toa chinh" nhảy lên
-   *   `truot` y = 1,4 (gốc canvas). TÂM nằm trong khung (1,4 ≥ 0) nên lượt ①
-   *   NHẬN, trong khi hộp chữ cao 17 px trải từ **−7,1** đến 9,9: `<svg>` có
-   *   `overflow: hidden` nên **41,8 % chiều cao chữ bị CẮT**. Đo:
-   *   nền `de1dc50a` **0/38** nhãn 2D thò khỏi khung · sau vá **1/41**.
-   *   Thước "% bị lớp phủ DOM che" báo 0 % — nó mù với mép khung, đúng lớp
-   *   "phép đo nói ĐẠT, con mắt nói KHÔNG" mà §⑦ đã một lần trả giá.
-   *
-   * ⇒ Lượt ① dùng HỘP; lượt ② (dự phòng) giữ TÂM, y như cũ — vẫn đúng lý lẽ
-   *   "một nhãn cụt còn hơn một nhãn vắng mặt" khi thật sự không còn chỗ nào.
-   * ⚠ `co.rong/cao = 0` (chưa đo được) ⇒ phép thử hộp tự thu về phép thử tâm,
-   *   nên đường G8 của jsdom không đổi một dòng.
-   */
-  const hopTrongKhung = (x: number, y: number) =>
-    x - co.rong / 2 >= 0 &&
-    x + co.rong / 2 <= khung.rong &&
-    y - co.cao / 2 >= 0 &&
-    y + co.cao / 2 <= khung.cao;
 
   /*
    * ② Trượt dọc khỏi ĐÚNG lớp phủ đang chắn ứng viên đầu — chèn ngay sau nó.
@@ -247,49 +182,17 @@ export function datNhanSaBan(
    *   HỘP. Cả hai nguồn đều được chèn: cái nào cho chỗ tốt hơn thì lượt quét ①
    *   nhận trước.
    */
-  /*
-   * ★★★ TRẦN TRƯỢT ĐO TỪ **CHÍNH NEO ĐANG NÉ**, KHÔNG TỪ NEO ƯU TIÊN.
-   *
-   * Bản trước sinh ứng viên trượt cho DUY NHẤT `ungVien[0]` (neo ưu tiên) và đo
-   * quãng trượt bằng `Math.abs(y - yDau)`. Khi lớp phủ chắn cả neo ưu tiên LẪN
-   * neo đối diện, phép trượt cứu neo ĐỐI DIỆN vẫn bị đo từ `yDau` — tức cộng
-   * thêm nguyên chiều cao khối + chiều cao nhãn trước khi so với trần 40 px.
-   *
-   * Đo được, `qatd_kythuat` 3D khung mặc định 1280×720, nhãn "Toà 2" (khối
-   * `[356,3..445,1]×[182,7..245,3]`, nhãn 37,7×18,5): thẻ `bang-kpi-noi` chắn cả
-   * `tren-giua` (y 167,4) lẫn `duoi-giua` (y 260,6). Chỗ thoát ĐÚNG là
-   * `y = 269,6` — cách `duoi-giua` vỏn vẹn **9,0 px**. Nhưng đo từ `yDau` = 167,4
-   * thì quãng thành **102,1 px** > 40 ⇒ ứng viên KHÔNG BAO GIỜ được sinh ra, và
-   * nhãn rơi xuống lượt quét "chỉ-sạch-tâm" với **15,1 %** thân chữ nằm dưới thẻ.
-   * Riêng cú lật `tren`→`duoi` đã tiêu 93,1 px trần trong khi chẳng né được gì.
-   *
-   * ⇒ Mỗi neo chính tự sinh ứng viên trượt của nó, trần đo từ nó, và chèn NGAY
-   *   SAU nó để thứ tự ưu tiên không đổi. Mô phỏng trên hình học đã đo
-   *   (`.qa-tapdoan/zz-nhan2-sim.mjs`, 51 nhãn, V0 tái hiện phép đo 0 lệch):
-   *   che-một-phần 5 → 4, cứu thêm 2 nhãn (`qatd_kythuat` 2D "Toà 2", 3D "Toà 1"),
-   *   **0 hồi quy, 0 nhãn mất**, `ve + an === tong` đúng ở cả 4 ca.
-   *
-   * ⚠ Neo PHỤ (`phu`) cố ý KHÔNG sinh ứng viên trượt: chúng vốn đã là phương án
-   *   dự phòng theo trục ngang, thêm trượt vào đó chỉ nở tổ hợp mà không mua thêm
-   *   chỗ nào — và mỗi ứng viên thừa là một chỗ nhãn có thể rơi xa thứ nó gọi tên.
-   */
-  const ungVien: Array<[MaChoDat, number, number]> = [];
-  for (const uv of dau) {
-    ungVien.push(uv);
-    const [, x, y] = uv;
-    const them: Array<[MaChoDat, number, number]> = [];
-    const themTruot = (z: HopNhanPx | null) => {
-      if (!z) return;
-      for (const yy of [z.duoi + KHE_NHAN_PX + co.cao / 2, z.tren - KHE_NHAN_PX - co.cao / 2])
-        if (Math.abs(yy - y) <= TRUOT_TOI_DA_PX) them.push(["truot", x, yy]);
-    };
-    const chanHop = giaoLopPhu(vungCam, x, y, co);
-    themTruot(chanHop);
-    const chanTam = chePhu(vungCam, x, y);
-    if (chanTam && chanTam !== chanHop) themTruot(chanTam);
-    ungVien.push(...them);
-  }
-  ungVien.push(...phu);
+  const them: Array<[MaChoDat, number, number]> = [];
+  const themTruot = (z: HopNhanPx | null) => {
+    if (!z) return;
+    for (const y of [z.duoi + KHE_NHAN_PX + co.cao / 2, z.tren - KHE_NHAN_PX - co.cao / 2])
+      if (Math.abs(y - yDau) <= TRUOT_TOI_DA_PX) them.push(["truot", xDau, y]);
+  };
+  const chanHop = giaoLopPhu(vungCam, xDau, yDau, co);
+  themTruot(chanHop);
+  const chanTam = chePhu(vungCam, xDau, yDau);
+  if (chanTam && chanTam !== chanHop) themTruot(chanTam);
+  if (them.length > 0) ungVien.splice(1, 0, ...them);
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -309,7 +212,7 @@ export function datNhanSaBan(
    * Lượt ① không bao giờ ẩn thêm ai so với lượt ②, nên nó chỉ có thể làm tốt lên.
    */
   for (const [ma, x, y] of ungVien) {
-    if (!hopTrongKhung(x, y)) continue;
+    if (!trongKhung(x, y)) continue;
     if (giaoLopPhu(vungCam, x, y, co)) continue;
     return { x, y, ma };
   }

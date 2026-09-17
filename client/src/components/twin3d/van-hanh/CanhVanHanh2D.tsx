@@ -67,6 +67,22 @@ const SA_BAN_2D_RONG: readonly BieuTuongToaVe[] = [];
 const SA_BAN_2D_CUM_RONG: readonly CumSaBanVe[] = [];
 
 /**
+ * Tên cho `<title>` của khối toà: "‹cụm› — ‹toà›", nhưng KHÔNG lặp khi tên toà
+ * đã mở đầu bằng chính tên cụm.
+ *
+ * ⚠ Đo được, không phải lo xa: ở `qatd_admin` 2D, toà 90 cho ra
+ *   "FUYU-F (tai tong hop) — FUYU-F (tai tong hop) — toa chinh" — tên cụm hiện
+ *   HAI lần trong một dòng mách. Dữ liệu thật đặt tên toà theo kiểu
+ *   "‹tên nhà máy› — toa chinh", nên phép nối ngây thơ tự sinh ra bản sao.
+ */
+export function nhanKhoiCoCum(tenCum: string | undefined, tenToa: string): string {
+  const cum = (tenCum ?? "").trim();
+  const toa = tenToa.trim();
+  if (!cum || toa === cum || toa.startsWith(`${cum} `)) return toa;
+  return `${cum} — ${toa}`;
+}
+
+/**
  * Cỡ chữ nhãn tính theo **TỈ LỆ cạnh sa bàn**, không theo hằng mét.
  *
  * `<svg viewBox>` co giãn toàn bộ hệ toạ độ, nên một cỡ chữ cố định *bằng mét*
@@ -186,6 +202,11 @@ export function CanhVanHanh2D({
    */
   const svgRef = useRef<SVGSVGElement | null>(null);
   const nhanRef = useRef<Map<string, SVGTextElement | null>>(new Map());
+  /** factoryId → tên cụm, cho `<title>` của khối toà (đường đọc lại tên khi nhãn bị ẩn). */
+  const tenCumTheoFactory = useMemo(
+    () => new Map(saBanCum.map((c) => [c.factoryId, c.nhan])),
+    [saBanCum],
+  );
   const mucNhan = useMemo<MucNhan2D[]>(() => {
     if (!veSaBan) return [];
     return [
@@ -339,6 +360,28 @@ export function CanhVanHanh2D({
           data-nhan-an={datNhan.dem.an}
           data-nhan-tong={datNhan.dem.tong}
         >
+          {/*
+            ★★★ ẨN PHẢI CÓ ĐƯỜNG ĐỌC LẠI — `<title>` LÀ ĐƯỜNG ẤY.
+            ────────────────────────────────────────────────────────────────
+            `datNhanSaBan` chứng minh được bằng phép chia rằng ở `qatd_admin`
+            (5 cụm) **tối đa 2/5 tên cụm có chỗ sạch**: `panel-trai`/`panel-phai`
+            cao suốt khung, và dải ngang của tấm nền không nằm dưới panel hẹp hơn
+            chính cái tên (thiếu 25,3 / 58,8 / 89,8 px). Ẩn là kết cục ĐÚNG — số
+            đã được ĐẾM RA ở `data-nhan-an`. Nhưng "đếm ra" mới là trung thực với
+            phép đo, chưa trung thực với NGƯỜI DÙNG: họ thấy một tấm nền không tên
+            và không có cách nào biết nó là công ty nào.
+
+            ⇒ `<title>` trên CHÍNH tấm nền và CHÍNH khối toà: di chuột là đọc được
+              tên, dù nhãn có được vẽ hay không. Chọn `<title>` chứ không phải một
+              con chip "còn N tên bị ẩn" là một QUYẾT ĐỊNH có lý do đo được: chip
+              là một LỚP PHỦ MỚI trong đúng một cảnh vừa được chứng minh là hết
+              chỗ — nó sẽ tự ăn thêm nhãn, đúng lớp hazard mà bản vá trước đã phải
+              trả giá (nhãn đè nhãn 1 → 5 cặp).
+            ⚠ Khối toà vẽ ĐÈ LÊN tấm nền, nên phần nền còn thò ra khỏi panel có thể
+              bị chính khối toà chiếm; vì thế khối toà mang tên CỤM kèm tên toà,
+              nếu không thì cụm `qatd_admin`/`Công ty A` (dải thò ra chỉ 19,4 px và
+              bị hai khối toà phủ kín) sẽ không di chuột vào đâu được.
+          */}
           {/* Nền cụm TRƯỚC — vẽ sau biểu tượng thì tấm nền đè mất chính thứ nó nền cho. */}
           {saBanCum.map((c) => (
             <rect
@@ -350,7 +393,9 @@ export function CanhVanHanh2D({
               width={c.co.rong}
               height={c.co.sau}
               fill={(toi ? NEN_CUM_TOI : NEN_CUM_SANG)[c.chiSoCum % NEN_CUM_SANG.length]}
-            />
+            >
+              <title>{c.nhan}</title>
+            </rect>
           ))}
           {saBan.map((v) => (
             <rect
@@ -371,7 +416,9 @@ export function CanhVanHanh2D({
               fill={toi ? MAU_BIEU_TUONG_TOA.toi : MAU_BIEU_TUONG_TOA.sang}
               stroke={quangChu}
               strokeWidth={Math.max(v.co.rong, v.co.sau) * 0.012}
-            />
+            >
+              <title>{nhanKhoiCoCum(tenCumTheoFactory.get(v.factoryId), v.nhan)}</title>
+            </rect>
           ))}
           {/*
             Nhãn SAU hình — chữ nằm dưới khối là chữ không đọc được.

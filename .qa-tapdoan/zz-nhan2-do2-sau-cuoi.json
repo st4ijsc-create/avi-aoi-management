@@ -1,0 +1,245 @@
+{
+ "nhan": "sau-cuoi",
+ "luc": "2026-09-17T09:14:57.882Z",
+ "goc": "http://localhost:3067",
+ "vai": {
+  "qatd_admin": {
+   "d3": {
+    "soNhan": {
+     "ve": 18,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "cheMotPhan": [],
+    "soNhanDom": 19
+   },
+   "d2": {
+    "demNhan": {
+     "ve": 12,
+     "an": 7,
+     "tong": 19
+    },
+    "soCum": 5,
+    "soNhanCum": 5,
+    "nhanCumAn": [
+     {
+      "chu": "Nhà máy ảo (SIM)",
+      "factoryId": 1
+     },
+     {
+      "chu": "Công ty A",
+      "factoryId": 48
+     }
+    ],
+    "duongDoc": [
+     {
+      "chu": "Nhà máy ảo (SIM)",
+      "soDiemDocDuoc": 110,
+      "mau": [
+       {
+        "x": 516,
+        "y": 264,
+        "the": "rect",
+        "tid": "cum-2d-sa-ban",
+        "title": "Nhà máy ảo (SIM)"
+       },
+       {
+        "x": 516,
+        "y": 276,
+        "the": "rect",
+        "tid": "cum-2d-sa-ban",
+        "title": "Nhà máy ảo (SIM)"
+       },
+       {
+        "x": 516,
+        "y": 288,
+        "the": "rect",
+        "tid": "cum-2d-sa-ban",
+        "title": "Nhà máy ảo (SIM)"
+       }
+      ],
+      "moiDiemCoTitle": true
+     },
+     {
+      "chu": "Công ty A",
+      "soDiemDocDuoc": 29,
+      "mau": [
+       {
+        "x": 985,
+        "y": 264,
+        "the": "rect",
+        "tid": "toa-2d-sa-ban",
+        "title": "Công ty A — Toà 1"
+       },
+       {
+        "x": 985,
+        "y": 299,
+        "the": "rect",
+        "tid": "toa-2d-sa-ban",
+        "title": "Công ty A — Toà 1"
+       },
+       {
+        "x": 985,
+        "y": 311,
+        "the": "rect",
+        "tid": "toa-2d-sa-ban",
+        "title": "Công ty A — Toà 1"
+       }
+      ],
+      "moiDiemCoTitle": true
+     }
+    ],
+    "titleTamNen": [
+     {
+      "f": "1",
+      "title": "Nhà máy ảo (SIM)"
+     },
+     {
+      "f": "47",
+      "title": "FUYU-F (tai tong hop)"
+     },
+     {
+      "f": "48",
+      "title": "Công ty A"
+     },
+     {
+      "f": "49",
+      "title": "Công ty B"
+     },
+     {
+      "f": "50",
+      "title": "Công ty C"
+     }
+    ],
+    "titleKhoiToa": [
+     {
+      "toa": "24",
+      "title": "Nhà máy ảo (SIM) — Xuong lap rap ao (SIM)"
+     },
+     {
+      "toa": "90",
+      "title": "FUYU-F (tai tong hop) — toa chinh"
+     },
+     {
+      "toa": "91",
+      "title": "Công ty A — Toà 1"
+     },
+     {
+      "toa": "92",
+      "title": "Công ty A — Toà 2"
+     },
+     {
+      "toa": "93",
+      "title": "Công ty A — Toà 3"
+     },
+     {
+      "toa": "94",
+      "title": "Công ty A — Toà 4"
+     },
+     {
+      "toa": "95",
+      "title": "Công ty B — Toà 1"
+     },
+     {
+      "toa": "96",
+      "title": "Công ty B — Toà 2"
+     },
+     {
+      "toa": "97",
+      "title": "Công ty B — Toà 3"
+     },
+     {
+      "toa": "98",
+      "title": "Công ty B — Toà 4"
+     },
+     {
+      "toa": "99",
+      "title": "Công ty C — Toà 1"
+     },
+     {
+      "toa": "100",
+      "title": "Công ty C — Toà 2"
+     },
+     {
+      "toa": "101",
+      "title": "Công ty C — Toà 3"
+     },
+     {
+      "toa": "102",
+      "title": "Công ty C — Toà 4"
+     }
+    ]
+   }
+  },
+  "qatd_kythuat": {
+   "d3": {
+    "soNhan": {
+     "ve": 9,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "cheMotPhan": [],
+    "soNhanDom": 10
+   },
+   "d2": {
+    "demNhan": {
+     "ve": 6,
+     "an": 4,
+     "tong": 10
+    },
+    "soCum": 2,
+    "soNhanCum": 2,
+    "nhanCumAn": [],
+    "duongDoc": [],
+    "titleTamNen": [
+     {
+      "f": "48",
+      "title": "Công ty A"
+     },
+     {
+      "f": "49",
+      "title": "Công ty B"
+     }
+    ],
+    "titleKhoiToa": [
+     {
+      "toa": "91",
+      "title": "Công ty A — Toà 1"
+     },
+     {
+      "toa": "92",
+      "title": "Công ty A — Toà 2"
+     },
+     {
+      "toa": "93",
+      "title": "Công ty A — Toà 3"
+     },
+     {
+      "toa": "94",
+      "title": "Công ty A — Toà 4"
+     },
+     {
+      "toa": "95",
+      "title": "Công ty B — Toà 1"
+     },
+     {
+      "toa": "96",
+      "title": "Công ty B — Toà 2"
+     },
+     {
+      "toa": "97",
+      "title": "Công ty B — Toà 3"
+     },
+     {
+      "toa": "98",
+      "title": "Công ty B — Toà 4"
+     }
+    ]
+   }
+  }
+ }
+}

@@ -168,18 +168,57 @@ describe("★★★ ⑦ Ưu tiên chỗ KHÔNG giao một pixel nào — ca sinh
   const THE: HopNhanPx = { trai: 0, phai: 470, tren: 34, duoi: 400 };
   const KHOI: HopNhanPx = { trai: 420, phai: 560, tren: 300, duoi: 380 };
 
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ĐỢT 2026-09-17 — HAI KHẲNG ĐỊNH ĐƯỢC THAY, CHỦ ĐỢT PHÂN XỬ
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản cũ khẳng định `d.x - CO.rong/2 >= THE.phai` và `d.x !== tamGiua`. Cả hai
+   * ghi **ĐƯỜNG THOÁT** (*"phải chạy sang PHẢI"*), không ghi **TÍNH CHẤT** mà ca
+   * này sinh ra để bảo vệ (*"hộp chữ phải sạch hẳn"*).
+   *
+   * Luật mới tìm được chỗ `(490, 415)` — **nằm DƯỚI thẻ** (`THE.duoi = 400`) nên
+   * hộp chữ giao thẻ **đúng 0 px²**, sạch hẳn y như chỗ cũ `(530, 285)`. Nhưng
+   * `x = 490` chính là `tamGiua`, và `490 − 30 = 460 < 470` ⇒ **cả hai khẳng định
+   * cũ đều đỏ trong khi tính chất chúng bảo vệ vẫn nguyên vẹn.**
+   *
+   * ⇒ Thay bằng **phép đo diện tích giao**. Đây là SIẾT, không phải nới: nó đo
+   *   đúng mối nguy (một pixel nào đó của hộp chữ bị ăn) thay vì đo một hướng
+   *   chạy trốn cụ thể, nên nó bắt được cả những chỗ hỏng mà luật cũ bỏ lọt.
+   *
+   * ⚠ Cùng lớp với hai lần phân xử trước của đợt này: lệnh cấm
+   *   `gocToaTheoTang(…, null)` viết theo HÌNH DẠNG MÃ, và ca T1§7 canh một "id
+   *   ma" chứ không đặt luật sản phẩm. Khuôn xử: **giữ nguyên tiền đề đắt nhất
+   *   của ca, chỉ đổi thứ nó kết luận.**
+   */
+  const dienTichGiao = (a: HopNhanPx, b: HopNhanPx) =>
+    Math.max(0, Math.min(a.phai, b.phai) - Math.max(a.trai, b.trai)) *
+    Math.max(0, Math.min(a.duoi, b.duoi) - Math.max(a.tren, b.tren));
+  const hopChu = (d: { x: number; y: number }): HopNhanPx => ({
+    trai: d.x - CO.rong / 2,
+    phai: d.x + CO.rong / 2,
+    tren: d.y - CO.cao / 2,
+    duoi: d.y + CO.cao / 2,
+  });
+
   it("chọn chỗ hộp chữ SẠCH HẲN, không chọn chỗ chỉ sạch tâm", () => {
     const d = datNhanSaBan(KHOI, CO, [THE], KHUNG, "trong");
     expect(d).not.toBeNull();
-    expect(d!.x - CO.rong / 2).toBeGreaterThanOrEqual(THE.phai);
+    // TÍNH CHẤT, không phải hướng: không một pixel nào của hộp chữ bị thẻ ăn.
+    expect(dienTichGiao(hopChu(d!), THE)).toBe(0);
   });
 
   it("đối chứng biết kêu — chỗ 'sạch tâm mà cụt chữ' CÓ tồn tại và luật đã bỏ qua nó", () => {
     const tamGiua = (KHOI.trai + KHOI.phai) / 2; // 490
+    // ── Tiền đề GIỮ NGUYÊN: chỗ xấu ấy thật sự tồn tại trên hình học này.
     expect(tamGiua).toBeGreaterThan(THE.phai); // tâm sạch…
     expect(tamGiua - CO.rong / 2).toBeLessThan(THE.phai); // …mà chữ đầu vẫn bị ăn
+    // Và nó xấu ĐO ĐƯỢC: đặt ở đúng cao độ của thẻ thì hộp chữ mất một mảng.
+    const chinhGiuaThe = { x: tamGiua, y: (THE.tren + THE.duoi) / 2 };
+    expect(dienTichGiao(hopChu(chinhGiuaThe), THE)).toBeGreaterThan(0);
+
     const d = datNhanSaBan(KHOI, CO, [THE], KHUNG, "trong");
-    expect(d!.x).not.toBeCloseTo(tamGiua, 6); // luật mới KHÔNG chọn chỗ ấy
+    // Luật KHÔNG chọn một chỗ bị ăn — dù nó thoát theo hướng nào.
+    expect(dienTichGiao(hopChu(d!), THE)).toBe(0);
   });
 
   it("không còn chỗ nào sạch hẳn ⇒ VẪN nhận chỗ sạch tâm, KHÔNG ẩn (giữ luật cũ)", () => {
