@@ -189,7 +189,51 @@ function DieuKhien({
  *   Đổi mỗi màu nền mà giữ sàn `#e2e8f0` sáng thì ở theme tối cả mặt sàn thành
  *   một tấm trắng chiếm gần hết khung — chói hơn cả lỗi ban đầu. Ba màu này đi
  *   cùng nhau hoặc không đi.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ PH-52 — MÀN NÀY CÙNG KHUYẾT TẬT VỚI `CanhVanHanh` (PH-51), ĐÃ ĐO RA SỐ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Tấm sàn `y = -0.01`, `gridHelper` `y = 0` — **khe hở 1 cm**, đúng cặp số mà
+ * PH-51 đã chứng minh là không đủ. Studio là cảnh NHỎ (`far` = 2000, `near` = 0,1,
+ * `camXa` đo sống 117,054 m) nên thước "đổi bên thắng" gần như KHÔNG THẤY GÌ
+ * (2,37 %): ở đây lưới **thua ỔN ĐỊNH**, không phải knife-edge. Phải dùng thước
+ * thứ hai — "lưới vẽ ĐỦ", so với oracle lưới tắt depth-test:
+ *
+ *   | vùng sàn thuần 3D (canvas 540×251) | TRƯỚC   | SAU    | đối chứng lưới +5 m |
+ *   |------------------------------------|---------|--------|---------------------|
+ *   | ST-A khung mặc định                | 59,21 % | 0,00 % | —                   |
+ *   | ST-B khung mặc định                | 60,47 % | 1,78 % | —                   |
+ *   | ST-E nhìn xiên                     | 34,96 % | 0,63 % | —                   |
+ *   | ST-F trần zoom (camXa 365,2)       |  1,02 % | 0,30 % | —                   |
+ *   | *thước 1* ST-A / ST-B              | 2,37 / 2,87 % | 0,00 / 0,03 % | 0,00 / 0,03 % |
+ *
+ *   Dư 1,78 / 0,63 / 0,30 % ở cột SAU **bằng ĐÚNG** mức hai oracle độc lập lệch
+ *   nhau (lưới tắt depth-test vs sàn tắt depth-write) ⇒ đó là sai số của chính
+ *   oracle ở mép máy, không phải lưới còn bị ăn.
+ *   Cột đối chứng: nâng `gridHelper` lên 5 m (z-fighting **bất khả**, mật độ lưới
+ *   GIỮ NGUYÊN) cho đúng những con số của bản vá ⇒ bản vá đã chạm sàn vật lý.
+ *   Nhiễu thiết bị đo: hai lượt chụp cùng bản dựng = **0,00 %** ở cả 4 vùng.
+ *
+ * ★★★ CON SỐ 57,30 % CỦA VÒNG TRƯỚC LÀ VÔ HIỆU, ĐÃ TRUY RA NGUYÊN NHÂN.
+ *   Cổng chờ cũ (`zf/chup-studio.mjs`) là "`calls` giống nhau ở hai lần đọc cách
+ *   900 ms". Đo sống 2 lượt × 24 mẫu/1 s: lượt 1 có `calls=3, tris=2702` ngay từ
+ *   giây 0; lượt 2 đứng ở `calls=2, tris=2` suốt **5 giây** (tấm sàn + lưới, **lô
+ *   máy chưa về**) rồi mới lên 3. Trạng thái "chưa có máy" ĐỨNG YÊN nên nó THOẢ
+ *   cổng chờ ⇒ hai lượt của họ khác nhau **2.700 tam giác**. Hiệu của hai cảnh
+ *   khác nhau thì không tách được gì. Cổng chờ mới là một KHẲNG ĐỊNH KÍCH THƯỚC
+ *   (`calls === 3 && tris === 2702`), thiếu thì phép đo NỔ.
+ *
+ * ★ Vì sao `polygonOffset` chứ không phải nới khe hở: y hệt lý lẽ PH-51 — khe hở
+ *   tính bằng MÉT còn bước z tỉ lệ `z²`, mà `z` là thứ người dùng đổi bằng con
+ *   lăn (`camXa` Studio đi từ 117 tới 365 m, bước z đổi ~9,7 lần). `units` đếm
+ *   theo bước z TẠI CHÍNH độ sâu ấy nên tự co giãn.
+ * ⚠ Khe hở 1 cm GIỮ NGUYÊN — hàng rào thứ hai, không phải bản thay thế.
+ *
+ * Lưới: `zFightingSanStudio.unit.test.ts`.
  */
+const SAN_DAY_SAU_HE_SO = 1;
+const SAN_DAY_SAU_DON_VI = 1;
+
 function San({
   rongM,
   sauM,
@@ -209,7 +253,12 @@ function San({
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[rongM / 2, -0.01, sauM / 2]}>
         <planeGeometry args={[rongM, sauM]} />
-        <meshStandardMaterial color={mauSan} />
+        <meshStandardMaterial
+          color={mauSan}
+          polygonOffset
+          polygonOffsetFactor={SAN_DAY_SAU_HE_SO}
+          polygonOffsetUnits={SAN_DAY_SAU_DON_VI}
+        />
       </mesh>
       {hienLuoi ? (
         <gridHelper

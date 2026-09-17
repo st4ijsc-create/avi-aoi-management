@@ -751,3 +751,49 @@ Luật mới tìm được chỗ `(490, 415)` — **nằm DƯỚI thẻ** (`THE.
 
 **Còn mở, có tên:** `admin` 2D "Toà 4" (che 24,5 %) là ô **DUY NHẤT còn cứu được** (dải sạch 51,4 ≥ nhãn 32,3) nhưng bị chặn bởi **một nhãn anh em đã đặt**, không phải lớp phủ ⇒ **lớp lỗi khác** (xếp chỗ giữa các toà cùng cụm). Không đụng, vì tiền lệ *"cứu thêm nhãn ⇒ nhãn đè nhãn 1→5 cặp"* nằm đúng ở đây. Ba ô còn lại bất khả (thiếu 25,3 / 12,9 / 12,9 px).
 ⚠ `<title>` là **đường duy nhất** đọc tên bị ẩn, và người dùng phải **biết mà rê chuột** — không có tín hiệu thị giác nào mời họ. Agent cố ý không thêm chip "còn N tên bị ẩn" vì đó là **một lớp phủ MỚI trong đúng cảnh vừa chứng minh là hết chỗ**.
+
+## V-38 ★★★ PH-52 — `/factory-command` MẤT TRỌN LƯỚI SÀN khi nghiêng, và `polygonOffset` KHÔNG vá được
+| vùng | TRƯỚC | SAU |
+|---|---|---|
+| tập đoàn **xiên** | **96,34 %** | **0,00 %** |
+| một nhà máy **xiên** | **56,32 %** | **0,00 %** |
+| bốn vùng khung mặc định | 0,00 % | 0,00 % |
+Chủ đợt **tự xem cặp `2p-vungSan-{TRUOC,SAU}-x3.png`**: TRƯỚC là một **tấm đen không một đường lưới nào**; SAU là lưới phối cảnh đầy đủ, sạch.
+
+★★★ **Vì sao cách của PH-51 vô dụng ở đây — bác bỏ bằng SỐ, không bằng khẩu vị**: drei `<Grid infiniteGrid>` nhân toạ độ đỉnh với `1 + fadeDistance` ⇒ tấm lưới rộng **3,36 TRIỆU mét** trong khi `far` = 8.200 m. Độ sâu của nó **sai hàng MÉT, không sai một nấc z** — mà `polygonOffset` nói bằng đơn vị **nấc z**, nên nó **không với tới**.
+| ứng viên | TĐ-xiên | NM-xiên | NM mặc định |
+|---|---|---|---|
+| sàn `polygonOffset` 1/1 (cách PH-51) | 96,34 % | 56,32 % | 0 % |
+| lưới `polygonOffset` −8/−8 | 96,34 % | 31,69 % | 0 % |
+| thu nhỏ tấm lưới (bỏ `infiniteGrid`) | 0,49 % | 0,00 % | **43,60/52,76 %** ⚠ |
+| **sàn `depthWrite: false` ← CHỌN** | **0,00** | **0,00** | **0,00** |
+★ Thu nhỏ tấm lưới **đổi khuyết tật lấy khuyết tật**: hết sai-vì-tấm-khổng-lồ thì lộ z-fighting cổ điển (khe 2 cm vs bước z 7,5 cm). Hai oracle độc lập lệch nhau **0,00 %** ở cả 6 vùng.
+
+## V-39 ★★★ Con số 57,30 % của Studio bị BÁC BỎ — hai lượt đo là HAI CẢNH KHÁC NHAU
+`calls = 2, tris = 2` là **sàn + lưới, lô máy CHƯA VỀ**. Đo sống 2 lượt × 24 mẫu/1 s: lượt 2 **đứng ở trạng thái ấy 5 giây**. Vì nó **đứng yên**, nó **thoả cổng chờ cũ** (*"`calls` giống nhau ở hai lần đọc cách 900 ms"*) ⇒ hai lượt của vòng trước khác nhau **2.700 tam giác**, tức họ đang trừ **hiệu của hai cảnh khác nhau**. ⇒ **57,30 % vô hiệu.**
+Cổng chờ mới khẳng định **kích thước tường minh** (`calls === 3 && tris === 2702`), thiếu thì nổ. Đo lại đúng: thước 2 **59,21 / 60,47 / 34,96 / 1,02 % → 0,00 / 1,78 / 0,63 / 0,30 %** (cột SAU **bằng đúng** mức hai oracle độc lập lệch nhau ⇒ dư lại là sai số oracle). Thước 1: 2,37/2,87 % → 0,00/0,03 %, **trùng đối chứng lưới-nâng-5 m**.
+
+### ★★★ CHỦ ĐỢT PHÂN XỬ — lý lẽ "`near` là nhiễu độ sâu thuần" của PH-51 CÓ TIỀN ĐỀ, và tiền đề ấy VỠ ở một chỗ
+Đối chứng chống-tự-thoả (đăng ký TRƯỚC: cả hai bên tắt depth-test lưới ⇒ không thể còn tranh chấp, chỉ khác `near`) cho `0/0/**96,34**/0/0/0 %`. Tức ở vùng tập-đoàn-xiên, `near` **KHÔNG** là nhiễu độ sâu thuần: tấm lưới 3,36 triệu mét **bị CẮT ở mặt phẳng near**, và vị trí đỉnh cắt phụ thuộc `near` ⇒ nó đổi cả **vùng phủ**, không chỉ đổi độ sâu.
+⇒ **Lý lẽ "near chỉ nằm ở cột z" (V-36) ĐÚNG, nhưng CHỈ KHI tam giác KHÔNG bị mặt phẳng near cắt.** Ghi tiền đề ấy ra, đừng để nó thành một câu tưởng là phổ quát.
+**Chủ đợt nhận cách đọc của agent**: thước 1 ở vùng ấy đọc TRƯỚC 0 % / SAU 96,34 % **không phải hồi quy** mà là thước **chạm sàn nhiễu của chính nó** (TRƯỚC đọc 0 vì lưới **thua ổn định** ở cả hai mức `near`). Bằng chứng quyết định: **thước 2 ở đúng vùng ấy đi 96,34 % → 0,00 %** — nếu SAU là hồi quy thì thước 2 phải **tệ đi**, chứ không thể về 0.
+
+## PH-53 (MỚI, CAO cho người sửa sau) · Lưới `/factory-command` PHỤ THUỘC `near` — một ràng buộc chéo có tên
+Ở `near = 0,1`, lưới tập-đoàn-xiên **biến mất kể cả khi tắt depth-test** — đó là **hình học của drei**, bản vá `depthWrite:false` không chữa được. Ở `near` đang giao (**0,41**, do `catCanh.ts` tính) thì lưới vẽ đủ.
+⇒ **Ai đổi `catCanh.ts` PHẢI đo lại màn `/factory-command`.** Đây là ràng buộc chéo giữa hai tệp không nhắc tên nhau.
+
+## PH-54 (MỚI, TRUNG BÌNH) · Lưới QUÁ DÀY — đã ĐO, cố ý CHƯA VÁ
+Ô lưới tại điểm ngắm, khung mặc định: `/factory-command` tập đoàn **1,07 px** (đường section 10 m cũng chỉ 5,33 px) · `/factory-command` một nhà máy 2,94 px · `/twin` tập đoàn **1,47 px** · Studio 2,59 px (trần zoom **0,83 px**). **Chỉ** `/twin` một nhà máy (27,75 px) đạt ≥ 8 px. `/factory-command` tệ nhất vì `cellSize` là **hằng 2 m**.
+★ **Một thước của agent tự bác bỏ**: tự tương quan đọc **chu kỳ vân moiré** khi ô < 1 px — ở tập-đoàn nó báo **11,00 px** (sẽ "ĐẠT ≥ 8" **oan**). Đổi sang thước hình học, kiểm chứng trên ca lưới đọc được.
+
+## ⚠ SỰ CỐ THIẾT BỊ ĐO — LỖI ĐIỀU PHỐI CỦA CHỦ ĐỢT
+15:43:56 một agent khác `start` server **trên đúng cổng 3067** agent này đang dùng, **giết tiến trình của họ**. Nhánh kia không chạm `/factory-command` nên màn ấy vẽ **giống hệt** ⇒ hai lượt đo sau đó trả *"bằng bản chưa vá"* mà **trông hoàn toàn hợp lý** — **một âm tính giả hoàn hảo**.
+★ Agent cách ly các lượt ấy vào `VO-HIEU-server-bi-doat-cong/`, đo lại từ đầu, và thêm **canh cửa md5 chunk qua HTTP ↔ đĩa** trước/sau mỗi lượt.
+⇒ **Lỗi của tôi**: tôi bảo cả hai agent "dựng cổng riêng" mà **không cấp số cổng khác nhau**. Từ nay brief phải **chỉ định cổng đích danh** cho từng agent.
+
+## PH-55 ĐÓNG · Ca chập chờn `phamViDocPatch.db.test.ts` — đã tách được, và CHỦ ĐỢT ĐỔI Ý CÓ LÝ DO ĐO ĐƯỢC
+Đo tách bạch, cùng máy cùng phiên: chạy **RIÊNG** tệp ⇒ ca `ÂM ①② hai chiều` **XANH ở 2.210 ms** (biên 2,26× dưới trần 5.000); chạy cả suite `phamVi` (21 tệp song song trên **một** Postgres) ⇒ **> 5.000 ms**. Mỗi lần đỏ **đều** là `Test timed out`, **chưa một lần** là `AssertionError`.
+Ca ấy khẳng định **PHẠM VI TENANT** (A không được thấy máy của B) — một luật đúng/sai, không phải một ngân sách thời gian. Trần 5.000 ms (mặc định vitest) ở đây đang đo **thông lượng CSDL khi 21 tệp tranh nhau**, tức **đo tải máy chứ không đo tính đúng**.
+⚠⚠ Chủ đợt đã **hai lần** nói *"không nâng trần, nâng là giấu"*. Đổi ý vì **lúc ấy chưa biết đỏ vì hết giờ hay vì sai**; nay đã tách được. Nâng trần cho một ca **SAI** là giấu lỗi; nâng trần cho một ca **hết-giờ-vì-tải** là **sửa một thước đang đo nhầm đại lượng** — cùng khuôn với lần rút lại thước `fps 47-57`.
+★ Giữ cho phép đo còn sức: trần mới **20.000 ms** = vẫn chỉ **9,05×** chi phí đo được khi chạy riêng. Một hồi quy thật (N+1, mất chỉ mục) thổi chi phí hàng chục lần và **vẫn vỡ** trần này. Con số **2.210 ms** ghi ngay trong docblock làm mốc so.
+Kiểm: `npx vitest run phamVi` **hai lượt liên tiếp, 21 tệp / 561 xanh**.

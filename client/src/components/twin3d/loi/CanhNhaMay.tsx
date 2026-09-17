@@ -251,6 +251,57 @@ function TheoDoiFps({ onDoiBac }: { onDoiBac: (chiHopBao: boolean, coNhan: boole
 /* ═════════════════════════════════════════════════════════════════════════ */
 
 /**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ PH-52 — SÀN THÔI GHI ĐỘ SÂU, VÌ Ở ĐÂY `polygonOffset` **KHÔNG ĐỦ**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Tấm sàn ở `y = -0.02`, drei `<Grid>` ở `y = 0` — cách nhau **2 cm**. Giống lớp
+ * lỗi PH-51 ở `CanhVanHanh`, nhưng **cách vá phải khác**, và đây là lý lẽ đo được
+ * chứ không phải khẩu vị:
+ *
+ * `<Grid infiniteGrid>` của drei nhân toạ độ đỉnh với `1 + fadeDistance`
+ * (`Grid.js`: `if (infiniteGrid) localPosition *= 1.0 + fadeDistance`). Với
+ * `args = banKinh*4` và `fadeDistance = banKinh*5`, ở cỡ tập đoàn QATD
+ * (`banKinh` = 410 m) tấm lưới rộng **1.640 × 2.051 ≈ 3,36 TRIỆU mét** trong khi
+ * `far` chỉ 8.200 m. Một tứ giác như thế vắt qua cả mặt phẳng `near` lẫn `far`;
+ * độ sâu nội suy của nó sai **hàng mét**, không phải sai một nấc z. Hệ quả:
+ * `polygonOffset` — thứ đếm theo **một** bước z — không mua nổi gì.
+ *
+ * ★ ĐO trên cổng 3077, bundle dựng từ chính cây này, thước "lưới vẽ ĐỦ"
+ *   (% pixel vùng sàn thuần khác với oracle; oracle = lưới tắt depth-test):
+ *
+ *   | ứng viên                                   | tập đoàn xiên | một nhà máy xiên |
+ *   |--------------------------------------------|---------------|------------------|
+ *   | (chưa vá)                                  | **96,34 %**   | **56,32 %**      |
+ *   | sàn `polygonOffset` 1/1 (cách của PH-51)   | 96,34 %       | 56,32 %          |
+ *   | lưới `polygonOffset` −1/−1                 | 96,34 %       | 56,32 %          |
+ *   | lưới `polygonOffset` −8/−8                 | 96,34 %       | 31,69 %          |
+ *   | thu nhỏ tấm lưới (bỏ `infiniteGrid`)       |  0,49 %       |  0,00 %  ⚠       |
+ *   | **sàn `depthWrite: false`  ← CHỌN**        |  **0,00 %**   |  **0,00 %**      |
+ *
+ *   ⚠ Thu nhỏ tấm lưới chữa khung XIÊN nhưng **làm hỏng khung mặc định** ở cỡ
+ *     một nhà máy (0 % → 43,60 %/52,76 %): hết sai-vì-tấm-khổng-lồ thì lộ ra
+ *     z-fighting cổ điển 2 cm vs Δz 7,5 cm. Tức nó đổi một khuyết tật lấy một
+ *     khuyết tật khác. `depthWrite: false` **bỏ hẳn cuộc tranh chấp**, nên không
+ *     phụ thuộc vào việc bước z có đủ mịn hay không ở bất kỳ nấc zoom nào.
+ *
+ * ★★★ VÌ SAO TẮT `depthWrite` CỦA SÀN LÀ AN TOÀN Ở ĐÂY (chứ không phải mọi nơi)
+ *   Tấm sàn là **mặt dưới cùng** của cảnh: mọi máy đứng ở `y ≥ 0`, và
+ *   `OrbitControls` không cho camera xuống dưới mặt sàn. Không có vật nào nằm
+ *   SAU sàn để sàn phải che. Bỏ ghi độ sâu vì thế không mở ra vật nào bị lộ —
+ *   đo toàn khung hình: khung mặc định (tập đoàn và một nhà máy) đổi **0,00 %**;
+ *   khung zoom-sâu vào giữa lô máy đổi 4,72 % và soi ảnh thì **toàn bộ** phần đổi
+ *   nằm trên mặt sàn HỞ, **0 pixel** trên khối máy (ảnh `_hz-fc-tatca-b-zoom.png`).
+ *   Đây chính là hazard đã LOẠI ứng viên (C) của PH-51 (lưới `depthTest:false`
+ *   vẽ đè khối máy) — ở đây nó không xảy ra vì thứ bị tắt là **sàn**, không phải
+ *   lưới: lưới vẫn so độ sâu, nên máy vẫn che được lưới.
+ *
+ * ⚠ Khe hở 2 cm GIỮ NGUYÊN — hàng rào thứ hai, không phải bản thay thế.
+ *
+ * Lưới: `zFightingSanNhaMay.unit.test.ts`.
+ */
+const SAN_GHI_DO_SAU = false;
+
+/**
  * ★ EXPORT cho LƯỚI: `chonNhatQuanChiHuy.dom.test.tsx` phải dựng **đúng cây này**
  *   dưới một gốc R3F có `gl` giả (jsdom không có WebGL, nên `<KhungCanh>` — tức
  *   `<Canvas>` thật — không dựng được). Dựng lại một bản chép trong lưới sẽ đo bản
@@ -487,7 +538,12 @@ export function NoiDungCanh({
       {/* Sàn + lưới — giữ nguyên diện mạo màn cũ. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
         <planeGeometry args={[banKinh * 8, banKinh * 8]} />
-        <meshStandardMaterial color={palette.floor} roughness={1} metalness={0} />
+        <meshStandardMaterial
+          color={palette.floor}
+          roughness={1}
+          metalness={0}
+          depthWrite={SAN_GHI_DO_SAU}
+        />
       </mesh>
       <Grid
         position={[0, 0, 0]}

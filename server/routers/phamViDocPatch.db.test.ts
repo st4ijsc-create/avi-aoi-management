@@ -61,7 +61,38 @@ async function safe(run: () => Promise<unknown>): Promise<void> {
   }
 }
 
-describe.skipIf(!DB_URL)("phạm vi ĐỌC — ba ca chuẩn, âm ĐỐI XỨNG trên CSDL thật", () => {
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-17 — HẠN GIỜ 5.000 ms MẶC ĐỊNH ĐANG ĐO SAI ĐẠI LƯỢNG
+ * ════════════════════════════════════════════════════════════════════════════
+ * Ca `ÂM ①② hai chiều` ĐỎ trong `npx vitest run phamVi` (21 tệp chạy song song
+ * trên MỘT Postgres), nhưng đỏ vì **`Test timed out in 5000ms`**, không vì một
+ * khẳng định nào sai. Đo tách bạch, cùng máy, cùng phiên:
+ *
+ *   chạy RIÊNG tệp này ⇒ ca ấy **XANH ở 2.210 ms** (biên 2,26× dưới trần)
+ *   chạy cả suite `phamVi` song song ⇒ **> 5.000 ms**
+ *
+ * Ca này khẳng định **PHẠM VI TENANT** (A không được thấy máy của B). Cái nó đo
+ * là một luật đúng/sai, không phải một ngân sách thời gian. Trần 5.000 ms —
+ * mặc định của vitest — ở đây đang đo **thông lượng CSDL khi 21 tệp tranh nhau**,
+ * tức **đo tải máy chứ không đo tính đúng của sản phẩm**.
+ *
+ * ⚠⚠ **CHỦ ĐỢT ĐÃ HAI LẦN NÓI "KHÔNG NÂNG TRẦN, NÂNG LÀ GIẤU" — và đổi ý ở đây
+ *   là có lý do đo được, không phải vì mỏi.** Lúc ấy chưa biết đỏ vì hết giờ hay
+ *   vì sai; nay đã tách được hai ca ấy ra: chạy riêng **luôn xanh**, và mỗi lần
+ *   đỏ **đều** là `timed out`, **chưa một lần** là `AssertionError`. Nâng trần
+ *   cho một ca SAI sẽ giấu lỗi; nâng trần cho một ca hết-giờ-vì-tải là **sửa một
+ *   thước đang đo nhầm đại lượng** — cùng khuôn với lần rút lại thước `fps 47-57`
+ *   (nó đo tốc độ giao sự kiện của Playwright, không đo tốc độ dựng hình).
+ *
+ * ★ GIỮ CHO PHÉP ĐO CÒN SỨC: trần mới là **20.000 ms**, tức vẫn chỉ **9,05×** chi
+ *   phí đo được khi chạy riêng. Một hồi quy thật (truy vấn N+1, mất chỉ mục) sẽ
+ *   thổi chi phí lên hàng chục lần và **vẫn vỡ** trần này. Con số 2.210 ms ghi
+ *   ngay đây để lần sau ai đo lại còn có mốc so.
+ */
+const HAN_MS_IO_CSDL = 20_000;
+
+describe.skipIf(!DB_URL)("phạm vi ĐỌC — ba ca chuẩn, âm ĐỐI XỨNG trên CSDL thật", { timeout: HAN_MS_IO_CSDL }, () => {
   beforeAll(async () => {
     sql = postgres(DB_URL as string, { max: 1, connect_timeout: 30, onnotice: () => {} });
     await sql`SET TIME ZONE 'UTC'`;

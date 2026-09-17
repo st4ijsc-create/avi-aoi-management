@@ -1,0 +1,119 @@
+PH-52 (SÀN-LƯỚI-3) — SỔ ABLATION  ·  đường TUYỆT ĐỐI: D:\SOURCES\avi-aoi-management
+════════════════════════════════════════════════════════════════════════════════════
+Bộ dựng: Chromium --use-angle=default --enable-gpu --ignore-gpu-blocklist (ANGLE/GPU
+THẬT, KHÔNG SwiftShader). Ảnh = screenshot PHẦN TỬ canvas. Cổng 3077 (của riêng tôi;
+xem ph52/server.sh). Viewport 1280×720 ⇒ canvas /factory-command 634×529, Studio 540×251.
+Thước: % pixel có |ΔR|+|ΔG|+|ΔB| > 6 trong VÙNG SÀN THUẦN 3D (chọn bằng mắt, soi ×3..×4);
+cột >0 và >24 in kèm ở ph52/tho/bang-*.json.
+
+⓪ NHIỄU THIẾT BỊ ĐO (chụp hai lượt CÙNG bản dựng)
+   /factory-command 6/6 vùng = 0,00 %   ·   Studio 4/4 vùng = 0,00 %
+   camXa tái lập tới 3 chữ số thập phân ở mọi khung, kể cả khung kéo nghiêng.
+
+① SỰ CỐ THIẾT BỊ ĐO — CỔNG BỊ ĐOẠT (ghi thẳng, vì nó suýt cho một âm tính giả HOÀN HẢO)
+   15:43:56 một phiên khác `start` server của họ trên cổng 3067 tôi đang dùng
+   (`dist-nhan2-sau`), giết tiến trình của tôi. Nhánh họ KHÔNG chạm `/factory-command`
+   nên màn ấy vẽ GIỐNG HỆT — hai lượt đo sau đó (`gpn8`, `tamnhopoly`) trả về "bằng bản
+   chưa vá" mà trông hoàn toàn hợp lý. Đã cách ly vào ph52/VO-HIEU-server-bi-doat-cong/,
+   đo lại từ đầu, và `chup-fc.mjs`/`chup-st.mjs` nay có CANH CỬA: md5 chunk lấy QUA HTTP
+   phải khớp chunk trên ĐĨA, kiểm TRƯỚC và SAU mỗi lượt.
+
+② `/factory-command` — THƯỚC 2 "LƯỚI VẼ ĐỦ" (oracle = lưới tắt depth-test)
+   Bản dựng THẬT `dist-ph52s`; "TRƯỚC" = GỠ đúng chuỗi `,depthWrite:_t` khỏi bundle
+   (ablation, mọi byte khác giống hệt).
+   | vùng                              | TRƯỚC   | SAU    |
+   | FCTD-A tập đoàn mặc định          |  0,00 % | 0,00 % |
+   | FCTD-B tập đoàn mặc định          |  0,00 % | 0,00 % |
+   | FCTD-E tập đoàn XIÊN              | 96,34 % | 0,00 % |
+   | FCNM-A một nhà máy mặc định       |  0,00 % | 0,00 % |
+   | FCNM-B một nhà máy mặc định       |  0,00 % | 0,00 % |
+   | FCNM-E một nhà máy XIÊN           | 56,32 % | 0,00 % |
+   Hai ORACLE ĐỘC LẬP (lưới tắt depth-test · sàn tắt depth-write) lệch nhau 0,00 % ở
+   cả 6 vùng ⇒ oracle không phải là biến.
+   CHÉO: bản dựng thật đã-gỡ-vá (HEAD a098369d) so với bản mô phỏng chưa vá (de1dc50a)
+   = 0,00 % ở cả 6 vùng ⇒ hai commit của phiên khác KHÔNG chạm màn này.
+
+③ `/factory-command` — BÁC BỎ BA ỨNG VIÊN BẰNG SỐ (đo trên dist-ph52t, cùng bundle)
+   | ứng viên                              | FCTD-E  | FCNM-E  | FCNM-A | FCNM-B |
+   | (chưa vá)                             | 96,34 % | 56,32 % | 0,00 % | 0,00 % |
+   | sàn polygonOffset 1/1 (cách PH-51)    | 96,34 % | 56,32 % | 0,00 % | 0,00 % |
+   | lưới polygonOffset −1/−1              | 96,34 % | 56,32 % | 0,00 % | 0,00 % |
+   | lưới polygonOffset −8/−8              | 96,34 % | 31,69 % | 0,00 % | 0,00 % |
+   | thu nhỏ tấm lưới (bỏ infiniteGrid)    |  0,49 % |  0,00 % | 43,60 %| 52,76 %|
+   | thu nhỏ tấm + polygonOffset sàn       |  0,49 % |  0,00 % |  0,00 %|  0,00 %|
+   | SÀN depthWrite:false   ← CHỌN         |  0,00 % |  0,00 % |  0,00 %|  0,00 %|
+   Vì sao polygonOffset vô dụng: drei `<Grid infiniteGrid>` nhân toạ độ đỉnh với
+   1+fadeDistance ⇒ tấm lưới rộng 1.640 × 2.051 ≈ 3,36 TRIỆU mét trong khi far = 8.200 m.
+   Độ sâu của nó sai HÀNG MÉT, không sai một nấc z.
+   ⚠ "Thu nhỏ tấm lưới" chữa khung xiên nhưng LÀM HỎNG khung mặc định cỡ một nhà máy
+     (0 → 43,60/52,76 %): hết sai-vì-tấm-khổng-lồ thì lộ z-fighting cổ điển (khe 2 cm
+     vs bước z 7,5 cm). Nó đổi khuyết tật lấy khuyết tật.
+
+④ ★★★ THƯỚC 1 ("đổi bên thắng" của PH-51) TỰ BÁC BỎ Ở ĐÚNG MỘT VÙNG
+   Chống tự thoả đã ĐĂNG KÝ TRƯỚC: cho CẢ HAI bên tắt depth-test của lưới (không thể
+   còn tranh chấp độ sâu) rồi chỉ đổi `near`. Nếu "near là nhiễu độ sâu thuần" thì bảng
+   phải ≈ 0. Kết quả (bản dựng thật):
+     FCTD-A 0 % · FCTD-B 0 % · FCNM-A 0 % · FCNM-B 0 % · FCNM-E 0 % · FCTD-E 96,34 %
+   ⇒ ở FCTD-E, `near` KHÔNG phải nhiễu độ sâu thuần: tấm lưới 3,36 triệu mét bị CẮT ở
+     mặt phẳng near, mà vị trí đỉnh cắt phụ thuộc `near` ⇒ nó đổi cả VÙNG PHỦ.
+     Lý lẽ "near/far chỉ nằm ở cột z nên không dịch pixel nào" của PH-51 chỉ đúng khi
+     tam giác KHÔNG bị cắt.
+   Thước 1, cùng bản dựng thật:
+     TRƯỚC: 0 / 0 / 0 / 0 / 0 / 56,32 %      (FCTD-E đọc 0 vì lưới THUA ỔN ĐỊNH ở cả
+                                              hai mức nhiễu — đúng điểm mù PH-51 cảnh báo)
+     SAU  : 0 / 0 / 96,34 / 0 / 0 / 0 %      (FCTD-E đọc ĐÚNG BẰNG sàn nhiễu của chính
+                                              thước ⇒ 0 tín hiệu z-fighting còn lại)
+
+⑤ STUDIO — CON SỐ 57,30 % CỦA VÒNG TRƯỚC LÀ VÔ HIỆU, ĐÃ TRUY RA NGUYÊN NHÂN
+   `_probe-studio.mjs`, 2 lượt × 24 mẫu/1 s:
+     lượt 1: calls=3 tris=2702 ngay giây 0
+     lượt 2: calls=2 tris=2 suốt 5 GIÂY rồi mới lên 3/2702
+   calls=2,tris=2 = tấm sàn (2 tam giác) + gridHelper; LÔ MÁY CHƯA VỀ. Trạng thái ấy
+   ĐỨNG YÊN nên nó THOẢ cổng chờ cũ ("calls giống nhau ở hai lần đọc cách 900 ms") ⇒
+   hai lượt của họ khác nhau 2.700 tam giác. Hiệu của hai cảnh khác nhau.
+   Cổng chờ mới = KHẲNG ĐỊNH KÍCH THƯỚC `calls === 3 && tris === 2702`, thiếu thì NỔ.
+
+   THƯỚC 2 (bản dựng thật, TRƯỚC = gỡ chuỗi polygonOffset khỏi bundle):
+   | vùng                | TRƯỚC   | SAU    | hai oracle độc lập lệch nhau |
+   | ST-A mặc định       | 59,21 % | 0,00 % | 0,00 %                        |
+   | ST-B mặc định       | 60,47 % | 1,78 % | 1,78 %                        |
+   | ST-F trần zoom      |  1,02 % | 0,30 % | 0,30 %                        |
+   | ST-E nhìn xiên      | 34,96 % | 0,63 % | 0,63 %                        |
+   Cột SAU BẰNG ĐÚNG cột "hai oracle lệch nhau" ⇒ dư lại là sai số của oracle ở mép máy,
+   không phải lưới còn bị ăn.
+   THƯỚC 1: TRƯỚC 2,37 / 2,87 / 0,49 / 0,18 %  →  SAU 0,00 / 0,03 / 0,01 / 0,00 %
+   SÀN của thước 1 (hai bên tắt depth lưới): 0,00 % ở cả 4 vùng ⇒ ở Studio `near` ĐÚNG
+   là nhiễu độ sâu thuần, thước hợp lệ.
+   ĐỐI CHỨNG tách z-fighting khỏi răng cưa (nâng gridHelper lên 5 m, mật độ GIỮ NGUYÊN):
+   0,00 / 0,03 / 0,03 / 0,00 % — bản vá chạm đúng sàn vật lý ấy.
+
+⑥ HAZARD CỦA CHÍNH BẢN VÁ (hỏi trước, đo sau)
+   · lệnh vẽ / tam giác: /factory-command 3 / 101.944 và Studio 3 / 2.702 — KHÔNG ĐỔI.
+   · fps CỬA SỔ CỐ ĐỊNH 5.000 ms, n=3 mỗi bên:
+       /factory-command TRƯỚC 302/302/300 khung (59,9–60,3 fps) · SAU 302/302/302 (60,3)
+       Studio          TRƯỚC 302/302/302 (60,2)                 · SAU 302/302/301 (60,1–60,2)
+     (thước fps theo-sự-kiện đã bị chủ đợt loại; `n4-ngansach` vẫn in nó, tôi KHÔNG dùng)
+   · "sàn thôi ghi độ sâu có mở ra vật nào bị lộ không": toàn khung hình TRƯỚC→SAU
+       tập đoàn mặc định 0,00 % · một nhà máy mặc định 0,00 %
+       zoom sâu vào GIỮA lô máy 4,72 % — soi ảnh `_hz-fc-tatca-b-zoom.png`: TOÀN BỘ phần
+       đổi nằm trên mặt sàn HỞ, 0 pixel trên khối máy.
+     Đây đúng là hazard đã LOẠI ứng viên (C) của PH-51 (lưới depthTest:false vẽ đè khối
+     máy) — ở đây không xảy ra vì thứ bị tắt là SÀN, không phải LƯỚI: lưới vẫn so độ sâu.
+
+⑦ VIỆC ③ (LƯỚI QUÁ DÀY) — ĐO, KHÔNG VÁ. Xem `ph52/viec3-oPx.mjs`.
+   ★ Một thước CỦA TÔI bị bác bỏ: tự tương quan (`ph52/phoLuoi.mjs`) đọc chu kỳ VÂN MOIRÉ
+     khi ô nhỏ hơn 1 px — ở FCTD-A nó báo 11,00 px trong khi ô thật ~1 px. Nếu tin nó thì
+     màn ấy "ĐẠT ≥ 8 px". Thước dùng được là hình học, kiểm chứng trên ca lưới ĐỌC ĐƯỢC.
+   ô lưới TẠI ĐIỂM NGẮM, khung mặc định:
+     /factory-command tập đoàn   1,07 px   (đường section 10 m cũng chỉ 5,33 px)
+     /factory-command 1 nhà máy  2,94 px
+     /twin tập đoàn              1,47 px
+     /twin 1 nhà máy            27,75 px   ← ca DUY NHẤT đạt ≥ 8 px
+     /twin-studio mặc định       2,59 px  ·  trần zoom 0,83 px
+   ⇒ Khuyết tật CÓ THẬT trên cả ba màn, và ở `/factory-command` nó tệ nhất vì `cellSize`
+     là HẰNG 2 m (không theo cỡ cảnh chút nào).
+
+md5 NGUỒN SAU VÁ: ph52/tho/md5-nguon-SAU-VA.txt
+Ablation lưới đơn vị: gỡ hai thuộc tính khỏi nguồn ⇒ ĐÚNG 2 ca đỏ (`vật liệu sàn khai
+depthWrite` và `vật liệu sàn khai polygonOffset`), 14 ca còn lại vẫn xanh; khôi phục
+bằng `md5sum -c` OK 2/2.
