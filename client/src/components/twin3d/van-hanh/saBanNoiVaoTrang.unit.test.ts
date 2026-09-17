@@ -156,24 +156,48 @@ describe("★★★ S4 — LỜI KHAI ĐI THEO BẢN VÁ TRONG CÙNG MỘT LƯ�
     expect(khoi).toContain("twin3d.vanHanh.viTriSoDo");
   });
 
-  it("★★★ banner nêu SỐ THẬT, không nêu tính từ — bốn ô thay số có mặt ở chỗ gọi", () => {
+  it("★★★ banner nêu SỐ THẬT, không nêu tính từ — TÁM ô thay số có mặt ở chỗ gọi", () => {
     const i = TRANG.indexOf('testId: "banner-vi-tri-tam-sinh"');
-    const khoi = TRANG.slice(i, i + 1_400);
+    const khoi = TRANG.slice(i, i + 2_600);
     for (const o of ["soToa:", "soKhoi:", "rongThat:", "rongSoDo:"]) {
       expect(khoi, `thiếu ${o}`).toContain(o);
     }
+    // ★ PH-50 — cỡ cũng thành sơ đồ, nên banner phải nêu CỠ ĐANG VẼ và CẠNH THẬT.
+    for (const o of ["rongBieuTuong:", "sauBieuTuong:", "canhNho:", "canhLon:"]) {
+      expect(khoi, `thiếu ${o}`).toContain(o);
+    }
     expect(khoi).toContain("khuonVien?.thatRongMm");
+    expect(khoi).toContain("khuonVien?.bieuTuongRongMm");
+    expect(khoi).toContain("khuonVien?.thatCanhLonNhatMm");
     // `data-*` để phép đo ngoài trang đọc được con số, không phải đọc câu chữ.
     expect(khoi).toContain('"data-so-toa"');
     expect(khoi).toContain('"data-rong-that-mm"');
     expect(khoi).toContain('"data-rong-so-do-mm"');
+    expect(khoi).toContain('"data-bieu-tuong-rong-mm"');
+    expect(khoi).toContain('"data-that-canh-lon-mm"');
   });
 
-  it("★★★ CHỮ người dùng đọc có ĐỦ bốn ô thay số ở CẢ BA ngôn ngữ", () => {
+  /**
+   * ★★★ PH-50 — Ô NÀY ĐỔI TỪ "BỐN Ô" SANG "TÁM Ô", ghi rõ vì sao.
+   *   Từ PH-50 `saBanTapDoan` vẽ MỌI mặt bằng cùng một cỡ. Câu banner cũ chỉ khai
+   *   *vị trí* là sơ đồ; để nguyên thì màn khoe biểu tượng mà giấu việc đã bỏ mất
+   *   tỉ số kích thước 101 lần (`qatd_admin`: cạnh thật 29,6 m … 3.000 m). Lời
+   *   khai phải rộng ra **trong cùng lượt** với bản vá sinh ra nó.
+   */
+  it("★★★ CHỮ người dùng đọc có ĐỦ TÁM ô thay số ở CẢ BA ngôn ngữ", () => {
     for (const ngu of NGU) {
       const s = chuoi(ngu, "twin3d.vanHanh.viTriSoDo");
       expect(s, `${ngu} thiếu khoá viTriSoDo`).toBeTruthy();
-      for (const o of ["{{soToa}}", "{{soKhoi}}", "{{rongThat}}", "{{rongSoDo}}"]) {
+      for (const o of [
+        "{{soToa}}",
+        "{{soKhoi}}",
+        "{{rongThat}}",
+        "{{rongSoDo}}",
+        "{{rongBieuTuong}}",
+        "{{sauBieuTuong}}",
+        "{{canhNho}}",
+        "{{canhLon}}",
+      ]) {
         expect(s, `${ngu} thiếu ${o}`).toContain(o);
       }
       expect(chuoi(ngu, "twin3d.vanHanh.toaKhongTen"), `${ngu} thiếu toaKhongTen`).toContain(

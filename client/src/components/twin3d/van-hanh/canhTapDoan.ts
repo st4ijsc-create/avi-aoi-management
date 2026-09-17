@@ -485,6 +485,23 @@ export interface SaBanTapDoan extends KhuonVien {
   /** Bề rộng/bề sâu THẬT của khuôn viên (mm) — cái mà sa bàn đã thay thế. */
   thatRongMm: number;
   thatSauMm: number;
+  /**
+   * ★★★ PH-50 — CỠ CHUNG của MỌI biểu tượng (mm). Từ PH-50, **mặt bằng** của
+   * biểu tượng là ƯỚC LỆ: mọi toà vẽ cùng một cỡ, và cỡ ấy là **trung vị của
+   * chính tập đang xem**. Trả ra ĐÚNG hai con số này (thay vì để giao diện tự
+   * đọc `bieuTuong[0]`) vì banner phải nêu được CON SỐ, và vì một phép suy thứ
+   * hai ở tầng trên là bộ luật thứ hai — đúng lớp lỗi đợt này đã vá năm lần.
+   */
+  bieuTuongRongMm: number;
+  bieuTuongSauMm: number;
+  /**
+   * Cạnh (rộng **hoặc** sâu) nhỏ nhất / lớn nhất THẬT trong tập, mm. Đây là cái
+   * mà `bieuTuongRongMm/SauMm` đã THAY — giữ lại để màn nói được *đã thay cái
+   * gì*, thay vì chỉ nói *đây là biểu tượng*. `lon/nho` chính là tỉ số mà bố cục
+   * cũ đem chia vào từng biểu tượng (78,13 ở `qatd_admin`).
+   */
+  thatCanhNhoNhatMm: number;
+  thatCanhLonNhatMm: number;
 }
 
 /** Tuỳ chọn bố cục — để lưới đo được GIÁ TRỊ thay vì đếm chính tả một dòng mã. */
@@ -494,6 +511,26 @@ export interface TuyChonSaBan {
 }
 
 const kepDuong = (n: number, san: number): number => (Number.isFinite(n) && n > san ? n : san);
+
+/**
+ * Trung vị của một dãy số — **thống kê BỀN**, dùng làm cỡ biểu tượng chung.
+ *
+ * ⚠ Vì sao trung vị chứ không phải trung bình: một toà 3.000 m kéo trung bình
+ *   của 14 toà lên 322 m (gấp 2,9 lần trung vị), tức ngoại lai vẫn thắng — chỉ
+ *   là thắng ít hơn. Trung vị KHÔNG bị một ngoại lai kéo, và với dãy mà mọi
+ *   phần tử bằng nhau thì trung vị **đúng bằng phần tử ấy** — đó chính là bất
+ *   biến làm bốn vai QATD không đổi một pixel nào (xem docblock `saBanTapDoan`).
+ *
+ * ⚠ Dãy RỖNG trả `0`: người gọi đã chặn `toaNhas.length === 0` trước đó, nhưng
+ *   một `Math.max()` trên tập rỗng trả `-Infinity` và lặng lẽ đầu độc cả bố cục
+ *   — lớp lỗi ấy phải chết ở đây, không phải ở ba chỗ dùng.
+ */
+function trungVi(xs: readonly number[]): number {
+  if (xs.length === 0) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const giua = s.length >> 1;
+  return s.length % 2 === 1 ? s[giua] : (s[giua - 1] + s[giua]) / 2;
+}
 
 /**
  * Xếp mọi toà nhà của phạm vi thành **sa bàn quy hoạch**.
@@ -547,14 +584,54 @@ export function saBanTapDoan(
     (nhom.get(ma) ?? []).sort((a, b) => a.id - b.id);
   }
 
-  // ── ① Ô đơn vị: cạnh lớn nhất SAU khi kẹp sàn.
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ ① CỠ BIỂU TƯỢNG — ĐỒNG CỠ THEO **TRUNG VỊ** (PH-50, chủ dự án chốt)
+   * ════════════════════════════════════════════════════════════════════════
+   * Bản trước lấy **cạnh LỚN NHẤT TOÀN TẬP** làm ô đơn vị và để mỗi biểu tượng
+   * giữ cỡ thật trong ô ấy. Phép chia mà cách đó ép vào từng biểu tượng:
+   *
+   *   bề rộng px của biểu tượng nhỏ nhất = 72,3 / (cạnh lớn nhất ÷ cạnh nhỏ nhất)
+   *
+   * (72,3 px = hằng của chính bố cục này ở 5 cụm × 4 toà, @1280×720 — nó KHÔNG
+   * phụ thuộc cỡ tuyệt đối, chỉ phụ thuộc TỈ SỐ.) Ở vai `qatd_admin` tỉ số ấy
+   * là **78,13** (một toà `FUYU-F` 3.000 m đứng cạnh 12 toà QATD 110 m và một
+   * toà SIM 38,4 m) ⇒ **0,9 px**; đo sống được **1,2 px**, khuôn viên **28.920 m**,
+   * và 3D **đen hoàn toàn** vì cả cảnh rơi ra ngoài mặt phẳng `far` của camera.
+   * ⇒ Không khung nhìn nào bù được: 24 px đòi tỉ số ≤ 3,0 ở 2D và ≤ 1,9 ở 3D,
+   *   mà dữ liệu thật cho 78.
+   *
+   * Chủ dự án chốt (2026-09-16, nhắc lại 2026-09-17): *"không nhất thiết phải vẽ
+   * đúng tỉ lệ kích thước của từng toà nhà, chỉ cần hiển thị dạng biểu tượng 3D"*.
+   * ⇒ Tỉ số := **1**. Mọi biểu tượng MỘT CỠ.
+   *
+   * ★★★ CỠ ẤY LÀ TRUNG VỊ CỦA CHÍNH TẬP ĐANG XEM — KHÔNG phải một hằng, và
+   *   khác biệt ấy là cả bản vá:
+   *   · mọi toà trong tập BẰNG NHAU ⇒ trung vị = chính cỡ ấy ⇒ sa bàn **không
+   *     đổi một số nào**. Bốn vai QATD rơi đúng vào trường hợp này (12/12 toà đo
+   *     được là 110.000 × 80.000 mm), và chúng đã được nghiệm thu BẰNG MẮT ở
+   *     `c41892bc` — một hằng cố định sẽ làm cả bốn đổi hình.
+   *   · một ngoại lai KHÔNG kéo được trung vị (khác `Math.max`, và khác cả trung
+   *     bình: trung bình của tập admin là 322 m, gấp 2,9 lần trung vị).
+   *
+   * ⚠ **CHIỀU CAO GIỮ NGUYÊN SỐ THẬT.** Chỉ MẶT BẰNG là ước lệ. Cao 8/25/42 m
+   *   trên mặt bằng 110 × 80 m vẫn đọc được và vẫn là thông tin thật — nên banner
+   *   phải nói đúng chừng ấy ("mặt bằng vẽ cùng cỡ"), không được nói quá thành
+   *   "kích thước là ước lệ". Nói quá cũng là một lời khai sai, chỉ lệch chiều.
+   *
+   * ⚠ Kẹp sàn TRƯỚC rồi mới lấy trung vị: kẹp sau thì một tập toàn toà thiếu số
+   *   đo cho trung vị 0 và mọi biểu tượng biến mất — đúng lỗi mà `BIEU_TUONG_
+   *   TOI_THIEU_MM` sinh ra để chặn.
+   */
+  const rongDaKep = toaNhas.map((b) => kepDuong(soMm(b.rongMm), toiThieu));
+  const sauDaKep = toaNhas.map((b) => kepDuong(soMm(b.sauMm), toiThieu));
+  const oRong = trungVi(rongDaKep);
+  const oSau = trungVi(sauDaKep);
   const coCua = (b: ToaNhaKhuonVien) => ({
-    rongMm: kepDuong(soMm(b.rongMm), toiThieu),
-    sauMm: kepDuong(soMm(b.sauMm), toiThieu),
+    rongMm: oRong,
+    sauMm: oSau,
     caoMm: kepDuong(soMm(b.caoMm), BIEU_TUONG_CAO_TOI_THIEU_MM),
   });
-  const oRong = Math.max(...toaNhas.map((b) => coCua(b).rongMm));
-  const oSau = Math.max(...toaNhas.map((b) => coCua(b).sauMm));
   const kheToa = Math.max(KHE_TRONG_CUM_TI_LE * Math.max(oRong, oSau), KHE_TRONG_CUM_TOI_THIEU_MM);
 
   // ── ② Lưới TRONG cụm, dựng theo cụm ĐÔNG NHẤT (mọi cụm cùng hình dạng ô).
@@ -662,5 +739,11 @@ export function saBanTapDoan(
     laSoDo: true,
     thatRongMm: that.rongMm,
     thatSauMm: that.sauMm,
+    // ★ PH-50 — cỡ ƯỚC LỆ đang dùng, và cái NÓ ĐÃ THAY. Hai vế đi cùng nhau:
+    //   nêu mỗi vế đầu là khoe biểu tượng mà giấu mất việc đã bỏ thông tin gì.
+    bieuTuongRongMm: oRong,
+    bieuTuongSauMm: oSau,
+    thatCanhNhoNhatMm: Math.min(...rongDaKep, ...sauDaKep),
+    thatCanhLonNhatMm: Math.max(...rongDaKep, ...sauDaKep),
   };
 }

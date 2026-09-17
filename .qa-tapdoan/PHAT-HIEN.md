@@ -603,3 +603,43 @@ Chủ đợt **tự xem** `anh/n1-v2/qatd_kythuat-2d-toan-man.png`: đọc rõ "
 ## PH-50 (MỚI, CAO) · Ô đơn vị sa bàn lấy cạnh lớn nhất TOÀN TẬP ⇒ một toà lớn bóp nát cả cảnh
 `saBanTapDoan` chọn ô đơn vị bằng **cạnh lớn nhất trong toàn bộ tập toà nhà**. Với `qatd_admin` (thấy cả QATD lẫn `FUYU-F`), một toà FUYU **3.000 m** ép mọi toà QATD **110 m** xuống **1,2 px** và kéo khuôn viên thành **30,8 km** ⇒ 2D còn 1,2 px (trần 24) và **3D đen hoàn toàn**, 19/19 nhãn ẩn mà bộ đếm khai `{ve:0, an:0}`.
 ★ Chủ dự án đã chốt *"không nhất thiết phải vẽ đúng tỉ lệ kích thước của từng toà nhà"* ⇒ **chuẩn hoá cỡ biểu tượng nằm TRONG quyết định ấy**. Nhưng nó đổi cảnh QATD mà chủ dự án đã nghiệm thu bằng mắt, nên agent **dừng và hỏi** — đúng luật.
+
+## V-34 ★★★ PH-50 ĐÓNG — ô đơn vị thôi `Math.max`, thành TRUNG VỊ; và agent bắt được HAI THƯỚC SAI CỦA CHỦ ĐỢT
+**Phạm vi hỏng HẸP hơn brief tưởng — chỉ mình `qatd_admin`.** Tỉ số cạnh lớn/nhỏ: `giamdoc`/`quanly`/`kythuat`/`congnhan` = **1,00** (12/12 toà QATD đo được là 110.000 × 80.000 mm y hệt nhau); `admin` = **78,13** (một toà FUYU **3.000 m**). ⚠ Nhưng đó là tính chất của **bộ dữ liệu QA**, không phải của sản phẩm: bất kỳ vai nào được gán ≥2 nhà máy có toà khác cỡ đều dính.
+
+**Mô phỏng TRƯỚC khi sửa mã, và TỰ KIỂM trước khi phán** (`p50-sim.mjs` phải tái hiện `viewBox` + mọi bề rộng đã đo sống cho **5/5 vai**; đối chứng dương bơm cỡ +11 % làm nó KÊU). Bề rộng biểu tượng nhỏ nhất = **72,3 / R** (R = trần tỉ số) — **không phụ thuộc cỡ tuyệt đối**:
+| R | 2D min | 3D (×0,63) | ĐẠT ≥24 cả hai? |
+|---|---|---|---|
+| 1 (đồng cỡ) | **86,2** | 54,3 | **ĐẠT** |
+| 2 | 43,1 | 27,2 | ĐẠT (sát) |
+| **3 — lối (b) CHỦ ĐỢT gợi ý** | 28,7 | **18,1** | **KHÔNG** |
+| 78 (hôm nay) | 1,2 | 0,8 | KHÔNG |
+★ **Lối (b) của tôi bị bác bỏ bằng số**: đạt ở 2D nhưng **hỏng ở 3D**. Trần tối đa còn đạt là **R ≈ 2,25** — giữ 2,25 lần trên 78 lần thật, tức *trông như* đang chở thông tin cỡ trong khi đã bỏ **97 %**. Đó là một lời khai sai kiểu mới.
+★ Lối (c) chuẩn hoá theo cụm: trên bộ dữ liệu này **không phân biệt được với (a)** ⇒ không phép đo nào chọn được nó.
+
+★★★ **CHỌN (a) ĐỒNG CỠ, cỡ = TRUNG VỊ của chính tập đang xem — và chữ "trung vị" LÀ CẢ BẢN VÁ**: dãy mà mọi phần tử bằng nhau có trung vị bằng chính phần tử ấy ⇒ **4 vai QATD không đổi một số nào, chứng minh được bằng ĐẠI SỐ chứ không chỉ bằng đo**. Trung bình không có tính chất ấy (trung bình tập admin = 322 m, gấp **2,9 lần** trung vị). Chiều cao **giữ nguyên số thật** — chỉ mặt bằng là ước lệ.
+
+| ô | TRƯỚC | SAU |
+|---|---|---|
+| admin 2D rộng biểu tượng | **1,2**..90,1 px | **86,2** đều |
+| admin 3D | **0 biểu tượng, canvas ĐEN** | **41,1..67,3 px** |
+| admin 3D tên cụm sạch trọn | **0/5** | **5/5** |
+| admin sa bàn | 28.920 m | **1.060,4 m** |
+| 4 vai QATD (mọi ô) | | **GIỐNG HỆT từng số** |
+| `/twin` một nhà máy | | md5 `637f81e1…` **GIỐNG BYTE** |
+Ablation gỡ đúng hai dòng `trungVi`→`Math.max`, dựng lại, đo sống: admin quay về **chính xác** `calls=2 tri=228 biểuTượng=0`; 4 vai QATD không đổi. `md5sum -c` 3/3.
+Chủ đợt **tự xem** `anh/n1-p50final/qatd_admin-3d-canvas.png`: đọc rõ **năm** tên cụm ("Nhà máy ảo (SIM)", "FUYU-F", "Công ty A/B/C").
+
+★ **Bản nháp banner của chính agent nói quá, và bị PHÉP ĐO bắt**: câu nháp kết bằng *"— chỉ chiều cao còn là số thật"*. Đọc sống ở `qatd_giamdoc`: với 4 vai QATD trung vị = **chính cỡ thật** ⇒ mặt bằng của chúng **CŨNG** là số thật ⇒ chữ "chỉ" là lời khai sai. **Suýt là cái thứ sáu.**
+
+### ★★★ HAI THƯỚC CỦA CHỦ ĐỢT BỊ BÁC BỎ — tôi nhận, và sửa thước
+1. **`hiện-mà-bị-che-một-phần ≤ 4` là thước SAI DẠNG.** Nó là **số tuyệt đối trên một mẫu số đang đổi**. Sau vá: 4 → **5**, nhưng nhãn HIỆN toàn cục **69 → 89 (+20)** và **tỉ lệ** che-một-phần **5,8 % → 5,6 %** (**tốt lên**). Toàn bộ +1 nằm ở `admin/2D`; 4 vai QATD giữ **1 → 1**. ⇒ **Thước đổi thành TỈ LỆ** (không tăng), cộng ô tuyệt đối **chỉ áp cho 4 vai QATD**.
+2. **`fps 47–57` là thước HẸP HƠN NHIỄU CỦA CHÍNH NÓ — lỗi của tôi: biến một quan sát thành một quy cách.** Agent đo **3 lượt mỗi bản**: bản **CHƯA VÁ** cũng rơi ra ngoài (giamdoc **42**, admin **38**); `kythuat` chạy 50→53→**45** trên hình học **byte-identical**. Hai phân bố chồng nhau, và hình học 4 vai không đổi nên fps **không thể** đổi vì bản vá. ⇒ **Trả thước về tiêu chí thiết kế gốc: ≥ 30 fps.**
+
+## PH-50b (MỚI, CAO) · `far` của camera bị ĐÓNG BĂNG ≈ 2.300–2.500 m, không theo `banKinh`
+`CanhVanHanh.tsx:962` tưởng `far = Math.max(2000, banKinh*24)`. Đo bằng **hành vi người dùng thật** (cuộn ra xa, `p50-probe-far.mjs`): khoảng cách khởi phát cắt là **MỘT HẰNG SỐ TUYỆT ĐỐI** cho mọi vai — `giamdoc` (sa bàn 673 m) cắt ở nấc 4, `admin sau vá` (1.060 m) cắt ở **nấc 1**, lệch đúng 3 nấc ≈ ×1,52 ≈ tỉ số sa bàn 1,575. Đó là chữ ký của `far` hằng. `quanly` (286 m, `far` thích ứng lẽ ra 6.864 m) **vẫn mất sạch cảnh** — với `far` thích ứng thì điều đó **bất khả**.
+Nghi phạm: `far` áp lúc tạo `Canvas` khi `khuonVien` còn `null` (`TwinVanHanh:2899` rơi về `tangDau.rongMm`), rồi prop đổi mà `updateProjectionMatrix` không theo.
+★★★ **Đây chính là vì sao admin đen**: sa bàn 28.920 m ⇒ camera 62.890 m ⇒ toàn cảnh ngoài `far`; `frustumCulled={false}` vẫn nộp 2 lệnh vẽ / 228 tam giác nhưng **0 pixel**.
+⚠ **Hazard bản vá tự sinh, agent khai trước khi ảnh tố cáo**: sa bàn admin mới 1.060 m đặt camera cách gốc **2.306 m** — *lọt* vào `far` nhưng chỉ dư ~10 %. Khung mặc định ĐẠT (14/14 biểu tượng), nhưng **cuộn ra MỘT nấc là mất 1 toà**; `giamdoc` chịu được 3 nấc. Chưa vá vì `far` nằm ở `CanhVanHanh`/`KhungCanh` dùng chung nhiều màn.
+
+⚠ **md5 ảnh KHÔNG phải thước hồi quy ở màn này**: `giamdoc-3d-canvas` lệch 435/473.352 px giữa trước↔sau, nhưng **hai lượt chụp CỦA CÙNG MỘT BẢN DỰNG lệch 269 px ở cùng vùng**. Lệch nằm trong nhiễu của thiết bị chụp.

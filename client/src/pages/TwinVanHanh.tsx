@@ -3209,6 +3209,32 @@ export function ThanTwinVanHanh() {
      * ⚠ `data-so-cap-chong` GIỮ LẠI: nó là phép đo trên DỮ LIỆU THẬT
      *   (`khuonVienTapDoan` bên trong `saBanTapDoan` vẫn tính), và nó vẫn là một
      *   sự thật đáng giữ — chỉ thôi làm điều kiện bật/tắt.
+     *
+     * ════════════════════════════════════════════════════════════════════════
+     * ★★★ PH-50 — TỪ LƯỢT NÀY **CỠ** CŨNG LÀ SƠ ĐỒ, NÊN CÂU PHẢI DÀI RA THEO
+     * ════════════════════════════════════════════════════════════════════════
+     * `saBanTapDoan` nay vẽ MỌI mặt bằng cùng một cỡ (trung vị của tập đang
+     * xem). Câu cũ chỉ khai *"vị trí và khoảng cách … KHÔNG phải số thật"* — đúng
+     * tới hôm qua, và **thiếu một nửa từ hôm nay**. Để nguyên là tạo lời khai
+     * sai cùng lớp THỨ SÁU của đợt này (`banner-ha-cap`, `CanhVanHanh2D:94`,
+     * `banner-vi-tri-tam-sinh`, `banner-trang-thai-mot-nha-may`, `aria-label` 2D).
+     * ⇒ Mở rộng lời khai **trong CÙNG lượt** với bản vá sinh ra nó, không hẹn.
+     *
+     * ★ Câu vẫn nêu SỐ, không nêu tính từ: cỡ biểu tượng đang dùng là bao nhiêu
+     *   mét, và cạnh THẬT trải từ đâu tới đâu — người đọc tự thấy tỉ số đã bị
+     *   bỏ đi (ở `qatd_admin`: 29,6 m … 3.000 m, tức 101 lần, vẽ thành 110×80 m).
+     * ⚠ KHÔNG khai "kích thước là ước lệ" trống trơn: **chiều cao vẫn là số
+     *   thật**. Nói quá cũng là khai sai, chỉ lệch chiều.
+     *
+     * ⚠⚠ BẢN NHÁP ĐẦU CỦA CHÍNH BẢN VÁ NÀY ĐÃ NÓI QUÁ, và bị bắt bằng phép đo,
+     *   không bằng cảm giác: câu nháp kết bằng *"— chỉ chiều cao còn là số thật"*.
+     *   Đọc sống ở `qatd_giamdoc` (`p50-banner.mjs`) ra: *"drawn at THE SAME SIZE
+     *   110×80 m, while real sides span 80 m to 110 m — only height is still a
+     *   real value"*. Với bốn vai QATD, trung vị = chính cỡ thật, nên **mặt bằng
+     *   của chúng CŨNG là số thật** và chữ "chỉ" thành lời khai sai. Câu cuối đổi
+     *   thành một mệnh đề đúng ở MỌI phạm vi: *"chiều cao của mỗi khối là số thật"*.
+     *   Hai con số `canhNho`/`canhLon` để người đọc TỰ thấy có méo hay không:
+     *   trùng cỡ vẽ ⇒ không méo (giamdoc 80…110); trải rộng ⇒ có (admin 30…3.000).
      */
     ds.push({
       testId: "banner-vi-tri-tam-sinh",
@@ -3216,12 +3242,16 @@ export function ThanTwinVanHanh() {
       hien: khuonVien !== null && khuonVien.laSoDo,
       noiDung: t(
         "twin3d.vanHanh.viTriSoDo",
-        "Cảnh cấp tập đoàn là SA BÀN SƠ ĐỒ: mỗi toà nhà là một biểu tượng, và {{soToa}} toà của {{soKhoi}} nhà máy được xếp thành cụm cho đọc được. Khuôn viên thật rộng {{rongThat}} m, sa bàn xếp lại còn {{rongSoDo}} m — vị trí và khoảng cách trên cảnh KHÔNG phải số thật.",
+        "Cảnh cấp tập đoàn là SA BÀN SƠ ĐỒ: mỗi toà nhà là một biểu tượng, và {{soToa}} toà của {{soKhoi}} nhà máy được xếp thành cụm cho đọc được. Khuôn viên thật rộng {{rongThat}} m, sa bàn xếp lại còn {{rongSoDo}} m — vị trí và khoảng cách trên cảnh KHÔNG phải số thật. Mặt bằng mọi toà vẽ CÙNG MỘT CỠ {{rongBieuTuong}}×{{sauBieuTuong}} m, trong khi cạnh thật trải từ {{canhNho}} m tới {{canhLon}} m; chiều cao của mỗi khối là số thật.",
         {
           soToa: khuonVien?.bieuTuong.length ?? 0,
           soKhoi: khuonVien?.khoi.length ?? 0,
           rongThat: Math.round(mmSangMet(khuonVien?.thatRongMm ?? 0)),
           rongSoDo: Math.round(mmSangMet(khuonVien?.rongMm ?? 0)),
+          rongBieuTuong: Math.round(mmSangMet(khuonVien?.bieuTuongRongMm ?? 0)),
+          sauBieuTuong: Math.round(mmSangMet(khuonVien?.bieuTuongSauMm ?? 0)),
+          canhNho: Math.round(mmSangMet(khuonVien?.thatCanhNhoNhatMm ?? 0)),
+          canhLon: Math.round(mmSangMet(khuonVien?.thatCanhLonNhatMm ?? 0)),
         },
       ),
       dataPhu: {
@@ -3230,6 +3260,11 @@ export function ThanTwinVanHanh() {
         "data-so-toa": khuonVien?.bieuTuong.length ?? 0,
         "data-rong-that-mm": khuonVien?.thatRongMm ?? 0,
         "data-rong-so-do-mm": khuonVien?.rongMm ?? 0,
+        // ★ PH-50 — phép đo ngoài trang đọc CON SỐ ở đây, không đọc câu chữ.
+        "data-bieu-tuong-rong-mm": khuonVien?.bieuTuongRongMm ?? 0,
+        "data-bieu-tuong-sau-mm": khuonVien?.bieuTuongSauMm ?? 0,
+        "data-that-canh-nho-mm": khuonVien?.thatCanhNhoNhatMm ?? 0,
+        "data-that-canh-lon-mm": khuonVien?.thatCanhLonNhatMm ?? 0,
       },
     });
 

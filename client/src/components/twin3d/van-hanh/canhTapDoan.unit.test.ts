@@ -551,7 +551,19 @@ describe("★★★ saBanTapDoan — đổi ĐƠN VỊ VẼ, không đổi khung
     expect(sb.toaNha.find((t) => t.id === 2)?.viTriZMm).toBe(-7_000);
   });
 
-  it("★★★ TOÀ THIẾU SỐ ĐO ⇒ BIỂU TƯỢNG TỐI THIỂU, **KHÔNG** rộng 0 (mất khỏi màn không lời báo)", () => {
+  /**
+   * ⚠⚠ Ô NÀY ĐÃ XANH RỒI ĐỎ Ở PH-50 — ghi lại CẢ HAI SỐ, không im lặng sửa.
+   *
+   *   · TRƯỚC PH-50: toà thiếu số đo ⇒ `20.000` (sàn); toà có số đo ⇒ `60.000`.
+   *   · SAU  PH-50: cả hai ⇒ `40.000` = trung vị của `[20.000, 60.000]`.
+   *
+   * Đây KHÔNG phải hồi quy: chủ dự án đã chốt bỏ ràng buộc "vẽ đúng tỉ lệ kích
+   * thước", nên "mỗi biểu tượng mang cỡ THẬT của nó" thôi là hợp đồng. Thứ ô này
+   * sinh ra để canh — *một toà thiếu số đo không được biến mất khỏi màn* — vẫn
+   * được canh, và canh CHẶT HƠN: nay nó to bằng mọi toà khác, chứ không còn là
+   * cái nhỏ nhất màn hình. Ô đổi **kỳ vọng**, giữ nguyên **ý định**.
+   */
+  it("★★★ TOÀ THIẾU SỐ ĐO **KHÔNG** rộng 0 — và từ PH-50 nó nhận CỠ CHUNG (20.000 → 40.000)", () => {
     const co: ToaNhaKhuonVien[] = [
       { id: 1, factoryId: 1, viTriXMm: 0, viTriYMm: 0, viTriZMm: 0 },
       { id: 2, factoryId: 1, viTriXMm: 0, viTriYMm: 0, viTriZMm: 0, rongMm: 60_000, sauMm: 50_000 },
@@ -559,11 +571,14 @@ describe("★★★ saBanTapDoan — đổi ĐƠN VỊ VẼ, không đổi khung
     const sb = saBanTapDoan(co);
     if (!sb) throw new Error("null");
     const v1 = sb.bieuTuong.find((v) => v.toaNhaId === 1);
-    expect(v1?.rongMm).toBe(BIEU_TUONG_TOI_THIEU_MM);
-    expect(v1?.sauMm).toBe(BIEU_TUONG_TOI_THIEU_MM);
+    // Ý ĐỊNH GỐC, giữ nguyên: không 0, không dưới sàn, vẫn có khối cao nhìn thấy.
+    expect(v1?.rongMm).toBeGreaterThanOrEqual(BIEU_TUONG_TOI_THIEU_MM);
+    expect(v1?.sauMm).toBeGreaterThanOrEqual(BIEU_TUONG_TOI_THIEU_MM);
     expect(v1?.caoMm).toBe(BIEU_TUONG_CAO_TOI_THIEU_MM);
-    // Đối chứng: toà CÓ số đo giữ nguyên số đo thật, không bị kẹp theo.
-    expect(sb.bieuTuong.find((v) => v.toaNhaId === 2)?.rongMm).toBe(60_000);
+    // HỢP ĐỒNG MỚI, ghim bằng con số: cả hai toà CÙNG cỡ = trung vị đã kẹp sàn.
+    expect(v1?.rongMm).toBe((BIEU_TUONG_TOI_THIEU_MM + 60_000) / 2);
+    expect(sb.bieuTuong.find((v) => v.toaNhaId === 2)?.rongMm).toBe(v1?.rongMm);
+    expect(sb.bieuTuongRongMm).toBe(40_000);
   });
 
   it("★ NHÃN lấy từ CSDL; thiếu ⇒ chuỗi RỖNG, không bịa tên", () => {
@@ -616,6 +631,177 @@ describe("★★★ saBanTapDoan — đổi ĐƠN VỊ VẼ, không đổi khung
     expect(sb.bieuTuong[0].caoMm).toBe(42_000);
     expect(sb.toaNha[0].viTriZMm).toBe(3_000);
     expect(Number.isFinite(sb.rongMm)).toBe(true);
+  });
+
+  /* ═════════════════════════════════════════════════════════════════════════ */
+  /* PH-50 — CỠ BIỂU TƯỢNG LÀ **ƯỚC LỆ**: ĐỒNG CỠ THEO TRUNG VỊ                */
+  /* ═════════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ★★★ VÌ SAO Ô ĐƠN VỊ THÔI LẤY `max` — MỘT PHÉP CHIA, KHÔNG PHẢI THẨM MỸ
+   * ══════════════════════════════════════════════════════════════════════════
+   * Ô đơn vị cũ = **cạnh lớn nhất TOÀN TẬP**. Ở vai `qatd_admin` (thấy cả QATD
+   * lẫn `FUYU-F`) tập ấy chứa MỘT toà rộng 3.000 m bên cạnh 12 toà 110 m và một
+   * toà 38,4 m. Hệ quả ĐO ĐƯỢC trên trình duyệt (`.qa-tapdoan/n1-p50truoc.json`,
+   * @1280×720 khung mặc định):
+   *
+   *   · sa bàn phình **28.920 m** (viewBox `-964 -964 30848 16288`)
+   *   · biểu tượng nhỏ nhất **1,2 px** — trần nghiệm thu là **24 px**
+   *   · 3D: canvas ĐEN, `soNhan() = {ve:0, an:19, anNgoaiKhung:19, tong:19}`
+   *
+   * Tỉ số lớn/nhỏ của tập admin là **78,13 : 1**. Với bố cục này, bề rộng pixel
+   * của biểu tượng NHỎ NHẤT bằng `72,3 / R` (R = tỉ số lớn/nhỏ sau khi kẹp) —
+   * nên R = 78 cho ~1 px, và **không khung nhìn nào bù được**. Chủ dự án đã chốt
+   * *"không nhất thiết phải vẽ đúng tỉ lệ kích thước của từng toà nhà"* ⇒ R := 1:
+   * **mọi biểu tượng một cỡ**.
+   *
+   * ★★★ CỠ CHUNG LÀ **TRUNG VỊ CỦA CHÍNH TẬP ĐANG XEM**, không phải một hằng.
+   *   Đây là điều làm bản vá KHÔNG HỒI QUY bốn vai QATD: cả 12 toà của chúng đo
+   *   được là **110.000 × 80.000 mm y hệt nhau** (CSDL, `.qa-tapdoan/p50-db.mjs`),
+   *   nên trung vị = chính con số ấy ⇒ sa bàn của chúng **không đổi một số nào**.
+   *   Một hằng cố định (ví dụ 100 m) sẽ làm bốn vai ấy đổi hình — mà bốn vai ấy
+   *   đã được chủ đợt nghiệm thu BẰNG MẮT ở `c41892bc`.
+   */
+  it("★★★ PH-50 N1 — MỌI biểu tượng CÙNG MỘT CỠ, và cỡ ấy là TRUNG VỊ của tập", () => {
+    // Kích thước đầu vào TRƯỚC (G5): 3 toà, ba cỡ khác hẳn nhau, trung vị ở giữa.
+    const co: ToaNhaKhuonVien[] = [
+      { id: 1, factoryId: 1, rongMm: 38_400, sauMm: 29_600, caoMm: 8_000 },
+      { id: 2, factoryId: 1, rongMm: 110_000, sauMm: 80_000, caoMm: 42_000 },
+      { id: 3, factoryId: 1, rongMm: 3_000_000, sauMm: 2_000_000, caoMm: 25_000 },
+    ];
+    expect(co).toHaveLength(3);
+    expect(3_000_000 / 38_400).toBeCloseTo(78.125, 3);
+
+    const sb = saBanTapDoan(co);
+    if (!sb) throw new Error("null");
+    expect(sb.bieuTuong).toHaveLength(3);
+    expect(sb.bieuTuong.map((v) => v.rongMm)).toEqual([110_000, 110_000, 110_000]);
+    expect(sb.bieuTuong.map((v) => v.sauMm)).toEqual([80_000, 80_000, 80_000]);
+    // Cỡ chung được KHAI RA, để banner nêu được CON SỐ thay vì một tính từ.
+    expect(sb.bieuTuongRongMm).toBe(110_000);
+    expect(sb.bieuTuongSauMm).toBe(80_000);
+    // …và cái ĐÃ BỊ THAY vẫn giữ được, nếu không thì màn không nói thật nổi.
+    expect(sb.thatCanhNhoNhatMm).toBe(29_600);
+    expect(sb.thatCanhLonNhatMm).toBe(3_000_000);
+  });
+
+  it("★★★ PH-50 N2 — MỌI TOÀ BẰNG NHAU ⇒ sa bàn KHÔNG ĐỔI MỘT SỐ NÀO (nền 4 vai QATD)", () => {
+    // Đây là hình học THẬT của 4 vai QATD: 110.000 × 80.000 mm, không lệch một mm.
+    const bang: ToaNhaKhuonVien[] = [];
+    for (let nm = 48; nm <= 50; nm += 1) {
+      for (let k = 0; k < 4; k += 1) {
+        bang.push({ id: nm * 10 + k, factoryId: nm, rongMm: 110_000, sauMm: 80_000, caoMm: 42_000 });
+      }
+    }
+    expect(bang).toHaveLength(12);
+    expect(new Set(bang.map((b) => `${b.rongMm}x${b.sauMm}`)).size).toBe(1);
+
+    const sb = saBanTapDoan(bang);
+    if (!sb) throw new Error("null");
+    // Cỡ chung = chính cỡ thật ⇒ ô đơn vị y hệt bản `max` cũ ⇒ 0 pixel xê dịch.
+    expect(sb.bieuTuongRongMm).toBe(110_000);
+    expect(sb.bieuTuongSauMm).toBe(80_000);
+    // Con số ĐÃ ĐO SỐNG (`n1-p50truoc.json`, `qatd_giamdoc` 2D): viewBox
+    // 718,08 × 598,08 m, tức sa bàn 673,2 × 553,2 m (lề = cạnh dài / 30).
+    expect(sb.rongMm).toBe(673_200);
+    expect(sb.sauMm).toBe(553_200);
+    // Đối chứng dương: thước BIẾT KÊU nếu cỡ chung lệch sang cỡ của tập admin.
+    expect(sb.rongMm).not.toBe(1_060_400);
+  });
+
+  it("★★★ PH-50 — TẬP CỦA `qatd_admin`: sa bàn 28.920 m → 1.060,4 m, tỉ số lớn/nhỏ 78,13 → 1", () => {
+    const admin: ToaNhaKhuonVien[] = [
+      { id: 24, factoryId: 1, rongMm: 38_400, sauMm: 29_600, caoMm: 8_000 },
+      { id: 90, factoryId: 47, rongMm: 3_000_000, sauMm: 2_000_000, caoMm: 25_000 },
+    ];
+    for (let nm = 48; nm <= 50; nm += 1) {
+      for (let k = 0; k < 4; k += 1) {
+        admin.push({ id: nm * 10 + k, factoryId: nm, rongMm: 110_000, sauMm: 80_000, caoMm: 42_000 });
+      }
+    }
+    expect(admin).toHaveLength(14);
+    expect(new Set(admin.map((b) => b.factoryId)).size).toBe(5);
+
+    const sb = saBanTapDoan(admin);
+    if (!sb) throw new Error("null");
+    expect(sb.oCum).toHaveLength(5);
+    expect(sb.bieuTuong).toHaveLength(14);
+    // Sa bàn CŨ 28.920.000 mm (đo sống). MỚI:
+    expect(sb.rongMm).toBe(1_060_400);
+    expect(sb.sauMm).toBe(553_200);
+    const rongs = sb.bieuTuong.map((v) => v.rongMm);
+    expect(Math.max(...rongs) / Math.min(...rongs)).toBe(1);
+    // Tỉ số đọc-được. CŨ = 38.400 / 28.920.000 = 0,13 % (≈1,2 px). Ngưỡng 10 %.
+    expect(tiSoNhoNhat(sb)).toBeGreaterThanOrEqual(TI_SO_DOC_DUOC);
+  });
+
+  it("★★★ PH-50 — QUAN HỆ KHÔNG ĐỔI: 1 cụm = 1 nhà máy, 0 cặp toà KHÁC công ty chồng nhau", () => {
+    const admin: ToaNhaKhuonVien[] = [
+      { id: 24, factoryId: 1, rongMm: 38_400, sauMm: 29_600 },
+      { id: 90, factoryId: 47, rongMm: 3_000_000, sauMm: 2_000_000 },
+    ];
+    for (let nm = 48; nm <= 50; nm += 1) {
+      for (let k = 0; k < 4; k += 1) {
+        admin.push({ id: nm * 10 + k, factoryId: nm, rongMm: 110_000, sauMm: 80_000 });
+      }
+    }
+    const sb = saBanTapDoan(admin);
+    if (!sb) throw new Error("null");
+    expect(sb.bieuTuong).toHaveLength(14);
+
+    let capKhacNhaMay = 0;
+    for (let i = 0; i < sb.bieuTuong.length; i += 1) {
+      for (let j = i + 1; j < sb.bieuTuong.length; j += 1) {
+        const a = sb.bieuTuong[i];
+        const b = sb.bieuTuong[j];
+        if (a.factoryId === b.factoryId) continue;
+        if (
+          a.xMm < b.xMm + b.rongMm &&
+          b.xMm < a.xMm + a.rongMm &&
+          a.yMm < b.yMm + b.sauMm &&
+          b.yMm < a.yMm + a.sauMm
+        ) {
+          capKhacNhaMay += 1;
+        }
+      }
+    }
+    expect(capKhacNhaMay).toBe(0);
+    // …và mỗi biểu tượng vẫn nằm trong ĐÚNG ô cụm của nhà máy nó thuộc về.
+    for (const v of sb.bieuTuong) {
+      expect(sb.oCum.find((c) => c.factoryId === v.factoryId)?.chiSoCum).toBe(v.chiSoCum);
+    }
+  });
+
+  it("★★★ PH-50 — TOÀ THIẾU SỐ ĐO cũng nhận CỠ CHUNG, và cỡ chung KHÔNG BAO GIỜ dưới sàn", () => {
+    // Một mình một toà không số đo ⇒ trung vị của tập ĐÃ KẸP SÀN = chính sàn.
+    const motMinh = saBanTapDoan([{ id: 1, factoryId: 1 }]);
+    if (!motMinh) throw new Error("null");
+    expect(motMinh.bieuTuongRongMm).toBe(BIEU_TUONG_TOI_THIEU_MM);
+    expect(motMinh.bieuTuong[0].rongMm).toBe(BIEU_TUONG_TOI_THIEU_MM);
+    expect(motMinh.bieuTuong[0].caoMm).toBe(BIEU_TUONG_CAO_TOI_THIEU_MM);
+
+    // Hai toà, một thiếu số đo ⇒ CẢ HAI nhận trung vị, và KHÔNG cái nào rộng 0.
+    const sb = saBanTapDoan([
+      { id: 1, factoryId: 1 },
+      { id: 2, factoryId: 1, rongMm: 60_000, sauMm: 50_000 },
+    ]);
+    if (!sb) throw new Error("null");
+    expect(sb.bieuTuongRongMm).toBe((BIEU_TUONG_TOI_THIEU_MM + 60_000) / 2);
+    for (const v of sb.bieuTuong) {
+      expect(v.rongMm).toBeGreaterThanOrEqual(BIEU_TUONG_TOI_THIEU_MM);
+      expect(v.sauMm).toBeGreaterThanOrEqual(BIEU_TUONG_TOI_THIEU_MM);
+    }
+  });
+
+  it("★★★ PH-50 — CHIỀU CAO vẫn là số THẬT: chỉ MẶT BẰNG bị đồng cỡ, và banner phải nói đúng chừng ấy", () => {
+    const sb = saBanTapDoan([
+      { id: 1, factoryId: 1, rongMm: 38_400, sauMm: 29_600, caoMm: 8_000 },
+      { id: 2, factoryId: 2, rongMm: 110_000, sauMm: 80_000, caoMm: 42_000 },
+      { id: 3, factoryId: 3, rongMm: 3_000_000, sauMm: 2_000_000, caoMm: 25_000 },
+    ]);
+    if (!sb) throw new Error("null");
+    expect(sb.bieuTuong.map((v) => v.caoMm)).toEqual([8_000, 42_000, 25_000]);
   });
 
   it("★★★ NỚI TỚI TRẦN 8 NHÀ MÁY — tỉ số đọc-được VẪN đứng (không chỉ đúng với 3)", () => {

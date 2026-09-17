@@ -19934,7 +19934,7 @@
       "chonTang": "Tầng",
       "linkBiBoQua": "Đường link mở màn này trỏ tới nhà máy/toà/tầng không còn tồn tại — đang hiện lựa chọn gần nhất.",
       "nhaMayVuotTran": "Phạm vi của bạn có {{tong}} nhà máy, một cảnh chỉ nạp được {{tran}} — {{thieu}} nhà máy CHƯA có trên cảnh.",
-      "viTriSoDo": "Cảnh cấp tập đoàn là SA BÀN SƠ ĐỒ: mỗi toà nhà là một biểu tượng, và {{soToa}} toà của {{soKhoi}} nhà máy được xếp thành cụm cho đọc được. Khuôn viên thật rộng {{rongThat}} m, sa bàn xếp lại còn {{rongSoDo}} m — vị trí và khoảng cách trên cảnh KHÔNG phải số thật.",
+      "viTriSoDo": "Cảnh cấp tập đoàn là SA BÀN SƠ ĐỒ: mỗi toà nhà là một biểu tượng, và {{soToa}} toà của {{soKhoi}} nhà máy được xếp thành cụm cho đọc được. Khuôn viên thật rộng {{rongThat}} m, sa bàn xếp lại còn {{rongSoDo}} m — vị trí và khoảng cách trên cảnh KHÔNG phải số thật. Mặt bằng mọi toà vẽ CÙNG MỘT CỠ {{rongBieuTuong}}×{{sauBieuTuong}} m, trong khi cạnh thật trải từ {{canhNho}} m tới {{canhLon}} m; chiều cao của mỗi khối là số thật.",
       "toaKhongTen": "Toà #{{id}}",
       "tangVuotTran": "Toà này có {{tong}} tầng, một lượt nạp chỉ hỏi được {{tran}} — {{thieu}} tầng CHƯA được nạp, máy ở đó không hiện trên cảnh.",
       "mayTangKhac": "{{so}} máy nữa đã có chỗ ở tầng khác của toà này — đổi ô Tầng để xem",

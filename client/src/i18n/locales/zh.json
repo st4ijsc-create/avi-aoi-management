@@ -19962,7 +19962,7 @@
       "chonTang": "楼层",
       "linkBiBoQua": "打开此画面的链接指向的工厂/楼栋/楼层已不存在——正在显示最接近的选择。",
       "nhaMayVuotTran": "您的范围内共有 {{tong}} 家工厂，单个场景最多只能加载 {{tran}} 家——尚有 {{thieu}} 家工厂未出现在场景中。",
-      "viTriSoDo": "集团级场景是示意沙盘：每栋楼以图标表示，{{soKhoi}} 家工厂的 {{soToa}} 栋楼按集群排布以便阅读。真实园区宽 {{rongThat}} 米，沙盘压缩为 {{rongSoDo}} 米——画面上的位置与间距并非真实数值。",
+      "viTriSoDo": "集团级场景是示意沙盘：每栋楼以图标表示，{{soKhoi}} 家工厂的 {{soToa}} 栋楼按集群排布以便阅读。真实园区宽 {{rongThat}} 米，沙盘压缩为 {{rongSoDo}} 米——画面上的位置与间距并非真实数值。每栋楼的占地均按同一尺寸 {{rongBieuTuong}}×{{sauBieuTuong}} 米绘制，而真实边长从 {{canhNho}} 米到 {{canhLon}} 米；每个体块的高度为真实数值。",
       "toaKhongTen": "楼 #{{id}}",
       "tangVuotTran": "本楼栋共有 {{tong}} 层，单次加载最多只能请求 {{tran}} 层——尚有 {{thieu}} 层未加载，其上的机台不会显示在场景中。",
       "mayTangKhac": "另有 {{so}} 台机台位于本楼栋的其他楼层——切换“楼层”框查看",
