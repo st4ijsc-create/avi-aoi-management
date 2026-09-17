@@ -1358,3 +1358,28 @@ git commit -m "feat(twin3d): canh pham vi tap doan gop nhieu nha may (muc 26 spe
 - Ảnh chụp phải cho thấy các cụm — chủ đợt sẽ **tự xem bằng mắt**, không nhận kết luận suy từ toạ độ chiếu.
 - Ngân sách vẽ giữ nguyên trần cũ (lệnh vẽ < 150 · tam giác < 500 k · nhãn < 30 · ≥ 30 khung/s).
 - **Đối chứng âm bắt buộc:** `/twin` một nhà máy **không đổi một ô nào** — đây là đường đang dùng được, một tính năng mới không được đẩy nó ra.
+
+---
+
+## Trạng thái 2026-09-17 — vòng vá sau Task 20
+
+Vẫn **không tick** 103 ô `- [ ]` ở trên (bài học Pha 0). Bảng dưới ghi **commit**.
+
+| việc | trạng thái | commit | điều đáng nhớ nhất |
+|---|---|---|---|
+| Task 20 sa bàn quy hoạch | **ĐẠT** | `9238c8f4` | Đổi ĐƠN VỊ VẼ, không đổi khung nhìn: 2,3 m mỗi pixel nên tự-khớp-khung vô dụng. Tam giác 61.248 → **182**. |
+| Khung nhìn biết VÙNG AN TOÀN | **ĐẠT** | `d70039ce` | Agent **từ chối** quyền tôi cho đổi hằng camera (quét ra **bão hoà**, mua 0 %) và **bác bỏ chẩn đoán của tôi** về ô lưới trống. |
+| Nhãn cụm đọc được cả hai chế độ | **ĐẠT** | `c41892bc` | Gốc chung: **đặt theo một ĐIỂM NEO trong khi thứ người ta đọc là CẢ HỘP CHỮ**. Agent sửa **5 chỗ sai** trong brief của tôi. |
+| PH-50 cỡ biểu tượng | **ĐẠT** | `616de103` | Ô đơn vị thôi `Math.max` toàn tập, thành **TRUNG VỊ** — dãy đồng nhất có trung vị bằng chính nó ⇒ 4 vai QATD không đổi, **chứng minh bằng ĐẠI SỐ**. |
+| PH-42 lệch lựa chọn | **ĐẠT** | `c1796740` | Màn ấy có **5** bề mặt chọn, không phải 3. Và **census của tôi sai**: grep theo tên cho 4 "người dùng", thật ra **1**. |
+| PH-50b `far` đóng băng | **ĐẠT** | `e7e840a6` | R3F so **thực thể** với **object cấu hình** bằng `===` ⇒ chỉ áp một lần. `far` bị chốt ở **đúng 2000**. Nay suy từ **trần zoom**. |
+| PH-51 z-fighting sàn | **ĐẠT** | `de1dc50a` | Tách được z-fighting khỏi răng cưa lưới bằng **lập luận cột-z cộng đối chứng nâng lưới 5 m**. `polygonOffset` vì khe hở tính bằng **mét** còn bước z tỉ lệ **z²**. |
+
+### Ba thước của tôi bị bác bỏ, tôi đã sửa thước
+1. **`fps 47–57`** — tôi biến một **quan sát** thành một **quy cách**. Bản chưa vá cũng rơi ra ngoài. ⇒ trả về tiêu chí gốc **≥ 30 fps**, và sau đó loại luôn thước fps **theo-sự-kiện** (nó đo tốc độ giao sự kiện của Playwright) ⇒ chuẩn từ nay là **cửa sổ thời gian cố định**.
+2. **`nhãn che-một-phần ≤ 4`** — số **tuyệt đối** trên một **mẫu số đang đổi**. ⇒ đổi thành **tỉ lệ**, cộng ô tuyệt đối chỉ áp cho 4 vai QATD.
+3. **`R = 3:1` cho tỉ số cỡ biểu tượng** — đạt ở 2D, **hỏng ở 3D**; trần thật là 2,25, tức *trông như* chở thông tin cỡ trong khi đã bỏ 97 %.
+
+### Nợ có tên, đang chạy hoặc còn mở
+- **Đang chạy**: z-fighting ở Studio và `/factory-command` (cùng lớp, chưa đo xong); lưới **quá dày** ở cỡ tập đoàn (212 ô trên sàn 1.060 m ⇒ ~2 px/ô — khuyết tật **khác** với z-fighting); hai nhãn còn sót (`admin` 2D 2/5, `kythuat` 3D 1 nhãn che 15,1 %).
+- **Còn mở**: **G134** luật chọn 30 nhãn chưa tồn tại · prop `ariaLabel` chuyền vào cây `<Canvas>` nơi nó không thể có tác dụng · **ba họ bản chuẩn** `/twin` một nhà máy với ba md5 khác nhau (`48af3d35` / `637f81e1` / `a0ae3cbe`) — một bản chuẩn mơ hồ là một bản chuẩn yếu, cần dọn về một · ca chập chờn CÓ SẴN `phamViDocPatch.db.test.ts` (timeout 5.000 ms, biên 1,46×) — **không nâng trần**, nâng là giấu.
