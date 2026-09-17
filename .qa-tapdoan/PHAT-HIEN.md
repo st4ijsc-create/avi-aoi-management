@@ -643,3 +643,38 @@ Nghi phạm: `far` áp lúc tạo `Canvas` khi `khuonVien` còn `null` (`TwinVan
 ⚠ **Hazard bản vá tự sinh, agent khai trước khi ảnh tố cáo**: sa bàn admin mới 1.060 m đặt camera cách gốc **2.306 m** — *lọt* vào `far` nhưng chỉ dư ~10 %. Khung mặc định ĐẠT (14/14 biểu tượng), nhưng **cuộn ra MỘT nấc là mất 1 toà**; `giamdoc` chịu được 3 nấc. Chưa vá vì `far` nằm ở `CanhVanHanh`/`KhungCanh` dùng chung nhiều màn.
 
 ⚠ **md5 ảnh KHÔNG phải thước hồi quy ở màn này**: `giamdoc-3d-canvas` lệch 435/473.352 px giữa trước↔sau, nhưng **hai lượt chụp CỦA CÙNG MỘT BẢN DỰNG lệch 269 px ở cùng vùng**. Lệch nằm trong nhiễu của thiết bị chụp.
+
+## V-35 ★★★ PH-50b ĐÓNG — `far` bị chốt ở ĐÚNG 2000, và chủ đợt đoán đúng cơ chế nhưng sai con số
+**Cơ chế — đúng như giả thuyết**: R3F 9.5 (`dist/events-*.esm.js:15613`) kiểm
+`if (!state.camera || state.camera === lastCamera && !is.equ(lastCamera, cameraOptions, shallowLoose))`.
+`state.camera` là **thực thể** `PerspectiveCamera`, `lastCamera` là **object cấu hình** của lượt trước ⇒ với một cấu hình thuần, hai thứ đó **không bao giờ `===`** ⇒ vế phải luôn sai ⇒ khối chỉ chạy **đúng một lần** (`!state.camera`). Nhánh `===` chỉ dành cho người truyền thẳng một camera instance.
+**Con số — chủ đợt ước 2.300-2.500, SỰ THẬT là ĐÚNG 2000**: chính sàn `Math.max(2000, …)` lúc mount khi `khuonVien` còn `null`.
+| vai | prop `far` yêu cầu | `camera.far` THẬT |
+|---|---|---|
+| admin | 25.449,6 | **2000** |
+| giamdoc / kythuat | 16.156,8 | **2000** |
+| quanly / congnhan | 6.864,0 | **2000** |
+★ **Chữ ký sắc hơn brief của tôi**: khởi phát cắt **không** bám số nấc mà bám **`camXa` vượt ~2000 m** — admin mất toà đầu ở camXa 2200, giamdoc 2221, kythuat 2193, quanly/congnhan 2089. Năm vai, sa bàn 286→1.060 m, **cùng một ngưỡng tuyệt đối**.
+★ Ba ngõ cụt `p50-probe-cam*.mjs` của vòng trước **không phải đi lại**: cả ba moi store qua `canvas.__r3f`/fiber, mà R3F 9.5 không treo store lên canvas. Đường đi được là component **bên trong** `<Canvas>` dùng `useThree`.
+
+**Vá:** `far` thôi là một hệ số đẹp, thành **hệ quả tính được**: `far = (lùi xa nhất + nửa đường chéo sàn) × 1,25`, dùng **chung hằng `HE_SO_ZOOM_XA_NHAT = 8`** với `OrbitControls.maxDistance` ⇒ hệ số hiệu dụng **12 thay cho 24**; `banKinh*24` cũ là **2,55 lần** mức cần, nay **1,25**. `DongBoCatCanh` (5 dòng thân) đưa `near`/`far` vào camera đang sống + `updateProjectionMatrix()` + `invalidate()`. Vì nằm ở `KhungCanh` nên nó chữa cả `CanhNhaMay` và `CanhThietKe` mà không chạm tệp của agent kia.
+
+| đo bằng cuộn tới khi `camXa` NGỪNG TĂNG (trần thật) | trước | sau |
+|---|---|---|
+| tapDoan × 5 vai | **MẤT 14/12/8/4/4 = 100 %** | **MẤT 0** |
+| nhaMay/tang/line/may × 2 vai | mất 0 | mất 0 |
+| **tổng** | **5/13 KHÔNG ĐẠT** | **13/13 ĐẠT** |
+Chủ đợt **tự xem cặp `3-qatd_admin-CUON-RA-4-NAC.png`**: TRƯỚC còn đúng một mảnh sàn cụt, 0 toà, 0 nhãn; SAU đủ sa bàn với "Công ty A/B/C", "FUYU-F" và nhãn toà.
+Không hồi quy: mọi ô giống hệt (tên công ty 3/3·1/1·2/2·1/1, admin 3D 5/5, biểu tượng 41,1-236,1 px, cụm×toà 0 lệch); `/twin` một nhà máy **giống BYTE**. Ablation gỡ đúng 5 dòng thân ⇒ trả về **chính xác** số bản chưa vá, và `__catCanhYeuCau` cho thấy **prop tính đúng, chỉ là không tới nơi**. `md5sum -c` 7/7.
+
+## PH-51 (MỚI, TRUNG BÌNH) · Z-FIGHTING CÓ THẬT ở mặt sàn — CÓ TRƯỚC, bản vá làm nhẹ đi chứ không đóng
+`CanhVanHanh.San` đặt mặt sàn ở `y = -0.01`, `gridHelper` ở `y = 0` — **cách nhau 1 cm**, trong khi bước z tại vùng toà (z≈2000, 24 bit) là **2,38 m** trước vá và **0,48 m** sau vá.
+| thay đổi | % pixel sàn ĐỔI BÊN THẮNG |
+|---|---|
+| chỉ `far` (2000→12478) | 21,50 % |
+| chỉ `near` (0,1→0,5) | 22,36 % |
+| cả hai | 23,88 % |
+| **chụp 2 lần CÙNG một bản dựng** | **0,00 %** |
+Nhiễu thiết bị đo **bằng 0** ⇒ độ nhạy ấy là **thật**. Bản vá làm bước z **mịn hơn 5 lần** (tốt lên) nhưng **không đóng** khuyết tật.
+★ Agent **KHÔNG tự vá**: nâng khe hở sàn/lưới hoặc `polygonOffset` là thay đổi **THỊ GIÁC** trên màn chủ dự án đã nghiệm thu bằng mắt. Chờ chốt.
+⚠ Chưa tách được z-fighting khỏi **răng cưa lưới** ở cỡ tập đoàn: `gridHelper` chia ô 5 m trên sàn 1.060 m ⇒ đường lưới cách nhau ~2 px. Ở cỡ zoom mà lưới đọc được thì trước↔sau lệch **16 px (0,003 %)** và lưới nhìn sạch.

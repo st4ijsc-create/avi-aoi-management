@@ -46,6 +46,8 @@ import { useOptionalTheme } from "@/components/factory-scene/useOptionalTheme";
 
 import {
   KhungCanh,
+  farTheoBanKinh,
+  khoangCachZoomXaNhat,
   LoBatchMay,
   LopNhan,
   TRANG_THAI_CHON_RONG,
@@ -205,7 +207,9 @@ function DieuKhien({
   useEffect(() => {
     const { controls, huy } = taoDieuKhienQuay(camera, gl.domElement, invalidate, {
       khoangCachToiThieu: 1.5,
-      khoangCachToiDa: Math.max(80, banKinhToiDa * 8),
+      // ★ PH-50b — CÙNG một hằng với `farTheoBanKinh`: `far` được suy TỪ con số này,
+      //   nên hai thứ không trôi khỏi nhau được nữa (`loi/catCanh.ts`).
+      khoangCachToiDa: khoangCachZoomXaNhat(banKinhToiDa),
     });
     controlsRef.current = controls;
     // Báo camera đổi để tầng trên ghi vào URL (`replaceState`, §9.4).
@@ -959,7 +963,7 @@ const CanhVanHanhOnDinh = memo(function CanhVanHanhOnDinh(props: CanhVanHanhProp
     <KhungCanh
       viTriCamera={viTriCamera}
       mauNen={mauNen}
-      far={Math.max(2000, banKinh * 24)}
+      far={farTheoBanKinh(banKinh)}
       cuongDoBanCau={toi ? 0.9 : 1.1}
       cuongDoHuong={toi ? 1.0 : 1.3}
       viTriDenHuong={viTriDenHuong}

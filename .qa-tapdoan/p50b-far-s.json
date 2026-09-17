@@ -1,0 +1,1587 @@
+{
+ "qatd_admin": {
+  "dungDuoc": true,
+  "banKinhM": null,
+  "nac0": {
+   "near": 0.5,
+   "far": 12478.54,
+   "camXa": 2005.681,
+   "tiLe": 24957,
+   "calls": 4,
+   "tri": 230,
+   "soBT": 14,
+   "rongMax": 67.3,
+   "soNhan": {
+    "ve": 18,
+    "an": 1,
+    "anVungCam": 1,
+    "anNgoaiKhung": 0,
+    "tong": 19
+   },
+   "yeuCau": {
+    "near": 0.5,
+    "far": 12478.540076925538
+   },
+   "rongThatMm": null,
+   "rongSoDoMm": null
+  },
+  "nac": [
+   {
+    "i": 1,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 2200.228,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 57.7,
+    "soNhan": {
+     "ve": 18,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 2,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 2420.604,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 49.7,
+    "soNhan": {
+     "ve": 17,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 3,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 2670.179,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 43,
+    "soNhan": {
+     "ve": 16,
+     "an": 3,
+     "anVungCam": 3,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 4,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 2952.762,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 37.2,
+    "soNhan": {
+     "ve": 14,
+     "an": 5,
+     "anVungCam": 5,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 5,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 3272.661,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 32.4,
+    "soNhan": {
+     "ve": 13,
+     "an": 6,
+     "anVungCam": 6,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 6,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 3634.746,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 28.2,
+    "soNhan": {
+     "ve": 12,
+     "an": 7,
+     "anVungCam": 7,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 7,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 4044.526,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 24.6,
+    "soNhan": {
+     "ve": 9,
+     "an": 10,
+     "anVungCam": 10,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 8,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 4508.23,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 21.5,
+    "soNhan": {
+     "ve": 7,
+     "an": 12,
+     "anVungCam": 12,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 9,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 5032.903,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 18.8,
+    "soNhan": {
+     "ve": 6,
+     "an": 13,
+     "anVungCam": 13,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 10,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 5626.514,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 16.5,
+    "soNhan": {
+     "ve": 10,
+     "an": 9,
+     "anVungCam": 9,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 11,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 6298.078,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 14.5,
+    "soNhan": {
+     "ve": 9,
+     "an": 10,
+     "anVungCam": 10,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 12,
+    "near": 0.5,
+    "far": 12478.54,
+    "camXa": 7057.79,
+    "tiLe": 24957,
+    "calls": 4,
+    "tri": 230,
+    "soBT": 14,
+    "rongMax": 12.7,
+    "soNhan": {
+     "ve": 9,
+     "an": 10,
+     "anVungCam": 10,
+     "anNgoaiKhung": 0,
+     "tong": 19
+    },
+    "yeuCau": {
+     "near": 0.5,
+     "far": 12478.540076925538
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   }
+  ]
+ },
+ "qatd_giamdoc": {
+  "dungDuoc": true,
+  "banKinhM": null,
+  "nac0": {
+   "near": 0.396,
+   "far": 7922.061,
+   "camXa": 1502.34,
+   "tiLe": 20000,
+   "calls": 4,
+   "tri": 182,
+   "soBT": 12,
+   "rongMax": 83,
+   "soNhan": {
+    "ve": 15,
+    "an": 0,
+    "anVungCam": 0,
+    "anNgoaiKhung": 0,
+    "tong": 15
+   },
+   "yeuCau": {
+    "near": 0.396103035636848,
+    "far": 7922.06071273696
+   },
+   "rongThatMm": null,
+   "rongSoDoMm": null
+  },
+  "nac": [
+   {
+    "i": 1,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 1650.306,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 71.9,
+    "soNhan": {
+     "ve": 15,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 2,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 1817.699,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 62.4,
+    "soNhan": {
+     "ve": 15,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 3,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 2007.063,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 54.3,
+    "soNhan": {
+     "ve": 15,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 4,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 2221.274,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 47.4,
+    "soNhan": {
+     "ve": 15,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 5,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 2463.585,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 41.4,
+    "soNhan": {
+     "ve": 15,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 6,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 2737.674,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 36.2,
+    "soNhan": {
+     "ve": 15,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 7,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 3047.702,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 31.7,
+    "soNhan": {
+     "ve": 15,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 8,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 3398.375,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 27.8,
+    "soNhan": {
+     "ve": 14,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 9,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 3795.014,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 24.4,
+    "soNhan": {
+     "ve": 14,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 10,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 4243.641,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 21.5,
+    "soNhan": {
+     "ve": 13,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 11,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 4751.061,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 18.9,
+    "soNhan": {
+     "ve": 12,
+     "an": 3,
+     "anVungCam": 3,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 12,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 5324.976,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 182,
+    "soBT": 12,
+    "rongMax": 16.6,
+    "soNhan": {
+     "ve": 12,
+     "an": 3,
+     "anVungCam": 3,
+     "anNgoaiKhung": 0,
+     "tong": 15
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   }
+  ]
+ },
+ "qatd_quanly": {
+  "dungDuoc": true,
+  "banKinhM": null,
+  "nac0": {
+   "near": 0.168,
+   "far": 3365.581,
+   "camXa": 592.821,
+   "tiLe": 20000,
+   "calls": 4,
+   "tri": 62,
+   "soBT": 4,
+   "rongMax": 236.1,
+   "soNhan": {
+    "ve": 5,
+    "an": 0,
+    "anVungCam": 0,
+    "anNgoaiKhung": 0,
+    "tong": 5
+   },
+   "yeuCau": {
+    "near": 0.16827906742741908,
+    "far": 3365.5813485483814
+   },
+   "rongThatMm": null,
+   "rongSoDoMm": null
+  },
+  "nac": [
+   {
+    "i": 1,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 650.499,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 201.2,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 2,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 715.819,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 172.4,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 3,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 789.779,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 148.4,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 4,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 873.507,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 128.3,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 5,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 968.277,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 111.2,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 6,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1075.533,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 96.6,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 7,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1196.905,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 84.1,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 8,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1334.238,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 73.4,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 9,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1489.618,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 64.2,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 10,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1665.404,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 56.2,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 11,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1864.266,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 49.2,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 12,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 2089.222,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 43.2,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   }
+  ]
+ },
+ "qatd_kythuat": {
+  "dungDuoc": true,
+  "banKinhM": null,
+  "nac0": {
+   "near": 0.396,
+   "far": 7922.061,
+   "camXa": 1104.895,
+   "tiLe": 20000,
+   "calls": 4,
+   "tri": 122,
+   "soBT": 8,
+   "rongMax": 139.7,
+   "soNhan": {
+    "ve": 8,
+    "an": 2,
+    "anVungCam": 2,
+    "anNgoaiKhung": 0,
+    "tong": 10
+   },
+   "yeuCau": {
+    "near": 0.396103035636848,
+    "far": 7922.06071273696
+   },
+   "rongThatMm": null,
+   "rongSoDoMm": null
+  },
+  "nac": [
+   {
+    "i": 1,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 1207.971,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 117.7,
+    "soNhan": {
+     "ve": 9,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 2,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 1325.065,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 100,
+    "soNhan": {
+     "ve": 9,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 3,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 1457.997,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 85.4,
+    "soNhan": {
+     "ve": 9,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 4,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 1608.822,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 73.3,
+    "soNhan": {
+     "ve": 9,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 5,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 1779.861,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 63.2,
+    "soNhan": {
+     "ve": 8,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 6,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 1973.738,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 54.7,
+    "soNhan": {
+     "ve": 8,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 7,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 2193.416,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 47.4,
+    "soNhan": {
+     "ve": 8,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 8,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 2442.25,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 41.3,
+    "soNhan": {
+     "ve": 8,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 9,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 2724.03,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 36,
+    "soNhan": {
+     "ve": 8,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 10,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 3043.046,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 31.4,
+    "soNhan": {
+     "ve": 8,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 11,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 3404.149,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 27.5,
+    "soNhan": {
+     "ve": 8,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 12,
+    "near": 0.396,
+    "far": 7922.061,
+    "camXa": 3812.828,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 122,
+    "soBT": 8,
+    "rongMax": 24,
+    "soNhan": {
+     "ve": 8,
+     "an": 2,
+     "anVungCam": 2,
+     "anNgoaiKhung": 0,
+     "tong": 10
+    },
+    "yeuCau": {
+     "near": 0.396103035636848,
+     "far": 7922.06071273696
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   }
+  ]
+ },
+ "qatd_congnhan": {
+  "dungDuoc": true,
+  "banKinhM": null,
+  "nac0": {
+   "near": 0.168,
+   "far": 3365.581,
+   "camXa": 592.821,
+   "tiLe": 20000,
+   "calls": 4,
+   "tri": 62,
+   "soBT": 4,
+   "rongMax": 236.1,
+   "soNhan": {
+    "ve": 5,
+    "an": 0,
+    "anVungCam": 0,
+    "anNgoaiKhung": 0,
+    "tong": 5
+   },
+   "yeuCau": {
+    "near": 0.16827906742741908,
+    "far": 3365.5813485483814
+   },
+   "rongThatMm": null,
+   "rongSoDoMm": null
+  },
+  "nac": [
+   {
+    "i": 1,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 650.368,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 201.3,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 2,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 715.54,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 172.6,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 3,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 789.332,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 148.6,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 4,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 872.869,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 128.4,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 5,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 967.425,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 111.3,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 6,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1074.437,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 96.7,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 7,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1195.533,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 84.2,
+    "soNhan": {
+     "ve": 5,
+     "an": 0,
+     "anVungCam": 0,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 8,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1332.554,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 73.5,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 9,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1487.581,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 64.3,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 10,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1662.968,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 56.3,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 11,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 1861.378,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 49.3,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   },
+   {
+    "i": 12,
+    "near": 0.168,
+    "far": 3365.581,
+    "camXa": 2085.824,
+    "tiLe": 20000,
+    "calls": 4,
+    "tri": 62,
+    "soBT": 4,
+    "rongMax": 43.3,
+    "soNhan": {
+     "ve": 4,
+     "an": 1,
+     "anVungCam": 1,
+     "anNgoaiKhung": 0,
+     "tong": 5
+    },
+    "yeuCau": {
+     "near": 0.16827906742741908,
+     "far": 3365.5813485483814
+    },
+    "rongThatMm": null,
+    "rongSoDoMm": null
+   }
+  ]
+ }
+}

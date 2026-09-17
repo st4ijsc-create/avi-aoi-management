@@ -1,0 +1,19 @@
+PH-50b — SỔ ABLATION (đường dẫn tuyệt đối: D:\SOURCES\avi-aoi-management)
+════════════════════════════════════════════════════════════════════════
+
+BẢN ĐO            NỘI DUNG                                          KẾT QUẢ (trần zoom, 13 ca)
+────────────────  ────────────────────────────────────────────────  ──────────────────────────
+dist-p50b-t2      616de103 + CHỈ thiết bị đo (0 dòng vá)            5/13 KHÔNG ĐẠT · far=2000 mọi vai
+dist-p50b-ab      = bản vá TRỪ 5 dòng thân `DongBoCatCanh`          5/13 KHÔNG ĐẠT · far=2000 mọi vai
+dist-p50b-abn     = bản vá, NEAR_TOI_DA_M 0,5 → 0,1                 (chỉ để tách hiệu ứng near)
+dist-p50b-cuoi    bản vá đầy đủ                                     13/13 ĐẠT · far theo cảnh
+
+· Ablation A (gỡ thân bộ đồng bộ) TRẢ LẠI CHÍNH XÁC số của t2 ở cả 13 ca.
+  Ở bản ablation, `__catCanhYeuCau = {near:0.5, far:12478.5}` trong khi camera
+  sống là `{near:0.1, far:2000}` — prop tính ĐÚNG, chỉ là không tới nơi.
+· Ablation lưới (cùng phép gỡ, chạy vitest): 3 ca CA B ĐỎ, 39 xanh → lưới BIẾT KÊU.
+· Ablation B tách được hiệu ứng `near` khỏi hiệu ứng `far` trên mặt sàn:
+  đổi RIÊNG far  (2000→12478, near 0,1) : 21,50 % pixel sàn đổi bên thắng
+  đổi RIÊNG near (0,1→0,5, far 12478)   : 22,36 %
+  đổi cả hai                            : 23,88 %
+  CHỤP HAI LẦN CÙNG MỘT BẢN DỰNG        :  0,00 %   ← nhiễu thiết bị đo = 0
