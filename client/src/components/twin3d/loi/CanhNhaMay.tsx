@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Grid } from "@react-three/drei";
+import { useBuocLuoi } from "./useBuocLuoi";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import {
@@ -299,6 +300,11 @@ function TheoDoiFps({ onDoiBac }: { onDoiBac: (chiHopBao: boolean, coNhan: boole
  *
  * Lưới: `zFightingSanNhaMay.unit.test.ts`.
  */
+/** Bước lưới gốc của màn (m) — SÀN của PH-54, bản vá chỉ làm THƯA hơn số này. */
+const CELL_SIZE_GOC = 2;
+/** Tỉ lệ `sectionSize / cellSize` — GIỮ NGUYÊN tỉ lệ 10/2 của bản đang chạy. */
+const HE_SO_SECTION = 5;
+
 const SAN_GHI_DO_SAU = false;
 
 /**
@@ -459,6 +465,26 @@ export function NoiDungCanh({
   const banKinh = layout.radius;
 
   /**
+   * ★★★ PH-54 — `cellSize` THÔI LÀ HẰNG 2 MÉT.
+   *
+   * Đây là màn TỆ NHẤT trong năm màn, và tệ vì một lý do khác hai màn `/twin`:
+   * ở kia số ô ít nhất còn đi theo cỡ sàn, còn ở đây `cellSize` là HẰNG 2 m bất
+   * kể cảnh rộng bao nhiêu hay camera đứng đâu. Đo sống trên `ca088198`:
+   * tập đoàn **1,07 px** một ô (đường `section` 10 m cũng chỉ 5,33 px), một nhà
+   * máy 2,94 px, và ở trần zoom xa còn tụt xuống **0,62 px**.
+   *
+   * ⚠ ĐỔI Ở ĐÂY LÀ MIỄN PHÍ VỀ HÌNH HỌC, và đó là lý do chọn đúng hai prop này:
+   *   drei `<Grid>` là MỘT `planeGeometry` (2 tam giác) với lưới vẽ trong
+   *   fragment shader — `cellSize`/`sectionSize` là UNIFORM. Đổi chúng không
+   *   thêm một đỉnh, một tam giác hay một lệnh vẽ nào. `args`, `infiniteGrid`
+   *   và `fadeDistance` — tức HÌNH HỌC của tấm lưới — GIỮ NGUYÊN không chạm,
+   *   vì chính hình học ấy là thứ PH-53 đã buộc vào `near` (ở `near` = 0,1 lưới
+   *   tập-đoàn-xiên BIẾN MẤT; `near` đang giao là 0,41 do `catCanh.ts` tính).
+   *   Bản vá này không được phép mở lại cánh cửa đó.
+   */
+  const buocLuoi = useBuocLuoi(CELL_SIZE_GOC, { heSoSection: HE_SO_SECTION });
+
+  /**
    * ★★★ `useCallback` BẮT BUỘC, không phải làm đẹp.
    *
    * `DieuKhien` liệt kê `onDoiKhoangCach` trong deps của `useEffect` dựng
@@ -548,10 +574,10 @@ export function NoiDungCanh({
       <Grid
         position={[0, 0, 0]}
         args={[banKinh * 4, banKinh * 4]}
-        cellSize={2}
+        cellSize={buocLuoi}
         cellThickness={0.6}
         cellColor={palette.gridCell}
-        sectionSize={10}
+        sectionSize={buocLuoi * HE_SO_SECTION}
         sectionThickness={1}
         sectionColor={palette.gridSection}
         fadeDistance={banKinh * 5}

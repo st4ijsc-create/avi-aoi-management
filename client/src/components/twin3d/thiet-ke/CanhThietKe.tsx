@@ -50,7 +50,7 @@
  *   scene (RB-7). `scene.add` thủ công cũng đúng nhưng phải tự nhớ `remove`.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -74,6 +74,7 @@ import {
 import { mmSangMet } from "../heToaDo";
 import { SAN_CAO_CANH_THIET_KE_PX } from "./khungNhin";
 import { TRANG_THAI_CHON_RONG, type TrangThaiChon } from "../loi/chonVatThe";
+import { useBuocLuoi } from "../loi/useBuocLuoi";
 import { GizmoBienDoi } from "./GizmoBienDoi";
 import type { CheDoGizmo, TrucKhoa } from "./gizmoNoiLogic";
 import type { HopMa } from "./xemTruocSinh";
@@ -246,6 +247,23 @@ function San({
   toi: boolean;
 }) {
   const canh = Math.max(rongM, sauM, 10);
+  /**
+   * ★★★ PH-54 — Ô 1 MÉT LÀ ĐÚNG Ở BÀN THIẾT KẾ, SAI Ở MỌI NẤC ZOOM THẬT.
+   *
+   * Studio là màn có ô NHỎ NHẤT: `soO = max(4, round(canh))` ⇒ ô ~1 m. Đo sống:
+   * khung mặc định **2,59 px**, trần zoom **0,83 px** — và ngay cả khi zoom VÀO
+   * hết cỡ cũng mới **7,10 px**, tức màn này KHÔNG đạt ở bất kỳ nấc nào.
+   * `buocGoc` giữ nguyên biểu thức cũ, nên nếu có nấc zoom nào mà 1 m đã đủ to
+   * thì ở đó lưới vẫn là lưới hôm nay, không đổi một đỉnh.
+   */
+  const soOGoc = Math.max(4, Math.round(canh));
+  const buocGoc = canh / soOGoc;
+  const lamTron = useCallback(
+    (b: number) => (b === buocGoc ? buocGoc : canh / Math.max(4, Math.floor(canh / b))),
+    [canh, buocGoc],
+  );
+  const buoc = useBuocLuoi(buocGoc, { lamTron });
+  const soO = Math.max(4, Math.round(canh / buoc));
   const mauSan = toi ? "#1e293b" : "#e2e8f0";
   const mauLuoiChinh = toi ? "#475569" : "#94a3b8";
   const mauLuoiPhu = toi ? "#334155" : "#cbd5e1";
@@ -262,7 +280,7 @@ function San({
       </mesh>
       {hienLuoi ? (
         <gridHelper
-          args={[canh, Math.max(4, Math.round(canh)), mauLuoiChinh, mauLuoiPhu]}
+          args={[canh, soO, mauLuoiChinh, mauLuoiPhu]}
           position={[rongM / 2, 0, sauM / 2]}
         />
       ) : null}

@@ -797,3 +797,43 @@ Ca ấy khẳng định **PHẠM VI TENANT** (A không được thấy máy củ
 ⚠⚠ Chủ đợt đã **hai lần** nói *"không nâng trần, nâng là giấu"*. Đổi ý vì **lúc ấy chưa biết đỏ vì hết giờ hay vì sai**; nay đã tách được. Nâng trần cho một ca **SAI** là giấu lỗi; nâng trần cho một ca **hết-giờ-vì-tải** là **sửa một thước đang đo nhầm đại lượng** — cùng khuôn với lần rút lại thước `fps 47-57`.
 ★ Giữ cho phép đo còn sức: trần mới **20.000 ms** = vẫn chỉ **9,05×** chi phí đo được khi chạy riêng. Một hồi quy thật (N+1, mất chỉ mục) thổi chi phí hàng chục lần và **vẫn vỡ** trần này. Con số **2.210 ms** ghi ngay trong docblock làm mốc so.
 Kiểm: `npx vitest run phamVi` **hai lượt liên tiếp, 21 tệp / 561 xanh**.
+
+## V-40 ★★★ PH-54 ĐÓNG — lưới theo MÀN HÌNH, và BẢNG CỦA CHỦ ĐỢT SAI HAI CHỖ
+| màn | mặc định | trần zoom xa |
+|---|---|---|
+| `/factory-command` tập đoàn | 1,07 → **10,65** | 0,62 → **15,57** |
+| `/factory-command` một nhà máy | 2,94 → **14,69** | 1,72 → **8,59** |
+| `/twin` tập đoàn | 1,47 → **14,86** | 0,33 → **13,95** |
+| `/twin` một nhà máy | 27,75 → 27,75 (không đổi) | **3,21** → **14,14** |
+| Studio | 2,59 → **12,94** | 0,83 → **8,30** |
+**10/10 ĐẠT**, dải để lại **[8,30 ; 27,75] px**. Chủ đợt **tự xem cặp `fc-motnhamay--a-macdinh`**: trước là lưới mịn đọc như **nhiễu**, sau là lưới rõ cho được **cảm giác tỉ lệ**.
+
+### ★★★ BẢNG CỦA CHỦ ĐỢT SAI HAI CHỖ — agent sửa cả hai
+1. **Bảng chỉ đo KHUNG MẶC ĐỊNH ⇒ bỏ sót một màn.** `/twin` một nhà máy — màn tôi ghi là *"DUY NHẤT đạt"* — tụt xuống **3,21 px ở trần zoom**. Vậy là **5/5 màn hỏng**, không phải 4/5.
+2. **Thước `camXa` của tôi SAI HỆ THỐNG.** `camXa = |camera.position|` là khoảng cách tới **GỐC**, không phải tới **điểm ngắm**. Ở `/factory-command` gốc **chính là** tâm cảnh (tỉ số `dNgam/camXa = 1,0000` chằn ⇒ thước tôi đúng tuyệt đối). Nhưng sàn `/twin`/Studio trải `[0,rộng]×[0,sâu]` nên **gốc là một GÓC**: tỉ số 0,66-0,99, và ở zoom sát chỉ **0,25**.
+   ★ Chiều lệch cứu kết luận: `camXa ≥ dNgam` ⇒ thước tôi **khai xa hơn thực** ⇒ **khai ô NHỎ hơn thực** ⇒ nó là **CẬN DƯỚI**. Nên "10/10 ĐẠT" **vẫn đứng vững**, thậm chí là con số **thận trọng** (ví dụ `/twin` một nhà máy thực ra ~42 px chứ không phải 27,75).
+   ★ Agent **không tự viết lại bảng nghiệm thu bằng thước kia** — đúng luật. Ô duy nhất hai thước cãi nhau: `studio/zoom gần` **7,10 px** (thước tôi) vs **28,39 px** (sản phẩm tự khai); ô ấy **y hệt nền**, ngoài tiêu chí, **chưa chốt được số nào đúng**.
+
+### Bác bỏ bằng PHÉP CHIA, trước khi sửa mã
+Điều kiện khả thi của một **bước HẰNG**: `d_max/d_min ≤ H/(2N) ≈ 33`.
+| màn | `d_max/d_min` | chịu được | kết |
+|---|---|---|---|
+| `/factory-command` tập đoàn | **512,5** | ≤ 33,1 | **BẤT KHẢ, vượt 16×** |
+| `/factory-command` một NM | **185,8** | ≤ 33,1 | **BẤT KHẢ, vượt 6×** |
+| ba màn còn lại | 8,6-21,7 | 15,7-30,6 | khả thi nhưng **ba khe hẹp KHÁC nhau** |
+`minDistance = 4 m` mở dải zoom rộng gấp **6-16 lần** thứ một hằng số chịu nổi. **Mờ dần theo khoảng cách mua đúng 0 px** ở điểm ngắm (bước không đổi ⇒ ô không đổi). ⇒ chọn **thang bản đồ 1/2/5/10 theo màn hình, CHỈ LÀM THƯA**.
+Mô phỏng chạy **trước khi viết dòng mã nào** trúng tới **2 chữ số thập phân** trên 6/10 ô; phần còn lại lệch đúng bằng lượng tử hoá `gridHelper`.
+★ `≥ 8 px` là **bất biến THEO CẤU TẠO**, không phải ba mẫu may: **quét zoom liên tục** cả dải cho đáy **8,33 / 8,43 / 8,88 px**.
+
+### Ba hazard — hỏi trước, đo trước
+(a) **ngân sách vẽ đổi 0/15 ô**: drei `<Grid>` là **2 tam giác + uniform** nên đổi miễn phí; `gridHelper` 212→21 ô đổi đỉnh **ĐƯỜNG**, không vào `triangles`, vẫn 1 lệnh vẽ. (b) **nhấp nháy 0** cả hai chiều, 3 màn; trễ **một chiều** đo được (thưa ngay / dày chậm, đệm ~18 %: 20→50 m ở d≈1734 khi ra, 50→20 m ở d≈1417 khi vào). Cú đổi **có nhìn thấy** (mật độ ~2×). (c) **không mất tỉ lệ ở gần** vì "chỉ làm thưa".
+
+### ★★★ CHỦ ĐỢT: ngưỡng GIỮ 8, và một nguy cơ lệch đã được đóng
+Agent đo được **N = 10 là MIỄN PHÍ** (nâng đúng hai ca sát ngưỡng 8,59→17,2 và 8,30→16,6, tám ca kia y nguyên; N=12 mới phải trả giá). Tôi **giữ 8** vì đó là cấu hình được **nghiệm thu sống đầy đủ** — N=10 mới chỉ được đo ở hai ô biên, và tôi không ship một cấu hình xác minh hẹp hơn để đổi lấy biên rộng hơn.
+★ Nhưng tôi thử N=10 và **hai ca đỏ** — không phải vì sản phẩm sai, mà vì ba chỗ trong lưới **viết cứng số 8** trong phép suy ranh giới (`(nac·489)/(8·2·tan(fov/2))`). **Một phép đo mà hằng số của nó chép tay thì nó đo một thế giới khác với thứ nó định canh, ngay khi ai đó đổi hằng** — đúng lớp lỗi ô T-2 của `HE_SO_LUI` đã phải tránh.
+⇒ Đã đổi ba chỗ ấy sang `dRanhCua(nac)` suy từ `O_TOI_THIEU_PX`, và **giữ cho ô còn sức**: hàm ấy **dựng lại công thức từ đầu**, chỉ mượn **một** hằng, nên sản phẩm đổi công thức thì ô vẫn kêu. Kiểm: ở N=8 **21/21 xanh**, ở N=10 **21/21 xanh**, ở N=0 **3 ĐỎ** (đối chứng biết kêu). ⇒ Hằng nay **đổi được tự do**, ai muốn lấy N=10 chỉ cần sửa một dòng.
+
+### Ba lỗi quy trình agent tự khai
+1. Chạy `vitest` khi nguồn **đang mang giá trị ablation** ⇒ 3 ca đỏ; truy ra là **nhiễm bẩn của chính mình** (đúng 3 ca canh *"vá bị tắt"*), chạy lại sạch.
+2. ★ **Harness ghi đè 21 tệp ĐÃ COMMIT** của vòng trước (`n1-truoc.json` + 20 PNG) vì bản sao harness vẫn trỏ `.qa-tapdoan/`. Dừng ngay, **khôi phục đủ 21 tệp từ HEAD** (`git status` sạch — chủ đợt đã kiểm), đổi đường ghi vào `ph54/`.
+3. ★ **Viết số "bất khả" vào docblock TRƯỚC khi đo** — và đo xong thì **sai** (ghi `/twin` tập đoàn bất khả; thật ra hai màn `/factory-command` mới bất khả). Đã sửa theo bảng đo và **dựng lại xác nhận md5 bundle giống hệt** bản đã đo.

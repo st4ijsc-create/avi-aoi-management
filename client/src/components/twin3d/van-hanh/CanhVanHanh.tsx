@@ -62,6 +62,7 @@ import { mauHex, mauThree } from "./mauThree";
 import type { KhungNhin, HopCanvas } from "./phamViCanh";
 import { TWEEN_DOI_CAP_MS, khungNhinVaoVung, vungDungCanvas } from "./phamViCanh";
 import { layVungCam } from "../loi/LopNhan";
+import { useBuocLuoi } from "../loi/useBuocLuoi";
 import type { DiemScene } from "../heToaDo";
 import { LopCanhBao, type CanhBaoTheGioi } from "./LopCanhBao";
 import { DongChayLine, type DiemDongChay } from "./DongChayLine";
@@ -344,6 +345,26 @@ const SAN_DAY_SAU_DON_VI = 1;
 
 function San({ rongM, sauM, toi }: { rongM: number; sauM: number; toi: boolean }) {
   const canh = Math.max(rongM, sauM, 10);
+  /**
+   * ★★★ PH-54 — SỐ Ô KHÔNG CÒN TỈ LỆ VỚI CỠ SÀN, MÀ THEO **MÀN HÌNH**.
+   *
+   * Trước: `soO = max(4, round(canh/5))` ⇒ ô ~5 m, và vì `soO` đi theo `canh` nên
+   * sàn tập đoàn 1.060 m sinh **212 ô** — ở khung mặc định mỗi ô rộng **1,47 px**
+   * (đo sống). Đó không còn là một cái lưới, đó là một tấm dither: nó không cho
+   * cảm giác tỉ lệ nào, chỉ thêm nhiễu và tốn đỉnh.
+   *
+   * `buocGoc` giữ nguyên biểu thức cũ nên ở mọi nấc zoom mà lưới hôm nay ĐÃ đủ to
+   * (`/twin` một nhà máy, khung mặc định: 27,75 px) bản vá trả về ĐÚNG số ô cũ —
+   * `soOGoc` được dùng lại nguyên vẹn, không phải tính lại bằng đường khác.
+   */
+  const soOGoc = Math.max(4, Math.round(canh / 5));
+  const buocGoc = canh / soOGoc;
+  const lamTron = useCallback(
+    (b: number) => (b === buocGoc ? buocGoc : canh / Math.max(4, Math.floor(canh / b))),
+    [canh, buocGoc],
+  );
+  const buoc = useBuocLuoi(buocGoc, { lamTron });
+  const soO = Math.max(4, Math.round(canh / buoc));
   return (
     <group>
       <mesh rotation={XOAY_SAN} position={[rongM / 2, -0.01, sauM / 2]}>
@@ -356,7 +377,7 @@ function San({ rongM, sauM, toi }: { rongM: number; sauM: number; toi: boolean }
         />
       </mesh>
       <gridHelper
-        args={[canh, Math.max(4, Math.round(canh / 5)), toi ? "#475569" : "#94a3b8", toi ? "#334155" : "#cbd5e1"]}
+        args={[canh, soO, toi ? "#475569" : "#94a3b8", toi ? "#334155" : "#cbd5e1"]}
         position={[rongM / 2, 0, sauM / 2]}
       />
     </group>
