@@ -1383,3 +1383,114 @@ Vẫn **không tick** 103 ô `- [ ]` ở trên (bài học Pha 0). Bảng dướ
 ### Nợ có tên, đang chạy hoặc còn mở
 - **Đang chạy**: z-fighting ở Studio và `/factory-command` (cùng lớp, chưa đo xong); lưới **quá dày** ở cỡ tập đoàn (212 ô trên sàn 1.060 m ⇒ ~2 px/ô — khuyết tật **khác** với z-fighting); hai nhãn còn sót (`admin` 2D 2/5, `kythuat` 3D 1 nhãn che 15,1 %).
 - **Còn mở**: **G134** luật chọn 30 nhãn chưa tồn tại · prop `ariaLabel` chuyền vào cây `<Canvas>` nơi nó không thể có tác dụng · **ba họ bản chuẩn** `/twin` một nhà máy với ba md5 khác nhau (`48af3d35` / `637f81e1` / `a0ae3cbe`) — một bản chuẩn mơ hồ là một bản chuẩn yếu, cần dọn về một · ca chập chờn CÓ SẴN `phamViDocPatch.db.test.ts` (timeout 5.000 ms, biên 1,46×) — **không nâng trần**, nâng là giấu.
+
+---
+
+## PDCA vòng 2 (2026-09-18) — chỉ số KẾT CỤC: *"thông tin trên màn 3D có ĐÚNG không?"*
+
+Vòng 1 đo **tốc độ** và đã đóng (`/twin` 9,2 → 60 rAF/s, gốc rễ `byteMau` gọi `getImageData` mỗi
+khung). Vòng này đo thứ **chưa ai đo**: người vận hành mở màn 3D thì con số họ đọc có khớp sự thật
+trong CSDL không. Thô: `.qa-v2/tho/` (mỗi tác vụ một tệp JSON, tự đếm lại được).
+
+### Bước 0 (MSA) — hệ đo, kiểm trước khi tin
+
+| kiểm | kết quả |
+|---|---|
+| `dist` có khớp nguồn không | CÓ — 0 tệp `client/src`, `server`, `shared` mới hơn `dist/public/index.html` |
+| cây có ai sửa dở không | sạch; HEAD `8875915f3` = `fresh/feat/ai-local-L7-hang-rao` |
+| phép đo có tự thoả không | KHÔNG — oracle là SQL thẳng vào CSDL, không qua API sản phẩm |
+
+★★★ **MSA bắt một bẫy TRƯỚC khi đo, và nó đủ để hỏng cả vòng**: `machines.lastHeartbeat` là
+`timestamp without time zone`; postgres.js phía JS diễn giải nó theo giờ máy (+07) nên `hb` in ra
+`07:54:25Z` trong khi `now() - "lastHeartbeat"` trong SQL nói **841 s**. Lệch **đúng 7 tiếng** —
+cùng lớp với `postgresjs-timestamp-naive-lech-7h`. ⇒ **mọi phép tính tuổi trong vòng này làm TRONG
+SQL**, không bao giờ ở JS.
+
+### KIỂM THƯỚC — trước khi tin một con số đẹp nào
+
+9/12 ĐẠT ngay lượt đầu là **đáng ngờ hơn đáng mừng**. Nên đổi trạng thái thật bằng **đường sản
+phẩm** (`npx tsx scripts/sinh-tai-twin.ts --chi-nhip`, chỉ chạm tiền tố `FUYU-F%` / `FUYU-G%` /
+`TAI-%` nên **không đụng nền QATD của phiên `-52`**) rồi đòi **hai kim cùng nhảy**:
+
+| | trước bơm | sau bơm |
+|---|---|---|
+| DOM `dem-tuoi` / `dem-khong-ro` | 0 / 549 | **549 / 0** |
+| SQL (ngưỡng 60 s, tính trong SQL) | 0 / 549 | **549 / 0** |
+
+⇒ **thước sống**. Bốn kết cục phân biệt được nhau (DOM đứng + SQL nhảy = màn cũ; DOM nhảy + SQL
+đứng = màn bịa; cả hai đứng = bơm hỏng), và ta rơi vào ô "cả hai nhảy".
+
+### Đường cơ sở — 13 tác vụ thật, chấm theo KẾT CỤC
+
+**11 ĐẠT · 1 CHẶN-ĐÚNG · 1 cụm HỎNG.**
+
+| mã | tác vụ | đọc được | oracle | phán quyết |
+|---|---|---|---|---|
+| T01 | số máy FUYU-F | 549 | SQL 549 | ĐẠT |
+| T02 | ba mức tuổi cộng = tổng máy | 0+0+549 | 549 | ĐẠT |
+| T03 | phân bổ tuổi khớp CSDL | 0 / 0 / 549 | 0 / 0 / 549 | ĐẠT |
+| T04 | máy ngừng khai thác | 0 | 0 | ĐẠT |
+| T05 | đổi sang QATD-A (đo **hai lượt**) | 549 → 371 | 371 | ĐẠT |
+| T06/T07/T08 | line 526: máy / trạm / tên | 39 · 39 · "Line 4 tang 3" | 39 · 39 · như vậy | ĐẠT |
+| T10 | bật bản 2D, số máy không đổi | 549 → 549 | 549 | ĐẠT |
+| T11 | `/twin/line/999999` | `line-khong-mo-duoc` | phải báo tử tế | ĐẠT |
+| T13b | **nhánh 2D của bản vá `8875915f3`** | `fill-opacity` **1 → 0,6**, **176/176** rect | dải `tuoi` → `cu` | ĐẠT |
+| T12 | **đối chứng**: `qatd_khonggan` mở `/twin` | *"Your account is not assigned to any factory"*, 0 canvas | 0 máy | **CHẶN-ĐÚNG** |
+| T09 | bấm khối máy trên cảnh | xem Pareto | | **cụm HỎNG** |
+
+### Bốn lần phép đo CỦA TÔI tự sinh ra phát hiện giả — cùng một chỗ
+
+1. **Oracle sai màn**: đo `ngan-ma-may` trên `/twin/line/526`, nhưng `NganXuLy` chỉ được dựng ở
+   `TwinVanHanh` / `TwinMay`. Bộ chọn **định nghĩa ra** kết cục `null` (đúng lớp PH-38).
+2. **Oracle sai DẤU**: chấm bản 2D bằng "pixel TỐI ĐI", chép nguyên thước của bản 3D. Ở 3D `doMo`
+   nhân vào **màu vật liệu** (nhạt = tối đi); ở 2D nó là `fill-opacity` của `<rect>` trên **nền
+   sáng** (nhạt = **sáng lên**). Số "2001 tối / 1649 sáng" vì thế phán quyết được **0**. Thay bằng
+   oracle thuộc-tính-đã-render ⇒ **176/176 rect đổi `1 → 0,6`**, dứt khoát.
+3. **Tâm bbox ≠ tâm bấm**: dùng tâm `hopKhoiMay` để bấm ⇒ **0/11 ĐẠT**. Dùng tâm chiếu `dsMay()`
+   mà chính sản phẩm và e2e dùng ⇒ **7/8 ĐẠT**. Với đích 3–5 px, sai số phép chiếu đủ để rơi
+   sang máy bên cạnh.
+4. **Đo nhầm cảnh**: đo cơ chế của T1g trên cảnh mặc định của `qatd_admin` (45 máy, 0 nhãn) — ở
+   đó **không tồn tại** ca "máy bị nhãn máy khác đè" để mà đo.
+
+### Pareto — nguyên nhân × bằng chứng
+
+| # | nguyên nhân | bằng chứng | ablation |
+|---|---|---|---|
+| 1 | **Nhãn máy bị lớp phủ DOM che ở khung nhỏ.** `__demNhan` @1280×720 FUYU-F: `ve=1` / `tong=182`, `ngoaiKhung=0 · chongLap=0 · vuotTran=0 · vuotMep=0`, **`biChe=5`**, `soLopPhuDom=7`. Chế độ mặc định là *"abnormal names only"* nên 5/6 nhãn bị che **chính là nhãn máy đang bất thường** | e2e `twin-dot47` **T1c ĐỎ** | **KHÔNG do bản vá vòng 1** |
+| 2 | **Đích bấm dưới ngưỡng WCAG.** `/twin` FUYU-F: trung vị **3,23 × 4,74 px = 15,25 px²**, **176/176 dưới 24×24** (AA 2.5.8) và dưới 44×44 (AAA 2.5.5). `/twin/line/526`: trung vị **8,99 × 8,32 = 74,76 px²**, **39/39 dưới ngưỡng** | T1g **ĐỎ** @1600×900; kéo-rồi-bấm 3/4 so với không-kéo 4/4 | **KHÔNG do bản vá vòng 1** |
+| 3 | **7/39 máy của line 526 chiếu RA NGOÀI canvas** ở khung mặc định (canvas `x=288, w=1288`; các hộp rơi về `x≈98–184`, tức dải NAV trái) và **không** chip / mini-map nào nói ra (`chip-su-co-ngoai-khung` = null, `mini-map` = false) | `.qa-v2/tho/T09e.json` | chưa ablation |
+
+★★★ **ABLATION — phần quan trọng nhất của vòng này.** Gỡ **đúng hai bản vá vòng 1**
+(`LopNhan.tsx` về `f232e791c^`, `LopCanhBao.tsx` về `7adc49600^`), build lại, chạy lại:
+**đúng hai ca ấy vẫn ĐỎ** (T1c @1280×720, T1g @1600×900). ⇒ **bản vá vòng 1 vô can**; hai đỏ là
+nợ CÓ SẴN. Đã hoàn nguyên; `git status` sạch; `git ls-files --eol` = `i/lf w/lf`.
+
+### Nợ vòng 1 ĐÓNG bằng phép đo, không bằng bản vá
+
+`BatchedMesh.dispose()` gọi hai lần (`LoBatchMay.tsx:310`): ép đúng đường tháo/lắp lô — đổi nhà
+máy ×4, bật/tắt bản 2D ×3 vòng, điều hướng SPA rời/về `/twin` và `/twin/line/526` ×4 —
+**0 `pageerror`, 0 `console.error`**. Không tái hiện được trên đường sản phẩm ⇒ **không vá**.
+Vá mà không có phép đo đi kèm là một lời khai.
+
+### Khuyết tật DỮ LIỆU (khác hẳn khuyết tật LOGIC — không gộp)
+
+**0/1.700 máy có `apiKey`**, trong khi **1.149 máy `registrationStatus = 'approved'`**. Máy được
+duyệt mà không có giấy tờ thì **không thể** gọi API nhịp tim — nghĩa là đường sản phẩm "máy tự bơm
+nhịp" **chưa bao giờ được chạy thật**; mọi `lastHeartbeat` trong CSDL đều do script seed ghi. Đây
+là **lỗi DỮ LIỆU**, không phải lỗi mã, và nó chạm dữ liệu của phiên khác ⇒ **chờ quyết định chủ dự
+án**, không tự ý seed lại.
+
+### Vòng sau — điều kiện mã chính xác
+
+1. `LopNhan.tsx` — nhãn bị `biChe` (đè lớp phủ DOM `[data-che-nhan]`) hiện bị **bỏ hẳn**; đã có
+   nhánh "phương án chót" (`deKhoiKhac`) cho trường hợp đè **khối máy** nhưng **không có** cho
+   trường hợp đè **lớp phủ**. Ở 1280×720 điều đó ăn **5/6** nhãn của máy bất thường.
+2. Đơn vị vẽ ở **cấp nhà máy**: Task 20 đã đổi đơn vị vẽ ở cấp **tập đoàn** (1.108 máy → 12 biểu
+   tượng). Cấp nhà máy (176 khối, trung vị 15,25 px²) chưa có bậc tương ứng.
+3. Khung nhìn màn LINE: 7/39 máy ngoài canvas mà không ai khai ra.
+
+### Cổng sau vòng đo
+
+`npm run check` (tsc --noEmit) **exit 0** · `vitest client/src/components/twin3d` **145 tệp /
+3.225 ca / 0 đỏ** · e2e `twin-dot47-bam-canh` **14/16** (2 đỏ đã truy gốc và ablation ở trên,
+`--workers=1` theo G147) · `git status` sạch.
