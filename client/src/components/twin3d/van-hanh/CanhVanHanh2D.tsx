@@ -46,7 +46,14 @@ import { useMemo, useRef } from "react";
 
 import { useOptionalTheme } from "@/components/factory-scene/useOptionalTheme";
 
-import { giaiMauCanh, mauChoTrangThai } from "../mauTrangThai";
+/*
+ * ★ `apDungMucTuoi` NHẬP THẲNG, không chép luật: đây là CÙNG hàm mà đường vẽ 3D
+ *   (`hopNhatCanh.dungMayVe`) gọi từ commit `4482aaaaa`. Hệ số 40 % vì thế vẫn
+ *   chỉ có ĐÚNG MỘT bản (`HE_SO_NHAT_DU_LIEU_CU`) — một bản sao ở đây sẽ chỉ
+ *   đồng ý tới lần sửa đầu tiên, rồi âm thầm cho hai bề mặt nhạt khác nhau về
+ *   cùng một máy (G12). Hàm là phép nhân THUẦN, không kéo DOM theo.
+ */
+import { apDungMucTuoi, giaiMauCanh, mauChoTrangThai, type MucTuoi } from "../mauTrangThai";
 import { mmSangMet } from "../heToaDo";
 import { useDatNhanSaBan2D, type MucNhan2D } from "./nhanSaBan2D";
 import {
@@ -65,6 +72,26 @@ import type { MayTrongLo } from "../loi";
  */
 const SA_BAN_2D_RONG: readonly BieuTuongToaVe[] = [];
 const SA_BAN_2D_CUM_RONG: readonly CumSaBanVe[] = [];
+/**
+ * Bản đồ mức tươi RỖNG — cùng lý lẽ hằng-module như hai hằng trên: một
+ * `new Map()` ở chỗ khai tham số dựng đối tượng MỚI mỗi render và `useMemo`
+ * phía dưới mất tác dụng ngay.
+ */
+const MUC_TUOI_2D_RONG: ReadonlyMap<number, MucTuoi> = new Map();
+
+/**
+ * Khoá bảng tra màu = **TỔ HỢP** (trạng thái × mức tươi), không phải trạng thái.
+ *
+ * ⚠ Ngăn cách bằng `\u0000` chứ không bằng `-`/`|`: khoá trạng thái là chuỗi tự
+ *   do — kiểu khai là `ReadonlyMap<number, string>`, KHÔNG phải union — nên một
+ *   ngăn cách xuất hiện trong chính giá trị sẽ gộp hai tổ hợp khác nhau vào CÙNG
+ *   một khoá: hai máy khác tuổi vẽ giống hệt nhau, im lặng, không lỗi nào nổ.
+ *   `\u0000` là ký tự Postgres KHÔNG chấp nhận trong một giá trị
+ *   `text`, nên nó không thể đến từ dữ liệu.
+ */
+function khoaToHopMau(trangThai: string, tuoi: MucTuoi): string {
+  return `${trangThai}\u0000${tuoi}`;
+}
 
 /**
  * Tên cho `<title>` của khối toà: "‹cụm› — ‹toà›", nhưng KHÔNG lặp khi tên toà
@@ -101,6 +128,36 @@ export interface CanhVanHanh2DProps {
   may: readonly MayTrongLo[];
   /** Trạng thái ĐÃ xét tuổi, tra theo `machineId` — cùng nguồn với bản 3D. */
   trangThaiTheoMay: ReadonlyMap<number, string>;
+  /**
+   * ★★★ `machineId → MỨC TƯƠI của dữ liệu` — ô THỨ HAI của `trangThaiHienThi()`,
+   * CÙNG bản đồ mà `hopNhatCanh.dungMayVe()` nhận cho bản 3D (commit `4482aaaaa`).
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * VÌ SAO **MỨC** CHỨ KHÔNG PHẢI `bayGio` + `thoiDiemDuLieu`
+   * ════════════════════════════════════════════════════════════════════════
+   * Cám dỗ là cho component nhận `bayGio` rồi tự gọi `mauTheoTuoi(tt, ts, bayGio)`.
+   * Làm vậy là buộc màu thành hàm của ĐỒNG HỒ: trang khai `Date.now()` MỖI
+   * RENDER, nên `useMemo` dưới đây sẽ dựng lại bảng tra mỗi render — tức gọi
+   * `getComputedStyle` lại từ đầu mỗi lần một gói socket về. `MucTuoi` chỉ có BA
+   * giá trị, nên nó là phép **lượng tử hoá tự nhiên** của `bayGio`: bảng tra chỉ
+   * đổi khi một máy thật sự VƯỢT NGƯỠNG — đúng lúc nó phải đổi.
+   *
+   * ⚠ Và KHÔNG áp lại luật `khong_ro` ở đây: `trangThaiHienThi` đã cưỡng chế nó ở
+   *   tầng DỮ LIỆU. Máy `ngung_khai_thac` luôn mang `tuoi = "khong_ro"`, nên một
+   *   nhánh thứ hai sẽ đẩy `doMo` 0,35 → 1 và xoá ý nghĩa "đã lùi khỏi tiền
+   *   cảnh". Cả hai bề mặt đi qua CÙNG `apDungMucTuoi`, vốn chỉ mang MỘT luật.
+   *
+   * ⚠⚠ **TUỲ CHỌN, và đó là một khe hở có thật.** Bản đồ vắng ⇒ mọi máy coi như
+   *   `tuoi` ⇒ không nhạt = hành vi trước bản vá. Bản 3D để trường này BẮT BUỘC
+   *   đúng vì lý do ấy (`ThamSoMayVe.mucTuoiTheoMay`); ở đây không làm được vì
+   *   `CanhVanHanh2D` còn được dựng ở `saBan2D.dom.test.tsx` với bộ props khác,
+   *   và đổi chúng nằm ngoài phạm vi ghi của lượt này. Chỗ gọi sản phẩm là
+   *   `TwinVanHanh.tsx` (`<CanhVanHanh2D`) — nó PHẢI truyền `mucTuoiTheoMay`,
+   *   nếu không bản 2D vẫn nói "bình thường" về máy mà bản 3D đã nói "dữ liệu
+   *   cũ". Lưới `tuoiDuLieuBan2D.dom.test.tsx` đo bề mặt này khi bản đồ CÓ được
+   *   truyền; nó KHÔNG thay được một ca ghim chỗ gọi ở trang.
+   */
+  mucTuoiTheoMay?: ReadonlyMap<number, MucTuoi>;
   /** Mã máy để hiện nhãn + đọc bằng trình đọc màn hình. */
   maTheoMay: ReadonlyMap<number, string>;
   machineIdChon: number | null;
@@ -132,6 +189,7 @@ const LE_M = 2;
 export function CanhVanHanh2D({
   may,
   trangThaiTheoMay,
+  mucTuoiTheoMay = MUC_TUOI_2D_RONG,
   maTheoMay,
   machineIdChon,
   onChonMay,
@@ -170,22 +228,43 @@ export function CanhVanHanh2D({
   const quangChu = toi ? "#0f172a" : "#ffffff";
 
   /**
-   * Phân giải màu MỘT LẦN cho mỗi trạng thái xuất hiện, không mỗi máy: mỗi lượt
-   * `giaiMauCanh` gọi `getComputedStyle`, và gọi nó 42 lần mỗi render là một
-   * reflow không cần thiết.
+   * Phân giải màu MỘT LẦN cho mỗi **TỔ HỢP** (trạng thái × mức tươi) xuất hiện,
+   * không mỗi máy: mỗi lượt `giaiMauCanh` gọi `getComputedStyle`, và gọi nó 42
+   * lần mỗi render là một reflow không cần thiết.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-09-18 — TRỤC THỨ HAI: TUỔI DỮ LIỆU (nối tiếp `4482aaaaa`)
+   * ════════════════════════════════════════════════════════════════════════
+   * Trước lượt này bảng tra chỉ có MỘT trục, nên bản 2D vẽ một máy im lặng 90
+   * giây **giống hệt** một máy vừa gửi tín hiệu — trong khi bản 3D (từ
+   * `4482aaaaa`) đã vẽ nó nhạt 40 %. Hai bề mặt của CÙNG một cảnh nói hai câu
+   * khác nhau về cùng một máy, và bản 2D là đường DỰ PHÒNG khi WebGL hỏng
+   * (`che2D = epChe2D || webglHong`), tức người dùng không rời khỏi nó được.
+   *
+   * ★ Vẫn là bảng tra theo TỔ HỢP, **không** phải bản đồ theo máy: số tổ hợp bị
+   *   chặn trên bởi (số trạng thái × 3), còn số máy thì không — ở cấp tập đoàn
+   *   đã đo được 1.108 máy. Lưới `tuoiDuLieuBan2D.dom.test.tsx` ĐẾM số lượt
+   *   `giaiMauCanh` để câu này không trôi thành lời khai.
+   * ★ `apDungMucTuoi` áp SAU `mauChoTrangThai`, trên KẾT QUẢ — y hệt `dungMayVe`:
+   *   `doMo` 0,35 của `ngung_khai_thac` được NHÂN (giữ tỉ lệ), không bị đè.
+   * ⚠ Khoá `useMemo` phải gồm `mucTuoiTheoMay`, nếu không bảng tra đóng băng ở
+   *   mức tươi của lần dựng đầu và không máy nào bao giờ nhạt đi.
    */
-  const mauTheoTrangThai = useMemo(() => {
+  const mauTheoToHop = useMemo(() => {
     const m = new Map<string, { mau: string; doMo: number; gachCheo: boolean }>();
-    for (const tt of new Set(trangThaiTheoMay.values())) {
-      const kieu = mauChoTrangThai(tt);
-      m.set(tt, {
+    for (const [machineId, tt] of trangThaiTheoMay) {
+      const tuoi = mucTuoiTheoMay.get(machineId) ?? "tuoi";
+      const khoa = khoaToHopMau(tt, tuoi);
+      if (m.has(khoa)) continue;
+      const kieu = apDungMucTuoi(mauChoTrangThai(tt), tuoi);
+      m.set(khoa, {
         mau: giaiMauCanh(kieu.token) ?? "#94a3b8",
         doMo: kieu.doMo,
         gachCheo: kieu.hoaTiet === "gach_cheo",
       });
     }
     return m;
-  }, [trangThaiTheoMay]);
+  }, [trangThaiTheoMay, mucTuoiTheoMay]);
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -470,7 +549,19 @@ export function CanhVanHanh2D({
 
       {veSaBan ? null : may.map((m) => {
         const tt = trangThaiTheoMay.get(m.machineId) ?? "khong_ro";
-        const kieu = mauTheoTrangThai.get(tt) ?? { mau: "#94a3b8", doMo: 1, gachCheo: true };
+        /*
+         * ⚠ Mặc định `"tuoi"` (KHÔNG nhạt) chứ không phải `"cu"`: máy vắng khỏi
+         *   bản đồ mức tươi là máy ta KHÔNG BIẾT tuổi, và vẽ nó nhạt là khẳng
+         *   định một điều chưa đo được. Luật "không biết" đã do `trangThaiTheoMay`
+         *   mang (`khong_ro`) — đúng chỗ nó được cưỡng chế. Cùng mặc định mà
+         *   `dungMayVe` dùng cho bản 3D.
+         */
+        const tuoi = mucTuoiTheoMay.get(m.machineId) ?? "tuoi";
+        const kieu = mauTheoToHop.get(khoaToHopMau(tt, tuoi)) ?? {
+          mau: "#94a3b8",
+          doMo: 1,
+          gachCheo: true,
+        };
         const rongM = mmSangMet(m.kichThuocMm.rongMm);
         const sauM = mmSangMet(m.kichThuocMm.sauMm);
         const daChon = m.machineId === machineIdChon;

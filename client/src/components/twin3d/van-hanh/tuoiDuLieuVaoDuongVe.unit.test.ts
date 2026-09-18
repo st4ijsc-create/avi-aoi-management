@@ -176,5 +176,52 @@ describe("★★★ BA TRANG cùng nối bản đồ MỨC TUỔI vào `dungMayV
     );
     // ③ và thật sự đi vào chỗ lắp ráp.
     expect(src).toMatch(/dungMayVe\(\{[\s\S]{0,1200}?mucTuoiTheoMay,/);
+    /*
+     * ④ ★★★ VÀ CÓ MẶT TRONG **MẢNG DEPS** — không chỉ trong đối số.
+     *
+     * Đây là khe mà nghiệm thu sống 2026-09-18 bắt được: bản vá đưa
+     * `mucTuoiTheoMay` vào đối số của `dungMayVe` nhưng bỏ quên nó ở deps, nên
+     * mức tuổi lật mà `useMemo` không dựng lại ⇒ `may` giữ nguyên tham chiếu ⇒
+     * `LoBatchMay` không `setColorAt` ⇒ **0 px đổi trong 95 giây**, và mọi khung
+     * vẽ sau đó đều vẽ lại đúng màu cũ. Hệ quả ấy được đo BẰNG GIÁ TRỊ ở
+     * `mucTuoiXinKhung.dom.test.tsx`; ca này ghim chính dòng deps để lỗi không
+     * quay lại lặng lẽ.
+     */
+    const i = src.indexOf("const mayVe = useMemo");
+    const doan = src.slice(i, src.indexOf("\n  );", i));
+    const deps = doan.slice(doan.lastIndexOf("["), doan.indexOf("]", doan.lastIndexOf("[")));
+    expect(deps, `mảng deps của \`mayVe\` trong ${ten} phải gồm \`mucTuoiTheoMay\``).toContain(
+      "mucTuoiTheoMay",
+    );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ HAI BỀ MẶT MỘT CẢNH — bản 2D phải nói CÙNG câu với bản 3D              */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * `CanhVanHanh2D` (bản dự phòng khi WebGL hỏng) vẽ **cùng cảnh** và nay đã biết
+ * luật tuổi. Nhưng prop `mucTuoiTheoMay` của nó **TUỲ CHỌN** (mặc định là bản đồ
+ * RỖNG ⇒ mọi máy coi như `tuoi`), nên chỗ gọi quên truyền thì **không cổng nào
+ * đỏ** — và người dùng rơi về 2D sẽ thấy máy im lặng 90 giây hiện "bình thường"
+ * trong khi bản 3D đã nói "dữ liệu cũ". Đúng lớp lỗi mà `trungThucDuLieu.ts:23`
+ * nói tới: hai bề mặt của MỘT sự thật nói hai câu.
+ *
+ * ⚠ "Mặc định mới là hàng rào" — một giá trị mặc định im lặng biến ca "quên nối"
+ *   thành ca "đã nối, và kết quả là không có gì cũ". Docblock cảnh báo được;
+ *   docblock không phải cổng. Ca này là cổng.
+ */
+describe("★★★ `<CanhVanHanh2D>` ở TwinVanHanh phải NHẬN bản đồ mức tuổi", () => {
+  it("chỗ dựng truyền `mucTuoiTheoMay={mucTuoiTheoMay}`, không bỏ trống cho mặc định rỗng", () => {
+    const src = readFileSync(resolve(GOC, "src/pages/TwinVanHanh.tsx"), "utf8");
+    const i = src.indexOf("<CanhVanHanh2D");
+    expect(i, "không tìm thấy chỗ dựng `<CanhVanHanh2D` trong TwinVanHanh.tsx").toBeGreaterThan(-1);
+    const the = src.slice(i, src.indexOf("\n            />", i));
+    // Bản 3D lấy mức tuổi từ CHÍNH biến này (`:1395`) — hai bề mặt PHẢI cùng nguồn.
+    expect(the).toContain("mucTuoiTheoMay={mucTuoiTheoMay}");
+    // Truyền một bản đồ dựng tại chỗ là mở lại đúng khe: hai nguồn, hai câu trả lời.
+    expect(the).not.toMatch(/mucTuoiTheoMay=\{\s*new Map/);
+    expect(the).not.toMatch(/mucTuoiTheoMay=\{\s*undefined\s*\}/);
   });
 });

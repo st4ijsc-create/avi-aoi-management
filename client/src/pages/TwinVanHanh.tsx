@@ -1606,7 +1606,10 @@ export function ThanTwinVanHanh() {
         tiLePhaNgoaiPhamVi: TI_LE_PHA_NGOAI_PHAM_VI,
         congCu: { mauCss, phaVeNen, mauChoTrangThai, hinhKhoiCho },
       }),
-    [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, gocToa, phamVi, factoryId, mauNenCanh],
+    // ★ `mucTuoiTheoMay` PHẢI có ở đây: thiếu nó thì mức tuổi lật mà memo không dựng lại ⇒ `may`
+    //   giữ nguyên tham chiếu ⇒ `LoBatchMay` không `setColorAt` ⇒ mọi khung sau đó
+    //   vẽ lại ĐÚNG MÀU CŨ. Đo sống 2026-09-18: **0 px đổi trong 95 giây**.
+    [mayVanHanh, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, mucTuoiTheoMay, gocToa, phamVi, factoryId, mauNenCanh],
   );
 
   /*
@@ -4321,6 +4324,10 @@ export function ThanTwinVanHanh() {
             <CanhVanHanh2D
               may={mayVeTatCa}
               trangThaiTheoMay={trangThaiTheoMay}
+              /* ★★★ CÙNG bản đồ mức tuổi mà bản 3D dùng (`:1395`) — prop bên kia TUỲ CHỌN
+                  (mặc định bản đồ RỖNG ⇒ mọi máy coi như `tuoi`), nên quên dòng này là để 2D
+                  nói "bình thường" về máy mà 3D đã nói "dữ liệu cũ" — và KHÔNG cổng nào đỏ. */
+              mucTuoiTheoMay={mucTuoiTheoMay}
               maTheoMay={maTheoMay}
               machineIdChon={machineIdNgan}
               onChonMay={chonMay}

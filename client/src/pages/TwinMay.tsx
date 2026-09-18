@@ -537,7 +537,8 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
         tiLePhaNgoaiPhamVi: TI_LE_PHA_NGOAI_PHAM_VI,
         congCu: { mauCss, phaVeNen, mauChoTrangThai, hinhKhoiCho },
       }),
-    [hangXom, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, gocToa, machineId, factoryId, mauNenCanh],
+    // ★ `mucTuoiTheoMay` PHẢI có ở đây — xem chú thích cùng chỗ ở `TwinVanHanh.tsx`.
+    [hangXom, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, mucTuoiTheoMay, gocToa, machineId, factoryId, mauNenCanh],
   );
 
   /**

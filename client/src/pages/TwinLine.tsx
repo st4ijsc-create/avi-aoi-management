@@ -655,7 +655,8 @@ export function ThanManLine({
         tiLePhaNgoaiPhamVi: TI_LE_PHA_NGOAI_PHAM_VI,
         congCu: { mauCss, phaVeNen, mauChoTrangThai, hinhKhoiCho },
       }),
-    [mayLine, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, gocToa, lineId, factoryId, mauNenCanh],
+    // ★ `mucTuoiTheoMay` PHẢI có ở đây — xem chú thích cùng chỗ ở `TwinVanHanh.tsx`.
+    [mayLine, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, mucTuoiTheoMay, gocToa, lineId, factoryId, mauNenCanh],
   );
 
   /**
