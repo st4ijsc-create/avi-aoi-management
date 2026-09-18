@@ -62,6 +62,86 @@ const connectedMachines: Map<number, { socketId: string; ipAddress: string; last
 const onlineMachineCodesMap: Map<number, string> = new Map();
 const presence = getMachinePresenceStore();
 
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ NHỊP TIM QUA SOCKET PHẢI BỀN HOÁ XUỐNG `machines.lastHeartbeat`
+// ════════════════════════════════════════════════════════════════════════════
+// Trước bản vá này, `machine:heartbeat` chỉ chạm HAI nơi SỐNG THEO TIẾN TRÌNH:
+// `connectedMachines` (Map trong RAM) và `machinePresenceStore` (TTL, Redis/bộ
+// nhớ). Cột `machines.lastHeartbeat` KHÔNG BAO GIỜ được ghi trên đường socket —
+// trong khi CẢ HAI nơi quyết định "máy còn sống hay `khong_ro`" đều đọc đúng cột
+// ấy: `server/services/trangThaiMayTuoi.ts` (`NGUONG_TRANG_THAI_TUOI_MS`, 5 phút)
+// và `client/src/components/twin3d/mauTrangThai.ts` (`NGUONG_CU_MS`, cùng 5 phút).
+// ⇒ một máy THẬT nối bằng socket.io và đập nhịp đều đặn vẫn hoá khối xám gạch
+// chéo sau 5 phút. Đường REST/tRPC không dính lỗi này (23 chỗ đã gọi
+// `db.updateMachineHeartbeat` sau `authenticateMachine`).
+//
+// ── VÌ SAO 45 000 ms, KHÔNG PHẢI MỘT SỐ TRÒN CHO ĐẸP ────────────────────────
+// Hai ràng buộc ngược chiều nhau, cả hai đều là SỐ:
+//
+//  (a) TƯƠI. Tuổi xấu nhất của `machines.lastHeartbeat` trên một máy KHOẺ là
+//      W + H, với W = cửa sổ tiết lưu và H = chu kỳ nhịp của máy (nhịp đầu tiên
+//      SAU khi cửa sổ mở mới ghi). Chu kỳ tham chiếu của repo là 30 000 ms
+//      (`EDGE_HEARTBEAT_INTERVAL_MS`, `EDGE_GATEWAY_HEARTBEAT_INTERVAL_MS`).
+//      Đặt trần "tuổi xấu nhất ≤ 1/4 ngưỡng tươi" ⇒ W ≤ 300 000/4 − 30 000 = 45 000.
+//      Với W = 45 000: tuổi xấu nhất 75 000 ms = 25 % ngưỡng, còn dư 225 000 ms —
+//      máy khoẻ vẫn có thể MẤT THÊM 7 nhịp 30 s liên tiếp mà chưa rơi `khong_ro`.
+//
+//  (b) TẢI. Tiết lưu chặn TRẦN ghi ở 1 lượt/máy/W, KHÔNG phụ thuộc máy đập nhanh
+//      cỡ nào: 1 700 máy ⇒ ≤ 1 700/45 ≈ 37,8 UPDATE/s. Một tác nhân đập 1 s/nhịp
+//      (có thật ở vài dòng máy) sẽ là 1 700 UPDATE/s nếu không tiết lưu — tiết lưu
+//      cắt đúng 45 lần. Ở chu kỳ 30 s chuẩn, nó gộp 2 nhịp thành 1 lượt ghi
+//      (ghi thực tế mỗi 60 s).
+//
+// Vì sao KHÔNG nhỏ hơn: W ≤ 30 000 = H ⇒ tiết lưu KHÔNG BAO GIỜ nổ với máy chuẩn
+// (0 tác dụng), mà trần ghi lại tăng gấp rưỡi trở lên.
+// Vì sao KHÔNG lớn hơn: W = 60 000/150 000 đẩy tuổi xấu nhất lên 30 %/60 % ngưỡng
+// mà chỉ đổi lại 1,33×/3,3× ít ghi hơn — mua rất ít bằng phần lề an toàn.
+//
+// Mẫu lấy từ `server/services/mqttService.ts` (R-2a, `MQTT_HEARTBEAT_THROTTLE_MS`
+// ~dòng 1578): cùng hình dạng "Map machineId→mốc ghi cuối + so cửa sổ". KHÁC một
+// điểm có chủ ý: MQTT mặc định 0 (TẮT) để giữ NGUYÊN VĂN hành vi cũ ghi-mỗi-ping;
+// ở đây KHÔNG có hành vi cũ nào để giữ (đường này chưa từng ghi), nên mặc định là
+// BẬT. `SOCKET_HEARTBEAT_THROTTLE_MS=0` vẫn là lối tắt tiết lưu cho người vận hành,
+// cùng nghĩa với con số 0 bên MQTT.
+export const NGUONG_TIET_LUU_NHIP_TIM_SOCKET_MS = 45_000;
+
+/** machineId → `Date.now()` của lượt GHI DB gần nhất (không phải của nhịp gần nhất). */
+const lanGhiNhipTimCuoi: Map<number, number> = new Map();
+
+function nguongTietLuuNhipTimMs(): number {
+  const raw = process.env.SOCKET_HEARTBEAT_THROTTLE_MS;
+  if (raw === undefined || raw.trim() === "") return NGUONG_TIET_LUU_NHIP_TIM_SOCKET_MS;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : NGUONG_TIET_LUU_NHIP_TIM_SOCKET_MS;
+}
+
+/**
+ * Bền hoá nhịp tim xuống `machines.lastHeartbeat` — TIẾT LƯU, KHÔNG CHẶN, KHÔNG NÉM.
+ *
+ * ⚠ Dùng LẠI `db.updateMachineHeartbeat` (`server/db/hierarchy.ts:813`) — đúng một bản cài đặt
+ *   của luật này trong repo; KHÔNG viết câu UPDATE thứ hai (hai bản rồi sẽ lệch nhau).
+ * ⚠ Mốc được ghi TRƯỚC khi lượt ghi hoàn tất, và lượt HỎNG KHÔNG xoá mốc: nếu xoá, một sự cố DB
+ *   sẽ biến mọi nhịp thành một lượt thử lại ⇒ đúng cơn bão ghi mà tiết lưu sinh ra để chặn.
+ */
+function ghiNhipTimXuongDb(machineId: number): void {
+  const nguong = nguongTietLuuNhipTimMs();
+  const bayGio = Date.now();
+  if (nguong > 0) {
+    const lanCuoi = lanGhiNhipTimCuoi.get(machineId) ?? 0;
+    if (bayGio - lanCuoi < nguong) return; // trong cửa sổ → gộp, bỏ lượt ghi
+  }
+  lanGhiNhipTimCuoi.set(machineId, bayGio);
+  try {
+    void Promise.resolve(db.updateMachineHeartbeat(machineId)).catch((err: any) =>
+      console.error("[Socket.io] updateMachineHeartbeat failed:", err?.message ?? err),
+    );
+  } catch (err: any) {
+    // Không thể xảy ra với một `async function`, nhưng handler nhịp tim là đường NÓNG:
+    // nó không được chết vì bất kỳ hình dạng lỗi nào của tầng dưới.
+    console.error("[Socket.io] updateMachineHeartbeat threw:", err?.message ?? err);
+  }
+}
+
 export interface InspectionAlert {
   type: "NG_ALERT" | "YIELD_WARNING" | "NEW_INSPECTION";
   machineId: number;
@@ -315,6 +395,10 @@ export function initializeSocket(server: HttpServer): Server {
           const machineCode = info.machineCode;
           connectedMachines.delete(machineId);
           onlineMachineCodesMap.delete(machineId);
+          // R-2a (mẫu mqttService:1528) — giải phóng sổ tiết lưu: máy nối LẠI phải được ghi ngay
+          // ở nhịp đầu, không phải chờ hết cửa sổ cũ (nếu chờ, tuổi xấu nhất thành 2W + H).
+          // Không mở ra cơn bão mới: mỗi lượt nối lại vốn đã ghi một hàng `machine_status_logs`.
+          lanGhiNhipTimCuoi.delete(machineId);
           // Shared-store mirror: drop presence, but only if THIS socket still
           // owns it (a machine that migrated to another instance keeps its newer
           // entry — see setOffline's socketId guard). Fire-and-forget.
@@ -386,6 +470,11 @@ export function initializeSocket(server: HttpServer): Server {
       if (machineInfo && machineInfo.socketId === socket.id) {
         machineInfo.lastHeartbeat = new Date();
         connectedMachines.set(data.machineId, machineInfo);
+        // ★ BỀN HOÁ: cột `machines.lastHeartbeat` là thứ DUY NHẤT mọi màn twin đọc để biết máy
+        // còn tươi hay `khong_ro`. Có tiết lưu, không chặn, không ném — xem `ghiNhipTimXuongDb`.
+        // Nằm SAU hàng rào danh tính `machineInfo.socketId === socket.id` ở trên (dòng ngay trên
+        // cùng khối `if`): một socket lạ mạo danh machineId KHÔNG ghi được gì.
+        ghiNhipTimXuongDb(data.machineId);
         // Shared-store mirror: refresh TTL so a live machine never self-expires.
         void presence.refresh({
           machineId: data.machineId,
