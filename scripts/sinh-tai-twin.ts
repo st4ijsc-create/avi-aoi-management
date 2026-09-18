@@ -858,6 +858,46 @@ async function main(): Promise<void> {
         `\n    Qua han, 'mucTuoi' quy ve 'khong_ro' va MOI MAY hoa XAM — WIP/andon van con.` +
         `\n    Lam tuoi lai: 'npx tsx scripts/sinh-tai-twin.ts --chi-nhip'`,
     );
+
+    /*
+     * ★★★ 2026-09-18 — KHOANG TRONG SO DANG KY: may sinh o day KHONG di qua cua duyet.
+     *
+     * `INSERT INTO machines` o tren (`:455`) khong ghi `registrationStatus`, nen may roi ve
+     * mac dinh `pending`. Man Twin lai KHONG loc theo cot do — no ve moi may cua nha may.
+     * Ket qua do duoc 2026-09-18: `/twin` FUYU-F hien **549 may dang van hanh** trong khi so
+     * dang ky noi ca 549 **chua ai duyet**, va vi chua duyet nen **khong may nao co giay to** —
+     * tuc duong san pham "may tu bom nhip tim" KHONG THE chay, moi `lastHeartbeat` deu do
+     * chinh script nay ghi thang. Mot doi may nhin nhu that ma khong the noi chuyen that.
+     *
+     * KHONG tu ghi `registrationStatus='approved'` o day: lam the se de ra dung khuyet tat
+     * vua chua o cho khac — 1.108 may QATD 'approved' ma trang tay giay to, vi co duoc lat
+     * bang SQL trong khi `machine.approve` moi la noi phat giay to. Co ma khong giay to con
+     * te hon `pending`: no NOI DOI rang may da qua cua.
+     *
+     * ⇒ Neu co may chua duyet thi NOI RA kem dung lenh phai chay. Doi soat, khong im lang.
+     */
+    const dk = await sql<{ chua: string; tong: string }[]>`
+      SELECT count(*) FILTER (WHERE m."registrationStatus" IS DISTINCT FROM 'approved')::text AS chua,
+             count(*)::text AS tong
+      FROM machines m
+      JOIN stations s ON m."stationId" = s.id
+      JOIN production_lines l ON s."lineId" = l.id
+      JOIN workshops w ON l."workshopId" = w.id
+      JOIN factories f ON w."factoryId" = f.id
+      WHERE f.code = ANY(${mas})
+    `;
+    const chuaDuyet = Number(dk[0]?.chua ?? 0);
+    if (chuaDuyet > 0) {
+      console.log(
+        `\n  ⚠ SO DANG KY: ${chuaDuyet}/${dk[0]?.tong} may CHUA DUYET (registrationStatus != 'approved').` +
+          `\n    Man Twin van ve chung nhu may dang chay, nhung chung KHONG co giay to nen khong` +
+          `\n    goi duoc /api/machine/heartbeat — nhip tim tren man se mai la do script ghi ho.` +
+          `\n    Dua chung qua dung cua: duyet bang 'machine.approve' (tRPC, vai admin), roi` +
+          `\n    'npx tsx scripts/issue-machine-keys.ts --dry-run' phai bao CAN CAP: 0.`,
+      );
+    } else {
+      console.log(`\n  ✔ SO DANG KY: ${dk[0]?.tong}/${dk[0]?.tong} may da duyet.`);
+    }
   }
 
   await sql.end();
