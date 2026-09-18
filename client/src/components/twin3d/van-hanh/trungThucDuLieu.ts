@@ -20,10 +20,39 @@
  * Ba ô xanh đó là toàn bộ lớp lỗi mà NT-3 sinh ra để chặn, và ở DB này nó KHÔNG
  * phải rủi ro lý thuyết — nó là trạng thái mặc định.
  *
- * ⇒ `trangThaiHienThi()` cho `khong_ro` THẮNG mọi trạng thái được báo cáo. Việc
- *   đó đã được `mauTrangThai.mauTheoTuoi` cưỡng chế ở tầng màu; module này cưỡng
- *   chế cùng luật ở tầng DỮ LIỆU, để cả bảng DOM, dải cảnh báo và ô đếm cũng
- *   không thể nói khác cảnh 3D.
+ * ⇒ `trangThaiHienThi()` cho `khong_ro` THẮNG mọi trạng thái được báo cáo.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ HAI TRỤC, VÀ CHÍNH XÁC NƠI MỖI TRỤC ĐƯỢC CƯỠNG CHẾ (đính chính 2026-09-18)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản trước của đoạn này viết: *"việc đó đã được `mauTrangThai.mauTheoTuoi` cưỡng
+ * chế ở tầng màu"*. Câu ấy **SAI, và sai suốt nhiều đợt**: đo bằng grep trên
+ * `client/src server shared` ngày 2026-09-18, `mauTheoTuoi` có **0 nơi gọi trong
+ * mã sản phẩm** — chỉ dòng khai của chính nó và 5 lượt trong lưới. Một docblock
+ * khẳng định sự cưỡng chế bởi một hàm **không ai gọi** là thứ nguy hiểm hơn cả
+ * việc không có câu nào: nó làm người đọc sau ngừng đi tìm.
+ *
+ * Hậu quả người dùng đo được: mức `cu` (60–300 s) KHÔNG tới được đường vẽ, nên
+ * **một máy im lặng 90 giây được vẽ giống hệt một máy vừa gửi tín hiệu**; khác
+ * biệt duy nhất nổi lên là ô đếm {@link demTheoTuoi} — một con số ở panel, trong
+ * khi 1.108 khối trên cảnh nói "bình thường".
+ *
+ * NAY, ĐÚNG HAI ĐIỂM NỐI — ai gỡ một trong hai thì câu này thành sai NHÌN THẤY ĐƯỢC:
+ *   · tầng DỮ LIỆU  — `trangThaiHienThi()` ngay dưới đây: `khong_ro` (> 300 s) và
+ *     `ngung_khai_thac` (`isActive=false`) thắng giá trị máy khai. Ba trang rút ô
+ *     `.trangThai` **và ô `.tuoi`** thành hai bản đồ song song
+ *     (`TwinVanHanh.tsx` `mucTuoiTheoMayTho` · `TwinLine.tsx` · `TwinMay.tsx`).
+ *   · tầng MÀU      — `van-hanh/hopNhatCanh.ts` `dungMayVe()` gọi
+ *     `mauTrangThai.apDungMucTuoi(kieu, mucTuoi)`: mức `cu` ⇒ `doMo` × 0,6, và
+ *     `loi/LoBatchMay.tsx` đổi `doMo < 1` thành màu nhạt trên khối máy.
+ *
+ * ⚠ `apDungMucTuoi` cố ý **KHÔNG** áp lại luật `khong_ro` (đã áp ở tầng dữ liệu):
+ *   áp hai lần sẽ nuốt `ngung_khai_thac` — máy ngừng khai thác mang `tuoi` =
+ *   `"khong_ro"`, nên `doMo` 0,35 của nó sẽ bị đẩy về 1. Ca ĐỐI CHỨNG NGƯỢC ghim
+ *   điều đó ở `tuoiDuLieuVaoDuongVe.unit.test.ts`.
+ *
+ * Module này cưỡng chế luật ở tầng DỮ LIỆU, để cả bảng DOM, dải cảnh báo và ô đếm
+ * cũng không thể nói khác cảnh 3D.
  *
  * ★ Module THUẦN (RB-8.1): không three, không react, không `Date.now()` ẩn —
  *   `bayGio` luôn là THAM SỐ, nên test tất định và không phụ thuộc đồng hồ máy.

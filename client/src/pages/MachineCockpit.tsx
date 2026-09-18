@@ -336,6 +336,66 @@ function Model3DCanvas({ uri }: { uri: string | null }) {
   );
 }
 
+/**
+ * ★★★ THĂM DÒ WEBGL — **VÀ TRẢ LẠI NGỮ CẢNH ĐÃ MƯỢN.**
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * NÓ TRẢ LỜI ĐÚNG MỘT CÂU
+ * ════════════════════════════════════════════════════════════════════════════
+ * `true` = trình duyệt dựng được ngữ cảnh WebGL. `Model3DPane` dùng thẳng nó làm `webglOk`; `false` ⇒ ngăn 3D thay bằng câu "3D is not available in this browser.".
+ *
+ * ⚠ Hàm này KHÔNG được đổi câu trả lời ấy. Mọi nhánh giữ nguyên kết cục của
+ *   bản cũ (thăm dò nội tuyến trong `useEffect`):
+ *     · `getContext` ném        ⇒ `false`   (bản cũ: nhánh `catch`)
+ *     · `getContext` trả `null` ⇒ `false`
+ *     · có ngữ cảnh              ⇒ `true`
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO GIẢI PHÓNG — VÀ VÌ SAO **KHÔNG** PHẢI VÌ MÀN ĐANG ĐEN
+ * ════════════════════════════════════════════════════════════════════════════
+ * Phép thăm dò lấy một ngữ cảnh WebGL **THẬT** trên một canvas RỜI (không bao
+ * giờ gắn vào tài liệu). Trình duyệt giới hạn số ngữ cảnh WebGL sống đồng thời
+ * và khi cạn thì **trục xuất cái CŨ NHẤT trước**.
+ *
+ * ★ Đo được trên bản đang chạy (điều hướng SPA 5 vòng × 4 màn 3D, kiểm kê bằng
+ *   `WeakRef`): **15 ngữ cảnh tạo ra · số SỐNG không bao giờ quá 2 · còn 0 sau
+ *   GC**. Tức ở quy mô ấy KHÔNG tích luỹ và KHÔNG có canvas đen.
+ *
+ * ⇒ Đây là **NỢ VỆ SINH**, không phải lỗi đang xảy ra. Thứ nó loại bỏ là một
+ *   KHẢ NĂNG: dưới tải nặng hơn, ngữ cảnh bị trục xuất có thể là ngữ cảnh của
+ *   **cảnh đang vẽ** (vì nó cũ hơn ngữ cảnh thăm dò vừa mượn). Trả lại ngay
+ *   thứ mình chỉ mượn để hỏi một câu hỏi là cách rẻ nhất để bỏ khả năng ấy.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * TRẢ LẠI **SAU** KHI ĐÃ ĐỌC XONG, VÀ TRONG `try` RIÊNG
+ * ════════════════════════════════════════════════════════════════════════════
+ * · Kết quả đã CHỐT ở `gl` trước khi giải phóng ⇒ không lối nào đổi câu trả lời.
+ * · `getExtension("WEBGL_lose_context")` có thể trả `null` (không có extension)
+ *   ⇒ optional chaining, và một lỗi ở bước dọn KHÔNG được kéo theo phép thăm dò
+ *   (nếu dùng chung `try` với bản cũ, một lỗi ở đây sẽ nuốt luôn `setState`).
+ * · `getContext` trả `null` ⇒ không có gì để trả lại; đó CHÍNH LÀ nhánh
+ *   "webglOk = hỏng" nên tuyệt đối không ném lỗi ở đó.
+ *
+ * Lưới: `webglThamDoGiaiPhong.dom.test.tsx`.
+ */
+export function thamDoWebGL(): boolean {
+  let gl: unknown = null;
+  try {
+    const c = document.createElement("canvas");
+    gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+  } catch {
+    return false;
+  }
+  /* ── Trả lại ngữ cảnh vừa mượn. Kết quả đã chốt ở `gl`; nhánh này chỉ dọn. ── */
+  try {
+    (gl as WebGLRenderingContext | null)?.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    /* Không có extension, hoặc gọi hỏng ⇒ bỏ qua: dọn dẹp không được làm
+       hỏng phép thăm dò (bẫy 3). */
+  }
+  return !!gl;
+}
+
 function Model3DPane({
   model3d, name, t, canRegister, uploading, onUploadFile, embedded = false,
 }: {
@@ -351,10 +411,7 @@ function Model3DPane({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [webglOk, setWebglOk] = useState(true);
   useEffect(() => {
-    try {
-      const el = document.createElement("canvas");
-      setWebglOk(!!(el.getContext("webgl") || el.getContext("experimental-webgl")));
-    } catch { setWebglOk(false); }
+    setWebglOk(thamDoWebGL());
   }, []);
 
   const uri = model3d.available ? model3d.value?.modelUri ?? null : null;

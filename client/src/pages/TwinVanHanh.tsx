@@ -86,7 +86,7 @@ import {
   type CumSaBanVe,
 } from "@/components/twin3d/van-hanh/hopNhatCanh";
 import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
-import { mauChoTrangThai } from "@/components/twin3d/mauTrangThai";
+import { mauChoTrangThai, type MucTuoi } from "@/components/twin3d/mauTrangThai";
 import { mauCss } from "@/components/twin3d/van-hanh/mauThree";
 // ── T-2 (§15.5.2) — lắp hình học Line, HÀM THUẦN dùng chung cho cả ba màn ──
 import { dungHinhLine } from "@/components/twin3d/van-hanh/canhLine";
@@ -341,6 +341,66 @@ function nhanHangSucKhoe(hang: HangSucKhoe, t: (k: string, d: string) => string)
     case "chua_do":
       return t("twin3d.may.hang.chuaDo", "chưa đo");
   }
+}
+
+/**
+ * ★★★ THĂM DÒ WEBGL — **VÀ TRẢ LẠI NGỮ CẢNH ĐÃ MƯỢN.**
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * NÓ TRẢ LỜI ĐÚNG MỘT CÂU
+ * ════════════════════════════════════════════════════════════════════════════
+ * `true` = trình duyệt dựng được ngữ cảnh WebGL. `ThanTwinVanHanh` dùng PHỦ ĐỊNH của nó làm `webglHong`, và `che2D = epChe2D || webglHong` (§9.9) rơi về bản 2D.
+ *
+ * ⚠ Hàm này KHÔNG được đổi câu trả lời ấy. Mọi nhánh giữ nguyên kết cục của
+ *   bản cũ (thăm dò nội tuyến trong `useEffect`):
+ *     · `getContext` ném        ⇒ `false`   (bản cũ: nhánh `catch`)
+ *     · `getContext` trả `null` ⇒ `false`
+ *     · có ngữ cảnh              ⇒ `true`
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO GIẢI PHÓNG — VÀ VÌ SAO **KHÔNG** PHẢI VÌ MÀN ĐANG ĐEN
+ * ════════════════════════════════════════════════════════════════════════════
+ * Phép thăm dò lấy một ngữ cảnh WebGL **THẬT** trên một canvas RỜI (không bao
+ * giờ gắn vào tài liệu). Trình duyệt giới hạn số ngữ cảnh WebGL sống đồng thời
+ * và khi cạn thì **trục xuất cái CŨ NHẤT trước**.
+ *
+ * ★ Đo được trên bản đang chạy (điều hướng SPA 5 vòng × 4 màn 3D, kiểm kê bằng
+ *   `WeakRef`): **15 ngữ cảnh tạo ra · số SỐNG không bao giờ quá 2 · còn 0 sau
+ *   GC**. Tức ở quy mô ấy KHÔNG tích luỹ và KHÔNG có canvas đen.
+ *
+ * ⇒ Đây là **NỢ VỆ SINH**, không phải lỗi đang xảy ra. Thứ nó loại bỏ là một
+ *   KHẢ NĂNG: dưới tải nặng hơn, ngữ cảnh bị trục xuất có thể là ngữ cảnh của
+ *   **cảnh đang vẽ** (vì nó cũ hơn ngữ cảnh thăm dò vừa mượn). Trả lại ngay
+ *   thứ mình chỉ mượn để hỏi một câu hỏi là cách rẻ nhất để bỏ khả năng ấy.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * TRẢ LẠI **SAU** KHI ĐÃ ĐỌC XONG, VÀ TRONG `try` RIÊNG
+ * ════════════════════════════════════════════════════════════════════════════
+ * · Kết quả đã CHỐT ở `gl` trước khi giải phóng ⇒ không lối nào đổi câu trả lời.
+ * · `getExtension("WEBGL_lose_context")` có thể trả `null` (không có extension)
+ *   ⇒ optional chaining, và một lỗi ở bước dọn KHÔNG được kéo theo phép thăm dò
+ *   (nếu dùng chung `try` với bản cũ, một lỗi ở đây sẽ nuốt luôn `setState`).
+ * · `getContext` trả `null` ⇒ không có gì để trả lại; đó CHÍNH LÀ nhánh
+ *   "webglHong = hỏng" nên tuyệt đối không ném lỗi ở đó.
+ *
+ * Lưới: `webglThamDoGiaiPhong.dom.test.tsx`.
+ */
+export function thamDoWebGL(): boolean {
+  let gl: unknown = null;
+  try {
+    const c = document.createElement("canvas");
+    gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+  } catch {
+    return false;
+  }
+  /* ── Trả lại ngữ cảnh vừa mượn. Kết quả đã chốt ở `gl`; nhánh này chỉ dọn. ── */
+  try {
+    (gl as WebGLRenderingContext | null)?.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    /* Không có extension, hoặc gọi hỏng ⇒ bỏ qua: dọn dẹp không được làm
+       hỏng phép thăm dò (bẫy 3). */
+  }
+  return !!gl;
 }
 
 /**
@@ -1312,6 +1372,28 @@ export function ThanTwinVanHanh() {
   // ★ Đợt 38 — `bayGio` đổi mỗi render; chỉ đổi tham chiếu khi một trạng thái ĐỔI.
   const trangThaiTheoMay = useOnDinhTheoGiaTri(trangThaiTheoMayTho, khoaBanDo(trangThaiTheoMayTho));
 
+  /**
+   * ★★★ MỨC TƯƠI theo máy — ô THỨ HAI của cùng một `trangThaiHienThi`, để tuổi dữ
+   *   liệu đi được tới ĐƯỜNG VẼ chứ không chỉ tới ô đếm.
+   *
+   * Trước bản vá 2026-09-18, chỉ `.trangThai` được lấy, nên một máy im lặng 90 giây
+   * được vẽ GIỐNG HỆT một máy vừa gửi tín hiệu (`khong_ro` chỉ bật từ 300 s). Bản đồ
+   * này đưa mức `cu` xuống `dungMayVe` ⇒ khối máy nhạt 40 % — xem `apDungMucTuoi`.
+   *
+   * ⚠ Dựng từ CHÍNH `trangThaiHienThi(mv, bayGio)` như bản đồ trạng thái ngay trên —
+   *   một phép tính tuổi thứ hai ở đây là cách chắc chắn để hai bản đồ nói lệch nhau
+   *   về cùng một máy (G12).
+   * ★ `MucTuoi` chỉ có BA giá trị ⇒ `khoaBanDo` đổi chỉ khi một máy VƯỢT NGƯỠNG,
+   *   không phải mỗi giây `bayGio` nhích. Đó là phép lượng tử hoá giữ
+   *   `frameloop="demand"` còn nghĩa (Đợt 38, `onDinhTheoGiaTri.ts`).
+   */
+  const mucTuoiTheoMayTho = useMemo(() => {
+    const m = new Map<number, MucTuoi>();
+    for (const mv of mayVanHanh) m.set(mv.id, trangThaiHienThi(mv, bayGio).tuoi);
+    return m;
+  }, [mayVanHanh, bayGio]);
+  const mucTuoiTheoMay = useOnDinhTheoGiaTri(mucTuoiTheoMayTho, khoaBanDo(mucTuoiTheoMayTho));
+
   const maTheoMay = useMemo(() => {
     const m = new Map<number, string>();
     for (const mv of mayVanHanh) m.set(mv.id, mv.ma);
@@ -1506,6 +1588,7 @@ export function ThanTwinVanHanh() {
         datChoTheoMay,
         kichThuocTheoLoai,
         trangThaiTheoMay,
+        mucTuoiTheoMay,
         gocToaTheoTang: gocToa,
         trongPhamVi: (mv, tangIdCuaDatCho) =>
           trongPhamVi(
@@ -2687,13 +2770,8 @@ export function ThanTwinVanHanh() {
   const [epChe2D, setEpChe2D] = useState(false);
   const [webglHong, setWebglHong] = useState(false);
   useEffect(() => {
-    try {
-      const c = document.createElement("canvas");
-      const gl = c.getContext("webgl") || c.getContext("experimental-webgl");
-      setWebglHong(!gl);
-    } catch {
-      setWebglHong(true);
-    }
+    /* `thamDoWebGL()` trả `true` khi CÓ WebGL ⇒ `webglHong` là PHỦ ĐỊNH của nó. */
+    setWebglHong(!thamDoWebGL());
   }, []);
   // ★ RB-4: `che2D` quyết định THAY THẾ, không bao giờ dựng cả hai.
   const che2D = epChe2D || webglHong;

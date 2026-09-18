@@ -67,6 +67,14 @@ import { gocTuQuatTrucDung, mmSangScene, mmSangMet, type DiemScene } from "../he
  *   đỏ ở đây chứ không im lặng dựng một khối không tồn tại.
  */
 import type { KhoiKey } from "../hinhKhoiMay";
+/*
+ * ★ `apDungMucTuoi` + kiểu `MucTuoi` nhập THẲNG, không tiêm: `mauTrangThai.ts` là
+ *   module LÁ (0 import) và `apDungMucTuoi` là phép nhân THUẦN — nó không kéo DOM
+ *   vào đây như `mauCss`/`giaiMauCanh` (lý do `CongCuMau` tồn tại). Nhập thẳng còn
+ *   là điều kiện để hệ số 40 % chỉ có ĐÚNG MỘT bản: tiêm nó qua `CongCuMau` sẽ cho
+ *   mỗi trang một cơ hội truyền một hàm khác.
+ */
+import { apDungMucTuoi, type MucTuoi } from "../mauTrangThai";
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* Kiểu vào                                                                    */
@@ -243,6 +251,31 @@ export interface ThamSoMayVe {
   kichThuocTheoLoai: ReadonlyMap<string, CoMacDinh>;
   trangThaiTheoMay: ReadonlyMap<number, string>;
   /**
+   * ★★★ `machineId → MỨC TƯƠI của dữ liệu` — ô thứ hai của `trangThaiHienThi()`.
+   *
+   * ════════════════════════════════════════════════════════════════════════
+   * VÌ SAO LÀ **MỨC** CHỨ KHÔNG PHẢI `bayGio` + `thoiDiemDuLieu`
+   * ════════════════════════════════════════════════════════════════════════
+   * Cám dỗ là cho khối này nhận `bayGio` rồi tự gọi `mauTheoTuoi(tt, ts, bayGio)`.
+   * Làm vậy là buộc màu thành **hàm của ĐỒNG HỒ**: cả ba trang khai
+   * `const bayGioThat = Date.now()` MỖI RENDER, nên `mayVe` sẽ dựng lại mỗi
+   * render ⇒ `LoBatchMay` `setColorAt` ⇒ `invalidate()` ⇒ một khung vẽ cho mỗi
+   * phản hồi poll và mỗi gói socket — đúng cái churn mà Đợt 38
+   * (`onDinhTheoGiaTri.ts`) và hai commit `7adc49600`/`f232e791c` vừa dọn.
+   *
+   * `MucTuoi` chỉ có BA giá trị, nên nó là phép **lượng tử hoá tự nhiên** của
+   * `bayGio`: hai render cách nhau 1 giây cho CÙNG một bản đồ ⇒ `khoaBanDo`
+   * không đổi ⇒ `useOnDinhTheoGiaTri` giữ nguyên tham chiếu ⇒ cảnh đứng yên.
+   * Màu chỉ đổi khi một máy thật sự VƯỢT NGƯỠNG — đúng lúc nó phải đổi.
+   *
+   * ⚠ Trường **BẮT BUỘC**, cùng chủ ý với `gocToaTheoTang` ngay dưới: để mặc
+   *   định (bản đồ rỗng ⇒ không nhạt) là giữ nguyên lỗi cũ ở mọi chỗ gọi quên
+   *   truyền mà không cổng nào đỏ. Bắt buộc thì `npm run check` gọi tên từng
+   *   chỗ gọi. Máy VẮNG trong bản đồ ⇒ coi như `tuoi` (không nhạt thêm) — đúng
+   *   hành vi trước bản vá, vì luật `khong_ro` đã do `trangThaiTheoMay` mang.
+   */
+  mucTuoiTheoMay: ReadonlyMap<number, MucTuoi>;
+  /**
    * `tangId → chỗ dời của toà chứa tầng ấy` ({@link gocToaTheoTang}).
    *
    * ⚠ Trường này **BẮT BUỘC**, và đó là chủ ý: để mặc định `{0,0,0}` là giữ
@@ -277,7 +310,22 @@ export function dungMayVe(ts: ThamSoMayVe): MayDaDung[] {
     const d = ts.datChoTheoMay.get(mv.id);
     if (!d || !d.hienThi) continue;
     const co = ts.kichThuocTheoLoai.get(mv.loaiMay) ?? CO_DU_PHONG;
-    const kieu = ts.congCu.mauChoTrangThai(ts.trangThaiTheoMay.get(mv.id));
+    /*
+     * ★★★ TUỔI DỮ LIỆU VÀO ĐƯỜNG VẼ (2026-09-18) — NT-3 mục 3, nay CÓ HIỆU LỰC.
+     *
+     * Trước dòng này, `trangThaiHienThi` chỉ rẽ nhánh ở `khong_ro` (> 300 s), nên
+     * một máy im lặng **90 giây được vẽ GIỐNG HỆT** một máy vừa gửi tín hiệu;
+     * khác biệt duy nhất nổi lên là một ô đếm (`trungThucDuLieu.demTheoTuoi`).
+     * `apDungMucTuoi` là chỗ mức `cu` (60–300 s) trở thành **nhạt 40 %** trên
+     * chính khối máy — mã hoá DƯ THỪA cạnh ô đếm, không thay nó.
+     *
+     * ⚠ Áp SAU `mauChoTrangThai`, trên KẾT QUẢ đã tiêm: `kieu.doMo` của
+     *   `ngung_khai_thac` là 0,35 và phép nhân giữ đúng tỉ lệ ấy thay vì đè lên.
+     */
+    const kieu = apDungMucTuoi(
+      ts.congCu.mauChoTrangThai(ts.trangThaiTheoMay.get(mv.id)),
+      ts.mucTuoiTheoMay.get(mv.id) ?? "tuoi",
+    );
     const trong = ts.trongPhamVi(mv, d.tangId);
     const mauGoc = ts.congCu.mauCss(kieu.token, "#94a3b8");
     ra.push({

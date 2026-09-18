@@ -112,7 +112,7 @@ import { CanhVanHanh } from "@/components/twin3d/van-hanh/CanhVanHanh";
 import { DaiLine } from "@/components/twin3d/van-hanh/DaiLine";
 import { BangKpiNoi } from "@/components/twin3d/van-hanh/BangKpiNoi";
 import { mauCss } from "@/components/twin3d/van-hanh/mauThree";
-import { mauChoTrangThai } from "@/components/twin3d/mauTrangThai";
+import { mauChoTrangThai, type MucTuoi } from "@/components/twin3d/mauTrangThai";
 import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
 import { dungHinhLine } from "@/components/twin3d/van-hanh/canhLine";
 import {
@@ -547,6 +547,28 @@ export function ThanManLine({
   // ★ Đợt 38 — `bayGio` đổi mỗi render; chỉ đổi tham chiếu khi một trạng thái ĐỔI.
   const trangThaiTheoMay = useOnDinhTheoGiaTri(trangThaiTheoMayTho, khoaBanDo(trangThaiTheoMayTho));
 
+  /**
+   * ★★★ MỨC TƯƠI theo máy — ô THỨ HAI của cùng một `trangThaiHienThi`, để tuổi dữ
+   *   liệu đi được tới ĐƯỜNG VẼ chứ không chỉ tới ô đếm.
+   *
+   * Trước bản vá 2026-09-18, chỉ `.trangThai` được lấy, nên một máy im lặng 90 giây
+   * được vẽ GIỐNG HỆT một máy vừa gửi tín hiệu (`khong_ro` chỉ bật từ 300 s). Bản đồ
+   * này đưa mức `cu` xuống `dungMayVe` ⇒ khối máy nhạt 40 % — xem `apDungMucTuoi`.
+   *
+   * ⚠ Dựng từ CHÍNH `trangThaiHienThi(mv, bayGio)` như bản đồ trạng thái ngay trên —
+   *   một phép tính tuổi thứ hai ở đây là cách chắc chắn để hai bản đồ nói lệch nhau
+   *   về cùng một máy (G12).
+   * ★ `MucTuoi` chỉ có BA giá trị ⇒ `khoaBanDo` đổi chỉ khi một máy VƯỢT NGƯỠNG,
+   *   không phải mỗi giây `bayGio` nhích. Đó là phép lượng tử hoá giữ
+   *   `frameloop="demand"` còn nghĩa (Đợt 38, `onDinhTheoGiaTri.ts`).
+   */
+  const mucTuoiTheoMayTho = useMemo(() => {
+    const m = new Map<number, MucTuoi>();
+    for (const mv of mayTatCa) m.set(mv.id, trangThaiHienThi(mv, bayGio).tuoi);
+    return m;
+  }, [mayTatCa, bayGio]);
+  const mucTuoiTheoMay = useOnDinhTheoGiaTri(mucTuoiTheoMayTho, khoaBanDo(mucTuoiTheoMayTho));
+
   const maTheoMay = useMemo(() => {
     const m = new Map<number, string>();
     for (const mv of mayTatCa) m.set(mv.id, mv.ma);
@@ -615,6 +637,7 @@ export function ThanManLine({
         datChoTheoMay,
         kichThuocTheoLoai,
         trangThaiTheoMay,
+        mucTuoiTheoMay,
         gocToaTheoTang: gocToa,
         trongPhamVi: (mv, tangIdCuaDatCho) =>
           trongPhamVi(

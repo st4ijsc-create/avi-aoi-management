@@ -289,11 +289,58 @@ export function mucTuoi(thoiDiemDuLieu: number | null | undefined, bayGio: numbe
 }
 
 /**
- * Áp mức tươi LÊN màu trạng thái — điểm hợp lưu của hai trục.
+ * Hệ số ĐỘ MỜ cho dữ liệu "cũ" (60–300 s) — nhạt 40 %. **KHAI ĐÚNG MỘT LẦN.**
+ *
+ * ⚠ Cùng lý lẽ với `NGUONG_TUOI_MS`/`NGUONG_CU_MS` ở trên: con số này quyết định
+ *   một CÂU NÓI VỚI NGƯỜI VẬN HÀNH ("dữ liệu này đã hơi cũ"). Hai bản sao của nó
+ *   chỉ đồng ý tới lần sửa đầu tiên, và khi lệch thì KHÔNG nổ — chỉ âm thầm cho
+ *   hai bề mặt nhạt khác nhau về cùng một máy.
+ */
+export const HE_SO_NHAT_DU_LIEU_CU = 0.6;
+
+/**
+ * ★★★ ÁP MỨC TƯƠI **ĐÃ BIẾT** lên một mô tả thị giác **ĐÃ QUYẾT**.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ĐÂY LÀ CỬA VÀO CỦA ĐƯỜNG SẢN PHẨM — và vì sao nó KHÔNG áp luật `khong_ro`
+ * ════════════════════════════════════════════════════════════════════════════
+ * Trên đường vẽ thật, `van-hanh/trungThucDuLieu.trangThaiHienThi()` ĐÃ chạy và
+ * ĐÃ quyết theo thứ tự ưu tiên của nó:
+ *   1. `isActive = false` → `ngung_khai_thac` (mờ 35 %)
+ *   2. tuổi > 5 phút      → `khong_ro`
+ *   3. còn lại            → giá trị máy khai
+ * Tức `khong_ro` đã được cưỡng chế Ở TẦNG DỮ LIỆU rồi. Áp nó **lần thứ hai** ở
+ * đây sẽ phá ô (1): một máy ngừng khai thác luôn mang `tuoi = "khong_ro"` (nó
+ * không còn phải gửi tín hiệu nào), nên một nhánh `if (tuoi === "khong_ro")` ở
+ * đây sẽ đổi `doMo` **0,35 → 1** và xoá luôn ý nghĩa "đã lùi khỏi tiền cảnh".
+ * `tuoiDuLieuVaoDuongVe.unit.test.ts` ghim ca ấy làm ĐỐI CHỨNG NGƯỢC.
+ *
+ * ⇒ Hàm này chỉ mang **một** luật: mức `cu` ⇒ nhạt {@link HE_SO_NHAT_DU_LIEU_CU}.
+ *   Luật `khong_ro` sống ở {@link mauTheoTuoi} (cho đầu vào THÔ) và ở
+ *   `trangThaiHienThi` (cho đường sản phẩm) — không có bản sao thứ ba.
+ *
+ * ★ Generic `<T extends { doMo: number }>` chứ không cứng `MauTrangThai`: người
+ *   gọi ở `van-hanh/hopNhatCanh.ts` nhận kiểu màu qua **tiêm** (`CongCuMau`), nên
+ *   ép về `MauTrangThai` sẽ đòi một `as` ngay tại chỗ nối — tức vứt đúng phép
+ *   kiểm mà kiểu sinh ra để làm.
+ */
+export function apDungMucTuoi<T extends { doMo: number }>(kieu: T, tuoi: MucTuoi): T {
+  // "cũ" = nhạt 40% + (UI kèm badge đồng hồ, do lớp nhãn vẽ, không thuộc tệp này).
+  if (tuoi !== "cu") return kieu;
+  return { ...kieu, doMo: kieu.doMo * HE_SO_NHAT_DU_LIEU_CU };
+}
+
+/**
+ * Áp mức tươi LÊN màu trạng thái — điểm hợp lưu của hai trục, cho đầu vào **THÔ**
+ * (một `operationStatus` chưa qua `trangThaiHienThi`).
  *
  * ★ `khong_ro` (quá 5 phút) THẮNG mọi trạng thái được báo cáo. Một máy báo "running"
  * từ 40 phút trước KHÔNG được vẽ như đang chạy; nó được vẽ xám gạch chéo. Đây chính
  * là chỗ NT-3 được cưỡng chế bằng mã, thay vì bằng lời hứa của người gọi.
+ *
+ * ⚠ ĐƯỜNG VẼ 3D **KHÔNG** đi qua hàm này mà qua {@link apDungMucTuoi}, vì ở đó
+ *   trạng thái đã được `trangThaiHienThi` quyết xong — xem docblock hàm ấy. Hai
+ *   hàm dùng CHUNG một phép nhân, nên chúng không thể lệch nhau.
  */
 export function mauTheoTuoi(
   trangThai: unknown,
@@ -302,10 +349,7 @@ export function mauTheoTuoi(
 ): MauTrangThai {
   const tuoi = mucTuoi(thoiDiemDuLieu, bayGio);
   if (tuoi === "khong_ro") return BANG_MAU.khong_ro;
-  const goc = mauChoTrangThai(trangThai);
-  // "cũ" = nhạt 40% + (UI kèm badge đồng hồ, do lớp nhãn vẽ, không thuộc tệp này).
-  if (tuoi === "cu") return { ...goc, doMo: goc.doMo * 0.6 };
-  return goc;
+  return apDungMucTuoi(mauChoTrangThai(trangThai), tuoi);
 }
 
 /** Tập token thực sự dùng — cho cầu chì trần 7 mã (ASM 6.1). */

@@ -23,6 +23,8 @@
  * nổ"* — một cảnh 3D sai trục vẫn là một cảnh 3D hợp lệ về kiểu dữ liệu.
  */
 import { describe, it, expect } from "vitest";
+
+import type { MucTuoi } from "../mauTrangThai";
 import {
   dungMayVe,
   idMayChuaDat,
@@ -92,6 +94,10 @@ const tsCoBan = (
   datChoTheoMay: new Map(datChos),
   kichThuocTheoLoai: new Map<string, typeof CO_DU_PHONG>(),
   trangThaiTheoMay: new Map<number, string>(),
+  // ★ 2026-09-18 — trường BẮT BUỘC mới của `ThamSoMayVe` (tuổi dữ liệu → độ mờ).
+  //   Giáo cụ để RỖNG ⇒ mọi máy coi như `tuoi` ⇒ **mọi ca dưới đây giữ nguyên kết
+  //   cục cũ**; luật nhạt-40 % được đo riêng ở `tuoiDuLieuVaoDuongVe.unit.test.ts`.
+  mucTuoiTheoMay: new Map<number, MucTuoi>(),
   gocToaTheoTang: goc,
   trongPhamVi: trong,
   mauNenCanh: "NEN",
