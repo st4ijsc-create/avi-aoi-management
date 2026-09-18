@@ -28,6 +28,7 @@ import * as THREE from "three";
 
 import { phaVeNen, TI_LE_PHA_NGOAI_PHAM_VI } from "./phamViCanh";
 import { byteMau, laCuPhapLa, mauCss } from "./mauThree";
+import { xoaDemByteMau } from "./byteMau";
 
 /** Quy oklch → rgb ĐO ĐƯỢC trên Chrome tại trang thật (không suy ra). */
 const DO_TREN_TRINH_DUYET: Record<string, [number, number, number]> = {
@@ -89,6 +90,22 @@ function chenh(a: string, b: string): number {
 
 beforeEach(() => {
   document.documentElement.style.cssText = "";
+  /*
+   * ★★★ PDCA "engine 3D" — XOÁ ĐỆM `byteMau` TRƯỚC MỖI CA.
+   *
+   * `byteMau` nay đệm ca THÀNH CÔNG theo chuỗi màu vào (bản vá Pareto #1: một
+   * lần kéo camera trên `/twin` đo được **2.425 lượt `getImageData`**, chiếm
+   * 93 % main thread). Đệm ấy sống ở tầng module nên nó SỐNG XUYÊN các `it()`.
+   *
+   * Tệp này có những ca cố ý cài canvas **KHÔNG** quy được `oklch` để ghim hành
+   * vi dự phòng; nếu một ca trước đó đã quy thành công CÙNG chuỗi ấy thì đệm trả
+   * lại trị cũ và ca sau hỏng. Đó là **thiếu cô lập giữa các ca**, không phải
+   * hành vi sản phẩm — trong trình duyệt thật canvas không đổi giữa chừng.
+   *
+   * ⚠ Dòng này KHÔNG làm yếu bất kỳ khẳng định nào: nó khôi phục đúng tiền đề
+   *   "module lạnh" mà mọi ca ở đây vốn đã ngầm giả định.
+   */
+  xoaDemByteMau();
 });
 afterEach(() => {
   vi.restoreAllMocks();
