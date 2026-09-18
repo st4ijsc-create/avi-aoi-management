@@ -1115,6 +1115,32 @@ export const machineRouter = router({
       // approval is already committed, so a credential failure must not 500 the admin.
       let mkKey: Awaited<ReturnType<typeof issueFleetMachineKey>> | null = null;
       let claim: { token: string; tokenPrefix: string; expiresAt: Date } | null = null;
+      /**
+       * ★★★ 2026-09-19 — "BEST-EFFORT" ĐƯỢC GIỮ, NHƯNG THÔI IM LẶNG.
+       *
+       * Lý lẽ của `try/catch` ở đây ĐÚNG và không bị đụng tới: lượt duyệt đã commit trước khi
+       * tới đoạn này, nên ném lỗi sẽ báo "thất bại" cho một thao tác THỰC SỰ đã thành công —
+       * còn tệ hơn. Cái sai không nằm ở việc nuốt lỗi, mà ở chỗ **không ai biết nó đã xảy ra**:
+       *
+       *   · `success: true` và `message` vẫn khẳng định *"per-device key (mk_) issued (shown
+       *     once)"* **kể cả khi đúc khoá vừa ném** — nói thẳng với quản trị viên một điều SAI;
+       *   · `apiKey: null` không phân biệt được "đội máy này không dùng mk_" với "đúc hỏng";
+       *   · vết kiểm toán chỉ **bỏ trống** `keyPrefix`, mà bỏ trống cũng là hình dạng của
+       *     "không áp dụng" ⇒ không tra ngược được.
+       *
+       * Đo được 2026-09-18: **1.108 máy QATD `approved` mà không một giấy tờ nào** (không
+       * `machines.apiKey`, không `mk_`, không claim token). Dù nguyên nhân của CHÍNH 1.108 máy
+       * ấy là được tạo đi tắt chứ không qua đây, chúng cho thấy trạng thái đó **tồn tại được và
+       * sống rất lâu mà không ai kêu** — và nhánh này là một đường hợp lệ để rơi vào đó.
+       *
+       * ⇒ Giữ nguyên hành vi (duyệt vẫn thành công), chỉ **khai báo kết cục THẬT**:
+       *   `credentialIssued` trong phản hồi · `message` đúng sự thật · `logger.error` cho nhánh
+       *   mk_ (máy không thể xác thực) so với `logger.warn` cho nhánh claim token (máy vẫn còn
+       *   `machines.apiKey`) · và ghi `credentialIssued` vào vết kiểm toán để tra ngược được.
+       *
+       * Đối soát định kỳ vẫn là `npx tsx scripts/issue-machine-keys.ts --dry-run` ⇒ `CẦN CẤP` > 0.
+       */
+      let loiGiayTo: string | null = null;
       if (mkOnly) {
         try {
           mkKey = await issueFleetMachineKey({
@@ -1123,7 +1149,9 @@ export const machineRouter = router({
             createdBy: ctx.user?.id ?? null,
           });
         } catch (e) {
-          logger.warn(
+          loiGiayTo = e instanceof Error ? e.message : String(e);
+          // ERROR chứ không WARN: máy rời khỏi đây KHÔNG có cách nào xác thực.
+          logger.error(
             { err: e, machineId: input.id },
             "[MachineApprove] mk_ key mint failed — machine approved without a credential; re-issue via machineApi.issueKey",
           );
@@ -1132,12 +1160,19 @@ export const machineRouter = router({
         try {
           claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
         } catch (e) {
+          loiGiayTo = e instanceof Error ? e.message : String(e);
           logger.warn(
             { err: e, machineId: input.id },
             "[MachineApprove] could not mint a claim token — machine approved without one; re-issue via machine.issueClaimToken",
           );
         }
       }
+      /**
+       * Đội AOI/AVI: `machines.apiKey` đã được `approveMachine` ghi TRƯỚC đoạn này, nên máy vẫn
+       * có giấy tờ kể cả khi claim token hỏng — claim token là tiện lợi cho kỹ thuật viên, không
+       * phải giấy tờ duy nhất. Đội mk_: khoá mk_ LÀ giấy tờ duy nhất, hỏng là trắng tay.
+       */
+      const credentialIssued = mkOnly ? mkKey !== null : Boolean(legacyApiKey);
 
       // M5: audit — snapshots NEVER include a plaintext key, and NEVER the claim
       // token plaintext (only its non-secret prefix + expiry).
@@ -1145,9 +1180,14 @@ export const machineRouter = router({
         action: "machine.approve", entityType: ENTITY_TYPES.MACHINE, entityId: input.id, entityName: input.code || machine.code,
         before: { code: machine.code, name: machine.name, stationId: machine.stationId, registrationStatus: machine.registrationStatus },
         after: { code: input.code || machine.code, name: input.name || machine.name, stationId, registrationStatus: "approved" },
+        // ★ `credentialIssued` LUÔN có mặt (kể cả khi true): một trường chỉ xuất hiện lúc hỏng
+        //   thì vắng mặt lại mang hai nghĩa — "không hỏng" và "bản cũ chưa biết ghi trường này".
         metadata: mkOnly
-          ? { mkOnly: true, deviceClass, ...(mkKey ? { keyPrefix: mkKey.keyPrefix, keyId: mkKey.id } : {}) }
-          : (claim ? { claimPrefix: claim.tokenPrefix, claimExpiresAt: claim.expiresAt.toISOString() } : undefined),
+          ? { mkOnly: true, deviceClass, credentialIssued, ...(mkKey ? { keyPrefix: mkKey.keyPrefix, keyId: mkKey.id } : {}) }
+          : {
+              mkOnly: false, deviceClass, credentialIssued,
+              ...(claim ? { claimPrefix: claim.tokenPrefix, claimExpiresAt: claim.expiresAt.toISOString() } : { claimTokenIssued: false }),
+            },
       });
 
       return {
@@ -1159,7 +1199,21 @@ export const machineRouter = router({
         /** Shown to the admin ONCE — hand to the technician, expires shortly (AOI fleet only). */
         claimToken: claim?.token ?? null,
         claimExpiresAt: claim?.expiresAt ?? null,
-        message: mkOnly ? "Machine approved — per-device key (mk_) issued (shown once)" : "Machine approved and mapped",
+        /**
+         * ★ Máy rời khỏi lượt duyệt này CÓ giấy tờ để xác thực hay không. `false` ⇒ máy đã
+         *   `approved` nhưng KHÔNG gọi được API nào; phải cấp lại bằng `machineApi.issueKey`
+         *   (đội mk_) hoặc `machine.issueClaimToken` (đội AOI). Đừng suy điều này từ
+         *   `apiKey === null`: `null` còn là hình dạng bình thường của đội máy khác.
+         */
+        credentialIssued,
+        credentialError: loiGiayTo,
+        message: !credentialIssued
+          ? "Machine approved, but NO credential could be issued — it cannot authenticate yet; re-issue a key before handing it to the technician"
+          : mkOnly
+          ? "Machine approved — per-device key (mk_) issued (shown once)"
+          : claim
+          ? "Machine approved and mapped"
+          : "Machine approved and mapped — but the one-time claim token could not be issued; re-issue via machine.issueClaimToken",
       };
     }),
 
