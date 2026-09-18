@@ -1494,3 +1494,112 @@ là **lỗi DỮ LIỆU**, không phải lỗi mã, và nó chạm dữ liệu c
 `npm run check` (tsc --noEmit) **exit 0** · `vitest client/src/components/twin3d` **145 tệp /
 3.225 ca / 0 đỏ** · e2e `twin-dot47-bam-canh` **14/16** (2 đỏ đã truy gốc và ablation ở trên,
 `--workers=1` theo G147) · `git status` sạch.
+
+---
+
+## PDCA vòng 3 (2026-09-19) — *"người vận hành có ĐỌC ĐƯỢC TÊN của máy đang bất thường không?"*
+
+Nguyên nhân Pareto #1 mà vòng 2 để lại. Thô: `.qa-v2/tho-v3/`.
+
+### Bước 0 (MSA) — bắt được một lệch trước khi đo
+
+`dist/index.js` cũ hơn nguồn (sửa `hierarchyRouters.ts` sau lần build) ⇒ **thứ đang phục vụ 3080
+không phải thứ vừa commit**. Dựng lại + khởi động lại, rồi **chứng minh bundle = HEAD bằng chính
+trường vừa thêm**: gọi `machine.approve` thật ⇒ phản hồi có `credentialIssued: true`, và vết kiểm
+toán sống cho thấy trước/sau trên cùng một bảng — `#8244` `{claimPrefix,…}` vs `#8248`
+`{mkOnly,deviceClass,credentialIssued:true,claimPrefix,…}`. Đây cũng là nghiệm thu SỐNG đầu tiên
+cho `fa1305b3a` (trước đó chỉ có lưới mock).
+
+### Hai chỗ tôi đọc/đo SAI, sửa trước khi chúng thành kết luận
+
+1. **Đọc sai cơ chế ở vòng 2.** Tôi thấy `biChe=5` rồi viết *"`LopNhan` không có nhánh chót cho
+   trường hợp đè lớp phủ"*. Đọc `locNhan.ts:529-530,601` thì ngược: vùng cấm **đã** tham gia vòng
+   xếp tầng từ Đợt 47 N5; `soBiChe` chỉ **quy gốc** cho nhãn đã thử hết tầng. Kết luận từ TÊN một
+   biến đếm, không từ mã tính ra nó.
+2. **Đo trên cảnh đã tắt.** Lượt quét 10 ca đầu chạy trên nhịp tim cũ ~2 giờ, nên `trangThaiHienThi`
+   (đúng đắn) hạ MỌI máy về `khong_ro` — cảnh không còn máy "bất thường" nào để đặt tên, và
+   "6 ứng viên" là con số của một cảnh đã tắt. Ngưỡng là 300 s mà một lượt quét dài hơn thế ⇒ phải
+   **bơm nhịp trước TỪNG ca**, không phải một lần ở đầu.
+
+### Đường cơ sở (sau khi sửa hai chỗ trên) — một nguyên nhân duy nhất
+
+| khung | lớp phủ ăn | tổng | lọc chính sách | ứng viên | vẽ | **biChe** | chồng/trần/mép | SQL: bất thường trong khung | có tên trên cảnh |
+|---|---|---|---|---|---|---|---|---|---|
+| 1280×720 | **70,8 %** | 182 | 163 | 19 | 1 | **18** | 0/0/0 | 24 | **1** |
+| 1366×768 | 65,1 % | 182 | 163 | 19 | 5 | 14 | 0/0/0 | 24 | 3 |
+| 1440×900 | 57,6 % | 182 | 163 | 19 | 10 | 9 | 0/0/0 | 24 | 6 |
+| 1600×900 | 60,6 % | 182 | 163 | 19 | 10 | 9 | 0/0/0 | 24 | 6 |
+| 1920×1080 | **47,3 %** | 182 | 163 | 19 | 15 | 1 | 3/0/0 | 24 | **10** |
+
+`chongLap`/`vuotTran`/`vuotMep` = 0 ở gần như mọi ca ⇒ **thủ phạm duy nhất là `biChe`**, và nó đi
+theo diện tích lớp phủ. Đối chứng âm (nhãn vẽ cho máy NGOÀI khung): **0 ở mọi ca**.
+
+### Pareto của chính bảy lớp phủ @1280×720
+
+Đo bằng lưới 8 px để phần chồng nhau không bị cộng hai lần — cột dưới là **phần giành lại được
+nếu bỏ lớp ấy**, không phải diện tích thô:
+
+| lớp phủ | thô | giành lại nếu bỏ |
+|---|---|---|
+| `panel-phai` | 26,4 % | **23,9 %** |
+| `panel-trai` | 23,1 % | **20,9 %** |
+| `bang-kpi-noi` | 14,9 % | **13,8 %** |
+| `lop-phu-dong-thoi-gian` | 7,8 % | 4,9 % |
+| ba lớp còn lại | 2,2 % | 1,4 % |
+
+Ba lớp đầu = **58,6/70,8 điểm (83 %)**. ★ `bang-kpi-noi` phình **5,2 % → 13,8 %** khi khung nhỏ
+lại — nó không co theo khung, nên nó là lớp *bất tương xứng* nhất ở khung hẹp.
+
+### Lever đã chứng minh, và nó THUẬN NGHỊCH
+
+Thu hai panel bằng **chính nút của sản phẩm** (`nut-thu-trai`/`nut-thu-phai`), A/B/A:
+
+```
+phủ                70,8 %  →  26,9 %  →  70,8 %
+máy bất thường có tên  1/24  →   7/24  →    1/24
+nhãn vẽ                   1  →      9  →        1
+biChe                    18  →     10  →       18
+```
+
+Về đúng giá trị cũ khi mở lại ⇒ biến giải thích là **diện tích**, không phải "cứ tương tác là
+nhãn tính lại".
+
+### Đã vá — `560c7012e`
+
+Bản cũ khai **MỘT** con số `soBiGiau` = 181, gộp hai chuyện đòi **hai hành động khác nhau**:
+163 tên ẩn theo **CHÍNH SÁCH** (máy bình thường ⇒ đổi bậc mật độ) và 18 tên bị **LỚP PHỦ CHE**
+(máy đang hỏng ⇒ thu panel). Người vận hành đọc *"181 tên khác bị ẩn"*, hiểu là chính sách, rồi
+yên tâm. Đúng lớp lỗi mà Đợt 49 đã vá **một tầng trên** cho alarm.
+
+⇒ Chip mới `chip-ten-bi-che`, chỉ hiện ở bậc *chỉ-nhãn-bất-thường*. Nghiệm thu trên trình duyệt:
+@1280 hiện **18** (khớp `__demNhan.biChe`), thu panel ⇒ **10**, @1920 ⇒ **1**, thu panel ở 1920 ⇒
+chip **biến mất** (`biChe` = 0).
+
+**ABLATION (bẫy G5 mà chính mã nguồn cảnh báo):** gỡ **đúng một** trong năm chặng nối dây (chỗ
+truyền xuống `<LopNhan>`) ⇒ chip mất hẳn **trong khi `tsc` vẫn xanh**.
+
+### Lưới cũ chặn bản vá — lần thứ N của lớp này
+
+`chipCanhBaoAn.unit.test.ts` khớp **nguyên văn cả dòng** `return null`, nên nó đỏ khi vòng 3 thêm
+chip thứ tư vào **đúng điều kiện nó bảo vệ**. Phân loại: ca **canh hazard viết theo HÌNH DẠNG MÃ**
+⇒ thu hẹp về đúng bất biến nó sở hữu. ⚠ KHÔNG nới thành `toMatch(/soCanhBaoAn/)` suông — chuỗi ấy
+có ở chục chỗ khác, một ca luôn xanh thì không canh gì. Kiểm lại ca đã thu hẹp **vẫn biết kêu**:
+gỡ `soCanhBaoAn === 0` khỏi điều kiện ⇒ đỏ; hoàn nguyên ⇒ 13/13 xanh.
+
+### CÒN MỞ — nói thẳng
+
+- **Chip mới KHÔNG làm tên hiện ra.** Nó biến một mất mát im lặng thành một mất mát **có tên và
+  có hành động**. Muốn 24/24 đọc được thì phải giảm diện tích lớp phủ — và đó là quyết định thiết kế.
+- **Ba lựa chọn cho chủ dự án**, kèm số đã đo: (a) `bang-kpi-noi` co theo khung ⇒ giành lại ~**9
+  điểm** ở ≤1366 mà không giấu dải cảnh báo; (b) mặc định **thu panel** ở khung ≤1366 ⇒ giành
+  ~**44 điểm** nhưng giấu chính dải cảnh báo đang chở tên; (c) giữ nguyên, coi chip là đủ.
+- **Panel dải cảnh báo tự khai *"Counted across your whole account scope"*** và liệt kê mục QATD
+  trong khi cảnh là FUYU-F. Tự khai đúng, nhưng chưa đo xem người vận hành có đọc nó thành phạm
+  vi của cảnh không. **Chưa kết luận.**
+- Hai nguyên nhân Pareto #2/#3 của vòng 2 (đích bấm 15,25 px²; 7/39 máy line 526 ngoài canvas)
+  **chưa đụng tới**.
+
+### Cổng sau vòng 3
+
+`tsc` **exit 0** · `twin3d` **146 tệp / 3.235 ca / 0 đỏ** · `i18n:check` **0 khoá mới lỗi** ·
+`git ls-files --eol` tất cả `i/lf w/lf` · cây sạch.
