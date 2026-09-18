@@ -850,7 +850,15 @@ Agent PH-54 tự khai: *"`lamTron` chưa có lưới đơn vị — chỉ đư�
 Đối chứng trên MÃ THẬT: đổi `floor` → `round` trong chính hàm ⇒ **1 ĐỎ**; hoàn nguyên ⇒ 25/25 xanh.
 Cổng: twin3d **140 tệp / 3.179 xanh** · check 0 · i18n 0.
 
-## PH-56 (MỚI, TRUNG BÌNH — do phiên `-d2` tìm ra, phiên `-51` kiểm chứng độc lập) · `mauTheoTuoi` là MÃ CHẾT, và một docblock khai nó đang cưỡng chế
+## PH-56 (MỚI, TRUNG BÌNH) · `mauTheoTuoi` là MÃ CHẾT, và một docblock khai nó đang cưỡng chế
+
+### ★★★ CHUỖI TÌM RA — ghi đúng, vì chính cái chuỗi mới là bài học
+1. Phiên **`-51`** trích `mauTrangThai.ts:307` (`doMo × 0,6`) và khẳng định *"mốc 60 s ghi lại toàn bộ bảng màu"* — **một manh mối SAI**, vì chưa kiểm hàm ấy có nơi gọi nào không.
+2. Phiên **`-d2`** đã nói ngược lại ở một điểm khác, nên **buộc phải tự đọc mã để phân xử** thay vì chép lại.
+3. **Chính lượt đọc ấy** lộ ra `mauTheoTuoi` **không có nơi gọi sản phẩm nào**.
+4. `-51` kiểm chứng độc lập bằng census và xác nhận.
+⇒ **Một manh mối sai vẫn dẫn tới một sự thật — miễn là người nhận ĐI KIỂM thay vì CHÉP.** Nếu `-d2` tin lời `-51`, cả hai đã dừng ở một cơ chế không tồn tại. Nếu `-51` không đưa manh mối ấy, `-d2` đã không mở tệp đó ra. **Công của cả chuỗi, không của một đầu nào.**
+★ Hệ quả thực hành: khi giao một manh mối cho phiên/agent khác, **nói rõ nó là manh mối hay là kết luận đã đo**. `-51` đã trình bày nó như kết luận — đó là phần lỗi.
 **Máy có dữ liệu cũ 60-300 giây được vẽ trên cảnh 3D GIỐNG HỆT một máy tươi.** Không nhạt đi, không dấu hiệu nào. Khác biệt duy nhất nổi lên là **một con số trong bảng**.
 
 Kiểm độc lập (phiên `-51`, `grep -rn "mauTheoTuoi" client/src server shared`):
