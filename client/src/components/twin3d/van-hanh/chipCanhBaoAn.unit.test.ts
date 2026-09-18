@@ -117,10 +117,29 @@ describe("D.2 — sổ SỐ dùng chung (một cụm chip, không hai cụm ch�
     expect(LOP_NHAN).toMatch(/\(chuCanhBaoAn && soCanhBaoAn > 0\)/);
   });
 
+  /**
+   * ★★★ 2026-09-19 (PDCA vòng 3) — CA NÀY TỪNG KHỚP NGUYÊN VĂN CẢ DÒNG `return null`:
+   *
+   *     /if \(tat \|\| \(hienThi\.length === 0 && soAn === 0 && soSuCoNgoai === 0 &&
+   *      soCanhBaoAn === 0\)\) return null;/
+   *
+   * Nó ĐỎ khi vòng 3 thêm một chip thứ tư (`soTenBiChe`) vào đúng điều kiện ấy — tức nó chặn
+   * một bản vá **mở rộng chính bất biến nó bảo vệ**. Phân loại theo khuôn của dự án: đây là ca
+   * **canh hazard nhưng viết theo HÌNH DẠNG MÃ**, không phải ca ghim một quyết định. ⇒ thu hẹp
+   * về đúng BẤT BIẾN mà nó sở hữu — *"số cảnh báo ẩn phải là một trong những thứ giữ lớp nhãn
+   * sống"* — và để mọi chip khác tự canh phần của mình (`chipTenBiChe.unit.test.ts`).
+   *
+   * ⚠ KHÔNG nới thành `toMatch(/soCanhBaoAn/)` suông: chuỗi ấy có ở chục chỗ khác trong tệp,
+   *   và một ca luôn xanh thì không canh gì cả. Neo vào đúng mệnh đề `=== 0` NẰM TRONG điều
+   *   kiện `return null`, cộng một khẳng định DƯƠNG rằng `hienThi.length === 0` cũng còn đó —
+   *   nếu ai đó xoá cả điều kiện thì cả hai vế cùng mất.
+   */
   it("★★★ lớp nhãn KHÔNG được `return null` khi chỉ còn chip cảnh báo — nếu không chip câm", () => {
-    expect(LOP_NHAN).toMatch(
-      /if \(tat \|\| \(hienThi\.length === 0 && soAn === 0 && soSuCoNgoai === 0 && soCanhBaoAn === 0\)\) return null;/,
-    );
+    const m = LOP_NHAN.match(/if \(tat \|\|([\s\S]{0,200}?)\)\s*\n?\s*return null;/);
+    expect(m, "không tìm thấy điều kiện `return null` của LopNhan").not.toBeNull();
+    const dieuKien = m![1];
+    expect(dieuKien).toMatch(/hienThi\.length === 0/);
+    expect(dieuKien).toMatch(/soCanhBaoAn === 0/);
   });
 });
 

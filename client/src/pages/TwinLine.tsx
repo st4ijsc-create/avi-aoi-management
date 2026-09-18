@@ -1098,6 +1098,8 @@ export function ThanManLine({
               }
               /* ★ Đợt 49 (mục D): chip "còn N cảnh báo ẩn" — badge bị lớp phủ che / hết chỗ dời. */
               chuCanhBaoAn={(n) => t("twin3d.vanHanh.canhBaoBiAn", "còn {{n}} cảnh báo ẩn", { n })}
+              /* ★ PDCA vòng 3: chip "N tên bị panel che" — cùng chuỗi với màn Vận hành. */
+              chuTenBiChe={(n) => t("twin3d.vanHanh.tenBiChe", "{{n}} tên bị panel che", { n })}
               chuMatContext={t("twin3d.loi.matContext")}
               ariaLabel={t("twin3d.line.ariaCanh", "Cảnh 3D của {{ten}}", { ten: tenLine })}
             />

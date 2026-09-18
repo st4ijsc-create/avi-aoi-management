@@ -4397,6 +4397,13 @@ export function ThanTwinVanHanh() {
               chuCanhBaoAn={(n) =>
                 t("twin3d.vanHanh.canhBaoBiAn", "còn {{n}} cảnh báo ẩn", { n })
               }
+              /* ★ PDCA vòng 3 (2026-09-19): chip "N tên bị lớp phủ che" — tách khỏi chip
+                 tên-bị-ẩn vì hai số ấy đòi hai hành động khác nhau. Đo `/twin` FUYU-F
+                 @1280×720: 24 máy trong khung đang down/error/maintenance mà chỉ 1 máy có
+                 tên trên cảnh; 18 tên bị chính panel của ta che. Thu panel ⇒ 7/24. */
+              chuTenBiChe={(n) =>
+                t("twin3d.vanHanh.tenBiChe", "{{n}} tên bị panel che", { n })
+              }
               /* ★ ĐỢT 24 VIỆC 2 — chỗ gọi THẬT của `chiNhanBatThuong`. Trước
                  dòng này `grep` ra 0 người truyền `true` (G16). */
               chiNhanBatThuong={chiNhanBatThuong}

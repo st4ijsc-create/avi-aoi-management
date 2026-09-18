@@ -204,6 +204,30 @@ export interface LopNhanProps {
    */
   chuCanhBaoAn?: (n: number) => string;
   /**
+   * ★★★ 2026-09-19 (PDCA vòng 3) — chữ ĐÃ QUA `t()` cho chip **"N tên bị lớp phủ che"**.
+   *
+   * Cùng lớp lỗi mà Đợt 49 đã vá MỘT TẦNG TRÊN cho alarm, nay đo được ở tầng TÊN MÁY:
+   * chip `chip-nhan-bi-an` khai **một** con số `soBiGiau`, gộp hai chuyện khác hẳn nhau —
+   * tên ẩn **theo CHÍNH SÁCH** (máy bình thường, cố ý không đặt tên) và tên bị **LỚP PHỦ DOM
+   * của chính ta CHE** (máy đang bất thường, đáng lẽ phải đọc được).
+   *
+   * Đo `/twin` FUYU-F, nhịp tươi, chế độ mặc định *chỉ-nhãn-bất-thường*:
+   *   @1280×720  phủ 70,8 % → `tong 182 · lọc chính sách 163 · ứng viên 19 · vẽ 1 · biChe 18`
+   *   @1920×1080 phủ 47,3 % → `… ứng viên 19 · vẽ 15 · biChe 1`
+   * Đối chiếu SQL: **24** máy trong khung đang `down/error/maintenance`, mà @1280 chỉ **1** máy
+   * có tên trên cảnh. Chip cũ nói *"181 tên khác bị ẩn"* — đúng số, sai nghĩa: người vận hành đọc
+   * nó như một lời khai về chính sách rồi yên tâm, trong khi **18 cái tên bị giấu là tên máy hỏng**.
+   *
+   * ★ Thuận nghịch, đo được: thu hai panel bằng chính `nut-thu-trai`/`nut-thu-phai` ⇒ phủ
+   *   70,8 % → 26,9 %, máy bất thường có tên **1/24 → 7/24**, mở lại ⇒ về đúng **1/24**. Nên con số
+   *   này KHÔNG phải một lời than: nó chỉ đúng một hành động mà người vận hành làm được ngay.
+   *
+   * ⚠ CHỈ hiện ở bậc *chỉ-nhãn-bất-thường*. Ở bậc hiện-mọi-tên, `biChe` phần lớn là tên máy
+   *   BÌNH THƯỜNG — con số ấy đã nằm trong `chip-nhan-bi-an` và nhắc lại là gây nhiễu.
+   * `undefined` ⇒ KHÔNG render chip (người gọi chưa nối — không có chuỗi rác).
+   */
+  chuTenBiChe?: (n: number) => string;
+  /**
    * ★★★ ĐỢT 49 (mục A) — KHỐI 3D của MỌI máy đang vẽ, để nhãn **không đè thân máy KHÁC**.
    *
    * Kết cục đo được (QA Đợt 48): bấm TÂM KHỐI máy 246 ở `/twin`@1600 mở `/twin/may/1`, bấm tâm
@@ -327,6 +351,7 @@ export function LopNhan({
   chuNhanAnTheoChinhSach,
   chuSuCoNgoaiKhung,
   chuCanhBaoAn,
+  chuTenBiChe,
   khoiMay,
   onChonNhan,
 }: LopNhanProps) {
@@ -418,6 +443,12 @@ export function LopNhan({
   const [demDuoiPx, setDemDuoiPx] = useState(0);
   /** ★ Đợt 49 (D) — số CẢNH BÁO bị giấu, do `LopCanhBao` ghi vào sổ chung ở cùng khung. */
   const [soCanhBaoAn, setSoCanhBaoAn] = useState(0);
+  /**
+   * ★ PDCA vòng 3 — số TÊN bị LỚP PHỦ DOM che (`locNhan.soBiChe`), tách khỏi `soAn` vì hai con
+   * số ấy đòi hai hành động khác nhau: `soAn` là chính sách (đổi bậc mật độ), còn số này là
+   * hình học (thu panel / nới khung). Gộp chúng lại là giấu cái hành động được ngay.
+   */
+  const [soTenBiChe, setSoTenBiChe] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
   /**
@@ -470,6 +501,7 @@ export function LopNhan({
       if (hienThi.length !== 0) setHienThi([]);
       if (soAn !== 0) setSoAn(0);
       if (soSuCoNgoai !== 0) setSoSuCoNgoai(0);
+      if (soTenBiChe !== 0) setSoTenBiChe(0);
       return;
     }
 
@@ -650,6 +682,7 @@ export function LopNhan({
     if (chuKy === chuKyRef.current) return;
     chuKyRef.current = chuKy;
     setSoAn(kq.soBiGiau);
+    setSoTenBiChe(kq.soBiChe);
     setSoSuCoNgoai(kq.soBatThuongNgoaiKhung);
     setSoCanhBaoAn(soAnBadge);
 
@@ -680,6 +713,7 @@ export function LopNhan({
     khoiMay,
     hienThi.length,
     soAn,
+    soTenBiChe,
     soSuCoNgoai,
     soCanhBaoAn,
   ]);
@@ -707,7 +741,8 @@ export function LopNhan({
   // hàm chỉ chạy khi có ai đó gọi `invalidate()` (xoay camera, đổi dữ liệu).
   useFrame(tinhLai);
 
-  if (tat || (hienThi.length === 0 && soAn === 0 && soSuCoNgoai === 0 && soCanhBaoAn === 0)) return null;
+  if (tat || (hienThi.length === 0 && soAn === 0 && soSuCoNgoai === 0 && soCanhBaoAn === 0 && soTenBiChe === 0))
+    return null;
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -762,7 +797,8 @@ export function LopNhan({
         */}
         {(chuNhanAn && soAn > 0) ||
         (chuSuCoNgoaiKhung && soSuCoNgoai > 0) ||
-        (chuCanhBaoAn && soCanhBaoAn > 0) ? (
+        (chuCanhBaoAn && soCanhBaoAn > 0) ||
+        (chuTenBiChe && chiNhanBatThuong && soTenBiChe > 0) ? (
           <div
             data-testid="cum-chip-nhan"
             data-dem-duoi-px={demDuoiPx}
@@ -832,6 +868,31 @@ export function LopNhan({
                 }}
               >
                 {chuCanhBaoAn(soCanhBaoAn)}
+              </div>
+            ) : null}
+            {/*
+              ★★★ PDCA vòng 3 (2026-09-19) — CHIP "N TÊN BỊ LỚP PHỦ CHE".
+              Đứng NGAY TRÊN chip tên-bị-ẩn vì nó nói về cùng thứ (tên máy) nhưng chỉ một
+              NGUYÊN NHÂN KHÁC và một hành động khác: chip dưới ⇒ đổi bậc mật độ; chip này ⇒
+              thu panel hoặc nới khung. Viền hổ phách, không đỏ: đây chưa phải một sự cố mới,
+              nó là lời khai rằng màn đang GIẤU tên của những máy vốn đã bất thường.
+            */}
+            {chuTenBiChe && chiNhanBatThuong && soTenBiChe > 0 ? (
+              <div
+                data-testid="chip-ten-bi-che"
+                data-so={soTenBiChe}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  background: "var(--muted, rgba(15,23,42,0.78))",
+                  color: "var(--warning, #b45309)",
+                  border: "1px solid var(--warning, #b45309)",
+                }}
+              >
+                {chuTenBiChe(soTenBiChe)}
               </div>
             ) : null}
             {chuChipAn && soAn > 0 ? (

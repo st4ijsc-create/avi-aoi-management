@@ -19944,6 +19944,7 @@
       "nhanBiAn": "{{n}} more names hidden",
       "suCoNgoaiKhung": "{{n}} alarms out of view",
       "canhBaoBiAn": "{{n}} alarms hidden",
+      "tenBiChe": "{{n}} names hidden by panels",
       "chiNhanBatThuongMoTa": "Show names only for abnormal machines (and the selected one)",
       "hienMoiNhanMoTa": "Showing abnormal machine names only — click to show every name",
       "breadcrumbAnCap": "Upper levels",
