@@ -10,6 +10,41 @@
  * Quyết định lọc nằm HẾT trong `locNhan.ts`; tệp .tsx này chỉ chiếu toạ độ và
  * vẽ div. Nhờ vậy luật ưu tiên (chọn > bất thường > hover > gần) test được trong
  * node, còn phần không test được (chiếu ma trận) không chứa quyết định nào.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ PH-55c — CHIẾU MỖI KHUNG, NHƯNG **RENDER** THÌ KHÔNG
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản trước đưa toạ độ vào khoá so sánh của state:
+ *
+ *     `${soBiGiau}#${soBatThuongNgoaiKhung}#${soAnBadge}#`
+ *       + ve.map(v => `${v.khoa}:${Math.round(v.x)}:${Math.round(v.y)}`)
+ *
+ * `Math.round(x)` của một nhãn đổi khi camera xê dịch chưa tới 1/800 bề ngang khung
+ * nhìn ⇒ **mỗi khung kéo xoay là một `setState`**, tức một lượt reconcile + commit cho
+ * CẢ danh sách nhãn — và vì `<Html>` của drei nuôi cây DOM con bằng một root react-dom
+ * RIÊNG, mỗi lượt ấy còn kéo theo một `root.render()` đầy đủ nữa. Đây là sai lầm số một
+ * trong *performance pitfalls* của react-three-fiber: *"never bind a component to state
+ * that changes per frame"*. Đo được ở `LopCanhBao` (`7adc49600`) trên cảnh 549 máy, cửa
+ * sổ nhàn rỗi 5 s: 60 nhịp rAF / 0 long task ở bản vá, 16,5 / 4 ca-6.101 ms ở bản nền.
+ *
+ * ⇒ TÁCH LÀM HAI:
+ *   · **TẬP + NỘI DUNG nhãn** (khoa · machineId · ma · phu · batThuong · dangChon, cộng
+ *     ba con số của cụm chip) — quyết định *có bao nhiêu node và mỗi node mang chữ/màu
+ *     gì* ⇒ React state.
+ *   · **VỊ TRÍ từng nhãn** (x, y) — đổi MỖI KHUNG ⇒ ghi thẳng vào node DOM qua `ref`
+ *     ({@link datViTriNhan}), KHÔNG qua state.
+ *
+ * ★★★ BA SỐ ĐẦU **Ở LẠI** TRONG KHOÁ, CÓ CHỦ ĐÍCH. `soBiGiau` /
+ *     `soBatThuongNgoaiKhung` / `soAnBadge` cũng đổi theo camera, nhưng chúng đổi MỘT
+ *     CÁCH CÓ NGHĨA: xoay camera đưa một máy sự cố ra/vào khung phải đổi CHIP NGAY, không
+ *     chờ tập nhãn đổi (xem docblock tại chỗ tính `chuKy`). Bản vá này chỉ bỏ `:x:y` khỏi
+ *     khoá — không bỏ ba số ấy. Ghim cả hai mặt ở
+ *     `lopNhanKhongVeLaiMoiKhung.dom.test.tsx`.
+ *
+ * ⚠ Phần TÍNH (chiếu, `locNhan`, `layVungCam`, `hopDaVeRef`, `hopKhoiRef`, `__demNhan`)
+ *   vẫn chạy **nguyên vẹn mỗi khung**, và lời ghi vị trí nằm TRONG CHÍNH lượt `useFrame`
+ *   vừa tính ra vị trí ấy — không đẩy sang `useEffect` / rAF riêng / lượt render sau, vì
+ *   như thế nhãn sẽ trễ camera một khung và **trôi lệch khỏi khối máy** trong lúc kéo.
  */
 
 import { Html } from "@react-three/drei";
@@ -61,6 +96,31 @@ export const TAM_CANVAS = (
 const Z_INDEX_NHAN: [number, number] = [20, 0];
 /** Lớp nhãn là chỉ báo, không nhận chuột — `pointer-events: none` để kéo xoay camera xuyên qua. */
 const KIEU_LOP_NHAN = { pointerEvents: "none", userSelect: "none" } as const;
+
+/** ★ PH-55c — thứ đổi MỖI KHUNG ⇒ đi thẳng vào node DOM qua `ref`, không qua state. */
+interface ViTriNhan {
+  x: number;
+  y: number;
+}
+
+/**
+ * ★★★ PH-55c — ghi vị trí của MỘT nhãn THẲNG vào node DOM (không `setState`).
+ *
+ * · Dùng `transform` chứ không `left/top`: hai kênh cho cùng một kết quả hình học
+ *   (`getBoundingClientRect` — thứ `coNhanRef` và e2e đọc — tính cả transform), nhưng
+ *   `left/top` bắt trình duyệt tính lại BỐ CỤC của cả lớp phủ mỗi khung, còn `transform`
+ *   chỉ hợp thành. Bỏ React ra khỏi đường đi mà vẫn viết `left/top` là mới đi được nửa
+ *   đường.
+ * · `translate(-50%, -100%)` giữ NGUYÊN nghĩa neo mà `hopNhan` của `locNhan.ts` phụ
+ *   thuộc: *(x, y) là điểm giữa CẠNH DƯỚI*, hộp trải từ `y - cao` tới `y`. Hai phép
+ *   tịnh tiến thuần giao hoán nên thứ tự không đổi gì — nhưng đổi phần trăm ấy thì mọi
+ *   phép khử chồng lệch nửa chiều cao.
+ * · KHÔNG đụng `pointerEvents` / z-index / thứ tự lớp: quyền ưu tiên click (G126/G128)
+ *   nằm ở `khiBam` + `hopKhoiRef`, không ở đây.
+ */
+function datViTriNhan(el: HTMLElement, v: ViTriNhan): void {
+  el.style.transform = `translate(-50%, -100%) translate(${v.x}px, ${v.y}px)`;
+}
 
 /**
  * ★ THAM SỐ LÀ `Element`, KHÔNG PHẢI `HTMLCanvasElement` — mở đúng một bậc, có lý do
@@ -171,11 +231,16 @@ export interface LopNhanProps {
   onChonNhan?: (machineId: number) => void;
 }
 
+/**
+ * ★★★ PH-55c — thứ ĐƯỢC PHÉP nằm trong React state: DANH TÍNH + NỘI DUNG của tập nhãn.
+ *
+ * Không còn `x`/`y` ở đây, và đó là toàn bộ bản vá. Mọi trường dưới đây chỉ đổi khi DỮ
+ * LIỆU đổi (thêm/bớt máy, đổi mã, đổi nhãn trạng thái, đổi máy đang chọn, máy hoá bất
+ * thường) — không trường nào đổi vì người dùng xoay camera.
+ */
 interface NhanDaChieu {
   khoa: string;
   machineId: number;
-  x: number;
-  y: number;
   ma: string;
   phu?: string;
   batThuong: boolean;
@@ -369,6 +434,15 @@ export function LopNhan({
    * `locNhan`; từ khung sau đã có số đo thật.
    */
   const coNhanRef = useRef(new Map<string, { rongPx: number; caoPx: number }>());
+  /**
+   * ★★★ PH-55c — HAI SỔ TAY ngoài React, cập nhật mỗi khung:
+   *   · `viTriRef` — vị trí đã tính của khung HIỆN TẠI, theo `khoa`. Node mới gắn vào DOM
+   *     đọc ngay sổ này trong `ref` nên nó không bao giờ nhấp nháy ở gốc (0, 0).
+   *   · `nodeRef`  — node DOM đang sống của từng nhãn, để vòng lặp khung ghi thẳng vào.
+   *     Xoá trong chính `ref` khi React tháo node (đối số `null`).
+   */
+  const viTriRef = useRef(new Map<string, ViTriNhan>());
+  const nodeRef = useRef(new Map<string, HTMLDivElement>());
 
   const tinhLai = useCallback(() => {
     if (tat || nhan.length === 0) {
@@ -382,6 +456,17 @@ export function LopNhan({
        */
       hopDaVeRef.current = [];
       hopKhoiRef.current = [];
+      viTriRef.current.clear();
+      /*
+       * ★★★ PH-55c — PHẢI XOÁ CHỮ KÝ Ở ĐÂY, nếu không lớp này CHẾT HẲN sau lần đầu về rỗng.
+       * Khoá nay CỐ Ý không có toạ độ ⇒ một tập nhãn biến mất rồi quay lại sinh ĐÚNG chuỗi cũ;
+       * giữ nguyên `chuKyRef` thì cửa so sánh bên dưới khớp và `setHienThi` KHÔNG BAO GIỜ được
+       * gọi lại — nhãn biến mất vĩnh viễn trong khi `__demNhan.ve` vẫn khai là có vẽ.
+       * ⚠ Bẫy này CÓ SẴN từ trước bản vá, chỉ là hẹp hơn: camera đứng yên thì `Math.round(x)/(y)`
+       *   của khoá cũ cũng không đổi, nên bật/tắt bậc mật độ `tat_nhan` đã đủ để giết lớp nhãn.
+       *   Ghim ở `lopNhanKhongVeLaiMoiKhung.dom.test.tsx` ("`tat` BẬT rồi TẮT").
+       */
+      chuKyRef.current = "";
       if (hienThi.length !== 0) setHienThi([]);
       if (soAn !== 0) setSoAn(0);
       if (soSuCoNgoai !== 0) setSoSuCoNgoai(0);
@@ -515,9 +600,53 @@ export function LopNhan({
     //   đo được dù tập nhãn và toạ độ làm tròn không đổi.
     hopDaVeRef.current = kq.ve.map((v) => ({ machineId: theoKhoa.get(v.khoa)!.machineId, hop: v.hop }));
 
+    /*
+     * ★★★ PH-55c (LUẬT 4) — VỊ TRÍ ĐI THẲNG VÀO DOM, KHÔNG QUA REACT.
+     *
+     * Đây là chỗ bản vá thật sự nằm. Vòng lặp này chạy MỖI KHUNG như trước, nhưng nó viết
+     * vào `element.style` thay vì gọi `setState`. Nó nằm TRONG CHÍNH lượt `useFrame` vừa
+     * tính ra toạ độ ấy (không `useEffect`, không rAF riêng), nên nhãn không bao giờ trễ
+     * camera một khung — thứ mà mắt bắt ngay lúc kéo (nhãn trôi khỏi khối máy) còn jsdom
+     * thì mù. Nhãn chưa có node (khung đầu của một nhãn mới) chỉ được ghi vào `viTriRef`;
+     * `ref` của nó đọc lại sổ ấy ngay khi React gắn node, trong cùng commit, trước khi
+     * trình duyệt vẽ.
+     *
+     * ⚠ THỨ TỰ ĐẶT NHÃN KHÔNG ĐỔI: `kq.ve` vẫn là thứ tự ưu tiên của `locNhan` và vẫn được
+     *   duyệt y nguyên — bản vá không sắp xếp lại gì, chỉ đổi KÊNH ghi toạ độ.
+     */
+    const viTri = viTriRef.current;
+    viTri.clear();
+    for (const v of kq.ve) {
+      const p: ViTriNhan = { x: v.x, y: v.y };
+      viTri.set(v.khoa, p);
+      const el = nodeRef.current.get(v.khoa);
+      if (el) datViTriNhan(el, p);
+    }
+
+    /*
+     * ★★★ CHỮ KÝ CỦA **TẬP + NỘI DUNG**, KHÔNG PHẢI CỦA KHUNG NHÌN — không một toạ độ nào.
+     *
+     * ★ Ba con số ĐẦU vẫn ở lại (xem docblock đầu tệp): chúng nuôi CỤM CHIP, và cụm chip
+     *   phải phản ứng NGAY khi xoay camera đưa một máy sự cố ra/vào khung — không chờ tập
+     *   nhãn đổi. Đây là một quyết định đã đo của Đợt 23 M1 / Đợt 35 / Đợt 49 D, không phải
+     *   phần sót lại của tật cũ.
+     * ★ Và vào chữ ký đúng những thứ quyết định *có bao nhiêu node, mỗi node mang gì*:
+     *   thứ tự + `khoa` (thêm/bớt/đổi chỗ), `machineId` (`data-machine-id`), `ma`/`phu`
+     *   (chữ), `batThuong` + `dangChon` (màu viền). Thiếu bốn trường sau thì đổi máy đang
+     *   chọn hay đổi nhãn trạng thái lúc camera đứng yên sẽ KHÔNG hiện ra — bản cũ chỉ
+     *   thoát nạn ấy nhờ chính cái tật render-mỗi-khung mà bản vá này gỡ bỏ (đúng lớp lỗi
+     *   `LopCanhBao` bắt được ở `muc`/`daAck`/`nhan`).
+     */
     const chuKy =
       `${kq.soBiGiau}#${kq.soBatThuongNgoaiKhung}#${soAnBadge}#` +
-      kq.ve.map((v) => `${v.khoa}:${Math.round(v.x)}:${Math.round(v.y)}`).join("|");
+      kq.ve
+        .map((v) => {
+          const g = theoKhoa.get(v.khoa)!;
+          return `${v.khoa}:${g.machineId}:${g.ma}:${g.phu ?? ""}:${g.batThuong ? 1 : 0}:${
+            g.machineId === dangChon ? 1 : 0
+          }`;
+        })
+        .join("|");
     if (chuKy === chuKyRef.current) return;
     chuKyRef.current = chuKy;
     setSoAn(kq.soBiGiau);
@@ -530,8 +659,6 @@ export function LopNhan({
         return {
           khoa: v.khoa,
           machineId: g.machineId,
-          x: v.x,
-          y: v.y,
           ma: g.ma,
           phu: g.phu,
           batThuong: g.batThuong === true,
@@ -737,7 +864,17 @@ export function LopNhan({
                Khung sau, `locNhan` khử chồng lấp bằng bbox thật thay vì trị suy
                đoán. Ghi vào ref (không setState) nên KHÔNG gây re-render vòng. */
             ref={(el) => {
-              if (!el) return;
+              if (!el) {
+                nodeRef.current.delete(n.khoa);
+                return;
+              }
+              nodeRef.current.set(n.khoa, el);
+              /* ★★★ PH-55c — đặt nhãn vào ĐÚNG chỗ của khung hiện tại NGAY trong commit này:
+                 `ref` chạy trước khi trình duyệt vẽ, nên node mới không bao giờ loé lên ở gốc
+                 lớp phủ. Phải đứng TRƯỚC phép đo bên dưới để `getBoundingClientRect` đọc node
+                 đã ở đúng chỗ. */
+              const v = viTriRef.current.get(n.khoa);
+              if (v) datViTriNhan(el, v);
               const r = el.getBoundingClientRect();
               if (r.width > 0 && r.height > 0) {
                 const cu = coNhanRef.current.get(n.khoa);
@@ -750,8 +887,12 @@ export function LopNhan({
             }}
             style={{
               position: "absolute",
-              left: n.x,
-              top: n.y,
+              /* ★★★ PH-55c — gốc CỐ ĐỊNH (0, 0); toạ độ thật đi qua `transform` do
+                 `datViTriNhan` ghi mỗi khung. Hai số này là hằng nên React không bao giờ phải
+                 viết lại chúng, và `transform` tĩnh dưới đây chỉ là trị khởi điểm (neo
+                 giữa-đáy) cho khoảnh khắc trước khi `ref` chạy. */
+              left: 0,
+              top: 0,
               transform: "translate(-50%, -100%)",
               padding: "2px 8px",
               borderRadius: 6,
