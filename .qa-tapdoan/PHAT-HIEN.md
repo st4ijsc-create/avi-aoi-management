@@ -849,3 +849,30 @@ Agent PH-54 tự khai: *"`lamTron` chưa có lưới đơn vị — chỉ đư�
 - **sàn 4 ô**: bước lớn hơn cả tấm sàn vẫn còn đúng 4 ô.
 Đối chứng trên MÃ THẬT: đổi `floor` → `round` trong chính hàm ⇒ **1 ĐỎ**; hoàn nguyên ⇒ 25/25 xanh.
 Cổng: twin3d **140 tệp / 3.179 xanh** · check 0 · i18n 0.
+
+## PH-56 (MỚI, TRUNG BÌNH — do phiên `-d2` tìm ra, phiên `-51` kiểm chứng độc lập) · `mauTheoTuoi` là MÃ CHẾT, và một docblock khai nó đang cưỡng chế
+**Máy có dữ liệu cũ 60-300 giây được vẽ trên cảnh 3D GIỐNG HỆT một máy tươi.** Không nhạt đi, không dấu hiệu nào. Khác biệt duy nhất nổi lên là **một con số trong bảng**.
+
+Kiểm độc lập (phiên `-51`, `grep -rn "mauTheoTuoi" client/src server shared`):
+| nơi | loại |
+|---|---|
+| `mauTrangThai.ts:298` | **khai hàm** |
+| `mauTrangThai.unit.test.ts` ×5 | lưới |
+| `trungThucDuLieu.ts:24` | **docblock** |
+⇒ Bỏ lưới và chú thích thì còn **đúng dòng khai của chính nó**. **0 nơi gọi sản phẩm.**
+
+Đường vẽ THẬT là `trangThaiHienThi` (`trungThucDuLieu.ts:103`) và nó rẽ **chỉ** ở `khong_ro` (`:108`). Ở mốc 60 s `trangThai` **KHÔNG đổi**, chỉ trường `tuoi` đổi — và `tuoi` được tiêu thụ ở đúng `:230-231` (`d.tuoi += 1` / `d.cu += 1`, **hai ô đếm**) cộng một nhãn ở `NganMoPhong.tsx:278`.
+★★★ Trong khi đó `trungThucDuLieu.ts:24` viết: *"Việc đó đã được `mauTrangThai.mauTheoTuoi` **cưỡng chế ở tầng màu**"* — **một docblock khẳng định sự cưỡng chế bởi một hàm không ai gọi**. Không phải một câu chữ sai, mà là một **hợp đồng an toàn được khai là có mà thực ra rỗng**.
+
+★ Đây là **lời khai sai thứ SÁU** của loạt này, và mỗi cái trước đều kèm một nhánh mã chết: `CanhVanHanh2D:94` ↔ nhánh `machineId === null` ở `XuongThietKe:1088` · `banner-ha-cap` · `banner-vi-tri-tam-sinh` · `banner-trang-thai-mot-nha-may` · `ariaLabel` chuyền vào cây `<Canvas>`.
+**Chưa vá, có chủ ý**: 60-300 s vẫn đủ tươi cho màn xưởng là một lựa chọn hợp lý; phân biệt *"quyết định có chủ ý"* với *"hồi quy khi tái cấu trúc"* là việc của chủ dự án. Nhưng dù chọn đường nào, **docblock `:24` phải đổi trong CÙNG LƯỢT**.
+**Gợi ý guard** (khuôn đã dùng được trong đợt này): ô **census** quét cây mã sản phẩm, bỏ tệp lưới, khẳng định *"mọi hàm xuất ra của `mauTrangThai.ts` có ≥ 1 nơi gọi sản phẩm, trừ danh sách miễn trừ ghi rõ lý do"*. Có ô ấy thì `mauTheoTuoi` **đã đỏ từ lúc mất nơi gọi cuối cùng**.
+
+### ⚠ LỖI CỦA PHIÊN `-51` TRONG CHÍNH VỤ NÀY — ghi để không lặp
+Tôi trích `mauTrangThai.ts:307` (`doMo × 0,6`) và **khẳng định một cơ chế mà không kiểm nó có nơi gọi nào không**, rồi đẩy phiên `-d2` đi theo một manh mối chết. Đúng lớp lỗi tôi **vừa tự dính hai hôm trước** khi khai `CanhNhaMay` có 4 người dùng (grep theo TÊN; ba trong bốn chỉ là chú thích; người dùng thật có **một**). *Phép đếm thô không phải kiểm kê* — và lần này tôi **còn không đếm**.
+★ Số học tôi đưa thì đúng: `--chi-nhip` đóng dấu **lùi 5 s** (`sinh-tai-twin.ts:906`, `TUOI_HEARTBEAT_MS = 5 * 1000`) ⇒ mốc lật ở **t+55 s**, không phải t+60. Nhưng **mốc ấy không tốn gì để vượt qua**, vì chẳng có gì được cưỡng chế ở đó.
+★ Đối chứng ba cửa sổ của `-d2` là cách xử đúng, và kết quả **mạnh hơn một lời bác bỏ**: cửa sổ **bắc qua mốc lại SẠCH NHẤT** (59,8 fps · giật 0,3 % so với 59,2/1,3 % và 59,4/1,0 %) ⇒ **thấy NGƯỢC CHIỀU**, loại hẳn giả thuyết thay vì để nó lơ lửng. Cú tụt 56,2 fps/6,8 % ban đầu quy được về **`vitest` của agent chính họ** đang chạy cùng lúc ⇒ luật mới: **đếm tiến trình node trước mỗi lượt đo** (G147 lần nữa).
+
+## ⚠ GHI CHÚ VẬN HÀNH · `--chi-nhip` KHÔNG tôn trọng `--kho` (phiên `-d2` phát hiện)
+`CHI_DO` chỉ được đọc ở `sinh-tai-twin.ts:695` và `:1125`; `chiNhip()` **không đọc** ⇒ `--chi-nhip --kho` **VẪN GHI**. Nó cũng viết lại mốc `wip_tracking` + `station_dwell_time` **không phục hồi được**. Không có `DELETE` nào nên không dính bẫy `--go`.
+★ Trạng thái nhịp lúc 2026-09-18: CSDL có **20 mốc khác nhau**; FUYU-F **549 máy / 1 mốc** (`08:40:35`, do `-d2` bơm), QATD **1.108 máy / 1 mốc** (`2026-09-16 09:05:42`), cũ nhất **2026-07-17 00:13:29** — đúng mốc mà docblock `twinCanh.ts:1497` lấy làm ví dụ *"im lặng 52 ngày"*. **Nền cũ ấy CỐ Ý để im, đừng bơm nếu cần giữ ca đối chứng.**
