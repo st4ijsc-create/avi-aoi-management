@@ -78,7 +78,50 @@ async function main() {
     for (const m of boQuaVongDoi) console.log(`   - ${m.code} (${m.lifecycle}/${m.registration})`);
     console.log("");
   }
-  const boQuaIds = new Set(boQuaVongDoi.map((m) => m.id));
+
+  /**
+   * ★★★ 2026-09-18 — BỎ QUA CẢ MÁY **CHƯA ĐƯỢC DUYỆT** (`registrationStatus != 'approved'`).
+   *
+   * Đây là số đo, không phải lo xa. Script này viết 2026-08-21 khi CSDL có **42 máy** và
+   * (gần như) tất cả đã duyệt, nên diện bỏ qua chỉ cần `retired/decommissioned/disposed`
+   * + `rejected`. Đo lại 2026-09-18: **1.700 máy, trong đó 550 `pending`**, và `--dry-run`
+   * khai sẽ cấp **1.657** khoá — tức **549 khoá sống cho máy FUYU-F mà chưa ai duyệt**.
+   *
+   * Cấp khoá cho máy `pending` là **đúng cùng một lớp lỗi** mà đoạn trên sinh ra để chặn,
+   * chỉ khác trạng thái: một credential sống cho thiết bị **chưa qua cửa duyệt**. Và nó
+   * còn lật ngược thứ tự của chính sản phẩm — `machine.approve` (`hierarchyRouters.ts:1035`)
+   * là nơi DUY NHẤT vừa lật `registrationStatus` vừa phát giấy tờ, trong MỘT thao tác của
+   * người quản trị. Cấp trước rồi duyệt sau làm cửa duyệt mất nghĩa.
+   *
+   * ⚠ Bỏ qua ở đây KHÔNG phải "bỏ rơi": máy `pending` có đường đi riêng và đúng — duyệt nó
+   *   qua `machine.approve`, và chính lượt duyệt ấy sẽ phát khoá. Script này chỉ để **vá
+   *   khoảng trống** cho máy ĐÃ duyệt mà thiếu giấy tờ (đo được 2026-09-18: **1.108 máy
+   *   QATD-A/B/C `approved` mà không có `machines.apiKey`, không `mk_`, không claim token**).
+   *
+   * ★ Đường duyệt KHÔNG hỏng — đã chạy thật một máy để biết, không đọc mã rồi suy:
+   *   `machine.approve` trên `FUYU-F-T1-L1-M1` (`pending`) ⇒ HTTP 200, cờ lật `approved`,
+   *   sinh `machines.apiKey = mach_…` **và** một claim token `mct_…` (đã hoàn nguyên sạch).
+   *   Nên 1.108 máy kia là do được tạo **đi tắt** — không script nào dưới `scripts/` sinh ra
+   *   chúng (đã grep toàn repo), chúng đến từ bộ QA của một phiên khác. **Không quy cho một
+   *   tệp cụ thể ở đây**: chưa đo được thì không ghi tên.
+   *
+   * ⚠⚠ CẢ HAI nhánh phát giấy tờ trong `machine.approve` đều bọc `try/catch` và chỉ
+   *   `logger.warn` (mã tự khai *"best-effort BY DESIGN — a credential failure must not 500
+   *   the admin"*). Nghĩa là **`approved` không hứa là CÓ giấy tờ**, và không có gì đối soát
+   *   lại về sau. Script này chính là cái đối soát ấy — chạy `--dry-run` định kỳ, con số
+   *   `CẦN CẤP` > 0 là một cảnh báo, không phải việc vặt.
+   */
+  const chuaDuyet = dsMay.filter(
+    (m) => !boQuaVongDoi.includes(m) && String(m.registration ?? "") !== "approved",
+  );
+  if (chuaDuyet.length) {
+    console.log(`Bỏ qua ${chuaDuyet.length} máy CHƯA ĐƯỢC DUYỆT (registrationStatus != 'approved'):`);
+    for (const m of chuaDuyet.slice(0, 10)) console.log(`   - ${m.code} (${m.registration})`);
+    if (chuaDuyet.length > 10) console.log(`   … và ${chuaDuyet.length - 10} máy nữa`);
+    console.log("   ⇒ Duyệt chúng qua `machine.approve`; chính lượt duyệt đó phát giấy tờ.\n");
+  }
+
+  const boQuaIds = new Set([...boQuaVongDoi, ...chuaDuyet].map((m) => m.id));
 
   const canCap = dsMay.filter((m) => !daCo.has(m.id) && !boQuaIds.has(m.id));
 
