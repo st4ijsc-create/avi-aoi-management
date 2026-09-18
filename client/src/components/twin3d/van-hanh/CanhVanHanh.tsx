@@ -63,6 +63,7 @@ import type { KhungNhin, HopCanvas } from "./phamViCanh";
 import { TWEEN_DOI_CAP_MS, khungNhinVaoVung, vungDungCanvas } from "./phamViCanh";
 import { layVungCam } from "../loi/LopNhan";
 import { useBuocLuoi } from "../loi/useBuocLuoi";
+import { buocThucTheoSoO } from "../loi/buocLuoi";
 import type { DiemScene } from "../heToaDo";
 import { LopCanhBao, type CanhBaoTheGioi } from "./LopCanhBao";
 import { DongChayLine, type DiemDongChay } from "./DongChayLine";
@@ -360,7 +361,7 @@ function San({ rongM, sauM, toi }: { rongM: number; sauM: number; toi: boolean }
   const soOGoc = Math.max(4, Math.round(canh / 5));
   const buocGoc = canh / soOGoc;
   const lamTron = useCallback(
-    (b: number) => (b === buocGoc ? buocGoc : canh / Math.max(4, Math.floor(canh / b))),
+    (b: number) => buocThucTheoSoO(canh, buocGoc, b),
     [canh, buocGoc],
   );
   const buoc = useBuocLuoi(buocGoc, { lamTron });

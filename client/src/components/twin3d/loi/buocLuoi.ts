@@ -166,3 +166,39 @@ export function khoangCachToiDiemNgam(
   }
   return r;
 }
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ LƯỢNG TỬ HOÁ VỀ SỐ Ô NGUYÊN — thứ giữ cho bất biến "ô ≥ N px" còn đúng
+ * ════════════════════════════════════════════════════════════════════════════
+ * `gridHelper` không nhận một BƯỚC, nó nhận một SỐ Ô nguyên. Nên bước thật sự
+ * được vẽ là `canh / soO`, chứ không phải bước mà {@link buocLuoiTheoManHinh}
+ * vừa chọn. Nếu làm tròn số ô theo kiểu gần nhất thì bước thật có thể **nhỏ hơn**
+ * bước đã chọn, và ô trên màn tụt xuống **dưới** {@link O_TOI_THIEU_PX} — tức
+ * bất biến bị phá ở đúng chỗ không ai nhìn.
+ *
+ * ⇒ Làm tròn số ô **XUỐNG** (`floor`): ít ô hơn ⇒ bước LỚN hơn ⇒ ô trên màn
+ *   **≥** thứ đã chọn. Sai số của lượng tử hoá luôn rơi về **phía an toàn**.
+ *
+ * ★ Ca `b === buocGoc` trả thẳng `buocGoc`: đó là đường "không làm thưa". Không
+ *   có nhánh ấy thì chính phép lượng tử hoá sẽ **đổi lưới hôm nay** ở những màn
+ *   vốn đã đủ to (`/twin` một nhà máy, 27,75 px) — một bản vá không được đụng
+ *   vào thứ nó không sửa.
+ *
+ * ★★★ VÌ SAO NẰM Ở ĐÂY: biểu thức này từng được **chép nguyên văn ở HAI tệp
+ *   cảnh** (`CanhVanHanh.tsx` và `CanhThietKe.tsx` — đã đối chiếu, giống hệt
+ *   từng ký tự). Hai bản sao của một bất biến là hai cơ hội để chúng lệch nhau
+ *   mà không cổng nào kêu. Gom về một chỗ, và ghim bằng lưới ở
+ *   `buocLuoi.unit.test.ts`.
+ *
+ * @param canh   cạnh tấm lưới (m) — `gridHelper` chia đều cạnh này
+ * @param buocGoc bước của lưới HÔM NAY, trước khi làm thưa
+ * @param b      bước mà thang màn hình vừa chọn
+ * @returns bước THẬT SỰ vẽ được, luôn `>= b` (trừ ca không-làm-thưa)
+ */
+export const O_TOI_THIEU_CUA_LUOI = 4;
+
+export function buocThucTheoSoO(canh: number, buocGoc: number, b: number): number {
+  if (b === buocGoc) return buocGoc;
+  return canh / Math.max(O_TOI_THIEU_CUA_LUOI, Math.floor(canh / b));
+}

@@ -9,6 +9,8 @@
 import { describe, it, expect } from "vitest";
 import {
   O_TOI_THIEU_PX,
+  O_TOI_THIEU_CUA_LUOI,
+  buocThucTheoSoO,
   THANG_BUOC,
   thangTran,
   pxTrenMet,
@@ -150,5 +152,68 @@ describe("khoangCachToiDiemNgam — điểm ngắm trên sàn, không phải g�
     const d = khoangCachToiDiemNgam({ x: 0, y: 50, z: 0 }, { x: 1, y: -1e-9, z: 0 });
     expect(Number.isFinite(d)).toBe(true);
     expect(d).toBeLessThanOrEqual(50 * 4 + 1e-6);
+  });
+});
+
+describe("★★★ ⑤ LƯỢNG TỬ HOÁ về số ô nguyên — sai số phải rơi về PHÍA AN TOÀN", () => {
+  /**
+   * ⚠ Ô này lấp một khoảng trống agent PH-54 **tự khai**: *"`lamTron` chưa có
+   * lưới đơn vị — chỉ được xác nhận qua số sống (50,495 ≥ 50; 212,08 ≥ 200)"*.
+   * Hai con số ấy đúng chiều, nhưng hai mẫu không phải một bất biến.
+   *
+   * ★ Vì sao nó quan trọng: `gridHelper` nhận một SỐ Ô NGUYÊN, nên bước THẬT là
+   *   `canh / soO`, không phải bước mà thang màn hình vừa chọn. Làm tròn gần nhất
+   *   sẽ cho bước thật **nhỏ hơn** bước đã chọn ⇒ ô trên màn tụt **dưới** ngưỡng
+   *   ⇒ bất biến ① bị phá **ở đúng chỗ không ai nhìn**.
+   *
+   * ★ Biểu thức này từng **chép nguyên văn ở HAI tệp cảnh** (đã đối chiếu: giống
+   *   hệt từng ký tự). Đã gom về `buocThucTheoSoO`; ô này ghim nó.
+   */
+  const CANH = [37, 110, 673, 1_060.4, 2_240, 28_920]; // cạnh sàn THẬT đã đo trong đợt
+
+  it("★ bước thật LUÔN ≥ bước được chọn — quét 6 cạnh × 40 bước", () => {
+    let soLan = 0;
+    for (const canh of CANH) {
+      const buocGoc = canh / Math.max(4, Math.round(canh / 5));
+      for (let i = 1; i <= 40; i += 1) {
+        const b = (canh / 4) * (i / 40); // trải từ rất mịn tới chạm trần 4 ô
+        if (b === buocGoc) continue;
+        const thuc = buocThucTheoSoO(canh, buocGoc, b);
+        expect(thuc, `canh=${canh} b=${b}`).toBeGreaterThanOrEqual(b);
+        soLan += 1;
+      }
+    }
+    // KÍCH THƯỚC đầu vào khẳng định TRƯỚC kết cục: một vòng lặp rỗng sẽ xanh giả.
+    expect(soLan).toBeGreaterThan(200);
+  });
+
+  it("★ ĐỐI CHỨNG BIẾT KÊU — làm tròn GẦN NHẤT thì bất biến VỠ", () => {
+    // Cùng dữ liệu, chỉ đổi `floor` thành `round`: phải tìm được ca bước thật < b.
+    const ganNhat = (canh: number, b: number) => canh / Math.max(4, Math.round(canh / b));
+    let soCaVo = 0;
+    for (const canh of CANH) {
+      for (let i = 1; i <= 40; i += 1) {
+        const b = (canh / 4) * (i / 40);
+        if (ganNhat(canh, b) < b - 1e-9) soCaVo += 1;
+      }
+    }
+    expect(soCaVo, "nếu 0 thì phép đo này không phân biệt được hai cách làm tròn").toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("★ đường KHÔNG-LÀM-THƯA trả về đúng bước cũ — bản vá không đụng thứ nó không sửa", () => {
+    for (const canh of CANH) {
+      const buocGoc = canh / Math.max(4, Math.round(canh / 5));
+      expect(buocThucTheoSoO(canh, buocGoc, buocGoc)).toBe(buocGoc);
+    }
+  });
+
+  it("★ sàn 4 ô — lưới không bao giờ thưa tới mức không còn là lưới", () => {
+    const canh = 1_060.4;
+    const buocGoc = canh / Math.max(4, Math.round(canh / 5));
+    // bước lớn hơn cả tấm sàn ⇒ vẫn phải còn đúng 4 ô
+    const thuc = buocThucTheoSoO(canh, buocGoc, canh * 10);
+    expect(canh / thuc).toBeCloseTo(O_TOI_THIEU_CUA_LUOI, 9);
   });
 });

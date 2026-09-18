@@ -837,3 +837,15 @@ Agent đo được **N = 10 là MIỄN PHÍ** (nâng đúng hai ca sát ngưỡn
 1. Chạy `vitest` khi nguồn **đang mang giá trị ablation** ⇒ 3 ca đỏ; truy ra là **nhiễm bẩn của chính mình** (đúng 3 ca canh *"vá bị tắt"*), chạy lại sạch.
 2. ★ **Harness ghi đè 21 tệp ĐÃ COMMIT** của vòng trước (`n1-truoc.json` + 20 PNG) vì bản sao harness vẫn trỏ `.qa-tapdoan/`. Dừng ngay, **khôi phục đủ 21 tệp từ HEAD** (`git status` sạch — chủ đợt đã kiểm), đổi đường ghi vào `ph54/`.
 3. ★ **Viết số "bất khả" vào docblock TRƯỚC khi đo** — và đo xong thì **sai** (ghi `/twin` tập đoàn bất khả; thật ra hai màn `/factory-command` mới bất khả). Đã sửa theo bảng đo và **dựng lại xác nhận md5 bundle giống hệt** bản đã đo.
+
+## V-41 ★★ Lượng tử hoá số ô — khoảng trống agent TỰ KHAI, nay đã ghim
+Agent PH-54 tự khai: *"`lamTron` chưa có lưới đơn vị — chỉ được xác nhận qua số sống (50,495 ≥ 50; 212,08 ≥ 200)"*. Hai con số ấy **đúng chiều**, nhưng hai mẫu không phải một bất biến.
+★ Vì sao nó quan trọng: `gridHelper` nhận một **SỐ Ô NGUYÊN**, nên bước THẬT là `canh / soO`, không phải bước mà thang màn hình vừa chọn. Làm tròn **gần nhất** sẽ cho bước thật **nhỏ hơn** bước đã chọn ⇒ ô trên màn tụt **dưới** ngưỡng ⇒ **bất biến ① bị phá ở đúng chỗ không ai nhìn**.
+★★★ Và biểu thức ấy **chép nguyên văn ở HAI tệp cảnh** (`CanhVanHanh.tsx` / `CanhThietKe.tsx` — chủ đợt đối chiếu: **giống hệt từng ký tự**). Hai bản sao của một bất biến là hai cơ hội để chúng lệch nhau mà không cổng nào kêu.
+⇒ Gom về `buocThucTheoSoO(canh, buocGoc, b)` trong `buocLuoi.ts`, hai tệp cảnh cùng gọi. Lưới mới 4 ca:
+- **bất biến**: quét **6 cạnh sàn THẬT đã đo trong đợt** (37 / 110 / 673 / 1.060,4 / 2.240 / 28.920 m) × 40 bước ⇒ bước thật **luôn ≥** bước được chọn; khẳng định **kích thước ≥ 200 lần lặp TRƯỚC** kết cục (vòng rỗng sẽ xanh giả).
+- **đối chứng biết kêu**: cùng dữ liệu, đổi `floor` → `round` ⇒ **phải tìm được** ca bước thật < b. Nếu đếm ra 0 thì phép đo không phân biệt được hai cách làm tròn.
+- đường **không-làm-thưa** trả đúng bước cũ (bản vá không đụng thứ nó không sửa).
+- **sàn 4 ô**: bước lớn hơn cả tấm sàn vẫn còn đúng 4 ô.
+Đối chứng trên MÃ THẬT: đổi `floor` → `round` trong chính hàm ⇒ **1 ĐỎ**; hoàn nguyên ⇒ 25/25 xanh.
+Cổng: twin3d **140 tệp / 3.179 xanh** · check 0 · i18n 0.

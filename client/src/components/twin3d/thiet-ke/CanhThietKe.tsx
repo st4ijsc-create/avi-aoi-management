@@ -75,6 +75,7 @@ import { mmSangMet } from "../heToaDo";
 import { SAN_CAO_CANH_THIET_KE_PX } from "./khungNhin";
 import { TRANG_THAI_CHON_RONG, type TrangThaiChon } from "../loi/chonVatThe";
 import { useBuocLuoi } from "../loi/useBuocLuoi";
+import { buocThucTheoSoO } from "../loi/buocLuoi";
 import { GizmoBienDoi } from "./GizmoBienDoi";
 import type { CheDoGizmo, TrucKhoa } from "./gizmoNoiLogic";
 import type { HopMa } from "./xemTruocSinh";
@@ -259,7 +260,7 @@ function San({
   const soOGoc = Math.max(4, Math.round(canh));
   const buocGoc = canh / soOGoc;
   const lamTron = useCallback(
-    (b: number) => (b === buocGoc ? buocGoc : canh / Math.max(4, Math.floor(canh / b))),
+    (b: number) => buocThucTheoSoO(canh, buocGoc, b),
     [canh, buocGoc],
   );
   const buoc = useBuocLuoi(buocGoc, { lamTron });
