@@ -30,6 +30,33 @@
  *
  * ★ RB-7 — component này không cấp phát geometry/material nào (toàn DOM), nên
  *   không có gì phải `dispose()`.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ LUẬT 4 (PH-55) — CHIẾU MỖI KHUNG, NHƯNG **RENDER** THÌ KHÔNG
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản trước đưa toạ độ vào khoá so sánh của state:
+ *
+ *     `${an}|${ve.map(v => `${v.id}:${Math.round(v.x)}:${Math.round(v.y)}:…`)}`
+ *
+ * `Math.round(x)` của một badge đổi khi camera xê dịch chưa tới 1/400 bề ngang khung
+ * nhìn ⇒ **mỗi khung kéo xoay là một `setState`**, tức một lượt reconcile + commit cho
+ * CẢ danh sách badge — và vì `<Html>` của drei nuôi cây DOM con bằng một root react-dom
+ * RIÊNG, mỗi lượt ấy còn kéo theo một `root.render()` đầy đủ nữa. Đây đúng là sai lầm số
+ * một trong *performance pitfalls* của react-three-fiber: *"never bind a component to
+ * state that changes per frame"*.
+ *
+ * ⇒ TÁCH LÀM HAI:
+ *   · **TẬP badge** (id · mức · nhãn · đã-ack · số bị ẩn) — đổi khi DỮ LIỆU đổi ⇒ React
+ *     state, vì nó quyết định *có bao nhiêu node, mỗi node mang chữ/màu gì*.
+ *   · **VỊ TRÍ + CỜ VẼ** (x, y, ngoài-khung, dời-chỗ, góc mũi tên) — đổi MỖI KHUNG ⇒ ghi
+ *     thẳng vào node DOM qua `ref` ({@link datViTriBadge}), KHÔNG qua state.
+ *
+ * ⚠ Phần TÍNH (chiếu, `locBadge`, `layVungCam`, `ghiHopDaVe`, `ghiSoAn`, `__demBadge`) vẫn
+ *   chạy **nguyên vẹn mỗi khung**. Bản vá chỉ bỏ REACT ra khỏi đường đi của toạ độ, không
+ *   bỏ phép đo nào: sổ `hopDaVe` mà `LopNhan` đọc ở CÙNG khung vẫn phải mới từng khung
+ *   (G136 — "badge VẼ == badge VÀO SỔ"), kể cả những khung không có lượt commit nào.
+ *   Ghim bằng `lopCanhBaoKhongVeLaiMoiKhung.dom.test.tsx` (đầu độc sổ giữa chừng, bắt một
+ *   khung không-setState dựng lại).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -37,6 +64,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
 
+import { useOptionalTheme } from "../../factory-scene/useOptionalTheme";
 import { giaiMauCanh } from "../mauTrangThai";
 import { mauChuTrenNen } from "./mauChuTrenNen";
 import { mauCss } from "./mauThree";
@@ -108,6 +136,51 @@ interface BadgeDaChieu {
   doiCho?: boolean;
 }
 
+/**
+ * ★★★ PH-55 — thứ ĐƯỢC PHÉP nằm trong React state: DANH TÍNH + NỘI DUNG của tập badge.
+ *
+ * Không có `x`/`y`/`ngoaiKhung`/`gocMuiTen` ở đây, và đó là toàn bộ bản vá. Mọi trường
+ * dưới đây chỉ đổi khi DỮ LIỆU cảnh báo đổi (thêm/bớt alarm, ack, đổi mức, đổi nhãn) —
+ * không trường nào đổi vì người dùng xoay camera.
+ */
+interface BadgeTrongTap {
+  id: number;
+  muc: MucCanhBao;
+  nhan: string;
+  daAck: boolean;
+}
+
+/** Thứ đổi MỖI KHUNG ⇒ đi thẳng vào node DOM qua `ref`, không qua state. */
+interface ViTriBadge {
+  x: number;
+  y: number;
+  ngoaiKhung: boolean;
+  doiCho: boolean;
+  gocMuiTen: number;
+}
+
+/**
+ * ★★★ PH-55 — ghi vị trí + cờ vẽ của MỘT badge THẲNG vào node DOM (không `setState`).
+ *
+ * · Dùng `transform` chứ không `left/top`: hai kênh cho cùng một kết quả hình học
+ *   (`getBoundingClientRect` — thứ e2e và `coBadgeRef` đọc — tính cả transform), nhưng
+ *   `left/top` bắt trình duyệt tính lại BỐ CỤC của cả lớp phủ mỗi khung, còn `transform`
+ *   chỉ hợp thành. Bỏ React ra khỏi đường đi mà vẫn viết `left/top` là mới đi được nửa
+ *   đường. `translate(-50%, -50%)` giữ nguyên nghĩa "(x, y) là TÂM hộp" mà `hopBadge`
+ *   của `locBadge.ts` phụ thuộc — hai phép tịnh tiến giao hoán nên thứ tự không đổi gì.
+ * · `data-ngoai-khung` / `data-doi-cho` ghi qua `dataset` (đúng tên thuộc tính cũ, e2e
+ *   `qa-t1-badge-chonglap.spec.ts` đọc chúng), vì hai cờ ấy cũng đổi theo từng khung.
+ */
+function datViTriBadge(el: HTMLElement, muiTen: HTMLElement | null | undefined, v: ViTriBadge): void {
+  el.style.transform = `translate(-50%, -50%) translate(${v.x}px, ${v.y}px)`;
+  el.dataset.ngoaiKhung = v.ngoaiKhung ? "1" : "0";
+  el.dataset.doiCho = v.doiCho ? "1" : "0";
+  if (!muiTen) return;
+  // Luật 3 — mũi tên chỉ về vị trí THẬT của alarm ngoài khung (Đợt 47: cả badge bị dời chỗ).
+  muiTen.style.display = v.ngoaiKhung || v.doiCho ? "inline-block" : "none";
+  muiTen.style.transform = `rotate(${v.gocMuiTen}rad)`;
+}
+
 /** Lề tối thiểu khi kẹp badge vào rìa, px. */
 const LE_RIA_PX = 28;
 
@@ -115,13 +188,48 @@ const LE_RIA_PX = 28;
 const Z_INDEX_BADGE: [number, number] = [30, 10];
 /** Lớp badge là chỉ báo, không nhận chuột — kéo xoay camera xuyên qua. */
 const KIEU_LOP_BADGE = { pointerEvents: "none", userSelect: "none" } as const;
+/**
+ * Kiểu KHỞI ĐIỂM của mũi tên — hằng module, và CỐ Ý là "ẩn".
+ *
+ * Nút mũi tên nay LUÔN được dựng (xem chỗ dùng): sự tồn tại của nó từng phụ thuộc cờ
+ * `ngoaiKhung`/`doiCho`, mà hai cờ ấy đổi theo từng khung kéo camera ⇒ mỗi lần badge chạm
+ * rìa là một lượt commit. `datViTriBadge` bật/tắt nó bằng `display` ngay trong chính
+ * commit gắn node (ref chạy trước khi trình duyệt vẽ), nên không có khung nào thấy mũi
+ * tên sai. `display: "none"` (chứ không `visibility`) ⇒ nút ẩn KHÔNG chiếm chỗ, bề rộng
+ * badge đo vào `coBadgeRef` vẫn đúng bằng bề rộng lúc chưa có mũi tên — y như bản
+ * dựng-có-điều-kiện trước đây, nên `locBadge` không đổi hành vi khử chồng.
+ */
+const KIEU_MUI_TEN = { display: "none", transform: "rotate(0rad)" } as const;
 
 export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const gl = useThree((s) => s.gl);
   const invalidate = useThree((s) => s.invalidate);
-  const [hienThi, setHienThi] = useState<BadgeDaChieu[]>([]);
+  /**
+   * ★★★ PH-55b — HỒI QUY DO CHÍNH PH-55 MỞ RA, VÁ BẰNG HOOK ĐÃ CÓ (G12).
+   *
+   * `mauCss` và `mauChuTrenNen` đọc biến CSS của `<html>` NGAY TRONG THÂN RENDER
+   * (`giaiMauCanh` → `getComputedStyle(document.documentElement)`), nên màu badge đúng
+   * hay sai phụ thuộc vào việc component có render lại sau khi theme đổi hay không.
+   * Trước PH-55 nó render mỗi khung nên tự lành sau ~16 ms; sau PH-55 nó chỉ render khi
+   * TẬP badge đổi — mà `ThemeContext.tsx:38` đổi theme bằng `root.classList.add("dark")`,
+   * một thao tác không chạm `canhBao` và không xin khung (`frameloop="demand"`). Badge sẽ
+   * đứng lại ở màu theme cũ vô thời hạn: đúng chỗ ba vòng đo WCAG của Đợt 57 vừa dọn.
+   *
+   * ★ DÙNG LẠI `useOptionalTheme` — KHÔNG viết bản thứ hai: nó đã theo dõi đúng
+   *   `documentElement` với `attributeFilter: ["class"]` + `matchMedia` cho theme hệ điều
+   *   hành, và an toàn khi thiếu Provider (không cần bắc cầu context vào trong `<Canvas>` —
+   *   ràng buộc mà lớp này không thể phá). `setState` của nó là thứ kéo một lượt render.
+   * ★ CỐ Ý KHÔNG đưa theme vào `chuKy` và KHÔNG memo hoá bảng màu: `chuKy` chỉ được so ở
+   *   TRONG một khung, mà đổi theme không sinh khung nào; còn memo theo `[theme]` sẽ ghim
+   *   vĩnh viễn màu DỰ PHÒNG nếu lượt render đầu chạy trước khi stylesheet kịp có biến —
+   *   đọc lại mỗi lượt render là hành vi cũ, và nay số lượt render đã ít.
+   * ★ Giá trị được KHAI ra DOM (`data-theme` dưới kia) nên sự phụ thuộc này đọc được, đo
+   *   được và không thể bị xoá âm thầm.
+   */
+  const theme = useOptionalTheme();
+  const [hienThi, setHienThi] = useState<BadgeTrongTap[]>([]);
 
   // ★ Đợt 47 (N5) — rời cảnh thì rút hộp khỏi sổ chung, nhãn không phải né bóng ma.
   useEffect(
@@ -142,10 +250,30 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
    * dùng trị suy đoán của `locBadge`; từ khung sau đã có số đo thật.
    */
   const coBadgeRef = useRef(new Map<number, { rongPx: number; caoPx: number }>());
+  /**
+   * ★★★ PH-55 — BA SỔ TAY ngoài React, cập nhật mỗi khung:
+   *   · `viTriRef`  — vị trí + cờ vẽ đã tính của khung HIỆN TẠI, theo `id`. Node mới gắn
+   *     vào DOM đọc ngay sổ này trong `ref` nên nó không bao giờ nhấp nháy ở gốc (0,0).
+   *   · `nodeRef` / `muiTenRef` — node DOM đang sống của từng badge, để vòng lặp khung
+   *     ghi thẳng vào. Xoá trong chính `ref` khi React tháo node (đối số `null`).
+   */
+  const viTriRef = useRef(new Map<number, ViTriBadge>());
+  const nodeRef = useRef(new Map<number, HTMLDivElement>());
+  const muiTenRef = useRef(new Map<number, HTMLSpanElement>());
 
   const tinhLai = useCallback(() => {
     if (canhBao.length === 0) {
       ghiHopDaVe(gl.domElement, LOP_BADGE, []);
+      viTriRef.current.clear();
+      /*
+       * ★★★ PH-55 — PHẢI XOÁ CHỮ KÝ Ở ĐÂY, nếu không lớp này CHẾT HẲN sau lần đầu hết
+       * cảnh báo. Trước bản vá chữ ký chứa toạ độ nên hai lần "cùng một tập badge" gần như
+       * không bao giờ trùng chuỗi, và lỗi ngủ yên. Nay chữ ký CỐ Ý không có toạ độ ⇒ một
+       * alarm đóng rồi mở lại sinh ĐÚNG chuỗi cũ; giữ nguyên `chuKyRef` thì so sánh bên
+       * dưới khớp và `setHienThi` không bao giờ được gọi lại — badge biến mất vĩnh viễn
+       * trong khi mọi phép đo (`__demBadge.ve`, sổ `hopDaVe`) vẫn khai là có vẽ.
+       */
+      chuKyRef.current = "";
       if (hienThi.length !== 0) {
         setHienThi([]);
         setSoAn(0);
@@ -316,10 +444,42 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
       };
     }
 
-    const chuKy = `${an}|${ve.map((v) => `${v.id}:${Math.round(v.x)}:${Math.round(v.y)}:${v.ngoaiKhung ? 1 : 0}${v.doiCho ? "d" : ""}`).join("|")}`;
+    /*
+     * ★★★ PH-55 (LUẬT 4) — VỊ TRÍ ĐI THẲNG VÀO DOM, KHÔNG QUA REACT.
+     *
+     * Đây là chỗ bản vá thật sự nằm. Vòng lặp này chạy MỖI KHUNG như trước, nhưng nó
+     * viết vào `element.style` / `element.dataset` thay vì gọi `setState`. Badge chưa có
+     * node (khung đầu của một badge mới) chỉ được ghi vào `viTriRef`; `ref` của nó đọc
+     * lại sổ ấy ngay khi React gắn node, trong cùng commit, trước khi trình duyệt vẽ.
+     */
+    const viTri = viTriRef.current;
+    viTri.clear();
+    for (const b of ve) {
+      const v: ViTriBadge = {
+        x: b.x,
+        y: b.y,
+        ngoaiKhung: b.ngoaiKhung,
+        doiCho: b.doiCho === true,
+        gocMuiTen: b.gocMuiTen,
+      };
+      viTri.set(b.id, v);
+      const el = nodeRef.current.get(b.id);
+      if (el) datViTriBadge(el, muiTenRef.current.get(b.id), v);
+    }
+
+    /*
+     * ★★★ CHỮ KÝ CỦA **TẬP**, KHÔNG PHẢI CỦA KHUNG NHÌN — không một toạ độ nào ở đây.
+     *
+     * Vào chữ ký đúng những thứ quyết định *có bao nhiêu node và mỗi node mang gì*:
+     * số bị ẩn (`data-so-an`), thứ tự + `id` (thêm/bớt badge), `muc` (hình dạng + màu),
+     * `daAck` (viền nét đứt), `nhan` (chữ). Thiếu ba trường sau thì một alarm được ack
+     * hoặc đổi mức sẽ KHÔNG bao giờ cập nhật trên màn khi camera đứng yên — bản cũ chỉ
+     * thoát nạn ấy nhờ chính cái tật render mỗi khung mà bản vá này gỡ bỏ.
+     */
+    const chuKy = `${an}|${ve.map((v) => `${v.id}:${v.muc}:${v.daAck ? 1 : 0}:${v.nhan}`).join("|")}`;
     if (chuKy === chuKyRef.current) return;
     chuKyRef.current = chuKy;
-    setHienThi(ve);
+    setHienThi(ve.map((b) => ({ id: b.id, muc: b.muc, nhan: b.nhan, daAck: b.daAck })));
     setSoAn(an);
   }, [canhBao, camera, gl, size.width, size.height, tran, hienThi.length]);
 
@@ -343,6 +503,10 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
         data-testid="lop-canh-bao"
         data-so-badge={hienThi.length}
         data-so-an={soAn}
+        /* ★★★ PH-55b — theme mà lớp này ĐANG vẽ theo. Không phải trang trí: nó là cửa sổ đo
+           duy nhất cho biết màu badge đã theo kịp `<html class="dark">` chưa, và nó khiến sự
+           phụ thuộc vào `useOptionalTheme` không thể bị xoá mà mọi lưới vẫn xanh. */
+        data-theme={theme}
         style={{ position: "relative", width: "100%", height: "100%" }}
       >
         {hienThi.map((b) => {
@@ -370,16 +534,28 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
             <div
               key={b.id}
               data-testid={`badge-canh-bao-${b.id}`}
-              data-ngoai-khung={b.ngoaiKhung ? "1" : "0"}
-              data-doi-cho={b.doiCho ? "1" : "0"}
               data-muc={b.muc}
               /* ★ Đợt 57 (mục 11) — trạng thái ack nay đọc được từ DOM (viền thay cho `opacity`). */
               data-da-ack={b.daAck ? "1" : "0"}
-              /* ★ Đo kích thước THẬT ngay khi div gắn vào DOM và nhớ theo `id`.
+              /* ★★★ PH-55 — `data-ngoai-khung` / `data-doi-cho` KHÔNG còn ở đây: hai cờ ấy đổi
+                 theo từng khung kéo camera nên chúng do `datViTriBadge` ghi qua ref (tên và
+                 ngữ nghĩa thuộc tính giữ nguyên — e2e `qa-t1-badge-chonglap.spec.ts` đọc chúng).
+                 Để chúng lại trong JSX là để nguyên cái tật này ở một cửa sau.
+                 ★ Đo kích thước THẬT ngay khi div gắn vào DOM và nhớ theo `id`.
                  Khung sau, `locBadge` khử chồng lấn bằng bbox thật thay vì trị
                  suy đoán. Ghi vào ref (không setState) nên KHÔNG gây re-render. */
               ref={(el) => {
-                if (!el) return;
+                if (!el) {
+                  nodeRef.current.delete(b.id);
+                  return;
+                }
+                nodeRef.current.set(b.id, el);
+                /* Đặt badge vào ĐÚNG chỗ của khung hiện tại NGAY trong commit này — `ref` chạy
+                   trước khi trình duyệt vẽ, nên node mới không bao giờ loé lên ở gốc lớp phủ.
+                   Phải đứng TRƯỚC phép đo bên dưới: mũi tên vừa được bật/tắt ở đây quyết định
+                   bề rộng mà `getBoundingClientRect` sắp đọc. */
+                const v = viTriRef.current.get(b.id);
+                if (v) datViTriBadge(el, muiTenRef.current.get(b.id), v);
                 const r = el.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0) {
                   const cu = coBadgeRef.current.get(b.id);
@@ -392,8 +568,12 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
               }}
               style={{
                 position: "absolute",
-                left: b.x,
-                top: b.y,
+                /* ★★★ PH-55 — gốc CỐ ĐỊNH (0, 0); toạ độ thật đi qua `transform` do
+                   `datViTriBadge` ghi mỗi khung. Hai số này là hằng nên React không bao giờ
+                   phải viết lại chúng, và `transform` tĩnh dưới đây chỉ là giá trị khởi điểm
+                   (neo TÂM) cho khoảnh khắc trước khi `ref` chạy. */
+                left: 0,
+                top: 0,
                 transform: "translate(-50%, -50%)",
                 display: "flex",
                 alignItems: "center",
@@ -431,16 +611,20 @@ export function LopCanhBao({ canhBao, tran = TRAN_BADGE }: LopCanhBaoProps) {
               {/* Luật 2 — hình dạng, rồi chữ. Màu là chiều thứ ba, không phải duy nhất. */}
               <span aria-hidden="true">{kieu.hinh}</span>
               <span>{b.nhan}</span>
-              {b.ngoaiKhung || b.doiCho ? (
-                /* Luật 3 — mũi tên chỉ về vị trí THẬT của alarm ngoài khung (Đợt 47: cả badge bị dời chỗ). */
-                <span
-                  aria-hidden="true"
-                  data-testid={`mui-ten-${b.id}`}
-                  style={{ transform: `rotate(${b.gocMuiTen}rad)`, display: "inline-block" }}
-                >
-                  ➤
-                </span>
-              ) : null}
+              {/* Luật 3 — mũi tên chỉ về vị trí THẬT của alarm ngoài khung (Đợt 47: cả badge bị dời
+                  chỗ). ★★★ PH-55: LUÔN dựng, `display`+góc do `datViTriBadge` ghi qua ref (xem
+                  `KIEU_MUI_TEN`) — dựng-có-điều-kiện buộc mỗi lần badge chạm rìa thành một commit. */}
+              <span
+                aria-hidden="true"
+                data-testid={`mui-ten-${b.id}`}
+                ref={(el) => {
+                  if (el) muiTenRef.current.set(b.id, el);
+                  else muiTenRef.current.delete(b.id);
+                }}
+                style={KIEU_MUI_TEN}
+              >
+                ➤
+              </span>
             </div>
           );
         })}
