@@ -235,3 +235,26 @@ describe("đổi cụm thành hộp cho `LoBatchMay` — dùng lại lớp vẽ 
     expect(theoId.size).toBe(0);
   });
 });
+
+describe("lối đè cỡ tối thiểu — cho bề mặt KHÔNG phối cảnh (bản 2D)", () => {
+  const ds = [may(1, 4, 0, 0), may(2, 4, 3, 0), may(3, 8, 50, 50)];
+  it("★★★ có `coToiThieuM` ⇒ camera KHÔNG còn ảnh hưởng cỡ (2D không có khoảng cách)", () => {
+    const gan = dungCumTram(ds, { x: 0, y: 5, z: 5 }, CAO_CANVAS, { fovDo: FOV, coToiThieuM: 9 });
+    const xa = dungCumTram(ds, { x: 0, y: 500, z: 500 }, CAO_CANVAS, { fovDo: FOV, coToiThieuM: 9 });
+    expect(gan[0].rongM).toBe(xa[0].rongM);
+    expect(gan[0].rongM).toBeGreaterThanOrEqual(9);
+  });
+
+  it("★ CA NGHỊCH — bỏ `coToiThieuM` thì camera LẠI ảnh hưởng (không phải hằng số hoá cả hàm)", () => {
+    const gan = dungCumTram(ds, { x: 0, y: 5, z: 5 }, CAO_CANVAS, { fovDo: FOV });
+    const xa = dungCumTram(ds, { x: 0, y: 500, z: 500 }, CAO_CANVAS, { fovDo: FOV });
+    expect(xa[0].rongM).toBeGreaterThan(gan[0].rongM);
+  });
+
+  it("★ vế 'không teo dưới cỡ máy thật' vẫn thắng khi `coToiThieuM` nhỏ hơn máy", () => {
+    const to = [{ machineId: 1, lineId: 1, viTri: { x: 0, y: 0, z: 0 },
+      kichThuocMm: { rongMm: 20_000, caoMm: 20_000, sauMm: 20_000 } }];
+    const cum = dungCumTram(to, { x: 0, y: 50, z: 50 }, CAO_CANVAS, { coToiThieuM: 2 });
+    expect(cum[0].rongM).toBeGreaterThanOrEqual(20);
+  });
+});

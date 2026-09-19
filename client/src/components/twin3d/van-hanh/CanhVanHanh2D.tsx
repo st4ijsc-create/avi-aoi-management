@@ -42,7 +42,7 @@
  * `saBan2D.dom.test.tsx` (hành vi) và `saBanHaiCheDo.unit.test.ts` (khớp nối).
  */
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useOptionalTheme } from "@/components/factory-scene/useOptionalTheme";
 
@@ -54,6 +54,8 @@ import { useOptionalTheme } from "@/components/factory-scene/useOptionalTheme";
  *   cùng một máy (G12). Hàm là phép nhân THUẦN, không kéo DOM theo.
  */
 import { apDungMucTuoi, giaiMauCanh, mauChoTrangThai, type MucTuoi } from "../mauTrangThai";
+import { cumThanhHopVe, dungCumTram, type CumTram } from "./cumTram";
+import { NGUONG_CANH_NHO_PX } from "./nguongDonViVe";
 import { mmSangMet } from "../heToaDo";
 import { useDatNhanSaBan2D, type MucNhan2D } from "./nhanSaBan2D";
 import {
@@ -162,6 +164,17 @@ export interface CanhVanHanh2DProps {
   maTheoMay: ReadonlyMap<number, string>;
   machineIdChon: number | null;
   onChonMay: (machineId: number | null) => void;
+  /**
+   * ★★★ HM-1 (bản 2D) — `machineId → lineId` để gộp CỤM TRẠM, CÙNG nguồn mà bản 3D dùng.
+   *
+   * Task 20 đo được hậu quả của việc đổi đơn vị vẽ ở một bề mặt mà quên bề mặt kia: 3D vẽ 12
+   * biểu tượng rộng 56,5–83,0 px trong khi 2D vẫn vẽ 1.108 vật thể rộng **0,11–3,95 px** — người
+   * dùng bấm nút "2D/3D" và thấy hai thứ khác hẳn nhau. Prop này là chỗ bịt khe ấy.
+   * `undefined`/rỗng ⇒ KHÔNG bao giờ gộp (đường cũ y nguyên).
+   */
+  lineTheoMay?: ReadonlyMap<number, number | null>;
+  /** Bấm vào biểu tượng cụm. `null` = cụm chưa gán line ⇒ người gọi tự quyết. */
+  onChonCum?: (lineId: number | null) => void;
   sanRongM: number;
   sanSauM: number;
   /** Nhãn trạng thái ĐÃ qua `t()` — component không gọi `t()` (RB-8.3). */
@@ -193,6 +206,8 @@ export function CanhVanHanh2D({
   maTheoMay,
   machineIdChon,
   onChonMay,
+  lineTheoMay,
+  onChonCum,
   sanRongM,
   sanSauM,
   nhanTrangThai,
@@ -219,9 +234,77 @@ export function CanhVanHanh2D({
    * `vien = kheToa` phía trên và chữ sẽ bị cắt ở mép viewBox. Một dòng chữ rưỡi
    * là đủ, và nó lấy đi ~3 % bề rộng sa bàn — trả giá ít hơn hẳn một nhãn cụt.
    */
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ HM-1 BẢN 2D — TỈ LỆ ĐỒNG NHẤT, NÊN PHÉP QUYẾT ĐỊNH ĐƠN GIẢN HƠN 3D
+   * ════════════════════════════════════════════════════════════════════════
+   * `viewBox` tính bằng MÉT và `<svg>` co giãn lấp khung, nên **không có phối cảnh**: mọi máy
+   * cùng một tỉ lệ px/mét. Không cần frustum, không cần khoảng cách, không cần thống kê theo
+   * diện tích như bản 3D — chỉ cần một phép chia.
+   * ⚠ Nhưng cỡ khung là một đại lượng DOM, nên phải đo; `ResizeObserver` giữ nó đúng khi panel
+   *   thu/mở hoặc cửa sổ đổi cỡ, thay vì đọc một lần rồi đóng băng.
+   */
+  const [khungPx, setKhungPx] = useState({ rong: 0, cao: 0 });
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((ds) => {
+      const r = ds[0]?.contentRect;
+      if (r) setKhungPx({ rong: r.width, cao: r.height });
+    });
+    ro.observe(el);
+    const r0 = el.getBoundingClientRect();
+    setKhungPx({ rong: r0.width, cao: r0.height });
+    return () => ro.disconnect();
+  }, []);
+
   const le = veSaBan ? Math.max(LE_M, chuCum * 1.6) : LE_M;
   const rong = Math.max(sanRongM, 10) + le * 2;
   const sau = Math.max(sanSauM, 10) + le * 2;
+
+  /**
+   * Đơn vị vẽ của bản 2D. Cùng ngưỡng WCAG và cùng hệ số trễ với bản 3D — hai lối vào, một bộ luật.
+   * `pxMoiMet` suy thẳng từ `viewBox`: `rong` mét lấp trọn `rongKhungPx` pixel.
+   */
+  /*
+   * ★★★ `min` CỦA HAI CHIỀU, không phải bề rộng.
+   * `<svg>` mặc định `preserveAspectRatio="xMidYMid meet"` — nó co để LỌT khung, nên tỉ lệ thật
+   * là chiều bị bó hẹp hơn. Đo được khi tôi chỉ lấy bề rộng: cụm ra **18,17 px** thay vì 24
+   * (= 0,757 lần), đúng bằng tỉ số hai chiều của khung lúc ấy.
+   */
+  const pxMoiMet =
+    rong > 0 && sau > 0 && khungPx.rong > 0 && khungPx.cao > 0
+      ? Math.min(khungPx.rong / rong, khungPx.cao / sau)
+      : 0;
+  const cumDeVe = useMemo(() => {
+    if (veSaBan || !lineTheoMay || lineTheoMay.size === 0 || pxMoiMet <= 0) return null;
+    const mayGop = may.map((m) => ({
+      machineId: m.machineId,
+      lineId: lineTheoMay.get(m.machineId) ?? null,
+      viTri: { x: m.viTri.x, y: 0, z: m.viTri.z },
+      kichThuocMm: {
+        rongMm: m.kichThuocMm.rongMm,
+        caoMm: m.kichThuocMm.rongMm,
+        sauMm: m.kichThuocMm.sauMm,
+      },
+      batThuong: (trangThaiTheoMay.get(m.machineId) ?? "") === "down",
+    }));
+    if (mayGop.length === 0) return null;
+    // Ở 2D cạnh nhỏ trên màn của MỘT máy = min(rộng, sâu) × px/mét — không có khoảng cách.
+    const canh = mayGop
+      .map((m) => Math.min(m.kichThuocMm.rongMm, m.kichThuocMm.sauMm) / 1000 * pxMoiMet)
+      .sort((a, z) => a - z);
+    const tv = canh.length ? canh[Math.floor((canh.length - 1) / 2)] : 0;
+    if (tv >= NGUONG_CANH_NHO_PX) return null;   // đủ to ⇒ vẽ từng máy, như cũ
+    const cum = dungCumTram(mayGop, { x: 0, y: 0, z: 0 }, 1, {
+      coToiThieuM: NGUONG_CANH_NHO_PX / pxMoiMet,
+    });
+    return cumThanhHopVe(cum, (c: CumTram) => {
+      const xau = c.machineIds.find((id: number) => (trangThaiTheoMay.get(id) ?? "") === "down");
+      const tt = trangThaiTheoMay.get(xau ?? c.machineIds[0]) ?? "khong_ro";
+      return giaiMauCanh(mauChoTrangThai(tt).token) ?? "#94a3b8";
+    });
+  }, [veSaBan, lineTheoMay, pxMoiMet, may, trangThaiTheoMay]);
 
   /** Màu chữ + quầng chữ: quầng làm nhãn đọc được TRÊN CẢ nền cụm lẫn mặt sàn. */
   const mauChu = toi ? "#e2e8f0" : "#0f172a";
@@ -354,7 +437,7 @@ export function CanhVanHanh2D({
        *   "hai chế độ cùng đơn vị vẽ" bằng một giá trị đọc được, thay vì bằng
        *   một ấn tượng về ảnh chụp.
        */
-      data-don-vi-ve={veSaBan ? "toa-nha" : "may"}
+      data-don-vi-ve={veSaBan ? "toa-nha" : cumDeVe ? "cum" : "may"}
       onClick={(e) => {
         /*
          * Click nền = bỏ chọn.
@@ -547,7 +630,43 @@ export function CanhVanHanh2D({
         </g>
       ) : null}
 
-      {veSaBan ? null : may.map((m) => {
+      {/*
+        ★★★ HM-1 bản 2D — CÙNG mảng cụm, CÙNG bộ luật với bản 3D.
+        Task 20 đo được hậu quả của việc quên bề mặt này: 3D vẽ 12 biểu tượng rộng 56,5–83,0 px
+        trong khi 2D vẫn vẽ 1.108 vật thể rộng 0,11–3,95 px — hai nút cho hai thứ khác hẳn nhau.
+      */}
+      {veSaBan || !cumDeVe
+        ? null
+        : cumDeVe.hop.map((h) => {
+            const c = cumDeVe.theoId.get(h.machineId)!;
+            const rongM = h.kichThuocMm.rongMm / 1000;
+            const sauM = h.kichThuocMm.sauMm / 1000;
+            return (
+              <g
+                key={h.machineId}
+                data-testid={`cum-2d-${c.lineId ?? "chua-gan"}`}
+                data-so-may={c.soMay}
+                data-so-bat-thuong={c.soBatThuong}
+                style={{ cursor: "pointer" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChonCum?.(c.lineId);
+                }}
+              >
+                <rect
+                  x={h.viTri.x - rongM / 2}
+                  y={h.viTri.z - sauM / 2}
+                  width={rongM}
+                  height={sauM}
+                  fill={h.mau}
+                  fillOpacity={0.85}
+                  stroke={h.mau}
+                  strokeWidth={Math.max(rongM, sauM) * 0.03}
+                />
+              </g>
+            );
+          })}
+      {veSaBan || cumDeVe ? null : may.map((m) => {
         const tt = trangThaiTheoMay.get(m.machineId) ?? "khong_ro";
         /*
          * ⚠ Mặc định `"tuoi"` (KHÔNG nhạt) chứ không phải `"cu"`: máy vắng khỏi

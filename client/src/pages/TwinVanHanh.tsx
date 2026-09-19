@@ -4358,6 +4358,9 @@ export function ThanTwinVanHanh() {
                   (mặc định bản đồ RỖNG ⇒ mọi máy coi như `tuoi`), nên quên dòng này là để 2D
                   nói "bình thường" về máy mà 3D đã nói "dữ liệu cũ" — và KHÔNG cổng nào đỏ. */
               mucTuoiTheoMay={mucTuoiTheoMay}
+              /* ★★★ HM-1 bản 2D — CÙNG bản đồ line mà bản 3D dùng, không dựng nguồn thứ hai. */
+              lineTheoMay={lineTheoMay}
+              onChonCum={chonCum}
               maTheoMay={maTheoMay}
               machineIdChon={machineIdNgan}
               onChonMay={chonMay}

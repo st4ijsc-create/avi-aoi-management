@@ -84,6 +84,18 @@ export interface TuyChonCum {
   nguongPx?: number;
   /** Trường nhìn dọc (độ). Mặc định 45 — khớp mặc định của `KhungCanh`. */
   fovDo?: number;
+  /**
+   * ★★★ ĐÈ cỡ tối thiểu (mét), bỏ qua phép suy từ camera.
+   *
+   * Dành cho bề mặt **KHÔNG có phối cảnh** — bản 2D vẽ trong một `viewBox` theo mét nên tỉ lệ
+   * px/mét là ĐỒNG NHẤT, không có khoảng cách nào để suy. Người gọi tính thẳng
+   * `nguongPx / pxMoiMet` rồi đưa vào đây.
+   *
+   * ⚠ Vì sao đè chứ không dựng một module thứ hai cho 2D: Task 20 đo được hậu quả của việc ấy —
+   *   3D vẽ 12 biểu tượng rộng 56,5–83,0 px trong khi 2D vẫn vẽ 1.108 vật thể rộng 0,11–3,95 px,
+   *   tức hai nút "2D/3D" cho hai thứ khác hẳn nhau. Một bộ luật, hai lối vào.
+   */
+  coToiThieuM?: number;
 }
 
 const trungVi = (ds: number[]): number =>
@@ -144,8 +156,10 @@ export function dungCumTram(
      * của biểu tượng sau khi đã biết cỡ sẽ thành vòng lặp (cỡ phụ thuộc d, d phụ thuộc cỡ);
      * chênh lệch do nửa chiều cao là bậc mét trên khoảng cách bậc trăm mét, không đáng kể.
      */
-    const d = khoangCachToiMay(camera, { x: tamX, y: 0, z: tamZ });
-    const toiThieuM = coThatToiThieuM(nguongPx, d, fovDo, caoCanvasPx);
+    const toiThieuM =
+      tuyChon.coToiThieuM !== undefined
+        ? tuyChon.coToiThieuM
+        : coThatToiThieuM(nguongPx, khoangCachToiMay(camera, { x: tamX, y: 0, z: tamZ }), fovDo, caoCanvasPx);
 
     const rongM = Math.max(trungVi(ds.map((m) => m.kichThuocMm.rongMm)) / 1000, toiThieuM);
     const sauM = Math.max(trungVi(ds.map((m) => m.kichThuocMm.sauMm)) / 1000, toiThieuM);
