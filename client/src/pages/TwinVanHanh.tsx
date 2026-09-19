@@ -4461,6 +4461,16 @@ export function ThanTwinVanHanh() {
                  Đo được @1280×720: 176 khối, cạnh trung vị 3,23 × 4,74 px, 0/130 đạt 24×24. */
               lineTheoMay={lineTheoMay}
               onChonCum={chonCum}
+              /* ★ Nhãn CỤM: ở tầm nhìn này thứ hành động được là "line nào đang có máy hỏng",
+                 không phải tên một cái máy nằm bên trong cụm — bấm không được. */
+              chuNhanCum={(c) =>
+                c.soBatThuong > 0
+                  ? t("twin3d.vanHanh.nhanCumCoLoi", "{{n}} máy · {{k}} bất thường", {
+                      n: c.soMay,
+                      k: c.soBatThuong,
+                    })
+                  : t("twin3d.vanHanh.nhanCum", "{{n}} máy", { n: c.soMay })
+              }
               /* ★ ĐỢT 24 VIỆC 2 — chỗ gọi THẬT của `chiNhanBatThuong`. Trước
                  dòng này `grep` ra 0 người truyền `true` (G16). */
               chiNhanBatThuong={chiNhanBatThuong}

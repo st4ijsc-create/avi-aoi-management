@@ -397,14 +397,23 @@ for (const vp of VP) {
       await page.waitForTimeout(150);
       await page.mouse.click(X, Y);
       /*
-       * ★★★ BẤM NHÃN ≠ BẤM KHỐI, kể cả ở bậc CỤM — và tôi đã khái quát quá tay một lần ở đây.
-       * Khối ở bậc cụm đại diện một LINE nên nó mở `/twin/line/:id`; còn NHÃN nêu tên MỘT MÁY cụ
-       * thể, nên nó phải mở đúng máy ấy. Cho nhãn đi theo đơn vị vẽ là biến một cái tên thành
-       * một cái nhóm — mất đúng thứ người vận hành vừa đọc được.
+       * ★★★ KHẲNG ĐỊNH ĐI THEO **THỨ MÀ NHÃN ĐẶT TÊN**, không theo "nhãn hay khối".
+       *
+       * Tôi đã sai ở đây một lần rồi sửa lại một lần nữa, và cả hai lần đều có lý do:
+       *   · lần 1 tôi cho nhãn đi theo đơn vị vẽ ⇒ SAI, vì lúc ấy nhãn vẫn là nhãn MÁY (chỉ được
+       *     nâng điểm neo lên nóc cụm); một cái tên máy phải mở đúng máy ấy;
+       *   · nay ở bậc cụm nhãn **là nhãn CỤM** (*"38 machines · 2 abnormal"*), nên nó đặt tên một
+       *     LINE và phải mở `/twin/line/:id` — y như khối cụm.
+       * ⇒ Hỏi `duongMongDoi`: ở bậc `may` nó vẫn đòi `/twin/may/:id` y như cũ, nên ca này KHÔNG
+       *   bị nới — nó chỉ thôi giả định rằng mọi nhãn đều nêu tên một cái máy.
        */
-      await page.waitForURL(new RegExp(`/twin/may/${id}(\\?|$)`), { timeout: 3_000 });
-      luu(`t1c-${man}-${vp.width}`, { duong, vp, nhanBamDuoc, urlSau: page.url() });
-      expect(new URL(page.url()).pathname).toBe(`/twin/may/${id}`);
+      const mongDoiC = await duongMongDoi(page, id);
+      await page.waitForURL(mongDoiC.re, { timeout: 3_000 });
+      luu(`t1c-${man}-${vp.width}`, { duong, vp, nhanBamDuoc, urlSau: page.url(), donViVe: mongDoiC.donViVe });
+      expect(
+        mongDoiC.hopLe(new URL(page.url()).pathname),
+        `nhãn ở đơn vị vẽ "${mongDoiC.donViVe}" ⇒ phải mở ${mongDoiC.moTa}, đo được ${new URL(page.url()).pathname}`,
+      ).toBe(true);
       // Không điều hướng HAI lần (nhãn + máy phía sau): Back một lần phải về màn gốc.
       await page.goBack({ waitUntil: "domcontentloaded" });
       await page.waitForTimeout(1_500);

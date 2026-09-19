@@ -185,6 +185,20 @@ export interface CanhVanHanhProps {
    * `null` = cụm "chưa gán line" — người gọi tự quyết làm gì, cảnh không đoán hộ.
    */
   onChonCum?: (lineId: number | null) => void;
+  /**
+   * ★★★ Chữ ĐÃ QUA `t()` cho nhãn CỤM — cảnh không được gọi `t()` (RB-8.3).
+   *
+   * Ở bậc cụm, nhãn phải nói về CỤM chứ không về máy, và đây là quyết định có số đứng sau: tên
+   * một cái máy nằm BÊN TRONG cụm là thứ người vận hành **không hành động được** ở tầm nhìn này
+   * — họ không bấm được cái máy ấy, chỉ bấm được cụm. Thứ hành động được là *"line nào đang có
+   * máy hỏng"*. Đo được @1280×720 khi còn dùng nhãn MÁY ở bậc cụm: **7/19** tên vẽ được,
+   * **11 bị lớp phủ che** — tức 11 cái tên vừa không đọc được vừa không bấm được.
+   *
+   * ★ Và nó rẻ hơn hẳn: ứng viên nhãn rơi từ **182** xuống đúng **số cụm**, nên `biChe` gần như
+   *   biến mất mà không phải đụng tới lớp phủ.
+   * `undefined` ⇒ giữ nhãn MÁY (đường cũ) — prop vắng thì hành vi byte-identical.
+   */
+  chuNhanCum?: (c: { lineId: number | null; soMay: number; soBatThuong: number }) => string;
   chuMatContext: string;
   ariaLabel: string;
   /**
@@ -793,6 +807,7 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
   const saBanCum = props.saBanCum ?? EMPTY_SA_BAN_CUM;
   const lineTheoMay = props.lineTheoMay;
   const onChonCum = props.onChonCum;
+  const chuNhanCum = props.chuNhanCum;
   /** ★ Task 20 — sa bàn THAY cảnh máy, không đứng cạnh (xem docblock prop `saBan`). */
   const veSaBan = saBan.length > 0;
   /* ★ PH-46/47 — xem docblock `useKhungNhinVungDung`. Không sa bàn ⇒ hai dòng này
@@ -969,12 +984,29 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
     return m;
   }, [cumVe]);
   const nhanVe = useMemo(() => {
+    /*
+     * ★★★ Ở bậc cụm, nhãn nói về CỤM — xem docblock prop `chuNhanCum`. Một cái tên máy nằm trong
+     *   cụm là thông tin KHÔNG HÀNH ĐỘNG ĐƯỢC ở tầm nhìn này.
+     */
+    if (cumVe && chuNhanCum) {
+      return cumVe.hop.map((h) => {
+        const c = cumVe.theoId.get(h.machineId)!;
+        return {
+          khoa: `cum:${c.lineId ?? "chua-gan"}`,
+          machineId: h.machineId,
+          viTri: { x: c.viTri.x, y: c.viTri.y + c.caoM + HO_NEO_TREN_CUM_M, z: c.viTri.z },
+          ma: chuNhanCum({ lineId: c.lineId, soMay: c.soMay, soBatThuong: c.soBatThuong }),
+          batThuong: c.soBatThuong > 0,
+        };
+      });
+    }
+    // Chưa nối chữ ⇒ giữ nhãn MÁY, chỉ nâng điểm neo lên nóc cụm.
     if (!nocCumTheoMay) return nhan;
     return nhan.map((n) => {
       const noc = nocCumTheoMay.get(n.machineId);
       return noc === undefined ? n : { ...n, viTri: { ...n.viTri, y: noc + HO_NEO_TREN_CUM_M } };
     });
-  }, [nhan, nocCumTheoMay]);
+  }, [nhan, nocCumTheoMay, cumVe, chuNhanCum]);
   const canhBaoVe = useMemo(() => {
     if (!nocCumTheoMay) return canhBao;
     return canhBao.map((c) => {
@@ -1191,6 +1223,7 @@ type PropsHam = Pick<
   | "chuCanhBaoAn"
   | "chuTenBiChe"
   | "onChonCum"
+  | "chuNhanCum"
 >;
 
 /** Khoá giá trị của một prop dữ liệu — `undefined` và `null` phân biệt (bỏ trống ≠ tắt). */
@@ -1227,6 +1260,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuCanhBaoAn: props.chuCanhBaoAn,
     chuTenBiChe: props.chuTenBiChe,
     onChonCum: props.onChonCum,
+    chuNhanCum: props.chuNhanCum,
   });
   hamRef.current = {
     onChonMay: props.onChonMay,
@@ -1237,6 +1271,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuCanhBaoAn: props.chuCanhBaoAn,
     chuTenBiChe: props.chuTenBiChe,
     onChonCum: props.onChonCum,
+    chuNhanCum: props.chuNhanCum,
   };
   const onChonMay = useCallback((id: number | null) => hamRef.current.onChonMay(id), []);
   const onCameraDoi = useCallback(
@@ -1259,6 +1294,11 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
   const chuCanhBaoAnOnDinh = useCallback((n: number) => hamRef.current.chuCanhBaoAn?.(n) ?? "", []);
   const coOnChonCum = props.onChonCum !== undefined;
   const onChonCumOnDinh = useCallback((lineId: number | null) => hamRef.current.onChonCum?.(lineId), []);
+  const coChuNhanCum = props.chuNhanCum !== undefined;
+  const chuNhanCumOnDinh = useCallback(
+    (c: { lineId: number | null; soMay: number; soBatThuong: number }) => hamRef.current.chuNhanCum?.(c) ?? "",
+    [],
+  );
   const coChuTenBiChe = props.chuTenBiChe !== undefined;
   const chuTenBiCheOnDinh = useCallback((n: number) => hamRef.current.chuTenBiChe?.(n) ?? "", []);
 
@@ -1283,6 +1323,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       chuCanhBaoAn={coChuCanhBaoAn ? chuCanhBaoAnOnDinh : undefined}
       chuTenBiChe={coChuTenBiChe ? chuTenBiCheOnDinh : undefined}
       onChonCum={coOnChonCum ? onChonCumOnDinh : undefined}
+      chuNhanCum={coChuNhanCum ? chuNhanCumOnDinh : undefined}
       lineTheoMay={props.lineTheoMay}
       sanRongM={props.sanRongM}
       sanSauM={props.sanSauM}
