@@ -259,8 +259,45 @@ export function CanhVanHanh2D({
   }, []);
 
   const le = veSaBan ? Math.max(LE_M, chuCum * 1.6) : LE_M;
-  const rong = Math.max(sanRongM, 10) + le * 2;
-  const sau = Math.max(sanSauM, 10) + le * 2;
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ KHUNG NHÌN KHỚP **NỘI DUNG**, KHÔNG KHỚP SÀN KHAI BÁO
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo được (`/twin` FUYU-F, bản 2D): `viewBox` là **3004 × 2004 mét** trong khi máy chỉ chiếm
+   * **51 × 200 m** — nội dung lấp **1,7 %** bề rộng. Hậu quả: mọi máy dồn vào một góc, và ở
+   * `0,24 px/mét` thì một đích bấm 24 px đòi một vật **98 mét** — rộng gần gấp đôi toàn bộ vùng
+   * máy. Đo được: cả 6 biểu tượng cụm rơi vào đúng ô `hang-tong-quan` của panel trái.
+   *
+   * Bản 3D **tự khớp khung theo nội dung** (`khungNhin`), nên hai bề mặt đang trả lời khác nhau
+   * về cùng một nhà máy — đúng lớp lỗi "hai nút, hai thứ" mà Task 20 đã ghi.
+   *
+   * ⇒ Khung nhìn lấy **hộp bao của máy** (cộng lề), kẹp trong sàn khai báo. Sàn vẫn được vẽ
+   *   nguyên kích thước thật của nó — đây là đổi KHUNG NHÌN, không phải đổi sự thật về sàn.
+   * ⚠ Không áp cho `veSaBan`: ở bậc sa bàn, khung do `canhTapDoan` quyết định và nó đã có bộ
+   *   luật riêng (Task 20).
+   */
+  const hopNoiDung = useMemo(() => {
+    if (veSaBan || may.length === 0) return null;
+    const xs = may.map((m) => m.viTri.x);
+    const zs = may.map((m) => m.viTri.z);
+    const bien = Math.max(...may.map((m) => Math.max(m.kichThuocMm.rongMm, m.kichThuocMm.sauMm) / 1000));
+    return {
+      xMin: Math.min(...xs) - bien,
+      xMax: Math.max(...xs) + bien,
+      zMin: Math.min(...zs) - bien,
+      zMax: Math.max(...zs) + bien,
+    };
+  }, [veSaBan, may]);
+
+  const goc = hopNoiDung
+    ? { x: hopNoiDung.xMin - le, z: hopNoiDung.zMin - le }
+    : { x: -le, z: -le };
+  const rong = hopNoiDung
+    ? Math.max(hopNoiDung.xMax - hopNoiDung.xMin, 10) + le * 2
+    : Math.max(sanRongM, 10) + le * 2;
+  const sau = hopNoiDung
+    ? Math.max(hopNoiDung.zMax - hopNoiDung.zMin, 10) + le * 2
+    : Math.max(sanSauM, 10) + le * 2;
 
   /**
    * Đơn vị vẽ của bản 2D. Cùng ngưỡng WCAG và cùng hệ số trễ với bản 3D — hai lối vào, một bộ luật.
@@ -425,7 +462,7 @@ export function CanhVanHanh2D({
   return (
     <svg
       ref={svgRef}
-      viewBox={`${-le} ${-le} ${rong} ${sau}`}
+      viewBox={`${goc.x} ${goc.z} ${rong} ${sau}`}
       className="h-full w-full"
       role="img"
       aria-label={ariaLabel}
