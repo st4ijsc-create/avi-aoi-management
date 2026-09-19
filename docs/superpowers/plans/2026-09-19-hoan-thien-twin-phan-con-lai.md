@@ -447,3 +447,85 @@ máy ấy. Cho nhãn đi theo đơn vị vẽ là biến một cái **tên** th�
 - **Nhãn cụm**: ở bậc cụm, nhãn vẫn là **tên MÁY** (được nâng lên nóc cụm), chưa có nhãn nói
   *"line 514 · 29 máy · 3 bất thường"*. Thiết kế có nêu; tôi chọn giữ tên máy vì đó là thứ vòng 3
   chứng minh người vận hành đang mất. Đánh đổi này **chưa được đo**.
+
+---
+
+# ĐÓNG CÁC MỤC CÒN MỞ (2026-09-19, tiếp)
+
+## 1. Bản 2D khớp khung theo NỘI DUNG — `674779eb8`
+
+Truy tiếp mục *"bấm cụm ở bản 2D chưa nghiệm thu được"* thì lộ ra một khuyết tật **có sẵn**,
+không phải của HM-1.
+
+| | trước | sau |
+|---|---|---|
+| `viewBox` | **3004 × 2004 m** | hộp bao máy + lề |
+| nội dung lấp | **1,7 %** bề rộng | ~100 % |
+| tỉ lệ vẽ | **0,244 px/m** | **2,369 px/m** |
+| bấm cụm 2D | **không cụm nào bấm được** (cả 6 rơi vào ô `hang-tong-quan`) | **ĐẠT** ⇒ `/twin/line/:id` |
+
+Ở `0,244 px/m`, một đích bấm 24 px đòi một vật **98 mét** — rộng gần gấp đôi toàn bộ vùng máy.
+Bản 3D vốn tự khớp theo nội dung, nên hai bề mặt đang trả lời khác nhau về cùng một nhà máy.
+Sàn vẫn được vẽ nguyên kích thước thật: đây là đổi **khung nhìn**, không phải đổi **sự thật về sàn**.
+
+Bản 2D nay **đạt cả năm tiêu chí**: đơn vị vẽ khai `"cum"` · 6 cụm = 6 cụm của 3D · cạnh nhỏ
+**6/6 ≥ 24 px** · **176/176** máy đại diện · bấm cụm mở màn Line.
+
+## 2. Nhãn CỤM thay nhãn MÁY ở bậc cụm — `a5eeb4508`
+
+Thiết kế §2 khai *"nhãn gắn cho CỤM chứ không cho máy"*; tôi đã lệch khỏi nó (giữ nhãn máy, chỉ
+nâng điểm neo) và **tự ghi đánh đổi ấy là chưa được đo**. Nay đo rồi, và thiết kế đúng.
+
+| @1280×720 | trước | sau |
+|---|---|---|
+| ứng viên nhãn | 182 | **6** (đúng số cụm) |
+| nhãn vẽ được | 7/19 | **5/6** |
+| `biChe` | 11 | **1** |
+| @1920×1080 | 15 vẽ / biChe 1 | **6/6 vẽ · biChe 0** · chip biến mất |
+
+Lý do nhãn cụm đúng hơn: tên một cái máy nằm **bên trong** cụm là thứ người vận hành **không hành
+động được** ở tầm nhìn này — họ không bấm được cái máy ấy, chỉ bấm được cụm. Thứ hành động được
+là *"line nào đang có máy hỏng"*. Nhãn hiện đúng: **"38 machines · 2 abnormal"**, tổng lại
+**176 máy / 19 bất thường** — khớp chính xác số máy của tầng và số ứng viên của chế độ
+chỉ-nhãn-bất-thường.
+
+### ★ Một khuôn rút ra: khẳng định đi theo THỨ MÀ NHÃN ĐẶT TÊN
+
+Tôi phải sửa **ba lần** đúng một chỗ trong lưới e2e, và cả ba đều có lý do riêng:
+
+1. ban đầu ca ghim hằng `"/twin/may/:id"` ⇒ đỏ khi đơn vị vẽ thành cụm;
+2. tôi cho **cả nhãn** đi theo đơn vị vẽ ⇒ **sai lúc ấy**, vì nhãn vẫn là nhãn MÁY (chỉ nâng neo);
+3. nay nhãn **là** nhãn cụm nên nó đặt tên một LINE ⇒ phải mở `/twin/line/:id`, y như khối cụm.
+
+Bậc `may` vẫn đòi `/twin/may/:id` y như cũ, nên ca **không bị nới** — nó chỉ thôi giả định rằng
+mọi nhãn đều nêu tên một cái máy. e2e `twin-dot47`: **16/16**.
+
+## 3. ⚠ MÀN LINE — đã đo, và nó là một QUYẾT ĐỊNH THIẾT KẾ, không phải một bản vá
+
+Đo `/twin/line/526` (39 máy):
+
+| khung | nội dung lấp ngang | nội dung lấp **dọc** | cạnh nhỏ trung vị | đạt 24×24 |
+|---|---|---|---|---|
+| 1280×720 | 80,5 % | **1,2 %** | 5,87 px | **0/39** |
+| 1920×1080 | 88,9 % | **1,3 %** | 10,76 px | **0/39** |
+
+Line là một dải **~130 : 1**, nên khung khớp theo chiều dài và **98,8 % chiều cao canvas bỏ không**.
+Và không nấc zoom nào vừa thấy trọn line vừa có đích ≥ 24 px: ở nấc 18 chỉ còn **11/39** máy trong
+khung. Đây **không phải** lỗi khung nhìn như bản 2D — khung đã khớp đúng; hình dạng của dữ liệu
+mới là thứ chặn.
+
+**Ba lối, mỗi lối một cái giá — cần chủ dự án chọn:**
+
+| | làm gì | được | giá |
+|---|---|---|---|
+| **(L1)** | giữ nguyên | 0 | đích bấm 5,87 px vĩnh viễn; người vận hành đi qua nhãn/danh sách |
+| **(L2)** | **bố cục SƠ ĐỒ** cho màn Line: xếp 39 máy thành lưới lấp khung, **khai rõ là sơ đồ** (có tiền lệ `laSoDo` của Task 20, và `banner-vi-tri-tam-sinh` đã có khuôn) | đích bấm đạt ngưỡng; thấy trọn line | vị trí trên cảnh thôi là toạ độ thật — phải nói ra, và phải giữ lại con số thật để banner nêu được cả hai |
+| **(L3)** | cuộn dọc theo line thay vì khớp trọn | đích bấm to | mất cái nhìn tổng thể của line |
+
+Tôi **không tự chọn** vì (L2) đổi ý nghĩa của vị trí trên màn Line — đó là một ràng buộc trung
+thực, không phải một chi tiết kỹ thuật.
+
+## Trạng thái cổng cuối
+
+`tsc` **0** · `twin3d`+`pages` **164 tệp / 3.472 ca / 0 đỏ** · `i18n:check` **0** khoá mới lỗi ·
+e2e `twin-dot47-bam-canh` **16/16** (`--workers=1`) · cây sạch.
