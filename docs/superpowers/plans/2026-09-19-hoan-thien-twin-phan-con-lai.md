@@ -348,3 +348,93 @@ Hai bài học tách bạch:
 Cơ chế đã chốt và đã có bằng chứng. **Chưa viết mã sản phẩm.** Việc kế tiếp theo đúng thứ tự §5:
 dựng hàm thuần + lưới (gồm ca nghịch và ca trễ đóng/mở), rồi mới nối vào cảnh.
 Thô: `.qa-v2/tho-v6/`.
+
+---
+
+# HOÀN THÀNH — cả ba hạng mục (2026-09-19)
+
+| | hạng mục | kết cục | commit |
+|---|---|---|---|
+| HM-1 | bậc đơn vị vẽ thứ ba: **cụm trạm** | đích bấm **0/130 → 6/6 đạt 24×24** | `7601c12fe` `ad30f99dd` `0b6428019` `e258c62c4` `83ec12d81` |
+| HM-2(a) | `bang-kpi-noi` thu ở khung hẹp | lớp phủ **70,8 % → 58,2 %**, nhãn vẽ **1 → 7** | `81a6bf670` |
+| HM-3 | hai ca e2e đỏ | **không vá, không sửa ca** — không tái hiện được | `daf9d11de` |
+
+Bộ e2e `twin-dot47-bam-canh`: **16/16** (`--workers=1`). Cổng: `tsc` 0 · `twin3d`+`pages`
+**163 tệp / 3.467 ca / 0 đỏ** · `i18n:check` 0 khoá mới lỗi.
+
+## HM-1 — nghiệm thu năm tiêu chí, đo trên trình duyệt thật
+
+| tiêu chí | trước | sau |
+|---|---|---|
+| (1) ≥ 90 % đơn vị vẽ đạt 24×24 @1280×720 | **0/130 = 0 %** | **6/6 = 100 %** |
+| (2) không mất máy nào | — | `dem-may` **549**, không đổi; cụm đại diện **176/176** máy của tầng |
+| (3) ngân sách vẽ | — | **4** lệnh vẽ (<150) · **27.626** tam giác (<500 k) · **1** nhãn (<30) · **41,6** khung/s (≥30) |
+| (4) ĐỐI CHỨNG ÂM `/twin/line/:id` | 39 đơn vị | **39 đơn vị — không đổi một ô** |
+| (5) tự tắt khi phóng to | — | **nấc 55** (`d = 4,4 m`) ⇒ về 98 đơn vị |
+
+★ Bấm cụm ⇒ `/twin/line/514`. ★ **ABLATION**: gỡ đúng một chặng nối dây (prop `lineTheoMay` ở
+chỗ gọi) ⇒ **0 %**, 176 đơn vị, bấm mở `/twin/may/:id`; hoàn nguyên ⇒ **100 %**.
+
+**Bản 2D** (bài học Task 20 — *"hai nút, một bộ luật"*): `data-don-vi-ve="cum"` · **6 cụm = 6 cụm
+của 3D** · cạnh nhỏ **6/6 ≥ 24 px** · **176/176** máy đại diện.
+
+## ★★★ Sáu lỗi mà CHỈ phép đo live bắt được — lưới đơn vị mù hoàn toàn
+
+1. **`useThree((s) => s.camera)` trả CÙNG MỘT thực thể** suốt vòng đời cảnh; `.position` đổi tại
+   chỗ. Nên `useMemo` khai `[camera]` **không bao giờ tính lại** — công tắc vẫn lật đúng (nó đọc
+   `.position` lúc gọi) nhưng **cỡ cụm đóng băng ở tư thế đầu tiên**: cụm tính ở `d = 34,9 m` ra
+   1,42 m (đúng 24 px ở đó), rồi `OrbitControls` kéo camera ra khớp khung và 1,42 m ấy còn
+   **4,76 px**. Hàm thuần vẫn đúng; cái sai là **nó không được gọi lại**.
+2. **`LopNhan` vẫn nhận `khoiMay={may}`** khi cảnh đã vẽ cụm ⇒ lớp nhãn né những khối **không còn
+   được vẽ**, và `hopKhoiMay()` — cửa sổ mà e2e/nghiệm thu đọc — khai **176** khối trong khi cảnh
+   vẽ **6**. Hai con số cho cùng một câu hỏi.
+3. **Trung vị là thống kê SAI cho câu hỏi này.** Công tắc ban đầu dùng trung vị trên máy trong tầm
+   nhìn; phóng tới trần zoom mà **không bao giờ lật về** — ở `d = 2 m` vẫn 54 máy trong frustum,
+   trung vị 7,27 px, vì frustum là hình nón vô tận nên máy xa dọc trục áp đảo. Đếm theo **đầu máy**
+   cũng sai: 3/54 máy đạt ngưỡng nhưng ba cái ấy chiếm gần trọn màn. ⇒ hỏi bằng **DIỆN TÍCH**, và
+   hai mốc `[5 %, 35 %]` lấy từ chính phép đo (tổng quan 0 %; đã phóng sát 24,6–37,7 %).
+4. **Quy ước ĐÁY, không phải tâm.** Tôi đặt `viTri.y = caoM/2` kèm chú thích *"nếu không nó lún
+   nửa thân"* — suy từ trực giác mà không đọc phía tiêu thụ. `MayTrongLo.viTri` khai *"Vị trí ĐÁY
+   máy trên sàn"* và `neoTrenNoc()` cộng TRỌN `caoMm`; đặt tâm vào đó là biểu tượng **nổi lên**
+   nửa thân. ⚠ **Lưới cũ xanh vì nó ghim chính cái sai của tôi** — một lưới viết cùng lúc với mã,
+   từ cùng một giả định, không kiểm được giả định ấy.
+5. **`px/mét` phải là MIN của hai chiều** ở bản 2D: `<svg>` mặc định `preserveAspectRatio` nên tỉ
+   lệ thật là chiều bị bó hẹp hơn. Lấy theo bề rộng ⇒ cụm ra **18,17 px** thay vì 24 (= 0,757 lần,
+   đúng tỉ số hai chiều của khung).
+6. **Thu bề ngang KHÔNG đủ** cho HM-2: hạ `min-w` 13rem → 9rem + nén đệm ⇒ phủ 70,8 % → **70,3 %**,
+   đúng nửa điểm, vì bảng dùng `w-max` nên bề ngang do **nội dung** quyết định. Lever thật là
+   **chiều cao**.
+
+## Hai chỗ phép đo CỦA TÔI tự sinh phát hiện giả
+
+- **Tiêu chí (d) của bản 2D so nhầm mẫu số**: `tongMayDaiDien` với `dem-may`. Ô ấy **cố ý** đếm
+  theo NHÀ MÁY (`cayVanHanh.ts:58-61`: *"cùng chữ máy, hai mẫu số"*) còn cảnh vẽ MỘT TẦNG.
+- **Phép đo vòng 3 bị chính HM-1 làm hỏng**: `dsMay()` nay mô tả **cụm** (id âm) nên phép đối
+  chiếu SQL "máy bất thường trong khung" trả 0. Số còn dùng được là `__demNhan.ve`.
+
+## Lưới cũ chặn bản vá — phân loại rồi mới sửa
+
+`twin-dot47-bam-canh` ghim *"bấm khối ⇒ `/twin/may/:id`"* như một **hằng**, nên 3/16 đỏ. Phân
+loại: **không** phải lật QĐ-23 (*"bấm Line ⇒ màn Line"*) — cụm trạm **là** một line, nên bấm nó
+mở màn Line đúng tinh thần ấy. Cái lạc hậu là **cơ chế** của ca: nó giả định mọi khối trên `/twin`
+đều là một máy. ⇒ `duongMongDoi()` hỏi đơn vị vẽ hiện hành rồi trả **đúng một** đường dẫn mong đợi.
+Ca vẫn ghim một đích duy nhất; bậc `may` vẫn phải mở `/twin/may/:id`, nên nếu HM-1 lỡ bật cụm ở
+màn Line thì ca ấy đỏ ngay.
+
+★ Và ở đây tôi lại khái quát quá tay một lần nữa: cho **cả ca bấm NHÃN** đi theo đơn vị vẽ ⇒
+timeout. Khối ở bậc cụm đại diện một LINE, còn **nhãn nêu tên MỘT MÁY** cụ thể nên nó phải mở đúng
+máy ấy. Cho nhãn đi theo đơn vị vẽ là biến một cái **tên** thành một cái **nhóm**.
+
+## CÒN MỞ — nói thẳng
+
+- **Chồng lấn biểu tượng cụm**: `demCapChongNhau()` đã có và có lưới, nhưng **chưa ai gọi nó ở
+  đường sản phẩm**. Biểu tượng được phóng to cho đạt ngưỡng nên chúng có thể đè nhau, và khi ấy
+  con số "100 % đạt 24×24" là **nửa sự thật**. Việc đầu vòng sau: đo số cặp chồng ở khung mặc
+  định, rồi mới quyết có cần giãn bố cục không.
+- **Bấm cụm ở bản 2D chưa nghiệm thu được**: @1280×720 mọi cụm 2D đều rơi dưới lớp phủ. Cần đo lại
+  sau HM-2(a) (bản đo chạy trước khi HM-2 vào).
+- **Màn Line vẫn 5,87 px/đơn vị** — ngoài phạm vi HM-1 theo đúng thiết kế, nhưng nó là cùng một
+  lớp vấn đề và chưa có hạng mục nào nhận.
+- **Nhãn cụm**: ở bậc cụm, nhãn vẫn là **tên MÁY** (được nâng lên nóc cụm), chưa có nhãn nói
+  *"line 514 · 29 máy · 3 bất thường"*. Thiết kế có nêu; tôi chọn giữ tên máy vì đó là thứ vòng 3
+  chứng minh người vận hành đang mất. Đánh đổi này **chưa được đo**.
