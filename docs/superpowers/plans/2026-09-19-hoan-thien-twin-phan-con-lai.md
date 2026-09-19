@@ -226,3 +226,64 @@ chứ không ở sản phẩm.
   **hai tập rỗng** và in ra "bản vá vô can".
 - **Không seed lại QATD-A/B/C**: phiên `-52` đang lấy mốc `2026-09-16 09:05:42.281539` làm nền đo.
   Việc cần làm ở đó đã xong bằng đường không phá gì (cấp khoá, `machines` không đổi một byte).
+
+---
+
+## HM-3 — KẾT QUẢ BƯỚC 1 (2026-09-19): không cần vá, và cũng không được sửa ca
+
+Bản thiết kế đặt bước đầu là *"đo lại T1g với n ≥ 20"* vì n = 4 không phân biệt được lỗi thật với
+nhiễu. Đã đo, và kết quả đi xa hơn dự kiến.
+
+### Bốn phép đo, mỗi phép loại trừ một biến
+
+| phép đo | thiết kế | kết quả |
+|---|---|---|
+| kéo camera rồi bấm | 22 máy × 2 nhánh, xen kẽ thứ tự | **22/22** không kéo · **21/22** có kéo — chênh 4,5 điểm |
+| máy bị nhãn máy khác đè | đúng tập T1g lọc, 12 + 12 máy | **12/12** vs **12/12** |
+| `goBack` (đường T1g dùng) | 3 nhánh × 9 máy: tải lại · goBack · goBack cụm-3 | **9/9 · 9/9 · 9/9** |
+| chạy chính spec | `-g "T1c\|T1g"` ×2 (nhịp tươi & nhịp 401 s), rồi trọn bộ | **8/8 · 8/8 · 16/16** |
+
+**Tổng 95 cú bấm, 94 ĐẠT** — trong đó 33 cú trên đúng tập "máy bị nhãn khác đè" mà T1g lọc.
+
+⇒ Ba giả thuyết bị bác bỏ bằng số: **không phải cú kéo · không phải nhãn cướp click · không phải
+`goBack`**. Và spec nay **16/16 XANH**, trong khi sáng cùng ngày nó **14/16** — đo hai lần, một lần
+có bản vá vòng 1 và một lần đã ablation gỡ ra.
+
+### Vì sao KHÔNG sửa ca
+
+Bản thiết kế dự trù nhánh *"hai nhánh ngang nhau ⇒ sửa ca, không sửa sản phẩm"*. Nhánh ấy
+**không áp dụng được**: ca đang **xanh**. Sửa một ca đang xanh mà mình không hiểu vì sao nó từng
+đỏ chính là **im một cảnh báo**, đúng thứ luật dự án cấm. ⇒ Không đụng vào `twin-dot47-bam-canh.spec.ts`.
+
+### Giả thuyết dẫn đầu, và bằng chứng của nó — MÁY CHỦ ĐO ĐÃ SUY YẾU
+
+Giữa lượt đỏ và lượt xanh có một khác biệt mà tôi không cố ý tạo ra: **máy chủ 3080 đã chết và
+được dựng lại**. Nhật ký của tiến trình cũ để lại đúng ba dấu:
+
+- log phình **1,94 GB**;
+- `[StoreForward] buffered 6796 telemetry row(s) (DB unavailable); queue=6796` — **CSDL có lúc
+  không phục vụ được**, và hàng đợi dồn trong bộ nhớ;
+- tiến trình biến mất **không để lại dòng fatal/OOM nào**.
+
+Lượt đỏ chạy trên tiến trình ấy; lượt xanh chạy trên tiến trình mới. T1c đỏ với `soNhan: 0` —
+**không một nhãn nào trong DOM** — là đúng hình dạng của một cảnh thiếu dữ liệu trạng thái, chứ
+không phải của một lớp nhãn hỏng.
+
+⚠ Không chứng minh được hồi tố. Ghi là **giả thuyết dẫn đầu**, không phải kết luận.
+
+### Hai luật rút ra cho hệ đo (áp cho mọi vòng sau)
+
+1. ★ **Máy chủ chạy lâu, đã từng ghi `DB unavailable`, KHÔNG phải nền đo hợp lệ.** Trước một lượt
+   đo nghiêm túc: dựng lại và khởi động lại, rồi mới đo. Bước 0 (MSA) từ nay phải hỏi thêm *"tiến
+   trình này sống bao lâu rồi, và nó có ghi `DB unavailable` không?"* — chứ không chỉ hỏi *"bundle
+   có khớp nguồn không?"*
+2. ★ **Không khởi động máy chủ sống-lâu qua background task của công cụ Bash** — nó bị dọn theo
+   vòng đời task, và cái chết ấy hiện ra ở tầng trên dưới dạng *"bộ đo chết giữa chừng"* (tôi đã
+   mất một lượt đo vì chẩn đoán nhầm sang lỗi harness). Dùng tiến trình tách rời
+   (`Start-Process ... -PassThru`), rồi **xác nhận cổng còn nghe** trước khi đo.
+
+### Trạng thái HM-3
+
+**ĐÓNG với điều kiện.** Không vá sản phẩm, không sửa ca. Nếu hai ca ấy đỏ lại, việc đầu tiên là
+kiểm tuổi tiến trình máy chủ và tìm `DB unavailable` trong log — trước khi nghi ngờ mã.
+Thô: `.qa-v2/tho-v5/`.
