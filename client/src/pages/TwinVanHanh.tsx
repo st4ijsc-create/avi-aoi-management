@@ -196,6 +196,7 @@ import type { CanhBaoDangMo, LoaiDich, QuyenXuLy } from "@/components/twin3d/van
 // ── Đợt 11 lô J — §11 #16: KPI ĐỌC ĐƯỢC TRÊN CẢNH 3D (yêu cầu #6) ──────────
 import { locKpiTheoCanh, tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kpiNoiLogic";
 import { BangKpiNoi, chuaChoDaiViec } from "@/components/twin3d/van-hanh/BangKpiNoi";
+import { useKhungHep } from "@/components/twin3d/van-hanh/useKhungHep";
 // ── ★★★ Đợt 34 (QĐ-24) — `NganMoPhong` + `useMoPhongTwin` + `dungDauVaoWhatIf` ĐÃ RỜI trang này sang
 //    `TwinLine.tsx`. Sau QĐ-23 `/twin` không bao giờ ở cấp Line (`?pv=line:` redirect sang
 //    `/twin/line/:id`), nên `lineDangXem` ở đây luôn `null` ⇒ ngăn luôn khai `chua_chon_line` (đo K11
@@ -2710,8 +2711,27 @@ export function ThanTwinVanHanh() {
 
   const kpiNoi = useMemo(() => tinhKpiNoi(mayKpiTang, kpiChuaDo), [mayKpiTang, kpiChuaDo]);
 
-  /** Bảng KPI mở/thu — dùng CHUNG khoá `?thu=` với hai panel bên (G40). */
-  const thuKpi = urlState.thu.includes("kpi");
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ HM-2(a) — BẢNG KPI THU SẴN Ở KHUNG HẸP, và vì sao phải là MẶC ĐỊNH chứ không ép
+   * ════════════════════════════════════════════════════════════════════════
+   * Đo được `/twin` FUYU-F: lớp phủ DOM ăn **70,8 %** canvas @1280×720 nhưng chỉ **47,3 %**
+   * @1920×1080, và `bang-kpi-noi` là lớp **bất tương xứng duy nhất** — **13,8 %** ở khung hẹp so
+   * với **5,2 %** ở khung rộng. Hệ quả đo được: @1280 chỉ **1/24** máy hỏng còn đọc được tên
+   * trên cảnh; thu hai panel bên ⇒ **7/24**. Tức diện tích lớp phủ LÀ nút thắt, và đã chứng minh
+   * bằng A/B/A (70,8 % → 26,9 % → 70,8 %).
+   *
+   * ⚠ Thu bề ngang KHÔNG đủ: bảng dùng `w-max` nên bề ngang do NỘI DUNG quyết định. Đo được sau
+   *   khi hạ `min-w` và nén đệm/bậc chữ: phủ 70,8 % → **70,3 %**, đúng nửa điểm. Lever thật là
+   *   CHIỀU CAO, và bảng đã có sẵn nút thu.
+   *
+   * ★ Đây là MẶC ĐỊNH, không phải ép: `?thu=` vẫn là nguồn sự thật, và một lần bấm mở của người
+   *   dùng ghi đè mặc định ấy suốt phiên (`daTuMoKpi`). Ép thu ở khung hẹp sẽ lấy mất quyền
+   *   quyết định của người vận hành — họ có thể muốn KPI hơn muốn nhãn.
+   */
+  const khungHep = useKhungHep(1366);
+  const [daTuMoKpi, setDaTuMoKpi] = useState(false);
+  const thuKpi = urlState.thu.includes("kpi") || (khungHep && !daTuMoKpi);
 
   /*
    * ════════════════════════════════════════════════════════════════════════
@@ -4535,7 +4555,11 @@ export function ThanTwinVanHanh() {
             kpi={kpiNoi}
             dangTai={kpiChuaDo}
             mo={!thuKpi}
-            onDoiMo={() => doiThu("kpi")}
+            onDoiMo={() => {
+              // Mở ở khung hẹp ⇒ ghi nhớ lựa chọn của người dùng, mặc định thôi áp.
+              if (thuKpi) setDaTuMoKpi(true);
+              if (urlState.thu.includes("kpi") || !thuKpi) doiThu("kpi");
+            }}
             /* ★ Nói RÕ đang đo phạm vi nào — một bảng KPI không khai phạm vi thì
                người xem mặc định hiểu là toàn nhà máy, trong khi cảnh chỉ nạp
                một tầng (đúng lớp lỗi `?pv=tapdoan` của §11e.6 F3).

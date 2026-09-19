@@ -148,7 +148,16 @@ export function BangKpiNoi({ kpi, dangTai = false, mo, onDoiMo, nhanPhamVi }: Ba
      *   `min-w` + `max-w` rộng hơn. Trần vẫn còn để bảng không nuốt cảnh.
      */
     <div
-      className="pointer-events-none absolute left-2 top-2 z-30 w-max min-w-[13rem] max-w-[min(20rem,calc(100%-1rem))]"
+      /*
+       * ★★★ HM-2(a) — BẢNG NÀY PHẢI CO THEO KHUNG. Trước bản vá `min-w-[13rem]` là một con số
+       *   CỨNG bất kể khung nhìn, nên nó là lớp phủ **bất tương xứng duy nhất** của màn:
+       *   đo được nó ăn **5,2 %** canvas @1920×1080 nhưng **13,8 %** @1280×720 — trong khi hai
+       *   panel trái/phải đều co. Ở 1280, lớp phủ ăn 70,8 % canvas và chỉ **1/24** máy hỏng còn
+       *   đọc được tên trên cảnh (`chip-ten-bi-che` khai 18 tên bị che).
+       * ★ Co theo `min-w` + bậc chữ, KHÔNG giấu bớt dòng nào: đây là bảng CHỈ SỐ, mọi con số
+       *   vẫn phải ở đó — thu hẹp khác với giấu.
+       */
+      className="pointer-events-none absolute left-2 top-2 z-30 w-max min-w-[9rem] max-w-[min(14rem,calc(100%-1rem))] lg:min-w-[11rem] lg:max-w-[min(17rem,calc(100%-1rem))] xl:min-w-[13rem] xl:max-w-[min(20rem,calc(100%-1rem))]"
       data-testid="bang-kpi-noi"
       /* ★ Đợt 35 (Pareto #5): lớp phủ ĐÈ canvas tự khai — `LopNhan` không vẽ nhãn dưới nó. */
       data-che-nhan="1"
@@ -158,7 +167,7 @@ export function BangKpiNoi({ kpi, dangTai = false, mo, onDoiMo, nhanPhamVi }: Ba
     >
       <div className="rounded-md border bg-background/85 shadow-sm backdrop-blur-sm">
         {/* ── Đầu bảng: tên + mẫu số + nút thu/mở ───────────────────────── */}
-        <div className="flex items-center gap-2 px-2 py-1">
+        <div className="flex items-center gap-1.5 px-1.5 py-0.5 xl:gap-2 xl:px-2 xl:py-1">
           <span className="text-xs font-semibold">{t("twin3d.kpiNoi.tieuDe", "Chỉ số")}</span>
           {/*
             ★ MẪU SỐ LUÔN HIỆN, kể cả khi bảng thu. "72 %" không có mẫu số là
@@ -198,14 +207,14 @@ export function BangKpiNoi({ kpi, dangTai = false, mo, onDoiMo, nhanPhamVi }: Ba
           ★ `hidden` chứ không unmount: giữ cây React để mở lại tức thì, và để
             trạng thái `data-*` phía trên vẫn đo được khi bảng đang thu.
         */}
-        <div id="than-bang-kpi" className="border-t px-2 py-1.5" hidden={!mo}>
+        <div id="than-bang-kpi" className="border-t px-1.5 py-1 xl:px-2 xl:py-1.5" hidden={!mo}>
           {nhanPhamVi ? (
             <p className="mb-1 truncate text-[11px] text-text-2" data-testid="kpi-pham-vi">
               {nhanPhamVi}
             </p>
           ) : null}
 
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+          <dl className="grid grid-cols-2 gap-x-2 gap-y-0 text-[11px] leading-tight xl:gap-x-3 xl:gap-y-0.5 xl:text-xs">
             {kpi.o.map((x) => (
               <div key={x.khoa} className="contents">
                 <dt className="truncate text-muted-foreground">
