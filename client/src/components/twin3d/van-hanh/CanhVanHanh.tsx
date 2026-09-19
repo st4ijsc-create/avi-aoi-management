@@ -70,7 +70,26 @@ import { DongChayLine, type DiemDongChay } from "./DongChayLine";
 import type { VienDeMay } from "./sucKhoeMay";
 import { LopVung } from "../thiet-ke/LopVung";
 import type { VungVe } from "../thiet-ke/vungAnToan";
+import { laCheDoDo } from "../loi/cheDoDo";
 import { LopSaBan } from "./LopSaBan";
+import { cumThanhHopVe, dungCumTram, type MayDeGopCum } from "./cumTram";
+/** Khoảng hở giữa nóc cụm và điểm neo nhãn/badge (mét) — cùng bậc với `HO_NHAN_MAY` của máy. */
+const HO_NEO_TREN_CUM_M = 1.2;
+/**
+ * Trễ chốt tư thế camera trước khi tính lại cỡ cụm (ms).
+ * ★ 200 ms: đủ dài để một cú kéo/cuộn liên tục chỉ sinh MỘT lượt tính lại, đủ ngắn để người
+ *   dùng buông tay là thấy cỡ đúng. Cỡ cụm sai trong lúc tay còn đang kéo là chấp nhận được;
+ *   sai sau khi đã buông thì không.
+ */
+const TRE_CHOT_TU_THE_MS = 200;
+import {
+  NGUONG_CANH_NHO_PX,
+  canhNhoTrenManPx,
+  donViVeTheoDienTich,
+  tiLeDienTichDat,
+  trungViCanhNhoPx,
+  type DonViVe,
+} from "./nguongDonViVe";
 import type { BieuTuongToaVe, CumSaBanVe } from "./hopNhatCanh";
 
 export interface CanhVanHanhProps {
@@ -150,6 +169,22 @@ export interface CanhVanHanhProps {
    * 1 máy có tên; thu hai panel ⇒ 7/24, mở lại ⇒ 1/24. Xem docblock ở `LopNhan`.
    */
   chuTenBiChe?: (n: number) => string;
+  /**
+   * ★★★ HM-1 — `machineId → lineId` để gộp CỤM TRẠM khi khối máy nhỏ hơn ngưỡng bấm.
+   *
+   * Đo được `/twin` FUYU-F @1280×720 khung mặc định: 176 khối, cạnh trung vị **3,23 × 4,74 px**
+   * — **0/130** khối đạt WCAG 2.5.8 (24×24). Và cuộn zoom KHÔNG giải được: phóng hết cỡ vẫn chỉ
+   * 8/16 khối đạt trong khi đã mất 45 % số máy khỏi khung. Lời giải là đổi **đơn vị vẽ**.
+   *
+   * `undefined`/rỗng ⇒ KHÔNG BAO GIỜ gộp cụm (đường cũ y nguyên) — cùng khuôn "prop vắng thì
+   * hành vi byte-identical" mà `saBan` dùng.
+   */
+  lineTheoMay?: ReadonlyMap<number, number | null>;
+  /**
+   * ★ Bấm vào một biểu tượng CỤM. Người gọi mở `/twin/line/:id`.
+   * `null` = cụm "chưa gán line" — người gọi tự quyết làm gì, cảnh không đoán hộ.
+   */
+  onChonCum?: (lineId: number | null) => void;
   chuMatContext: string;
   ariaLabel: string;
   /**
@@ -756,6 +791,8 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
   const vungAT = props.vung ?? EMPTY_VUNG;
   const saBan = props.saBan ?? EMPTY_SA_BAN;
   const saBanCum = props.saBanCum ?? EMPTY_SA_BAN_CUM;
+  const lineTheoMay = props.lineTheoMay;
+  const onChonCum = props.onChonCum;
   /** ★ Task 20 — sa bàn THAY cảnh máy, không đứng cạnh (xem docblock prop `saBan`). */
   const veSaBan = saBan.length > 0;
   /* ★ PH-46/47 — xem docblock `useKhungNhinVungDung`. Không sa bàn ⇒ hai dòng này
@@ -774,12 +811,223 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
 
   const banKinh = Math.max(sanRongM, sanSauM, 10);
 
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ HM-1 — CÔNG TẮC ĐƠN VỊ VẼ, CHẠY Ở `camDoi` CHỨ KHÔNG Ở `useFrame`
+   * ════════════════════════════════════════════════════════════════════════
+   * Cỡ trên màn là đại lượng không gian màn hình, nên cách hiển nhiên là đo hình chiếu mỗi
+   * khung rồi `setState`. Đó đúng là *pitfall #1* của R3F, và vòng PDCA 1 của dự án này đã trả
+   * giá ở chính chỗ ấy (`LopCanhBao`/`LopNhan` `setState` mỗi khung ⇒ 9,2 fps). Ở đây dùng công
+   * thức đóng (`nguongDonViVe`) và chạy nó **trên sự kiện camera**: O(N) phép trừ vector mỗi lần
+   * người dùng xoay/cuộn, không phải mỗi khung.
+   *
+   * ⚠ `donViVeKeTiep` có TRỄ ĐÓNG/MỞ — xem docblock hằng `HE_SO_TRE`: đo được cỡPx đổi 1,0688
+   *   lần mỗi nấc cuộn, nên một ngưỡng trần trụi sẽ nhấp nháy khi cuộn quanh mốc.
+   */
+  const [donViVe, setDonViVe] = useState<DonViVe>("may");
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ TƯ THẾ CAMERA PHẢI VÀO STATE — `useThree` TRẢ CÙNG MỘT OBJECT
+   * ════════════════════════════════════════════════════════════════════════
+   * Đây là một lỗi THẬT mà phép đo live vừa bắt được, và nó im lặng hoàn hảo:
+   * `useThree((s) => s.camera)` trả về **cùng một thực thể** suốt vòng đời cảnh — `.position`
+   * đổi tại chỗ. Nên một `useMemo` khai `[camera]` **không bao giờ tính lại**. Công tắc vẫn lật
+   * đúng (nó đọc `.position` tại lúc gọi), nhưng **cỡ cụm đóng băng ở tư thế ĐẦU TIÊN**:
+   * đo được cụm tính ở `d = 34,9 m` ⇒ 1,42 m (đúng 24 px ở đó), rồi `OrbitControls` kéo camera
+   * ra khớp khung và 1,42 m ấy còn **4,76 px**. Lưới đơn vị không thể bắt: hàm thuần vẫn đúng,
+   * cái sai nằm ở chỗ NÓ KHÔNG ĐƯỢC GỌI LẠI.
+   *
+   * ⇒ Đưa tư thế vào state để memo có cái mà phụ thuộc. Nhưng `camDoi` bắn **mỗi khung** trong
+   *   lúc kéo, nên `setState` trần trụi ở đó lại là *pitfall #1*. Vì vậy: ref giữ tư thế HIỆN
+   *   TẠI (công tắc đọc nó, không tốn render), còn state chỉ được đẩy **sau khi camera đứng
+   *   yên** {@link TRE_CHOT_TU_THE_MS} — cỡ cụm không cần đúng trong lúc tay còn đang kéo.
+   */
+  const tuTheRef = useRef({ x: 0, y: 0, z: 0 });
+  const [tuTheChot, setTuTheChot] = useState({ x: 0, y: 0, z: 0 });
+  const henChotRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Hai con số mà công tắc THẬT SỰ nhìn vào — không có chúng thì "không lật" là một hộp đen. */
+  const chanDoanRef = useRef<Record<string, number | null>>({ soTrongTam: -1, tvPx: null });
+  const camera = useThree((s) => s.camera);
+  const kichThuocKhung = useThree((s) => s.size);
+  const coGopCum = lineTheoMay !== undefined && lineTheoMay.size > 0 && !veSaBan;
+  const mayDeGop = useMemo<MayDeGopCum[]>(() => {
+    if (!coGopCum) return [];
+    const bt = new Set(nhan.filter((n) => n.batThuong === true).map((n) => n.machineId));
+    return may.map((m) => ({
+      machineId: m.machineId,
+      lineId: lineTheoMay!.get(m.machineId) ?? null,
+      viTri: m.viTri,
+      kichThuocMm: m.kichThuocMm,
+      batThuong: bt.has(m.machineId),
+    }));
+  }, [coGopCum, may, nhan, lineTheoMay]);
+
+  /** Đo lại mật độ và lật công tắc — gọi lúc mount và mỗi lần camera đổi. */
+  const doLaiMatDo = useCallback(() => {
+    if (!coGopCum) return;
+    const vt = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    tuTheRef.current = vt;
+    /*
+     * ════════════════════════════════════════════════════════════════════
+     * ★★★ CÔNG TẮC HỎI VỀ MÁY **ĐANG TRONG TẦM NHÌN**, KHÔNG PHẢI TOÀN SÀN
+     * ════════════════════════════════════════════════════════════════════
+     * Bản đầu lấy trung vị trên CẢ 176 máy của tầng. Phép đo live bác bỏ nó: phóng tới tận
+     * `d = 2 m` (chạm trần zoom) mà công tắc **vẫn không lật về** — vài máy trước mặt to lên,
+     * nhưng máy-trung-vị nằm tít xa nên trung vị vẫn bé. Người dùng **kẹt vĩnh viễn ở bậc cụm**:
+     * một dải trễ bất khả đạt, tức một chiều của công tắc chưa bao giờ tồn tại.
+     *
+     * ⇒ Lọc bằng frustum THẬT của camera (`projectionMatrix × matrixWorldInverse`) — chính xác,
+     *   không phải một hình nón xấp xỉ, và chỉ chạy trên sự kiện camera nên O(N) là rẻ.
+     * ⚠ Chỉ dùng cho PHÉP QUYẾT ĐỊNH. Việc DỰNG cụm vẫn lấy TOÀN BỘ máy — một cụm chỉ đại diện
+     *   phần máy đang lọt khung là một cụm nói dối về số máy nó chứa.
+     */
+    const mt = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(mt);
+    const diem = new THREE.Vector3();
+    const trongTam = mayDeGop.filter((m) =>
+      frustum.containsPoint(diem.set(m.viTri.x, m.viTri.y + m.kichThuocMm.caoMm / 2000, m.viTri.z)),
+    );
+    // Không máy nào trong tầm nhìn ⇒ GIỮ NGUYÊN bậc đang vẽ, không đoán.
+    if (trongTam.length === 0) {
+      chanDoanRef.current = { soTrongTam: 0, tvPx: null };
+      return;
+    }
+    const tv = trungViCanhNhoPx(
+      trongTam,
+      vt,
+      "fov" in camera ? (camera as THREE.PerspectiveCamera).fov : 45,
+      kichThuocKhung.height,
+    );
+    const fovHt = "fov" in camera ? (camera as THREE.PerspectiveCamera).fov : 45;
+    const soDat = trongTam.filter(
+      (m) => canhNhoTrenManPx(m, vt, fovHt, kichThuocKhung.height) >= NGUONG_CANH_NHO_PX,
+    ).length;
+    /*
+     * ★★★ TỈ LỆ DIỆN TÍCH, không phải đếm đầu máy.
+     * Đo được ở `d = 2 m`: chỉ **3/54** máy trong tầm nhìn đạt ngưỡng — nhưng ba cái ấy ở cách
+     * 2 m nên chúng chiếm gần trọn màn, còn 51 cái kia là những chấm xa tít dọc trục nhìn.
+     * Đếm đầu máy trả lời sai câu hỏi *"người dùng đang nhìn cái gì"*; diện tích trả lời đúng.
+     */
+    const tiLeDienTich = tiLeDienTichDat(trongTam, vt, fovHt, kichThuocKhung.height);
+    chanDoanRef.current = {
+      soTrongTam: trongTam.length,
+      tvPx: +tv.toFixed(2),
+      soDat,
+      tiLeDat: +((100 * soDat) / trongTam.length).toFixed(1),
+      tiLeDienTich: +(100 * tiLeDienTich).toFixed(1),
+    };
+    setDonViVe((cu) => donViVeTheoDienTich(tiLeDienTich, cu));
+    // Chốt tư thế SAU khi camera đứng yên — xem docblock `tuTheRef`.
+    if (henChotRef.current) clearTimeout(henChotRef.current);
+    henChotRef.current = setTimeout(() => {
+      setTuTheChot((cu) => (cu.x === vt.x && cu.y === vt.y && cu.z === vt.z ? cu : vt));
+    }, TRE_CHOT_TU_THE_MS);
+  }, [coGopCum, mayDeGop, camera, kichThuocKhung.height]);
+  useEffect(() => {
+    doLaiMatDo();
+    return () => {
+      if (henChotRef.current) clearTimeout(henChotRef.current);
+    };
+  }, [doLaiMatDo]);
+
+  /**
+   * Hộp cụm để `LoBatchMay` vẽ. Màu lấy từ chính MÀU THÀNH VIÊN — ưu tiên một máy bất thường —
+   * nên không cần tiêm thêm một bảng màu thứ hai vào cảnh (bộ luật màu chỉ có một).
+   */
+  const cumVe = useMemo(() => {
+    if (!coGopCum || donViVe !== "cum" || mayDeGop.length === 0) return null;
+    const mauTheoMay = new Map(may.map((m) => [m.machineId, m.mau] as const));
+    const cum = dungCumTram(mayDeGop, tuTheChot, kichThuocKhung.height, {
+      fovDo: "fov" in camera ? (camera as THREE.PerspectiveCamera).fov : 45,
+    });
+    return cumThanhHopVe(cum, (c) => {
+      const xau = c.machineIds.find((id) => mayDeGop.find((m) => m.machineId === id)?.batThuong);
+      return mauTheoMay.get(xau ?? c.machineIds[0]) ?? "#94a3b8";
+    });
+  }, [coGopCum, donViVe, mayDeGop, may, camera, kichThuocKhung.height, tuTheChot]);
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ Ở BẬC CỤM, NHÃN VÀ BADGE PHẢI LEO LÊN NÓC CỤM
+   * ════════════════════════════════════════════════════════════════════════
+   * Cả hai lớp neo ở **nóc MÁY** (`neoTrenNoc`, ~1,8 m). Hộp cụm cao hàng chục mét, nên giữ
+   * nguyên điểm neo là **chôn tên máy vào trong hộp** — đúng lớp lỗi mà Task 20 đã ghi:
+   * *"`LopCanhBao` sẽ dán nhãn MÁY lên mặt những toà nhà không bấm được"*.
+   *
+   * ⇒ Nâng điểm neo lên nóc CỤM chứa máy ấy, giữ nguyên `x`/`z` (tên vẫn chỉ đúng chỗ máy đứng)
+   *   và giữ nguyên MỌI trường khác. Không lọc bớt nhãn: chế độ *chỉ-nhãn-bất-thường* đã lọc
+   *   rồi, và bỏ thêm ở đây là giấu đúng những cái tên mà vòng 3 vừa chứng minh người vận hành
+   *   đang mất.
+   */
+  const nocCumTheoMay = useMemo(() => {
+    if (!cumVe) return null;
+    const m = new Map<number, number>();
+    for (const c of cumVe.theoId.values()) {
+      const noc = c.viTri.y + c.caoM;
+      for (const id of c.machineIds) m.set(id, noc);
+    }
+    return m;
+  }, [cumVe]);
+  const nhanVe = useMemo(() => {
+    if (!nocCumTheoMay) return nhan;
+    return nhan.map((n) => {
+      const noc = nocCumTheoMay.get(n.machineId);
+      return noc === undefined ? n : { ...n, viTri: { ...n.viTri, y: noc + HO_NEO_TREN_CUM_M } };
+    });
+  }, [nhan, nocCumTheoMay]);
+  const canhBaoVe = useMemo(() => {
+    if (!nocCumTheoMay) return canhBao;
+    return canhBao.map((c) => {
+      const noc = c.machineId == null ? undefined : nocCumTheoMay.get(c.machineId);
+      return noc === undefined ? c : { ...c, viTri: { ...c.viTri, y: noc + HO_NEO_TREN_CUM_M } };
+    });
+  }, [canhBao, nocCumTheoMay]);
+
+  /**
+   * ★ CỬA SỔ ĐO cho chính công tắc HM-1 — cùng khuôn `__demTuongTac` mà `LoBatchMay`/`LopNhan`
+   *   dùng. Không có nó thì "cụm không bật" và "cụm bật nhưng vẽ sai" trông y hệt nhau từ ngoài.
+   */
+  useEffect(() => {
+    // ★ Cùng quy ước `__demTuongTac` của `LoBatchMay`/`KhungCanh`: CHỈ ở chế độ đo (DEV hoặc `?do=1`).
+    if (typeof window === "undefined" || !laCheDoDo()) return;
+    const w = window as Window & CuaSoDoTwin3d;
+    const cua = (w.__demTuongTac ?? (w.__demTuongTac = {})) as Record<string, unknown>;
+    cua.hm1 = {
+      coGopCum,
+      donViVe,
+      soMayDeGop: mayDeGop.length,
+      soCum: cumVe ? cumVe.hop.length : 0,
+      soLineTheoMay: lineTheoMay ? lineTheoMay.size : -1,
+      chanDoan: chanDoanRef.current,
+      caoCanvasPx: kichThuocKhung.height,
+      rongCanvasPx: kichThuocKhung.width,
+      fov: "fov" in camera ? (camera as THREE.PerspectiveCamera).fov : null,
+      cam: { x: +camera.position.x.toFixed(1), y: +camera.position.y.toFixed(1), z: +camera.position.z.toFixed(1) },
+      coCum: cumVe ? cumVe.hop.slice(0, 3).map((h) => ({
+        id: h.machineId,
+        rongM: +(h.kichThuocMm.rongMm / 1000).toFixed(2),
+        caoM: +(h.kichThuocMm.caoMm / 1000).toFixed(2),
+        viTri: { x: +h.viTri.x.toFixed(1), y: +h.viTri.y.toFixed(1), z: +h.viTri.z.toFixed(1) },
+        d: +Math.hypot(camera.position.x - h.viTri.x, camera.position.y - h.viTri.y, camera.position.z - h.viTri.z).toFixed(1),
+      })) : [],
+    };
+  }, [coGopCum, donViVe, mayDeGop.length, cumVe, lineTheoMay, kichThuocKhung, camera]);
+
   const khiChon = useCallback(
     (id: number | null) => {
+      /*
+       * ★ id ÂM = biểu tượng cụm. TRA BẢNG `theoId`, không giải mã con số — một phép giải mã
+       *   thứ hai ở tầng này là bộ luật thứ hai, và nó sẽ lệch khỏi `cumThanhHopVe` trong im lặng.
+       */
+      if (id != null && id < 0) {
+        const c = cumVe?.theoId.get(id);
+        if (c) onChonCum?.(c.lineId);
+        return;
+      }
       setChon((cu) => ({ ...cu, dangChon: id }));
       onChonMay(id);
     },
-    [onChonMay],
+    [onChonMay, onChonCum, cumVe],
   );
 
   const khiHover = useCallback((id: number | null) => {
@@ -820,8 +1068,10 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         mucZ: muc.z,
       };
       onCameraDoiNgoai?.(viTri, muc);
+      // ★ HM-1 — đo lại mật độ TẠI ĐÂY: một sự kiện, không phải mỗi khung.
+      doLaiMatDo();
     },
-    [onCameraDoiNgoai],
+    [onCameraDoiNgoai, doLaiMatDo],
   );
 
   return (
@@ -852,7 +1102,8 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
       {/* ★ A-4 TRƯỚC `LoBatchMay`: vòng nằm dưới chân máy, phải vẽ trước để thân
           máy đè lên phần vòng bị che — đúng thứ tự vật lý của cảnh. */}
       <LopVienSucKhoe vien={vienSK} />
-      <LoBatchMay may={may} chon={chon} onChon={khiChon} onHover={khiHover} />
+      {/* ★ HM-1 — CÙNG lớp vẽ, chỉ đổi TẬP HỘP. Không dựng lớp vẽ thứ hai (xem `cumTram.ts`). */}
+      <LoBatchMay may={cumVe ? cumVe.hop : may} chon={chon} onChon={khiChon} onHover={khiHover} />
       {dongChay ? <DongChayLine dongChay={dongChay} /> : null}
       <OngWip wip={wip} />
       {/*
@@ -863,9 +1114,9 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
           này là nhãn đọc hộp badge của KHUNG TRƯỚC. z-index DOM không phụ thuộc thứ tự này
           (badge z 30, nhãn z 20 — khai tường minh).
       */}
-      <LopCanhBao canhBao={canhBao} />
+      <LopCanhBao canhBao={canhBaoVe} />
       <LopNhan
-        nhan={nhan}
+        nhan={nhanVe}
         dangChon={chon.dangChon}
         dangHover={chon.dangHover}
         tat={tatNhan}
@@ -880,7 +1131,11 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         /* ★★★ Đợt 49 (A) — CÙNG mảng `may` đã đưa cho `LoBatchMay`: nhãn né hình chiếu thân máy KHÁC.
            Một nguồn, hai người đọc — chép tay danh sách máy sang đây là cách chắc chắn để hai nơi
            lệch nhau một máy rồi im lặng (G5). Bỏ prop này = bản GỠ VÁ của ablation mục A. */
-        khoiMay={may}
+        /* ★★★ HM-1 — ở bậc cụm, vùng tránh của lớp nhãn phải là HỘP CỤM, không phải hộp máy.
+             Để nguyên `may` thì nhãn né những khối KHÔNG CÒN ĐƯỢC VẼ, và `hopKhoiMay()` (cửa sổ
+             đo mà e2e/nghiệm thu đọc) khai 176 khối trong khi cảnh chỉ vẽ 6 — hai con số cho
+             cùng một câu hỏi. */
+        khoiMay={cumVe ? cumVe.hop : may}
         /* ★ Đợt 47 (N2) — bấm lên NHÃN cũng chọn máy (nhãn pointer-events:none, LopNhan tự hit-test hộp thật). */
         onChonNhan={khiChon}
       />
@@ -935,6 +1190,7 @@ type PropsHam = Pick<
   | "chuSuCoNgoaiKhung"
   | "chuCanhBaoAn"
   | "chuTenBiChe"
+  | "onChonCum"
 >;
 
 /** Khoá giá trị của một prop dữ liệu — `undefined` và `null` phân biệt (bỏ trống ≠ tắt). */
@@ -970,6 +1226,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
     chuCanhBaoAn: props.chuCanhBaoAn,
     chuTenBiChe: props.chuTenBiChe,
+    onChonCum: props.onChonCum,
   });
   hamRef.current = {
     onChonMay: props.onChonMay,
@@ -979,6 +1236,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
     chuCanhBaoAn: props.chuCanhBaoAn,
     chuTenBiChe: props.chuTenBiChe,
+    onChonCum: props.onChonCum,
   };
   const onChonMay = useCallback((id: number | null) => hamRef.current.onChonMay(id), []);
   const onCameraDoi = useCallback(
@@ -999,6 +1257,8 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
   //   truyền xuống). Thiếu một chỗ ⇒ prop "có mặt" mà không bao giờ tới `LopNhan`; Đợt 45 đã dính.
   const coChuCanhBaoAn = props.chuCanhBaoAn !== undefined;
   const chuCanhBaoAnOnDinh = useCallback((n: number) => hamRef.current.chuCanhBaoAn?.(n) ?? "", []);
+  const coOnChonCum = props.onChonCum !== undefined;
+  const onChonCumOnDinh = useCallback((lineId: number | null) => hamRef.current.onChonCum?.(lineId), []);
   const coChuTenBiChe = props.chuTenBiChe !== undefined;
   const chuTenBiCheOnDinh = useCallback((n: number) => hamRef.current.chuTenBiChe?.(n) ?? "", []);
 
@@ -1022,6 +1282,8 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       chuSuCoNgoaiKhung={coChuSuCo ? chuSuCoOnDinh : undefined}
       chuCanhBaoAn={coChuCanhBaoAn ? chuCanhBaoAnOnDinh : undefined}
       chuTenBiChe={coChuTenBiChe ? chuTenBiCheOnDinh : undefined}
+      onChonCum={coOnChonCum ? onChonCumOnDinh : undefined}
+      lineTheoMay={props.lineTheoMay}
       sanRongM={props.sanRongM}
       sanSauM={props.sanSauM}
       tatNhan={props.tatNhan}

@@ -1261,6 +1261,36 @@ export function ThanTwinVanHanh() {
   const mayVanHanhTho = useMemo(() => hopNhat(mayNen, kho), [mayNen, kho]);
   const mayVanHanh = useOnDinhTheoGiaTri(mayVanHanhTho, khoaMayVanHanh(mayVanHanhTho));
 
+  /**
+   * ★★★ HM-1 — `machineId → lineId`, nguồn gộp CỤM TRẠM của cảnh.
+   *
+   * Dùng CHÍNH trục phân cấp mà `mayNen` đã suy (`stationId → lineCuaTram`), không dựng trục
+   * thứ hai — bài học "cùng chữ máy, hai mẫu số" (`cayVanHanh.ts:58-61`): một trục thứ hai sẽ
+   * lệch khỏi trục thứ nhất rồi im lặng.
+   * ⚠ Khoá ổn định theo GIÁ TRỊ: `CanhVanHanh` ghim prop dữ liệu bằng `useOnDinhTheoGiaTri`, một
+   *   `Map` mới mỗi lượt render sẽ dựng lại cảnh mỗi gói ws.
+   */
+  const lineTheoMayTho = useMemo(
+    () => new Map(mayVanHanh.map((m) => [m.id, m.lineId ?? null] as const)),
+    [mayVanHanh],
+  );
+  const lineTheoMay = useOnDinhTheoGiaTri(
+    lineTheoMayTho,
+    [...lineTheoMayTho.entries()].map(([k, v]) => `${k}:${v ?? "-"}`).join("|"),
+  );
+  /**
+   * Bấm vào một biểu tượng cụm ⇒ mở màn Line. Đi qua ĐÚNG `chonLine` như mọi lối bấm Line khác
+   * (cây, dải Line, breadcrumb) — không nơi nào tự ghép `/twin/...` (G12).
+   * `null` = cụm "chưa gán line": không có màn nào để mở, nên KHÔNG điều hướng đi đâu cả thay vì
+   * đoán bừa một line.
+   */
+  const chonCum = useCallback(
+    (lineId: number | null) => {
+      if (lineId != null) chonLine(lineId);
+    },
+    [chonLine],
+  );
+
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* ★★★ TASK 10 — MÁY ĐANG XỬ LÝ TẠI CHỖ (ngăn phải hoạt động trên `/twin`)  */
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -4404,6 +4434,10 @@ export function ThanTwinVanHanh() {
               chuTenBiChe={(n) =>
                 t("twin3d.vanHanh.tenBiChe", "{{n}} tên bị panel che", { n })
               }
+              /* ★★★ HM-1 — gộp CỤM TRẠM khi khối máy nhỏ hơn ngưỡng bấm WCAG.
+                 Đo được @1280×720: 176 khối, cạnh trung vị 3,23 × 4,74 px, 0/130 đạt 24×24. */
+              lineTheoMay={lineTheoMay}
+              onChonCum={chonCum}
               /* ★ ĐỢT 24 VIỆC 2 — chỗ gọi THẬT của `chiNhanBatThuong`. Trước
                  dòng này `grep` ra 0 người truyền `true` (G16). */
               chiNhanBatThuong={chiNhanBatThuong}

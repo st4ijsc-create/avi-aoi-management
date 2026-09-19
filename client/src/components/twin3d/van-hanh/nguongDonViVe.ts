@@ -213,3 +213,55 @@ export function donViVeKeTiep(trungViPx: number, dangVe: DonViVe): DonViVe {
   if (dangVe === "may") return trungViPx < NGUONG_CANH_NHO_PX ? "cum" : "may";
   return trungViPx > NGUONG_CANH_NHO_PX * HE_SO_TRE ? "may" : "cum";
 }
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ CÔNG TẮC THEO **DIỆN TÍCH**, KHÔNG THEO TRUNG VỊ — và vì sao phải đổi
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bản đầu quyết định bằng **trung vị cạnh nhỏ** trên máy trong tầm nhìn. Phép đo live bác bỏ nó:
+ * phóng tới tận trần zoom mà công tắc **không bao giờ lật về** — đo được ở `d = 2 m` vẫn còn
+ * **54 máy trong frustum, trung vị 7,27 px**. Lý do: frustum là hình nón kéo dài vô tận, nên
+ * những máy ở xa dọc trục nhìn áp đảo trung vị, trong khi thứ người dùng THẬT SỰ nhìn là vài cái
+ * máy ngay trước mặt. Đếm theo ĐẦU MÁY cũng sai vì cùng lý do: ở `d = 2 m` chỉ **3/54** máy đạt
+ * ngưỡng, nhưng ba cái ấy chiếm phần lớn màn.
+ *
+ * ⇒ Hỏi bằng **diện tích**: *bao nhiêu phần diện tích máy trên màn là của những máy BẤM ĐƯỢC?*
+ *
+ * Hai mốc dưới đây lấy TỪ CHÍNH PHÉP ĐO ẤY, không chọn cho đẹp (quét 100 nấc cuộn trên
+ * `/twin` FUYU-F @1280×720):
+ *     tổng quan  d ≥ 71 m : tỉ lệ diện tích **0 %**
+ *     đã phóng sát d ≤ 6 m: **24,6 → 37,7 %**, đỉnh 37,7 %
+ * Dải `[5 %, 35 %]` vì thế nằm gọn giữa hai vùng, và nó đủ rộng để chuỗi đo dao động
+ * `32 → 0 → 24,6 → 36,6 → 37,7` chỉ lật **một lần** thay vì ba.
+ */
+export const NGUONG_GOP_CUM_TI_LE = 0.05;
+export const NGUONG_BO_CUM_TI_LE = 0.35;
+
+/** Phần diện tích (0–1) của những máy ĐẠT ngưỡng bấm, trên tổng diện tích máy đang thấy. */
+export function tiLeDienTichDat(
+  may: readonly MayDeChamCo[],
+  camera: DiemMet,
+  fovDo: number,
+  caoCanvasPx: number,
+  nguongPx: number = NGUONG_CANH_NHO_PX,
+): number {
+  let dat = 0;
+  let tong = 0;
+  for (const m of may) {
+    const canh = canhNhoTrenManPx(m, camera, fovDo, caoCanvasPx);
+    const dt = canh * canh;
+    tong += dt;
+    if (canh >= nguongPx) dat += dt;
+  }
+  return tong > 0 ? dat / tong : 0;
+}
+
+/**
+ * Công tắc đơn vị vẽ theo tỉ lệ diện tích, CÓ TRỄ.
+ * Trong dải `[NGUONG_GOP_CUM_TI_LE, NGUONG_BO_CUM_TI_LE]` thì **giữ nguyên** thứ đang vẽ.
+ */
+export function donViVeTheoDienTich(tiLe: number, dangVe: DonViVe): DonViVe {
+  if (!Number.isFinite(tiLe)) return dangVe;
+  if (dangVe === "may") return tiLe < NGUONG_GOP_CUM_TI_LE ? "cum" : "may";
+  return tiLe > NGUONG_BO_CUM_TI_LE ? "may" : "cum";
+}

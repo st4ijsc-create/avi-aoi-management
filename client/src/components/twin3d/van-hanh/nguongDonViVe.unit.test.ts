@@ -28,6 +28,11 @@ import {
   donViVeKeTiep,
   khoangCachToiMay,
   trungViCanhNhoPx,
+  tiLeDienTichDat,
+  donViVeTheoDienTich,
+  NGUONG_GOP_CUM_TI_LE,
+  NGUONG_BO_CUM_TI_LE,
+  type DonViVe,
   type MayDeChamCo,
 } from "./nguongDonViVe";
 
@@ -198,5 +203,55 @@ describe("đối chiếu với SỐ ĐO THỰC ĐỊA — công thức tự nh�
     const tv = trungViCanhNhoPx(ds, camera, 45, 489);
     expect(tv).toBeLessThan(NGUONG_CANH_NHO_PX);
     expect(donViVeKeTiep(tv, "may")).toBe("cum");
+  });
+});
+
+describe("công tắc theo DIỆN TÍCH — thay trung vị, vì trung vị trả lời sai câu hỏi", () => {
+  it("★★★ ba máy SÁT camera + 51 máy xa ⇒ diện tích nói 'bấm được', trung vị nói ngược lại", () => {
+    const cam = { x: 0, y: 0, z: 0 };
+    const gan = [1, 2, 3].map((i) => ({ kichThuocMm: { rongMm: 1000, caoMm: 1800 }, viTri: { x: i, y: 0, z: 3 } }));
+    const xa = Array.from({ length: 51 }, (_, i) => ({
+      kichThuocMm: { rongMm: 1000, caoMm: 1800 }, viTri: { x: i - 25, y: 0, z: 300 + i },
+    }));
+    const ds = [...gan, ...xa];
+    // Trung vị bị 51 chấm xa kéo xuống…
+    expect(trungViCanhNhoPx(ds, cam, FOV, CAO_CANVAS)).toBeLessThan(NGUONG_CANH_NHO_PX);
+    // …trong khi diện tích nói đúng thứ người dùng đang nhìn.
+    expect(tiLeDienTichDat(ds, cam, FOV, CAO_CANVAS)).toBeGreaterThan(0.9);
+    expect(donViVeTheoDienTich(tiLeDienTichDat(ds, cam, FOV, CAO_CANVAS), "cum")).toBe("may");
+  });
+
+  it("★★★ cảnh tổng quan (mọi máy đều bé) ⇒ tỉ lệ 0 ⇒ gộp cụm", () => {
+    const cam = { x: 0, y: 120, z: 0 };
+    const ds = Array.from({ length: 60 }, (_, i) => ({
+      kichThuocMm: { rongMm: 1000, caoMm: 1800 }, viTri: { x: (i % 10) * 6, y: 0, z: Math.floor(i / 10) * 6 },
+    }));
+    const tl = tiLeDienTichDat(ds, cam, FOV, CAO_CANVAS);
+    expect(tl).toBe(0);
+    expect(donViVeTheoDienTich(tl, "may")).toBe("cum");
+  });
+
+  it("★★★ TRONG DẢI TRỄ thì giữ nguyên — cả hai chiều", () => {
+    const giua = (NGUONG_GOP_CUM_TI_LE + NGUONG_BO_CUM_TI_LE) / 2;
+    expect(donViVeTheoDienTich(giua, "may")).toBe("may");
+    expect(donViVeTheoDienTich(giua, "cum")).toBe("cum");
+  });
+
+  it("★★★ DẢI TRỄ phải chứa trọn chuỗi dao động ĐÃ ĐO (32 → 0 → 24,6 → 36,6 → 37,7 %)", () => {
+    // Nếu ai đó bóp dải lại, chuỗi này sẽ lật nhiều lần — đó chính là nhấp nháy.
+    let dv: DonViVe = "cum";
+    const lat: DonViVe[] = [];
+    for (const t of [0.32, 0.0, 0.246, 0.366, 0.377]) {
+      const moi = donViVeTheoDienTich(t, dv);
+      if (moi !== dv) lat.push(moi);
+      dv = moi;
+    }
+    expect(lat).toHaveLength(1);
+    expect(dv).toBe("may");
+  });
+
+  it("tập rỗng ⇒ tỉ lệ 0 (không NaN); giá trị không hữu hạn ⇒ giữ nguyên", () => {
+    expect(tiLeDienTichDat([], { x: 0, y: 0, z: 0 }, FOV, CAO_CANVAS)).toBe(0);
+    expect(donViVeTheoDienTich(Number.NaN, "cum")).toBe("cum");
   });
 });
