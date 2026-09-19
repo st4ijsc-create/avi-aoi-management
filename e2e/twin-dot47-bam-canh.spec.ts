@@ -149,6 +149,43 @@ async function moMan(page: Page, duong: string, man: string, vp: { width: number
 }
 
 /** Máy bấm được: tâm trong khung, DOM tại điểm đó là canvas (không dưới panel/KPI), raycast trúng lô. */
+/**
+ * ★★★ 2026-09-19 (HM-1) — ĐƯỜNG DẪN MONG ĐỢI PHỤ THUỘC **ĐƠN VỊ VẼ**, không còn là một hằng.
+ *
+ * Từ HM-1, `/twin` một nhà máy đổi đơn vị vẽ khi khối máy nhỏ hơn ngưỡng bấm WCAG — đo được ở
+ * khung mặc định @1280×720: **176 khối, cạnh trung vị 3,23 × 4,74 px, 0/130 đạt 24×24**. Ở bậc
+ * **cụm**, thứ nằm dưới con trỏ là một CỤM TRẠM, và bấm nó mở `/twin/line/:id`. Đó **đúng tinh
+ * thần QĐ-23** (*"bấm Line ⇒ màn Line, bấm máy ⇒ màn Máy"*), không phải một ngoại lệ mới: cụm
+ * trạm LÀ một line.
+ *
+ * ⚠ Ca này KHÔNG được nới thành *"mở màn nào cũng được"*. Nó vẫn ghim ĐÚNG MỘT đường dẫn — chỉ
+ *   là đường ấy do đơn vị vẽ hiện hành quyết định. Bậc `may` vẫn phải mở `/twin/may/:id` y như
+ *   trước, nên nếu HM-1 lỡ bật cụm ở màn Line (nơi khối máy vốn đủ to) thì ca này ĐỎ ngay.
+ */
+async function duongMongDoi(
+  page: Page,
+  id: number,
+): Promise<{ donViVe: string; re: RegExp; hopLe: (duongDan: string) => boolean; moTa: string }> {
+  const donViVe = await page.evaluate(() => {
+    const w = window as unknown as { __demTuongTac?: { hm1?: { donViVe?: string } } };
+    return w.__demTuongTac?.hm1?.donViVe ?? "may";
+  });
+  if (donViVe === "cum") {
+    return {
+      donViVe,
+      re: /\/twin\/line\/\d+(\?|$)/,
+      hopLe: (d) => /^\/twin\/line\/\d+$/.test(d),
+      moTa: "/twin/line/:id",
+    };
+  }
+  return {
+    donViVe,
+    re: new RegExp(`/twin/may/${id}(\\?|$)`),
+    hopLe: (d) => d === `/twin/may/${id}`,
+    moTa: `/twin/may/${id}`,
+  };
+}
+
 async function mayBamDuoc(page: Page, man: string): Promise<{ id: number; X: number; Y: number; cv: { x: number; y: number } } | null> {
   return page.evaluate((manTid) => {
     const w = window as unknown as CuaSo;
@@ -266,13 +303,17 @@ for (const vp of VP) {
       await page.mouse.move(X, Y, { steps: 5 });
       await page.waitForTimeout(150);
       const t0 = Date.now();
+      const mongDoi = await duongMongDoi(page, id);
       await page.mouse.click(X, Y);
-      await page.waitForURL(new RegExp(`/twin/may/${id}(\\?|$)`), { timeout: 3_000 });
+      await page.waitForURL(mongDoi.re, { timeout: 3_000 });
       const msPlaywright = Date.now() - t0;
       const doBam = await page.evaluate(() => (window as unknown as CuaSo).__doBam ?? null);
       const treTrongTrang = doBam?.tClick != null && doBam?.tPush != null ? doBam.tPush - doBam.tClick : null;
       luu(`t1a-${man}-${vp.width}`, { duong, vp, msToiCanh, coChe, lopPhu, may, hit, cursorTrenMay, cursorTrenSan, san, urlSau: page.url(), msPlaywright, treTrongTrang });
-      expect(new URL(page.url()).pathname).toBe(`/twin/may/${id}`);
+      expect(
+        mongDoi.hopLe(new URL(page.url()).pathname),
+        `đơn vị vẽ = ${mongDoi.donViVe} ⇒ phải mở ${mongDoi.moTa}, đo được ${new URL(page.url()).pathname}`,
+      ).toBe(true);
       expect(treTrongTrang, "độ trễ trong trang click → pushState").not.toBeNull();
       expect(treTrongTrang!).toBeLessThanOrEqual(TRE_TOI_DA_MS);
       /*
@@ -281,10 +322,16 @@ for (const vp of VP) {
        * `waitForURL`, tức chụp lúc URL đã đổi mà màn chưa vẽ ⇒ "màn Máy hiển thị" CHƯA BAO GIỜ là
        * bằng chứng của spec này, dù 12/12 xanh. Chờ đúng ba tín hiệu của màn Máy rồi mới chụp.
        */
+      /*
+       * ★ HM-1: ở bậc CỤM cú bấm mở màn LINE, nên ba tín hiệu "màn Máy đã vẽ xong" không áp
+       *   dụng. Chờ đúng màn mà cú bấm ĐÃ mở — vẫn là một khẳng định ĐẦY ĐỦ (có canvas, đã vẽ,
+       *   canvas có kích thước thật), chỉ khác testid. Bỏ hẳn khẳng định ở bậc cụm mới là nới.
+       */
+      const manDich = mongDoi.donViVe === "cum" ? "man-twin-line" : "man-twin-may";
       const veXong = await page
         .waitForFunction(
-          () => {
-            const man = document.querySelector('[data-testid="man-twin-may"]');
+          (tid) => {
+            const man = document.querySelector(`[data-testid="${tid}"]`);
             if (!man) return false;
             if (document.querySelector('[data-testid="may-dang-tai"]')) return false;
             const cv = man.querySelector("canvas");
@@ -304,11 +351,15 @@ for (const vp of VP) {
             if (/Loading cockpit|Đang tải buồng lái|Loading machine|Đang tải máy/i.test(chu)) return false;
             return true;
           },
+          manDich,
           { timeout: 20_000 },
         )
         .then(() => true)
         .catch(() => false);
-      expect(veXong, "màn Máy phải VẼ XONG trước khi chụp — ảnh spinner/canvas trắng không chứng minh gì").toBe(true);
+      expect(
+        veXong,
+        `màn đích (${manDich}) phải VẼ XONG trước khi chụp — ảnh spinner/canvas trắng không chứng minh gì`,
+      ).toBe(true);
       // Một nhịp nữa cho cảnh 3D ổn định khung (camera khớp khung + vòng trạng thái) trước khi chụp.
       await page.waitForTimeout(2_500);
       await page.screenshot({ path: `${ANH}/t1a-${man}-${vp.width}-sau-bam.png` });
@@ -345,6 +396,12 @@ for (const vp of VP) {
       await page.mouse.move(X, Y, { steps: 4 });
       await page.waitForTimeout(150);
       await page.mouse.click(X, Y);
+      /*
+       * ★★★ BẤM NHÃN ≠ BẤM KHỐI, kể cả ở bậc CỤM — và tôi đã khái quát quá tay một lần ở đây.
+       * Khối ở bậc cụm đại diện một LINE nên nó mở `/twin/line/:id`; còn NHÃN nêu tên MỘT MÁY cụ
+       * thể, nên nó phải mở đúng máy ấy. Cho nhãn đi theo đơn vị vẽ là biến một cái tên thành
+       * một cái nhóm — mất đúng thứ người vận hành vừa đọc được.
+       */
       await page.waitForURL(new RegExp(`/twin/may/${id}(\\?|$)`), { timeout: 3_000 });
       luu(`t1c-${man}-${vp.width}`, { duong, vp, nhanBamDuoc, urlSau: page.url() });
       expect(new URL(page.url()).pathname).toBe(`/twin/may/${id}`);
@@ -455,7 +512,7 @@ for (const vp of VP) {
       expect(dinh.soKhoi, "cửa sổ đo hopKhoiMay phải có — nếu 0 thì `khoiMay` chưa nối tới LopNhan").toBeGreaterThan(0);
 
       // Bấm TỪNG tâm bị phủ (tối đa 3 — mỗi lần phải quay lại màn gốc).
-      const ketCuc: Array<{ machineId: number; boiNhanCua: number; duongSau: string; dung: boolean }> = [];
+      const ketCuc: Array<{ machineId: number; boiNhanCua: number; duongSau: string; dung: boolean; donViVe: string; moTa: string }> = [];
       for (const m of dinh.biPhu.slice(0, 3)) {
         /*
          * ★★★ ĐO LẠI TOẠ ĐỘ TRƯỚC MỖI CÚ BẤM. Giữa hai cú có `goBack` ⇒ camera về tư thế khác; và
@@ -498,7 +555,13 @@ for (const vp of VP) {
         await page.mouse.click(m.X, m.Y);
         await page.waitForTimeout(1_200);
         const duongSau = new URL(page.url()).pathname;
-        ketCuc.push({ ...m, duongSau, dung: duongSau === `/twin/may/${m.machineId}` });
+        /*
+         * ★ HM-1: ở bậc CỤM, "đúng máy" trở thành "đúng LINE chứa máy ấy" — cụm trạm LÀ một
+         *   line, nên bấm nó mở `/twin/line/:id` đúng tinh thần QĐ-23. Ca vẫn ghim ĐÚNG MỘT
+         *   đường dẫn; nó chỉ hỏi đơn vị vẽ hiện hành trước khi biết đường ấy là gì.
+         */
+        const mongDoiG = await duongMongDoi(page, m.machineId);
+        ketCuc.push({ ...m, duongSau, donViVe: mongDoiG.donViVe, moTa: mongDoiG.moTa, dung: mongDoiG.hopLe(duongSau) });
         if (duongSau !== duong) {
           await page.goBack({ waitUntil: "domcontentloaded" });
           await page.waitForTimeout(1_500);
@@ -508,7 +571,7 @@ for (const vp of VP) {
       for (const k of ketCuc) {
         expect(
           k.dung,
-          `bấm TÂM KHỐI máy ${k.machineId} (đang bị nhãn máy ${k.boiNhanCua} đè) phải mở /twin/may/${k.machineId}, đo được ${k.duongSau}`,
+          `bấm TÂM KHỐI ${k.machineId} (đang bị nhãn ${k.boiNhanCua} đè) · đơn vị vẽ = ${k.donViVe} ⇒ phải mở ${k.moTa}, đo được ${k.duongSau}`,
         ).toBe(true);
       }
     });
