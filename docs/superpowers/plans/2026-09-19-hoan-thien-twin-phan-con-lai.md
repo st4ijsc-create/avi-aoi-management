@@ -529,3 +529,113 @@ thực, không phải một chi tiết kỹ thuật.
 
 `tsc` **0** · `twin3d`+`pages` **164 tệp / 3.472 ca / 0 đỏ** · `i18n:check` **0** khoá mới lỗi ·
 e2e `twin-dot47-bam-canh` **16/16** (`--workers=1`) · cây sạch.
+
+---
+
+# L2 — MÀN LINE THÀNH **SƠ ĐỒ RẮN BÒ** (`7c8938786`)
+
+Chủ dự án chốt lối **(L2)** trong ba lối đã trình. Đây là hồ sơ thực hiện.
+
+## Kết cục — tiêu chí duy nhất: đích bấm ≥ 24×24 px **và** thấy trọn chuyền
+
+| `/twin/line/526` (39 máy) | lấp NGANG | lấp **DỌC** | cạnh nhỏ trung vị | đạt 24×24 | bấm |
+|---|---|---|---|---|---|
+| **trước** @1280×720 | 80,5 % | **1,2 %** | 5,87 px | **0/39** | `/twin/may/:id` |
+| **trước** @1920×1080 | 88,9 % | **1,3 %** | 10,76 px | **0/39** | `/twin/may/:id` |
+| **sau** @1280×720 | 65,1 % | **49,4 %** | **49,57 px** | **39/39** | `/twin/may/:id` |
+| **sau** @1920×1080 | 86,4 % | **58,5 %** | **107,59 px** | **39/39** | `/twin/may/:id` |
+
+Không mất máy nào (39/39 vẽ). Banner khai sơ đồ có mặt ở cả hai khung.
+
+### ABLATION — mỗi lớp một lần, hoàn nguyên sau mỗi lần
+
+| gỡ gì | kết cục |
+|---|---|
+| **A** — gỡ SƠ ĐỒ | trở lại **đúng** số cơ sở: 80,5 %/1,2 %, 5,87 px, **0/39**, banner biến mất |
+| **B** — gỡ bản vá MỤC NGẮM | 36 khối, lấp **2.746 %/8.933 %**, cảnh trống, bấm không đi đâu |
+| hoàn nguyên | **39/39** cả hai khung |
+
+A tái hiện chính xác con số đã ghi ở lượt đo trước — tức nó xác nhận **cả đường cơ sở lẫn
+thiết bị đo**, không chỉ bản vá.
+
+## Vì sao **RẮN BÒ**, không phải một lưới bất kỳ
+
+Một chuyền là một **TRÌNH TỰ**. Xếp 39 máy theo id thì đích bấm đạt ngưỡng nhưng *"sau máy này
+là máy nào"* biến mất — đổi một khuyết tật lấy một khuyết tật khác. Rắn bò giữ **hai máy liền kề
+trong dòng chảy thì liền kề trên màn, kể cả ở chỗ xuống hàng**, và `duongTam` (mũi tên dòng chảy)
+đi theo đúng đường ấy.
+
+Thứ tự lấy từ `stations.thuTu` **chỉ khi mọi máy tra được**; thiếu một cái là rơi **hẳn** về thứ
+tự theo vị trí. Trộn hai thang tạo ra một trình tự *trông như* trình tự công nghệ mà không phải.
+
+## Ràng buộc trung thực — cùng luật với sa bàn tập đoàn
+
+`banner-so-do-line` khai bằng **SỐ**: *chuyền dài 229 m × 1 m trải thành lưới 5×9 cho 39 máy; mặt
+bằng mọi máy vẽ CÙNG MỘT CỠ 1,2×0,8 m trong khi cạnh thật trải từ 0,8 tới 1,2 m.* Câu **không nói
+quá**: chiều cao khối, cao độ sàn và **thứ tự dòng chảy** vẫn là số thật.
+
+## ★★★ Ba khuyết tật chỉ phép đo LIVE bắt được
+
+**① Tôi ngắm camera vào một THỐNG KÊ của bbox — và sai HAI LẦN ở đúng một chỗ.**
+Bbox màn Line trộn **ba** cao độ: mặt phẳng máy (**tầng 3, y = 16,6 m**), đáy cột WIP
+(`bboxKemCotWip` **ép cứng `minY: 0`**) và đỉnh cột WIP (16,6 m — chiều cao mã hoá 314 WIP).
+`tamBBox().y` ⇒ ngắm cao hơn sàn 8,3 m; `bbox.minY` ⇒ ngắm **thấp hơn máy 16,6 m**, máy chiếu
+xuống **y ≈ 975 px** trên canvas cao 437 px. Không thống kê nào của một bbox như thế trả lời được
+*"mặt phẳng máy ở đâu"* — chỉ **tập máy** trả lời được, nên `yMatPhangM` phải được **truyền vào**.
+
+**② `OrbitControls` bị dựng lại ⇒ `target` reset về gốc toạ độ.**
+Camera **giữ nguyên vị trí** `(124; 27,9; 132,8)` mà hướng nhìn lật từ `(0; −0,970; −0,243)` thành
+`(−0,675; −0,152; −0,723)` — gần như **nằm ngang**, chỉ về gốc. Giải ngược: mục ngắm rơi đúng về
+`(0,1; 0; 0,1)`. Cảnh chỉ còn sàn trống, **không một lỗi nào nổ**.
+
+> ⚠⚠ **Vì sao chỉ lộ ra bây giờ** — và đây mới là bài học: trước đây `khungNhin` đổi **giá trị**
+> mỗi khi dữ liệu sống về, nên một tween mới luôn chạy sau đó và **vô tình ngắm lại**. Sơ đồ làm
+> `khungNhin` ổn định theo giá trị ⇒ tween thôi chạy lại ⇒ khuyết tật hết chỗ nấp.
+> **Một hành vi tình cờ đang che một khuyết tật là một bản vá không ai biết mình có, và nó hết
+> hiệu lực đúng vào lúc có người dọn cái tình cờ ấy đi.**
+
+**③ Hộp bao khớp khung dựng từ TÂM máy.** `hinhHocLine` trả một đám **ĐIỂM**. Ở 1280 lề px cố
+định đủ che; ở **1920** cùng số px ấy nhỏ đi tương đối và khuyết tật lộ ra: **lấp 118,6 % bề
+ngang**, hai cột rìa bị cắt. ⇒ `hopBaoSoDo` bao cả mặt bằng và chiều cao thật.
+
+## Thiết bị đo của TÔI cũng hỏng hai lần
+
+- **`hm1.cam` là ẢNH CHỤP, không phải số sống.** Effect không phụ thuộc vị trí camera (thực thể
+  `camera` bất biến — **cùng cái bẫy `useThree`** đã ghi ở `nguongDonViVe`). Đọc nó trong một
+  phiên đo dài cho số **cũ** và tôi kết luận *"camera đứng yên"* trong khi nó đang bay. ⇒ thêm
+  `camHienTai()`: một **HÀM**, gọi lúc nào đọc lúc ấy. Đó là thứ tìm ra khuyết tật ②.
+- **`--reporter=json` ghi UTF-8 còn python đọc bằng cp1252** ⇒ **mọi** đột biến đều báo *"KHÔNG
+  ĐỌC ĐƯỢC"*. Một thước luôn báo cùng một thứ thì nó không đo gì cả.
+
+## Lưới cũ chặn bản vá — phân loại rồi mới sửa, KHÔNG nới
+
+Ba lưới tra hằng chữ `"const mayVe = useMemo"` để ghim deps/đối số của phép dựng máy. Màn Line
+đổi tên memo ấy thành `mayVeThat` (nhường tên `mayVe` cho bản đã trải) ⇒ **6 ca đỏ**, trong khi
+thứ chúng ghim **không đổi một chữ**. ⇒ lưới canh theo **HÌNH DẠNG** (một cái tên) thay vì theo
+**TÍNH CHẤT** (memo nào gọi `dungMayVe`). Sửa **cơ chế** bằng `shared/testing/dauMemoDungMayVe.ts`;
+khẳng định **không bị nới** — bỏ một dep hay thay `gocToaTheoTang` bằng `new Map()` vẫn đỏ.
+
+Ca thứ 7 ghim nguyên văn `bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh)`: **quyết định** (*"khung
+phải bao cả đỉnh cột WIP"*) còn nguyên; cái lạc hậu là giả định chỉ có **một** nguồn hộp bao.
+
+## Lưới mới + đột biến
+
+| tệp | ca | đột biến ĐỎ |
+|---|---|---|
+| `soDoLine.unit.test.ts` | 35 | **12/12** |
+| `khungNhinSoDoLine.unit.test.ts` | 9 | **6/6** — KN1/KN2 dựng lại **chính hai lỗi của tôi** |
+| `mucNgamSongSotDungLaiControls.unit.test.ts` | 4 | hạng B (đo VĂN BẢN) — nói thẳng là hạng thấp hơn; bằng chứng nhân quả thật là **ablation B** |
+
+⚠ **DB8 SỐNG SÓT ở bản đầu**: ca chỉ so `viTri`/`gocXoayRad`, nên một đột biến trả
+`{ ...m, hien: false }` **lọt** — máy vẫn trong mảng, vẫn đúng toạ độ, và **biến mất khỏi cảnh**.
+Đúng lớp lỗi F2 mà ca ấy được viết ra để chặn, và nó **đo nhầm tính chất**. Đã đổi sang khẳng
+định **đồng nhất thực thể**.
+
+## Cổng
+
+`tsc` **0** · `twin3d`+`pages` **936 tệp / 3.527 ca / 0 đỏ** · `i18n:check` **0** khoá mới lỗi ·
+e2e `twin-dot47-bam-canh` **16/16** (`--workers=1`, cả `/twin` lẫn `/twin/line/2`).
+
+> ⚠ **MSA**: lượt e2e đầu tiên là **16/16 ĐỎ** vì **cổng 3000 chết** (`ECONNREFUSED`), không phải
+> vì sản phẩm. Dựng lại server, kiểm bản đang phục vụ **có** chứa mã mới **qua HTTP**, rồi mới
+> chạy lại. Thô: `.qa-v2/tho-v12/`.
