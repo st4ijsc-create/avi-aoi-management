@@ -427,10 +427,19 @@ máy ấy. Cho nhãn đi theo đơn vị vẽ là biến một cái **tên** th�
 
 ## CÒN MỞ — nói thẳng
 
-- **Chồng lấn biểu tượng cụm**: `demCapChongNhau()` đã có và có lưới, nhưng **chưa ai gọi nó ở
-  đường sản phẩm**. Biểu tượng được phóng to cho đạt ngưỡng nên chúng có thể đè nhau, và khi ấy
-  con số "100 % đạt 24×24" là **nửa sự thật**. Việc đầu vòng sau: đo số cặp chồng ở khung mặc
-  định, rồi mới quyết có cần giãn bố cục không.
+- **Chồng lấn biểu tượng cụm — ĐÃ ĐO (2026-09-19), không còn là ẩn số.**
+
+  | khung | đơn vị vẽ | cặp chồng | diện tích chồng |
+  |---|---|---|---|
+  | 1280×720 | 6 | **3** | **6,1 %** (453/7.451 px²) |
+  | 1920×1080 | 6 | **0** | 0 % |
+
+  ⇒ Có chồng ở khung hẹp nhưng chỉ là **những dải mỏng ở mép**: mỗi biểu tượng vẫn còn ~94 %
+  diện tích riêng, và cú bấm ở vùng tâm vẫn phân giải đúng (nghiệm thu bấm cụm ⇒ `/twin/line/514`).
+  Nên *"100 % đạt 24×24"* đứng vững — nhưng con số 6,1 % phải được nói ra chứ không được im.
+  **Chưa hành động**: giãn bố cục là một đánh đổi (giãn ra thì biểu tượng rời khỏi chỗ máy thật
+  đứng), và 6,1 % chưa đủ để trả giá ấy. `demCapChongNhau()` vẫn **chưa được gọi ở đường sản
+  phẩm** — nó là công cụ cho vòng sau, và phép đo trên làm bằng bộ đo ngoài.
 - **Bấm cụm ở bản 2D chưa nghiệm thu được**: @1280×720 mọi cụm 2D đều rơi dưới lớp phủ. Cần đo lại
   sau HM-2(a) (bản đo chạy trước khi HM-2 vào).
 - **Màn Line vẫn 5,87 px/đơn vị** — ngoài phạm vi HM-1 theo đúng thiết kế, nhưng nó là cùng một
