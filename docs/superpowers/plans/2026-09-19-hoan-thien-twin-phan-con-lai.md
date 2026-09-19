@@ -287,3 +287,64 @@ không phải của một lớp nhãn hỏng.
 **ĐÓNG với điều kiện.** Không vá sản phẩm, không sửa ca. Nếu hai ca ấy đỏ lại, việc đầu tiên là
 kiểm tuổi tiến trình máy chủ và tìm `DB unavailable` trong log — trước khi nghi ngờ mã.
 Thô: `.qa-v2/tho-v5/`.
+
+---
+
+## HM-1 §2.1 — CƠ CHẾ CỦA NGƯỠNG (phần bản thiết kế còn thiếu, đã đo 2026-09-19)
+
+Bản thiết kế khai ngưỡng *"đổi đơn vị vẽ khi trung vị diện tích khối < 576 px²"* nhưng **không
+nói lấy con số ấy ở đâu**. Đó là một lỗ hổng thật: diện tích trên màn là đại lượng **không gian
+màn hình**, phụ thuộc tư thế camera, nên chỗ lấy nó quyết định cả kiến trúc lẫn hiệu năng.
+
+### Hai cách, và vì sao chọn cách thứ hai
+
+| | cách | vì sao |
+|---|---|---|
+| (a) | đo hình chiếu **mỗi khung** rồi `setState` | ✕ Đúng *pitfall #1* của R3F — vòng 1 đã trả giá đúng chỗ này (`LopCanhBao`/`LopNhan` `setState` mỗi khung, 9,2 fps). |
+| **(b)** | **công thức đóng**, tính lại **khi camera đổi** | ✓ Hàm thuần ⇒ lưới kiểm được mà không cần dựng cảnh; O(N) trên một **sự kiện**, không phải mỗi khung; `onCameraDoi` đã được nối sẵn. |
+
+```
+caoPx = caoThatM / (2 · d · tan(fov/2)) · caoCanvasPx
+```
+
+### ★ `d` là khoảng cách camera → CHÍNH MÁY ĐÓ, không phải bán kính quỹ đạo
+
+Đây là chỗ tôi suýt làm sai, và phép đo bắt được trước khi có một dòng mã nào.
+
+Quét 7 nấc cuộn trên `/twin` FUYU-F @1280×720, kiểm bất biến `caoPx × d` (phải gần HẰNG nếu công
+thức đúng), với `d` = **bán kính quỹ đạo** đọc từ `window.__tuTheCamera`:
+
+| mẫu dùng để lấy `caoPx` | tích ở nấc 0 | tích ở nấc 18 | trôi |
+|---|---|---|---|
+| **trung vị** toàn tập | 1269,7 | 889,2 | **−30 %** |
+| **một máy CỐ ĐỊNH** (id 7583) | 1211,8 | 1034,6 | **−15 %** |
+
+Hai bài học tách bạch:
+
+1. **Trung vị chạy trên một TẬP ĐANG CO** (176 → 113 khối khi phóng to) ⇒ "máy trung vị" đổi danh
+   tính giữa các nấc, và một nửa độ trôi là của **thành phần mẫu**, không phải của công thức.
+   Bám một máy cố định thì nửa ấy biến mất ngay.
+2. **15 % còn lại là sai số của PROXY**: `__tuTheCamera` cho bán kính quỹ đạo (camera → điểm
+   ngắm), còn công thức đòi camera → chính máy đó. Máy lệch trục thì hai khoảng cách ấy **co
+   khác nhau**: đo được `caoPx` tăng 3,10× trong khi bán kính quỹ đạo giảm 3,63×.
+
+⇒ **Công thức không sai; proxy của tôi sai.** Cài đúng phải lấy khoảng cách tới từng máy.
+
+### Hệ quả cho cách cài
+
+- Ngưỡng tính bằng một **hàm thuần**:
+  `(máy[viTri, cỡ thật], viTríCamera, fov, caoCanvasPx) → trung vị caoPx`.
+  Không đụng R3F, lưới kiểm được như `locNhan`/`locBadge` đang được kiểm.
+- Gọi lại **khi camera đổi** (qua `onCameraDoi` đã nối sẵn), không phải trong `useFrame`.
+  O(549) phép trừ vector trên một sự kiện là rẻ; O(549) mỗi khung thì không.
+- **Phải có TRỄ ĐÓNG/MỞ (hysteresis)**: một ngưỡng trần trụi ở đúng 576 px² sẽ **nhấp nháy** khi
+  người dùng cuộn quanh mốc — cảnh đổi đơn vị vẽ qua lại giữa hai khung liền nhau. Đề xuất: bật
+  cụm khi trung vị < 576, tắt khi > 864 (1,5×). Con số 1,5× phải được **đo** ở lưới, không chọn
+  bừa: quét quanh mốc và đếm số lần lật.
+- Lưới cho hàm thuần phải có **ca nghịch**: đưa camera ra xa ⇒ trung vị giảm ⇒ phải bật cụm; đưa
+  vào gần ⇒ phải tắt. Chỉ kiểm một chiều là kiểm nửa hợp đồng.
+
+### Trạng thái
+Cơ chế đã chốt và đã có bằng chứng. **Chưa viết mã sản phẩm.** Việc kế tiếp theo đúng thứ tự §5:
+dựng hàm thuần + lưới (gồm ca nghịch và ca trễ đóng/mở), rồi mới nối vào cảnh.
+Thô: `.qa-v2/tho-v6/`.
