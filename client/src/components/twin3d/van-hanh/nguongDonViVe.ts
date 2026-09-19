@@ -135,6 +135,31 @@ export function khoangCachToiMay(camera: DiemMet, viTri: DiemMet): number {
 }
 
 /**
+ * PHÉP NGHỊCH của {@link coTrenManPx}: một vật ở khoảng cách `d` phải to bao nhiêu **mét** thì
+ * chiếm đúng `nguongPx` pixel trên màn?
+ *
+ * ★ Vì sao cần: biểu tượng cụm phải ĐẠT ngưỡng bấm **theo cấu tạo**, chứ không phải nhờ may. Cỡ
+ *   thế giới cố định (kiểu `BIEU_TUONG_TOI_THIEU_MM` của Task 20) chỉ đúng ở đúng một tư thế
+ *   camera; camera lùi ra là nó lại nhỏ hơn ngưỡng, và ta quay về đúng bài toán vừa giải.
+ *   Suy ngược từ ngưỡng thì mọi tư thế đều đạt, và tiêu chí nghiệm thu "≥ 90 % đơn vị vẽ đạt
+ *   24×24" trở thành hệ quả của phép dựng chứ không phải một điều cần cầu may.
+ *
+ * ⚠ Cùng quy ước trả `0` khi đối số không dùng được — xem docblock {@link coTrenManPx}.
+ */
+export function coThatToiThieuM(
+  nguongPx: number,
+  khoangCachM: number,
+  fovDo: number,
+  caoCanvasPx: number,
+): number {
+  if (!Number.isFinite(nguongPx) || nguongPx <= 0) return 0;
+  if (!Number.isFinite(khoangCachM) || khoangCachM <= 0) return 0;
+  if (!Number.isFinite(fovDo) || fovDo <= 0 || fovDo >= 180) return 0;
+  if (!Number.isFinite(caoCanvasPx) || caoCanvasPx <= 0) return 0;
+  return (nguongPx * (2 * khoangCachM * Math.tan((fovDo * DO_SANG_RAD) / 2))) / caoCanvasPx;
+}
+
+/**
  * Cạnh NHỎ của hình chiếu một máy (px) — `min(rộng, cao)`.
  *
  * ⚠ Bề rộng chiếu ở đây là xấp xỉ **mặt đối diện camera**: nó bỏ qua góc xoay quanh trục đứng.
