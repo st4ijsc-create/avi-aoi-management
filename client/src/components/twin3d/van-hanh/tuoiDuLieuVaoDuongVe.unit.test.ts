@@ -22,6 +22,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { dauMemoDungMayVe } from "@shared/testing/dauMemoDungMayVe";
 
 import { mauChoTrangThai, type MucTuoi } from "../mauTrangThai";
 import { trangThaiHienThi, type MayVanHanh } from "./trungThucDuLieu";
@@ -187,7 +188,10 @@ describe("★★★ BA TRANG cùng nối bản đồ MỨC TUỔI vào `dungMayV
      * `mucTuoiXinKhung.dom.test.tsx`; ca này ghim chính dòng deps để lỗi không
      * quay lại lặng lẽ.
      */
-    const i = src.indexOf("const mayVe = useMemo");
+    // ★ Neo theo `dungMayVe` chứ không theo TÊN biến — xem `dauMemoDungMayVe`: màn Line đặt memo
+    //   ấy tên `mayVeThat` từ khi có bố cục sơ đồ, và cái tên KHÔNG phải thứ ca này ghim.
+    const i = dauMemoDungMayVe(src, ten);
+    expect(i, `không tìm thấy memo dựng máy trong ${ten}`).toBeGreaterThan(-1);
     const doan = src.slice(i, src.indexOf("\n  );", i));
     const deps = doan.slice(doan.lastIndexOf("["), doan.indexOf("]", doan.lastIndexOf("[")));
     expect(deps, `mảng deps của \`mayVe\` trong ${ten} phải gồm \`mucTuoiTheoMay\``).toContain(

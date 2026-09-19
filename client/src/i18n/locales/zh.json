@@ -19845,7 +19845,10 @@
       "khongMoDuoc": "无法打开产线 #{{n}}",
       "rong": "该产线的布局上还没有机台",
       "rongMo": "该产线可能尚未在 Twin Studio 中布置，或属于另一家工厂。",
-      "ariaCanh": "{{ten}} 的 3D 场景"
+      "ariaCanh": "{{ten}} 的 3D 场景",
+      "viTriSoDo": "此视图为示意图：{{daiThat}} m × {{rongThatM}} m 的产线已展开为 {{hang}}×{{cot}} 网格以容纳 {{soMay}} 台设备，因此画面上的位置与距离并非真实数值。流向顺序是真实的（{{nguonThuTu}}），每个方块的高度也是。所有设备的占地一律按同一尺寸 {{oRong}}×{{oSau}} m 绘制，而真实边长介于 {{canhNho}} m 至 {{canhLon}} m 之间。",
+      "thuTuTheoTram": "按工位顺序",
+      "thuTuTheoViTri": "根据布局上的真实位置推得"
     },
     "chuaDung": "此页面尚未构建。内容将在 3D 数字孪生项目的后续阶段中添加。",
     "chuaDo": "未实测",

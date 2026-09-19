@@ -255,6 +255,70 @@ export function khungNhinLine(
 }
 
 /**
+ * Hệ số CAO/LÙI của khung nhìn khi màn Line vẽ **sơ đồ** (`soDoLine.ts`).
+ *
+ * ★★★ VÌ SAO KHÔNG DÙNG LẠI `HE_SO_CAO.line = 0,55`
+ * Con số 0,55 là một góc **thấp**, và nó đúng cho thứ nó được viết ra để phục vụ: một dải máy
+ * dài nhìn dọc trục, nơi góc thấp làm cả chuyền vào khung và đọc được dòng chảy. Áp đúng góc ấy
+ * lên một **lưới** thì hai chuyện xảy ra, cả hai đều đo được: trục sâu bị co lại theo `cos` của
+ * góc nhìn nên lưới vuông hiện ra bẹt, và **hàng trước che hàng sau**.
+ *
+ * ⇒ Sơ đồ đi kèm góc nhìn của chính nó: `cao = 2,2 · bán kính`, `lùi = 0,55 · bán kính` theo +Z,
+ *   tức nghiêng **~14°** khỏi phương thẳng đứng. Đủ đứng để trục sâu gần như không co
+ *   (`cos 14° = 0,97`) và không hàng nào che hàng nào; vẫn đủ nghiêng để khối còn ra khối chứ
+ *   không thành hình chiếu bằng phẳng lì.
+ *
+ * ⚠ Hai con số này là một CẶP với `heSoNghieng` của `dungSoDoLine`: đổi góc ở đây mà không đổi
+ *   hệ số kia thì lưới thôi khớp tỉ lệ canvas, và con số *"nội dung lấp cả hai chiều"* tụt mà
+ *   không có test nào đỏ. Chúng phải đi cùng nhau.
+ */
+export const HE_SO_CAO_SO_DO_LINE = 2.2;
+export const HE_SO_LUI_SO_DO_LINE = 0.55;
+
+/**
+ * Khung nhìn cho màn Line khi cảnh là **sơ đồ**: nhìn gần thẳng đứng xuống lưới.
+ *
+ * ★ G8 — bbox không thực ⇒ `null` (cùng hợp đồng với `khungNhinCho`/`khungNhinLine`).
+ * ★ Có `khung` ⇒ `khopKhungNhin` khớp khoảng cách để **8 đỉnh** bbox lọt frustum kèm lề nhãn —
+ *   đúng cơ chế mà hai đường tính khung nhìn kia đã dùng, không phát minh phép khớp thứ hai.
+ */
+export function khungNhinSoDoLine(
+  bbox: BBox,
+  yMatPhang: number,
+  khung?: KhungKhop,
+): KhungNhin | null {
+  if (!bboxCoThuc(bbox)) return null;
+  const tam = tamBBox(bbox);
+  const co = kichThuocBBox(bbox);
+  const banKinh = Math.max(1, 0.5 * Math.hypot(co.rong, co.cao, co.sau));
+  // ⚠ `yMatPhang` rác ⇒ rơi về tâm dọc bbox: sai khung còn hơn camera bay ra `NaN` (G8/G11).
+  const yNgam = Number.isFinite(yMatPhang) ? yMatPhang : tam.y;
+  /*
+   * ★★★ NGẮM VÀO **MẶT PHẲNG MÁY** (`yMatPhang`), KHÔNG VÀO MỘT THỐNG KÊ CỦA BBOX.
+   *   Đây là một khuyết tật ĐÃ ĐO, và tôi đã sai HAI lần ở đúng chỗ này trước khi đo ra nó.
+   *
+   * Đo `/twin/line/526` sau khi trải sơ đồ: lưới **14,2 × 5,1 m**, nhưng cột WIP cao tới
+   *   **16,6 m** (chiều cao cột mã hoá 314 WIP — một thang được hiệu chỉnh cho chuyền dài 229 m).
+   *   Bbox vì thế cao 16,6 m và `tamBBox().y = 8,3 m`. Camera nhìn gần thẳng đứng mà ngắm vào
+   *   một điểm **cao hơn mặt sàn 8,3 m** thì cả mặt phẳng máy trượt xuống dưới khung: đo được
+   *   *"nội dung lấp 333 % bề ngang / 1.134 % bề dọc"*, và ảnh chụp chỉ còn sàn trống.
+   *
+   * ⚠ Ở bố cục DẢI (`khungNhinLine`) khuyết tật này không tồn tại — chuyền dài 229 m nên 16,6 m
+   *   là nhiễu. Nó chỉ lộ ra khi sơ đồ làm thế giới co lại 16 lần. Tức bố cục và khung nhìn là
+   *   MỘT gói: đổi một vế mà giữ vế kia thì hỏng theo một kiểu mới.
+   *
+   * ★ Cột WIP KHÔNG bị cắt: chúng vẫn nằm trong `bbox` mà `khopKhungNhin` phải bao trọn, nên
+   *   camera tự lùi đủ để thấy cả cột. Thay đổi ở đây là **ngắm vào đâu**, không phải **bỏ gì đi**.
+   */
+  const goc: KhungNhin = {
+    viTri: [tam.x, yNgam + banKinh * HE_SO_CAO_SO_DO_LINE, tam.z + banKinh * HE_SO_LUI_SO_DO_LINE],
+    muc: [tam.x, yNgam, tam.z],
+    banKinh,
+  };
+  return khung ? khopKhungNhin(bbox, goc, khung) : goc;
+}
+
+/**
  * ★★★ ĐỢT 33 (Pareto #9) — `?cam=` TRÊN MÀN LINE/MÁY KHÔNG ĐƯỢC NUỐT IM LẶNG.
  *
  * Đợt 32 a3b đo `/twin/line/2?cam=10,5,10,0,0` ⇒ `camDoiCamera: false`: tham số

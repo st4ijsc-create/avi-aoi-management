@@ -115,6 +115,8 @@ import { mauCss } from "@/components/twin3d/van-hanh/mauThree";
 import { mauChoTrangThai, type MucTuoi } from "@/components/twin3d/mauTrangThai";
 import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
 import { dungHinhLine } from "@/components/twin3d/van-hanh/canhLine";
+import { apSoDoVaoMay, dungSoDoLine, hopBaoSoDo } from "@/components/twin3d/van-hanh/soDoLine";
+import { laCheDoDo } from "@/components/twin3d/loi/cheDoDo";
 import {
   dungCanhBao3D,
   dungMayVe,
@@ -126,6 +128,7 @@ import { tangIdsDeHoi } from "@/components/twin3d/van-hanh/boChonNap";
 import {
   dichKhungDoc,
   khungNhinLine,
+  khungNhinSoDoLine,
   khungNhinTuCamera,
   phaVeNen,
   TI_LE_PHA_NGOAI_PHAM_VI,
@@ -630,7 +633,7 @@ export function ThanManLine({
    *     ③ `tangId` của **HÀNG ĐẶT CHỖ** (`tangIdCuaDatCho`), không phải một
    *        `tangId` của trang — màn này không có "tầng đang xem".
    */
-  const mayVe = useMemo<MayTrongLo[]>(
+  const mayVeThat = useMemo<MayTrongLo[]>(
     () =>
       dungMayVe({
         may: mayLine,
@@ -659,15 +662,64 @@ export function ThanManLine({
     [mayLine, datChoTheoMay, kichThuocTheoLoai, trangThaiTheoMay, mucTuoiTheoMay, gocToa, lineId, factoryId, mauNenCanh],
   );
 
+  /* ══════════════════════════════════════════════════════════════════════ */
+  /* ★★★ BỐ CỤC SƠ ĐỒ (`soDoLine.ts`) — MÀN LINE TRẢI CHUYỀN THÀNH LƯỚI RẮN BÒ */
+  /* ══════════════════════════════════════════════════════════════════════ */
+  /*
+   * Đo trên `/twin/line/526` (39 máy): nội dung lấp **80,5 % bề ngang nhưng 1,2 % bề CAO** —
+   * chuyền là dải ~130:1 nên 98,8 % chiều cao canvas bỏ không và **0/39** máy đạt đích bấm
+   * 24×24 px, ở cả 1280×720 lẫn 1920×1080. Không nấc zoom nào cứu được (nấc 18: còn 11/39 máy
+   * trong khung). Khung đã khớp ĐÚNG — hình dạng của dữ liệu mới là thứ chặn, nên đây là một
+   * QUYẾT ĐỊNH THIẾT KẾ do chủ dự án chốt, không phải một bản vá khung nhìn.
+   *
+   * ★ `thuTuTheoMay` lấy `stations.thuTu` — TRÌNH TỰ CÔNG NGHỆ. `dungSoDoLine` chỉ dùng nó khi
+   *   **mọi** máy tra được; thiếu một cái là rơi hẳn về thứ tự theo vị trí (xem docblock của nó).
+   * ★ `tiLeKhung` là khung canvas THẬT: số cột chọn theo đó thì lưới lấp cả hai chiều. Chưa đo
+   *   được khung (khung hình đầu) ⇒ `undefined` ⇒ module dùng 16/9, rồi dựng lại khi có số đo.
+   */
+  const thuTuTheoMay = useMemo(() => {
+    const thuTuTram = new Map<number, number | null>();
+    for (const s of tram) thuTuTram.set(s.id, s.thuTu ?? null);
+    const m = new Map<number, number | null>();
+    for (const mv of mayLine) {
+      m.set(mv.id, mv.stationId != null ? thuTuTram.get(mv.stationId) ?? null : null);
+    }
+    return m;
+  }, [tram, mayLine]);
+
+  const soDo = useMemo(
+    () =>
+      dungSoDoLine(mayVeThat, thuTuTheoMay, {
+        tiLeKhung: kichThuocKhung ? kichThuocKhung.rongPx / kichThuocKhung.caoPx : undefined,
+      }),
+    [mayVeThat, thuTuTheoMay, kichThuocKhung],
+  );
+
+  /*
+   * ★★★ ĐÚNG MỘT `mayVe` ĐI XUỐNG MỌI NGƯỜI TIÊU THỤ. Nhãn (`dungNhanMay`), badge cảnh báo
+   *   (`dungCanhBao3D`), hình học chuyền và `<CanhVanHanh>` đều đọc biến này. Nếu để `mayVe`
+   *   thật cho một nhánh và `mayVe` sơ đồ cho nhánh khác thì nhãn sẽ neo vào chỗ máy KHÔNG còn
+   *   được vẽ — đúng lỗi mà `LopNhan` đã mắc ở màn Vận hành (`hopKhoiMay` khai 176 khối trong
+   *   khi cảnh vẽ 6). Một hệ toạ độ, một danh sách.
+   */
+  const mayVe = useMemo(() => apSoDoVaoMay(mayVeThat, soDo), [mayVeThat, soDo]);
+
   /**
    * Hình học đường tâm chuyền — `dungHinhLine` (`canhLine.ts:79`), CÙNG hàm mà
    * `/twin` dùng. `thuocVe` là **`mayTatCa`** chứ không `mayLine`: hàm tra
    * `lineId`/`stationId` của một máy qua bảng này, và thu hẹp nó không đổi kết
    * quả nhưng làm hàm mất khả năng nhận ra máy nằm ngoài (giữ đúng bản gốc).
+   *
+   * ★★★ `boQuaDatCho: soDo !== null` — BẮT BUỘC ĐI KÈM SƠ ĐỒ. Máy đã sang hệ toạ độ sơ đồ; nếu
+   *   tâm trạm vẫn đọc `twin_dat_cho` thì cột WIP và mũi tên dòng chảy đứng ở chỗ THẬT, cách
+   *   hàng chục mét khỏi chính những cái máy chúng nói về — và không một lỗi nào nổ.
    */
   const hinhLine = useMemo(
-    () => dungHinhLine(lineId, tram, mayVe, mayTatCa, canhQ.data?.datCho ?? []),
-    [lineId, tram, mayVe, mayTatCa, canhQ.data],
+    () =>
+      dungHinhLine(lineId, tram, mayVe, mayTatCa, canhQ.data?.datCho ?? [], {
+        boQuaDatCho: soDo !== null,
+      }),
+    [lineId, tram, mayVe, mayTatCa, canhQ.data, soDo],
   );
 
   /* ── WIP: một phép ghép, hai người đọc (§11.5 + G12) ─────────────────── */
@@ -849,13 +901,31 @@ export function ThanManLine({
    *   giữa-dưới canvas (QA Đợt 44: tâm nhãn ~48 %, nửa dưới trống). Ghép ở ĐÂY — cách trình
    *   bày của màn Line — không đổi hợp đồng `khungNhinLine`. `?cam=` deep-link vẫn đi thẳng.
    */
+  /*
+   * ★★★ SƠ ĐỒ ĐI KÈM GÓC NHÌN CỦA CHÍNH NÓ — `khungNhinSoDoLine` (nhìn ~14° khỏi phương thẳng
+   *   đứng) chứ KHÔNG `khungNhinLine` (`HE_SO_CAO.line = 0,55`, một góc THẤP). Góc thấp viết ra
+   *   cho một DẢI nhìn dọc trục; áp lên một LƯỚI thì trục sâu co theo `cos` góc nhìn và **hàng
+   *   trước che hàng sau**. Đổi bố cục mà giữ nguyên camera là làm nửa việc.
+   *
+   * ★ Và KHÔNG `dichKhungDoc` ở chế độ sơ đồ: phép dịch ấy đẩy dải nội dung xuống 64 % chiều
+   *   cao để chừa chỗ cột WIP phía trên — đúng cho dải mỏng, SAI cho một lưới vốn đã lấp gần
+   *   trọn khung (dịch xuống là đẩy hàng cuối ra ngoài).
+   */
   const khungNhinTho = useMemo(() => {
     if (camUrl) return khungNhinTuCamera(camUrl);
     if (!hinhLine || !hinhLine.hh.coHinhHoc) return null;
-    const bbox = bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh);
+    // ★ Ở chế độ sơ đồ, hộp bao lấy theo THÂN máy (`hopBaoSoDo`) chứ không theo tâm: bbox của
+    //   `hinhHocLine` là một đám ĐIỂM, và khớp khung vào nó thì cột rìa bị cắt (đo @1920: 118,6 %).
+    const bbox = bboxKemCotWip(
+      soDo !== null ? hopBaoSoDo(soDo, mayVe) : hinhLine.hh.bbox,
+      cotWipCanh,
+    );
+    // ★★★ Ngắm vào MẶT PHẲNG MÁY (`soDo.yMatPhangM`), không vào một thống kê của bbox:
+    //   `bboxKemCotWip` ép `minY: 0` còn máy ở đây nằm trên TẦNG 3 (y = 16,6 m).
+    if (soDo !== null) return khungNhinSoDoLine(bbox, soDo.yMatPhangM, kichThuocKhung ?? undefined);
     const k = khungNhinLine(bbox, hinhLine.hh.truc, hinhLine.hh.trucDangTin, kichThuocKhung ?? undefined);
     return k && kichThuocKhung ? dichKhungDoc(bbox, k, kichThuocKhung) : k;
-  }, [camUrl, hinhLine, cotWipCanh, kichThuocKhung]);
+  }, [camUrl, hinhLine, cotWipCanh, kichThuocKhung, soDo, mayVe]);
   /*
    * ★★★ ỔN ĐỊNH THEO GIÁ TRỊ — `DieuKhien` (CanhVanHanh) khởi động TWEEN mỗi khi `khungNhin` đổi THAM
    *   CHIẾU, không so giá trị. `hinhLine` dựng lại mỗi khi `mayVe` đổi (trạng thái/tuổi làm mới theo
@@ -868,6 +938,38 @@ export function ThanManLine({
     : "";
   // eslint-disable-next-line react-hooks/exhaustive-deps -- cố ý: chỉ đổi đối tượng khi GIÁ TRỊ đổi
   const khungNhin = useMemo(() => khungNhinTho, [khoaKhungNhin]);
+
+  /*
+   * ★ CỬA SỔ ĐO cho khớp nối SƠ ĐỒ ↔ KHUNG NHÌN — cùng khuôn `__demTuongTac` của `LoBatchMay`,
+   *   và CHỈ ở chế độ đo (DEV hoặc `?do=1`). Có nó vì phép đo live đầu tiên của bố cục sơ đồ
+   *   ra một con số vô lý (nội dung lấp 333 % bề ngang) và ba lượt suy đoán đều sai: thứ thiếu
+   *   là **bbox mà camera đang khớp vào**, không suy được từ bên ngoài trang.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined" || !laCheDoDo()) return;
+    const w = window as unknown as { __demTuongTac?: Record<string, unknown> };
+    const cua = (w.__demTuongTac ?? (w.__demTuongTac = {})) as Record<string, unknown>;
+    const bbox = hinhLine && hinhLine.hh.coHinhHoc ? bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh) : null;
+    cua.soDoLine = {
+      laSoDo: soDo !== null,
+      yMatPhangM: soDo?.yMatPhangM ?? null,
+      cot: soDo?.cot ?? null,
+      hang: soDo?.hang ?? null,
+      oRongM: soDo?.oRongM ?? null,
+      rongM: soDo?.rongM ?? null,
+      sauM: soDo?.sauM ?? null,
+      soCotWip: cotWipCanh.length,
+      tramOGoc: (hinhLine?.tram ?? []).filter((t) => t.tam.x === 0 && t.tam.z === 0).length,
+      soTram: (hinhLine?.tram ?? []).length,
+      bbox,
+      bboxTruocWip: hinhLine?.hh.bbox ?? null,
+      may3: mayVe.slice(0, 3).map((m) => ({ id: m.machineId, v: m.viTri, co: m.kichThuocMm })),
+      mayThat3: mayVeThat.slice(0, 3).map((m) => ({ id: m.machineId, v: m.viTri })),
+      cotWip3: cotWipCanh.slice(0, 3),
+      khungNhin,
+      kichThuocKhung,
+    };
+  }, [soDo, hinhLine, cotWipCanh, khungNhin, kichThuocKhung, mayVe, mayVeThat]);
 
   /* ── (B) LỚP PHỦ 2D — chip trái ──────────────────────────────────────── */
   /*
@@ -1028,6 +1130,55 @@ export function ThanManLine({
         </span>
       </div>
 
+      {/*
+        ── ★★★ LỜI KHAI SƠ ĐỒ — RÀNG BUỘC TRUNG THỰC, KHÔNG PHẢI MỘT CHÚ THÍCH ──
+        Cùng luật mà `banner-vi-tri-tam-sinh` (cấp tập đoàn) chịu: khi vị trí trên cảnh là sơ đồ
+        chứ không phải toạ độ thật, màn **PHẢI NÓI RA, và nói bằng SỐ**. Câu nêu cả hai vế — dài
+        thật bao nhiêu mét, trải lại thành lưới mấy hàng mấy cột — để người đọc TỰ thấy đã bỏ đi
+        cái gì, thay vì một tính từ ("sơ đồ", "ước lệ") mà ai cũng hiểu một kiểu.
+
+        ⚠ Câu KHÔNG được nói quá: chiều cao khối, cao độ sàn và **thứ tự dòng chảy** vẫn là số
+          thật. Bản nháp của banner cấp tập đoàn từng kết bằng "chỉ chiều cao còn là số thật" và
+          bị chính phép đo bắt là khai sai — không lặp lại ở đây.
+        ★ `data-*` mang CON SỐ cho phép đo ngoài trang; nó không đọc câu chữ (PH-50).
+      */}
+      {soDo !== null && lyDoLine === "mo" && !rongThat ? (
+        <div
+          className="shrink-0 border-b bg-muted/40 px-3 py-1 text-xs text-muted-foreground"
+          data-testid="banner-so-do-line"
+          data-la-so-do="1"
+          data-cot={soDo.cot}
+          data-hang={soDo.hang}
+          data-so-may={soDo.thuTu.length}
+          data-theo-thu-tu-tram={soDo.theoThuTuTram ? "1" : "0"}
+          data-that-rong-m={soDo.thatRongM.toFixed(2)}
+          data-that-sau-m={soDo.thatSauM.toFixed(2)}
+          data-o-rong-m={soDo.oRongM.toFixed(3)}
+          data-o-sau-m={soDo.oSauM.toFixed(3)}
+          data-that-canh-nho-m={soDo.thatCanhNhoM.toFixed(3)}
+          data-that-canh-lon-m={soDo.thatCanhLonM.toFixed(3)}
+        >
+          {t(
+            "twin3d.line.viTriSoDo",
+            "Cảnh này là SƠ ĐỒ: chuyền dài {{daiThat}} m × {{rongThatM}} m được trải lại thành lưới {{hang}} hàng × {{cot}} cột cho {{soMay}} máy, nên vị trí và khoảng cách trên cảnh KHÔNG phải số thật. Thứ tự dòng chảy thì là số thật ({{nguonThuTu}}), và chiều cao mỗi khối cũng vậy. Mặt bằng mọi máy vẽ CÙNG MỘT CỠ {{oRong}}×{{oSau}} m, trong khi cạnh thật trải từ {{canhNho}} m tới {{canhLon}} m.",
+            {
+              daiThat: Math.round(Math.max(soDo.thatRongM, soDo.thatSauM)),
+              rongThatM: Math.round(Math.min(soDo.thatRongM, soDo.thatSauM)),
+              hang: soDo.hang,
+              cot: soDo.cot,
+              soMay: soDo.thuTu.length,
+              nguonThuTu: soDo.theoThuTuTram
+                ? t("twin3d.line.thuTuTheoTram", "theo trình tự trạm")
+                : t("twin3d.line.thuTuTheoViTri", "suy từ vị trí thật trên bố cục"),
+              oRong: soDo.oRongM.toFixed(1),
+              oSau: soDo.oSauM.toFixed(1),
+              canhNho: soDo.thatCanhNhoM.toFixed(1),
+              canhLon: soDo.thatCanhLonM.toFixed(1),
+            },
+          )}
+        </div>
+      ) : null}
+
       {/* ── Khung cảnh: canvas chiếm trọn, lớp phủ ĐÈ lên ───────────────── */}
       <div ref={khungCanhRef} className="relative min-h-0 flex-1">
         {lyDoLine !== "mo" ? (
@@ -1072,10 +1223,16 @@ export function ThanManLine({
               /* ★ Mũi tên dòng chảy — `nhipMs = null` ⇒ ĐỨNG YÊN, đúng cam kết
                    của `DongChayLine`. §15.6 **D-7** cấm hoạt ảnh băng tải; đây
                    là mũi tên chỉ HƯỚNG, tốc độ mã hoá nhịp THẬT. */
+              /* ★ Ở chế độ SƠ ĐỒ mũi tên đi theo ĐƯỜNG RẮN BÒ qua từng ô (`soDo.duongTam`),
+                   KHÔNG theo tâm trạm: một trạm vắt qua chỗ xuống hàng có tâm rơi vào GIỮA lưới
+                   và vẽ ra một đoạn chuyền không tồn tại. Thứ tự là thứ sơ đồ còn giữ — nên nó
+                   phải được vẽ đúng chỗ mắt đang đi. */
               dongChay={
-                hinhLine && hinhLine.hh.coHinhHoc
-                  ? { diem: hinhLine.hh.diemDuongTam, nhipMs: nhipChuyenMs }
-                  : null
+                soDo
+                  ? { diem: soDo.duongTam, nhipMs: nhipChuyenMs }
+                  : hinhLine && hinhLine.hh.coHinhHoc
+                    ? { diem: hinhLine.hh.diemDuongTam, nhipMs: nhipChuyenMs }
+                    : null
               }
               wip={cotWipCanh}
               /* ★★★ §15.6 **D-12** — `vung` KHÔNG truyền: đo 2026-09-08 có **0

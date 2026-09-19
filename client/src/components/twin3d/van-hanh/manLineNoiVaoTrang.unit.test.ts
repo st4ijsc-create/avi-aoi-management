@@ -119,7 +119,7 @@ describe("★★★ ① Phạm vi của màn Line — đo bằng GIÁ TRỊ, kh�
 
 describe("★★★ ② Trang gọi `phamViCuaManLine`, không dựng phạm vi tại chỗ", () => {
   it("`mayVe` truyền `phamViCuaManLine(lineId)`", () => {
-    const t = than("mayVe");
+    const t = than("mayVeThat");
     expect(t).toContain("phamViCuaManLine(lineId)");
   });
 
@@ -140,7 +140,7 @@ describe("★★★ ② Trang gọi `phamViCuaManLine`, không dựng phạm vi 
 
 describe("★★★ ③ Cảnh vẽ MÁY CỦA CHUYỀN, không phải toàn nhà máy", () => {
   it("`mayVe` nhận `may: mayLine`", () => {
-    const t = than("mayVe");
+    const t = than("mayVeThat");
     expect(t).toContain("may: mayLine");
     /*
      * ★★★ ĐỘT BIẾN `may: mayLine` → `may: mayTatCa`. Đúng lỗi **F2** mà
@@ -212,8 +212,19 @@ describe("★★★ ⑥ Camera bay DỌC chuyền, dùng `khungNhinLine` (không
     expect(t).toContain("khungNhinLine(");
     expect(t).toContain("hinhLine.hh.truc");
     expect(t).toContain("hinhLine.hh.trucDangTin");
-    // ★ Đợt 35: bbox KÈM cột WIP (cột 6 m xuyên mép trên nếu chỉ bbox máy) + KHUNG canvas thật.
-    expect(t).toContain("bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh)");
+    /*
+     * ★ Đợt 35: bbox KÈM cột WIP (cột 6 m xuyên mép trên nếu chỉ bbox máy) + KHUNG canvas thật.
+     *
+     * ⚠ Ca này từng ghim NGUYÊN VĂN `bboxKemCotWip(hinhLine.hh.bbox, cotWipCanh)` và đỏ khi bố
+     *   cục sơ đồ thêm một nhánh hộp bao thứ hai (`hopBaoSoDo`). Phân loại: QUYẾT ĐỊNH mà nó
+     *   ghim — *"khung nhìn phải bao cả đỉnh cột WIP"* — **không đổi**; cái lạc hậu là việc nó
+     *   giả định chỉ có MỘT nguồn hộp bao. ⇒ ghim đúng hai điều còn đúng: `bboxKemCotWip` vẫn
+     *   bọc ngoài, và đường KHÔNG-sơ-đồ vẫn dùng `hinhLine.hh.bbox`. Không nới: bỏ
+     *   `bboxKemCotWip` đi thì ca vẫn đỏ.
+     */
+    expect(t).toContain("bboxKemCotWip(");
+    expect(t).toContain("cotWipCanh,");
+    expect(t).toContain("hinhLine.hh.bbox");
     expect(t).toContain("kichThuocKhung ?? undefined");
     expect(t).not.toContain("khungNhinLine(hinhLine.hh.bbox");
     /*
@@ -564,7 +575,7 @@ describe("Đợt 38 — TwinLine: nhãn 3D dùng mã NGẮN (tiền tố chung c
  */
 describe("★★★ Task 17c — cộng gốc toà nhà và trần tầng ở màn này", () => {
   it("`mayVe` truyền `gocToaTheoTang: gocToa`, KHÔNG phải Map rỗng tại chỗ gọi", () => {
-    const t = than("mayVe");
+    const t = than("mayVeThat");
     expect(t).toContain("gocToaTheoTang: gocToa");
     expect(t).not.toMatch(/gocToaTheoTang:\s*new Map\(\s*\)/);
   });
@@ -580,5 +591,83 @@ describe("★★★ Task 17c — cộng gốc toà nhà và trần tầng ở m�
   it("★★★ `.slice(0, 50)` đã BIẾN MẤT — cắt im lặng không còn đường về", () => {
     expect(MA).not.toMatch(/\.slice\(\s*0\s*,\s*50\s*\)/);
     expect(MA).toContain("tangIdsDeHoi(");
+  });
+});
+
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ BỐ CỤC SƠ ĐỒ (`soDoLine.ts`) — NĂM KHỚP NỐI MỚI, TỨC NĂM BỀ MẶT LỖI MỚI */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Bố cục sơ đồ là **một gói**, và mỗi mảnh của nó có thể bị gỡ riêng mà `tsc` vẫn xanh và mọi
+ * lưới module vẫn xanh — đúng lớp G93 mà tệp này tồn tại để chặn. Gỡ một mảnh thì hỏng theo một
+ * kiểu KHÁC nhau, nên mỗi mảnh một ca:
+ *
+ *   ① cảnh nhận `mayVe` (đã trải) chứ không `mayVeThat` ⇒ gỡ ra là sơ đồ **biến mất hoàn toàn**;
+ *   ② `apSoDoVaoMay` được gọi ⇒ gỡ ra là `mayVe` thành bản sao của `mayVeThat`, **im lặng**;
+ *   ③ `boQuaDatCho` đi kèm ⇒ gỡ ra thì máy ở hệ sơ đồ còn cột WIP/mũi tên ở hệ THẬT, cách nhau
+ *      hàng chục mét, và **không lỗi nào nổ**;
+ *   ④ `khungNhinSoDoLine` ⇒ gỡ ra thì lưới bị nhìn bằng góc thấp `HE_SO_CAO.line = 0,55`: trục
+ *      sâu co lại và hàng trước che hàng sau;
+ *   ⑤ `dichKhungDoc` KHÔNG chạy ở chế độ sơ đồ ⇒ nó đẩy nội dung xuống 64 % chiều cao, làm rơi
+ *      hàng cuối ra ngoài khung.
+ */
+describe("★★★ Bố cục sơ đồ màn Line — năm khớp nối (G93)", () => {
+  it("① `<CanhVanHanh>` nhận `may={mayVe}` — bản ĐÃ TRẢI, không phải `mayVeThat`", () => {
+    expect(MA).toContain("may={mayVe}");
+    expect(MA).not.toContain("may={mayVeThat}");
+  });
+
+  it("② `mayVe` dựng bằng `apSoDoVaoMay(mayVeThat, soDo)`", () => {
+    const t = than("mayVe");
+    expect(t).toContain("apSoDoVaoMay(mayVeThat, soDo)");
+  });
+
+  it("★★★ ③ `dungHinhLine` nhận `boQuaDatCho` — nếu không, hai hệ toạ độ trong cùng một cảnh", () => {
+    const t = than("hinhLine");
+    expect(t).toContain("boQuaDatCho: soDo !== null");
+    // Và nó phải nhận `mayVe` (sơ đồ), không phải `mayVeThat`.
+    expect(t).toContain("dungHinhLine(lineId, tram, mayVe, mayTatCa");
+  });
+
+  it("★★★ ④ khung nhìn dùng `khungNhinSoDoLine` khi có sơ đồ, và ⑤ KHÔNG `dichKhungDoc`", () => {
+    const t = than("khungNhinTho");
+    expect(t).toContain("khungNhinSoDoLine(bbox");
+    /*
+     * ★★★ Và nó nhận `soDo.yMatPhangM`, KHÔNG một thống kê của bbox. Hai bản sai trước đó
+     *   (`tamBBox().y` rồi `bbox.minY`) đều xanh `tsc` và xanh mọi lưới module; thứ bắt được
+     *   chúng là phép đo live. Ca này giữ chỗ ấy khỏi trôi về một trong hai.
+     */
+    expect(t).toContain("soDo.yMatPhangM");
+    /*
+     * ★★★ Hộp bao khớp khung lấy theo THÂN máy (`hopBaoSoDo`), không theo bbox tâm của
+     *   `hinhHocLine` — đo @1920×1080: theo tâm thì nội dung lấp 118,6 %, tức cột rìa bị cắt.
+     */
+    expect(t).toContain("hopBaoSoDo(soDo, mayVe)");
+    // Nhánh sơ đồ phải `return` TRƯỚC `dichKhungDoc` — không phải "tính rồi mới bỏ".
+    const iSoDo = t.indexOf("khungNhinSoDoLine");
+    const iDich = t.indexOf("dichKhungDoc");
+    expect(iSoDo).toBeGreaterThan(-1);
+    expect(iDich).toBeGreaterThan(iSoDo);
+    // Đường cũ vẫn còn nguyên cho ca không có sơ đồ (không nới, không xoá).
+    expect(t).toContain("khungNhinLine(bbox");
+  });
+
+  it("★★ `soDo` dựng từ `mayVeThat` và nhận TỈ LỆ KHUNG THẬT (không một hằng)", () => {
+    const t = than("soDo");
+    expect(t).toContain("dungSoDoLine(mayVeThat, thuTuTheoMay");
+    expect(t).toContain("kichThuocKhung.rongPx / kichThuocKhung.caoPx");
+  });
+
+  it("★★ mũi tên dòng chảy đi theo `soDo.duongTam` khi có sơ đồ", () => {
+    expect(MA).toContain("diem: soDo.duongTam");
+  });
+
+  it("★★★ banner `banner-so-do-line` CÓ MẶT và mang CON SỐ, không chỉ một tính từ", () => {
+    expect(MA).toContain('data-testid="banner-so-do-line"');
+    for (const thuoc of ["data-cot", "data-hang", "data-that-rong-m", "data-o-rong-m"]) {
+      expect(MA).toContain(thuoc);
+    }
   });
 });

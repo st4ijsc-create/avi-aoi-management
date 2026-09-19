@@ -262,6 +262,28 @@ function DieuKhien({
     batDau: number;
   } | null>(null);
 
+  /*
+   * ★★★ MỤC NGẮM PHẢI SỐNG SÓT QUA MỘT LẦN DỰNG LẠI `OrbitControls` — KHUYẾT TẬT ĐÃ ĐO.
+   *
+   * Effect dưới đây dựng `OrbitControls` mới mỗi khi `banKinhToiDa`/`onCameraDoi` đổi, và một
+   * `OrbitControls` mới mặc định `target = (0,0,0)`. Lần `update()` kế tiếp giữ nguyên VỊ TRÍ
+   * camera nhưng **quay nó về gốc toạ độ**.
+   *
+   * Đo được ở `/twin/line/526` (bố cục sơ đồ): camera đứng yên ở `(124, 27,9, 132,8)` mà hướng
+   * nhìn lật từ `(0; −0,970; −0,243)` — chúi xuống lưới — thành `(−0,675; −0,152; −0,723)`, tức
+   * gần như NẰM NGANG và chỉ về gốc. Giải ngược: mục ngắm rơi đúng về `(0,1; 0; 0,1)`. Hệ quả:
+   * cảnh chỉ còn sàn trống, 39 máy nằm ngoài khung, và **không một lỗi nào nổ**.
+   *
+   * ⚠ Vì sao chỉ lộ ra bây giờ: trước đây `khungNhin` đổi GIÁ TRỊ mỗi khi dữ liệu sống về, nên
+   *   một tween mới luôn chạy sau đó và **vô tình** ngắm lại. Bố cục sơ đồ làm `khungNhin` ổn
+   *   định theo giá trị, tween thôi chạy lại, và khuyết tật hết chỗ nấp. Một bản vá che, không
+   *   phải một bản vá chữa — và nó che suốt cho tới khi có người bỏ cái tình cờ ấy đi.
+   *
+   * ★ `useFrame` bên dưới ghi `mucRef` mỗi khung (kể cả khung không tween), nên giá trị khôi
+   *   phục luôn là mục ngắm THẬT gần nhất, không phải một giá trị đoán.
+   */
+  const mucRef = useRef<THREE.Vector3 | null>(null);
+
   useEffect(() => {
     const { controls, huy } = taoDieuKhienQuay(camera, gl.domElement, invalidate, {
       khoangCachToiThieu: 1.5,
@@ -269,6 +291,11 @@ function DieuKhien({
       //   nên hai thứ không trôi khỏi nhau được nữa (`loi/catCanh.ts`).
       khoangCachToiDa: khoangCachZoomXaNhat(banKinhToiDa),
     });
+    // ★ Khôi phục mục ngắm TRƯỚC khi ai kịp `update()` — xem docblock `mucRef`.
+    if (mucRef.current) {
+      controls.target.copy(mucRef.current);
+      controls.update();
+    }
     controlsRef.current = controls;
     // Báo camera đổi để tầng trên ghi vào URL (`replaceState`, §9.4).
     const bao = () => onCameraDoi(camera.position, controls.target);
@@ -312,6 +339,7 @@ function DieuKhien({
       // quá `_EPS` (OrbitControls.js:812-815), nên vòng này TỰ TẮT khi camera
       // đứng yên — `frameloop="demand"` vẫn được tôn trọng.
       controls.update();
+      (mucRef.current ??= new THREE.Vector3()).copy(controls.target);
       return;
     }
     const t = Math.min(1, (performance.now() - tw.batDau) / TWEEN_DOI_CAP_MS);
@@ -320,6 +348,7 @@ function DieuKhien({
     camera.position.lerpVectors(tw.tuViTri, tw.denViTri, e);
     controls.target.lerpVectors(tw.tuMuc, tw.denMuc, e);
     controls.update();
+    (mucRef.current ??= new THREE.Vector3()).copy(controls.target);
     // ★ Bắt buộc với `frameloop="demand"`: tween là animation của TA.
     invalidate();
     if (t >= 1) {
@@ -1035,6 +1064,21 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
       rongCanvasPx: kichThuocKhung.width,
       fov: "fov" in camera ? (camera as THREE.PerspectiveCamera).fov : null,
       cam: { x: +camera.position.x.toFixed(1), y: +camera.position.y.toFixed(1), z: +camera.position.z.toFixed(1) },
+      /*
+       * ★★★ HÀM, KHÔNG PHẢI ẢNH CHỤP. `cam` ở trên là giá trị TẠI LÚC effect chạy lần cuối, và
+       *   effect này không phụ thuộc vị trí camera (thực thể `camera` bất biến — cùng cái bẫy
+       *   `useThree` đã ghi ở `nguongDonViVe`). Một phiên đo dài đọc `cam` sẽ thấy số CŨ và kết
+       *   luận "camera đứng yên" trong khi nó đang bay. Đã mất một vòng chẩn đoán vì đúng điều
+       *   đó, nên cửa sổ này trả một HÀM: gọi lúc nào thì đọc lúc ấy.
+       */
+      camHienTai: () => ({
+        viTri: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+        huong: (() => {
+          const v = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+          return { x: v.x, y: v.y, z: v.z };
+        })(),
+        fov: "fov" in camera ? (camera as THREE.PerspectiveCamera).fov : null,
+      }),
       coCum: cumVe ? cumVe.hop.slice(0, 3).map((h) => ({
         id: h.machineId,
         rongM: +(h.kichThuocMm.rongMm / 1000).toFixed(2),

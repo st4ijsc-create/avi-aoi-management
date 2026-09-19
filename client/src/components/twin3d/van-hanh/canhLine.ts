@@ -74,6 +74,26 @@ export interface HinhLine {
 }
 
 /**
+ * Tuỳ chọn dựng hình Line.
+ *
+ * ★★★ `boQuaDatCho` — CHO CHẾ ĐỘ SƠ ĐỒ (`soDoLine.ts`), KHÔNG PHẢI MỘT CÔNG TẮC TIỆN TAY.
+ *
+ * Khi màn Line trải máy thành **sơ đồ**, vị trí máy trên cảnh không còn là toạ độ đặt chỗ. Tâm
+ * trạm thì vẫn đọc từ `twin_dat_cho` — tức **THẬT**. Hai hệ toạ độ trong cùng một cảnh, và hậu
+ * quả không nổ một lỗi nào: cột WIP và mũi tên dòng chảy đứng ở chỗ THẬT của trạm, cách xa hàng
+ * chục mét khỏi chính những cái máy chúng nói về.
+ *
+ * ⇒ `true` ⇒ tâm trạm **luôn** suy từ máy của trạm đó — cùng đường mà trạm chưa đặt chỗ vẫn đi,
+ *   nên không đẻ ra phép tính thứ hai (G12). Máy đã ở hệ nào thì trạm theo hệ ấy.
+ *
+ * ⚠ Trạm **không có máy nào** vẫn rơi về `{0,0,0}` y như trước — `boQuaDatCho` không tạo thêm
+ *   ca mới, nó chỉ bỏ nhánh đọc đặt chỗ. Ở chế độ sơ đồ trạm rỗng là trạm không có gì để trải.
+ */
+export interface TuyChonHinhLine {
+  boQuaDatCho?: boolean;
+}
+
+/**
  * Dựng hình học của MỘT line từ dữ liệu cảnh.
  *
  * @param lineId  line đang xem. `null` ⇒ trả `null` (không ở cấp Line).
@@ -86,6 +106,7 @@ export function dungHinhLine(
   mayVe: readonly MayCoViTri[],
   thuocVe: readonly ThuocVeMay[],
   datCho: readonly DatChoTho[],
+  tuyChon: TuyChonHinhLine = {},
 ): HinhLine | null {
   if (lineId === null) return null;
 
@@ -136,7 +157,9 @@ export function dungHinhLine(
           : null;
       return {
         khoa: `station:${s.id}`,
-        tam: v ?? tamMay ?? { x: 0, y: 0, z: 0 },
+        // ★ `boQuaDatCho` ⇒ BỎ HẲN `v`, không "ưu tiên `tamMay` rồi mới tới `v`": nửa vời thì
+        //   trạm rỗng lại nhảy về toạ độ thật và ta có hai hệ toạ độ trong cùng một cảnh.
+        tam: (tuyChon.boQuaDatCho ? null : v) ?? tamMay ?? { x: 0, y: 0, z: 0 },
         thuTu: s.thuTu ?? undefined,
       };
     });

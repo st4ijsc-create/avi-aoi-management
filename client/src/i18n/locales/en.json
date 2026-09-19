@@ -19837,7 +19837,10 @@
       "khongMoDuoc": "Cannot open line #{{n}}",
       "rong": "This line has no machines on the layout yet",
       "rongMo": "The line may not have been placed in Twin Studio yet, or it belongs to another factory.",
-      "ariaCanh": "3D scene of {{ten}}"
+      "ariaCanh": "3D scene of {{ten}}",
+      "viTriSoDo": "This view is a SCHEMATIC: a line {{daiThat}} m × {{rongThatM}} m has been unrolled into a {{hang}}×{{cot}} grid for {{soMay}} machines, so positions and distances on screen are NOT real values. The flow order is real ({{nguonThuTu}}), and so is each block's height. Every machine's footprint is drawn at THE SAME SIZE {{oRong}}×{{oSau}} m, while real sides span {{canhNho}} m to {{canhLon}} m.",
+      "thuTuTheoTram": "from the station sequence",
+      "thuTuTheoViTri": "derived from real positions on the layout"
     },
     "chuaDung": "This screen is not built yet. Content will be added in later phases of the 3D Twin project.",
     "chuaDo": "not measured",

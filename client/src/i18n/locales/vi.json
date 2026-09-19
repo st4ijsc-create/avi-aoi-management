@@ -19817,7 +19817,10 @@
       "khongMoDuoc": "Không mở được chuyền #{{n}}",
       "rong": "Chuyền này chưa có máy nào trên bố cục",
       "rongMo": "Chuyền có thể chưa được xếp chỗ trong Twin Studio, hoặc thuộc một nhà máy khác.",
-      "ariaCanh": "Cảnh 3D của {{ten}}"
+      "ariaCanh": "Cảnh 3D của {{ten}}",
+      "viTriSoDo": "Cảnh này là SƠ ĐỒ: chuyền dài {{daiThat}} m × {{rongThatM}} m được trải lại thành lưới {{hang}} hàng × {{cot}} cột cho {{soMay}} máy, nên vị trí và khoảng cách trên cảnh KHÔNG phải số thật. Thứ tự dòng chảy thì là số thật ({{nguonThuTu}}), và chiều cao mỗi khối cũng vậy. Mặt bằng mọi máy vẽ CÙNG MỘT CỠ {{oRong}}×{{oSau}} m, trong khi cạnh thật trải từ {{canhNho}} m tới {{canhLon}} m.",
+      "thuTuTheoTram": "theo trình tự trạm",
+      "thuTuTheoViTri": "suy từ vị trí thật trên bố cục"
     },
     "chuaDung": "Màn này chưa dựng. Nội dung sẽ được lắp ở các đợt sau của dự án Twin 3D.",
     "chuaDo": "chưa đo",

@@ -62,6 +62,7 @@ import { mauChoTrangThai, type MucTuoi } from "../mauTrangThai";
 import { khoaBanDo, useOnDinhTheoGiaTri } from "./onDinhTheoGiaTri";
 import { trangThaiHienThi, type MayVanHanh } from "./trungThucDuLieu";
 import { dungMayVe, type DatChoVaoCanh } from "./hopNhatCanh";
+import { dauMemoDungMayVe } from "@shared/testing/dauMemoDungMayVe";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -104,11 +105,11 @@ function glGia(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
 /* DANH SÁCH DEPS — đọc từ NGUỒN TRANG, không chép tay                         */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
-/** Tên các dep của `const mayVe = useMemo(...)` trong một trang, theo đúng thứ tự. */
+/** Tên các dep của `useMemo` dựng máy vẽ trong một trang, theo đúng thứ tự. */
 function tenDepsMayVe(tepTrang: string): string[] {
   const src = readFileSync(resolve(GOC, "src/pages", tepTrang), "utf8");
-  const i = src.indexOf("const mayVe = useMemo");
-  expect(i, `không tìm thấy \`mayVe\` trong ${tepTrang}`).toBeGreaterThan(-1);
+  const i = dauMemoDungMayVe(src, tepTrang);
+  expect(i, `không tìm thấy memo dựng máy trong ${tepTrang}`).toBeGreaterThan(-1);
   // Cắt theo DẤU KẾT của chính memo (bài học `usePhanTichLine`: cửa sổ cố định
   // đọc lấn hàng xóm và cho ra một ca xanh oan).
   const j = src.indexOf("\n  );", i);
