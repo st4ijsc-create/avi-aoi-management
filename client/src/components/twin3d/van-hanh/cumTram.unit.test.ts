@@ -16,7 +16,7 @@
 import { describe, it, expect } from "vitest";
 
 import { NGUONG_CANH_NHO_PX, canhNhoTrenManPx, coThatToiThieuM } from "./nguongDonViVe";
-import { demCapChongNhau, dungCumTram, gopTheoLine, type MayDeGopCum } from "./cumTram";
+import { cumThanhHopVe, demCapChongNhau, dungCumTram, gopTheoLine, type MayDeGopCum } from "./cumTram";
 
 const CAO_CANVAS = 489;   // đo được: canvas cao 489 px ở khung nhìn 1280×720
 const FOV = 45;
@@ -136,9 +136,29 @@ describe("cụm mang theo đủ thông tin mà vòng 2/3 chứng minh người v
     expect(hop).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("★ biểu tượng ĐỨNG TRÊN sàn: `viTri.y` = nửa chiều cao, không phải 0 (nếu không nó lún nửa thân)", () => {
+  /*
+   * ★★★ CA NÀY TỪNG GHIM ĐIỀU NGƯỢC LẠI, và bản thân nó là một bài học.
+   *
+   * Tôi viết `viTri.y = caoM/2` kèm chú thích *"nếu không nó lún nửa thân"* — suy từ trực giác
+   * "tâm khối" mà KHÔNG đọc phía tiêu thụ. Quy ước của cảnh là ĐÁY: `MayTrongLo.viTri` khai
+   * *"Vị trí ĐÁY máy trên sàn"*, và `neoTrenNoc()` cộng TRỌN `caoMm` để lên nóc. Đặt tâm vào đó
+   * là biểu tượng **nổi lên** nửa thân — đúng ngược điều tôi sợ.
+   * ⇒ Lưới cũ xanh vì nó ghim chính cái sai của tôi. Một lưới viết cùng lúc với mã, từ cùng một
+   *   giả định, không kiểm được giả định ấy — phải đối chiếu với NGƯỜI TIÊU THỤ.
+   */
+  it("★★★ biểu tượng dùng quy ước ĐÁY như `MayTrongLo`, và nằm đúng TẦNG của thành viên", () => {
+    const tren: MayDeGopCum[] = [1, 2].map((i) => ({
+      machineId: i, lineId: 1, viTri: { x: i * 2, y: 12.5, z: 0 },
+      kichThuocMm: { rongMm: 1000, caoMm: 1800, sauMm: 1000 },
+    }));
+    const cum = dungCumTram(tren, { x: 100, y: 50, z: 100 }, CAO_CANVAS, { fovDo: FOV })[0];
+    expect(cum.viTri.y).toBeCloseTo(12.5, 9);          // ← đáy, ở đúng cao độ sàn tầng 2
+    expect(cum.viTri.y).not.toBeCloseTo(cum.caoM / 2, 3);
+  });
+
+  it("★ máy ở sàn `y = 0` ⇒ đáy cụm cũng 0 (ca nghịch: không tự ý nâng lên)", () => {
     const cum = dungCumTram([may(1, 1, 0, 0)], { x: 100, y: 50, z: 100 }, CAO_CANVAS, { fovDo: FOV })[0];
-    expect(cum.viTri.y).toBeCloseTo(cum.caoM / 2, 9);
+    expect(cum.viTri.y).toBe(0);
   });
 
   it("★ tâm cụm là TÂM HỘP BAO của thành viên, không phải máy đầu tiên", () => {
@@ -167,5 +187,51 @@ describe("chồng lấn — đo được, KHÔNG tự sửa", () => {
   it("một cụm đơn độc ⇒ 0 cặp (không tự chồng chính mình)", () => {
     const cum = dungCumTram([may(1, 1, 0, 0)], { x: 0, y: 60, z: 60 }, CAO_CANVAS, { fovDo: FOV });
     expect(demCapChongNhau(cum)).toBe(0);
+  });
+});
+
+describe("đổi cụm thành hộp cho `LoBatchMay` — dùng lại lớp vẽ đã có, không dựng lớp thứ hai", () => {
+  const ds = [may(11, 3, 0, 0, true), may(12, 3, 2, 0), may(13, 9, 40, 40)];
+  const cam = { x: 200, y: 80, z: 200 };
+
+  it("★★★ id hộp là ÂM — không bao giờ trùng id máy thật (dương), kể cả khi lineId trùng chỉ số", () => {
+    const { hop } = cumThanhHopVe(dungCumTram(ds, cam, CAO_CANVAS, { fovDo: FOV }), () => "#fff");
+    expect(hop).toHaveLength(2);
+    for (const h of hop) expect(h.machineId).toBeLessThan(0);
+    // …và đôi một khác nhau: hai cụm cùng id là hai đích bấm không phân biệt được.
+    expect(new Set(hop.map((h) => h.machineId)).size).toBe(hop.length);
+  });
+
+  it("★★★ TRA BẢNG chứ không giải mã số: `theoId` phải dẫn ngược về đúng cụm", () => {
+    const cum = dungCumTram(ds, cam, CAO_CANVAS, { fovDo: FOV });
+    const { hop, theoId } = cumThanhHopVe(cum, () => "#fff");
+    for (const h of hop) {
+      const c = theoId.get(h.machineId);
+      expect(c).toBeDefined();
+      expect(c!.machineIds.length).toBe(c!.soMay);
+    }
+    expect(theoId.get(hop[0].machineId)!.lineId).toBe(3);
+    expect(theoId.get(hop[1].machineId)!.lineId).toBe(9);
+  });
+
+  it("★ cỡ hộp đổi ĐÚNG đơn vị (mét → mm) và vị trí giữ nguyên ĐÁY", () => {
+    const cum = dungCumTram(ds, cam, CAO_CANVAS, { fovDo: FOV });
+    const { hop } = cumThanhHopVe(cum, () => "#fff");
+    expect(hop[0].kichThuocMm.rongMm).toBeCloseTo(cum[0].rongM * 1000, 6);
+    expect(hop[0].kichThuocMm.caoMm).toBeCloseTo(cum[0].caoM * 1000, 6);
+    expect(hop[0].viTri).toEqual(cum[0].viTri);
+  });
+
+  it("★ hàm màu được TIÊM và thật sự được gọi cho từng cụm (không phải màu cứng)", () => {
+    const cum = dungCumTram(ds, cam, CAO_CANVAS, { fovDo: FOV });
+    const { hop } = cumThanhHopVe(cum, (c) => (c.soBatThuong > 0 ? "#ff0000" : "#00ff00"));
+    expect(hop[0].mau).toBe("#ff0000");   // line 3 có 1 máy bất thường
+    expect(hop[1].mau).toBe("#00ff00");   // line 9 không có
+  });
+
+  it("tập rỗng ⇒ không hộp nào, bảng tra rỗng", () => {
+    const { hop, theoId } = cumThanhHopVe([], () => "#fff");
+    expect(hop).toEqual([]);
+    expect(theoId.size).toBe(0);
   });
 });

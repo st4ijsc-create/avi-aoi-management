@@ -62,7 +62,12 @@ export interface CumTram {
   lineId: number | null;
   soMay: number;
   soBatThuong: number;
-  /** Tâm biểu tượng, hệ CẢNH (mét). `y` = nửa chiều cao ⇒ biểu tượng ĐỨNG TRÊN sàn `y = 0`. */
+  /**
+   * Vị trí **ĐÁY** biểu tượng, hệ CẢNH (mét) — CÙNG quy ước với `MayTrongLo.viTri` của
+   * `LoBatchMay` (*"Vị trí ĐÁY máy trên sàn"*), và với `neoTrenNoc()` vốn cộng TRỌN chiều cao
+   * để lên nóc. Đặt tâm vào đây là biểu tượng nổi lên nửa thân.
+   * ★ `y` lấy TRUNG VỊ độ cao sàn của thành viên ⇒ cụm nằm đúng TẦNG của nó, không phải `0`.
+   */
   viTri: DiemMet;
   rongM: number;
   caoM: number;
@@ -150,7 +155,7 @@ export function dungCumTram(
       lineId,
       soMay: ds.length,
       soBatThuong: ds.filter((m) => m.batThuong === true).length,
-      viTri: { x: tamX, y: caoM / 2, z: tamZ },
+      viTri: { x: tamX, y: trungVi(ds.map((m) => m.viTri.y)), z: tamZ },
       rongM, caoM, sauM,
       thatRongM, thatSauM,
       machineIds: ds.map((m) => m.machineId),
@@ -178,4 +183,69 @@ export function demCapChongNhau(cum: readonly CumTram[]): number {
     }
   }
   return so;
+}
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ CỤM VẼ BẰNG CHÍNH `LoBatchMay`, KHÔNG DỰNG MỘT LỚP VẼ THỨ HAI
+ * ════════════════════════════════════════════════════════════════════════════
+ * `LopSaBan` (Task 20) là một lớp riêng 491 dòng vì biểu tượng toà nhà có nền cụm, nhãn cụm và
+ * một bộ luật đặt nhãn riêng. Cụm trạm KHÔNG cần thứ đó: nó là **một cái hộp**, đúng thứ
+ * `LoBatchMay` đã vẽ 176 lần mỗi khung.
+ *
+ * Dùng lại nó mua được ba thứ mà một lớp mới sẽ phải tự giành lấy:
+ *   · **đường bấm đã đo**: 94/95 cú bấm trúng đúng khối (đo trên trình duyệt thật, n = 95);
+ *   · `BatchedMesh` một lệnh vẽ, không cộng thêm vào ngân sách 150 lệnh;
+ *   · toàn bộ luật ghi màu/độ mờ theo instance đã có lưới.
+ *
+ * ⚠ `machineId` của hộp cụm là một id **TỔNG HỢP, ÂM** — không bao giờ trùng id máy thật (dương).
+ *   Nhưng người gọi **KHÔNG được tự giải mã con số ấy**: `theoId` là bảng tra chính thức. Một
+ *   phép giải mã thứ hai ở tầng trên là bộ luật thứ hai, và dự án này đã đếm được nhiều lần nó
+ *   lệch khỏi bộ luật thứ nhất rồi im lặng.
+ */
+
+/** Hộp để `LoBatchMay` vẽ — hình dạng con của `MayTrongLo`, khai lại để tệp này không phụ thuộc nó. */
+export interface HopCumDeVe {
+  machineId: number;
+  khoi: "tram_chung";
+  kichThuocMm: { rongMm: number; caoMm: number; sauMm: number };
+  viTri: DiemMet;
+  gocXoayRad: number;
+  mau: string;
+  doMo?: number;
+}
+
+export interface CumDeVe {
+  hop: HopCumDeVe[];
+  /** id tổng hợp → cụm. Tra bảng này, đừng giải mã con số. */
+  theoId: Map<number, CumTram>;
+}
+
+/**
+ * Đổi danh sách cụm thành hộp cho `LoBatchMay`.
+ *
+ * @param mau Hàm cho màu của một cụm — TIÊM vào thay vì import, cùng lý do `CongCuMau` của
+ *   `hopNhatCanh`: phép giải màu đọc `getComputedStyle` nên nó cần DOM, còn tệp này phải chạy
+ *   được trong `environment: "node"`.
+ */
+export function cumThanhHopVe(
+  cum: readonly CumTram[],
+  mau: (c: CumTram) => string,
+): CumDeVe {
+  const hop: HopCumDeVe[] = [];
+  const theoId = new Map<number, CumTram>();
+  cum.forEach((c, i) => {
+    // Âm và tuần tự theo thứ tự đã sắp — id ổn định giữa hai lần dựng cùng dữ liệu.
+    const id = -(i + 1);
+    theoId.set(id, c);
+    hop.push({
+      machineId: id,
+      khoi: "tram_chung",
+      kichThuocMm: { rongMm: c.rongM * 1000, caoMm: c.caoM * 1000, sauMm: c.sauM * 1000 },
+      viTri: c.viTri,
+      gocXoayRad: 0,
+      mau: mau(c),
+    });
+  });
+  return { hop, theoId };
 }
