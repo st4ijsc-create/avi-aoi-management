@@ -718,3 +718,80 @@ kiểm bản đang phục vụ qua HTTP.
 
 `tsc` **0** · `twin3d`+`pages` **943 tệp / 3.550 ca / 0 đỏ** · `i18n:check` **0** ·
 e2e `twin-dot47-bam-canh` **16/16**. Thô: `.qa-v2/tho-v13/`, `.qa-v2/tho-v14/`.
+
+---
+
+# ĐÓNG BA MÓN CÒN MỞ (`7462494d1`, `b545bdb8d`, + một ablation không commit)
+
+## ① Bản sao G12 của phép ghép WIP — GỘP (`7462494d1`)
+
+`TwinVanHanh.tinhWip` là bản sao inline của `manLine.tinhWipLine`, và cả hai trang còn chép thêm
+một vòng lặp `khoa → id` giống hệt. **Bản sao ấy vừa tính tiền**: cả HAI bản đều đánh rơi `y`
+(cao độ sàn trạm) ở đúng vòng lặp đó, nên **0/39** cột WIP đứng đúng chỗ — *một* khuyết tật,
+*hai* tệp phải vá. Đó là lý do gộp, không phải "cho sạch".
+
+Gộp **giữ nguyên đầu ra** (G5/G32): cùng luật lọc, cùng `soWip = null` khi chưa đo, cùng thứ tự
+sắp. Khác duy nhất: `tinhWipLine` có câu dự phòng cho `ma`/`ten`/`thuTu` thiếu, còn bản inline
+**ném** ở `a.ma.localeCompare(b.ma)` trong đúng ca đó ⇒ bản gộp **chặt hơn**, không lỏng hơn.
+
+★ **Ca kiểm bắt một lỗ trong chính mã tôi vừa viết**: `tamTramTheoId` chỉ lọc `Number.isFinite`,
+mà `Number("")` là **0** — một số hữu hạn hoàn toàn hợp lệ — nên khoá `"station:"` rỗng lặng lẽ
+thành **trạm số 0**. Đã chặn riêng.
+
+★ **Lưới cũ chặn bản vá ⇒ NÂNG HẠNG, không nới.** `noiChoGoi` ghim nguyên văn
+`daDo ? (soTheoTram.get(s.id) ?? 0) : null` **trong trang**; biểu thức ấy nay ở trong hàm chung.
+Thứ nó bảo vệ — *"`soWip` chỉ là 0 khi truy vấn ĐÃ THÀNH CÔNG"* — không đổi một chữ, và nay được
+chứng minh **bằng giá trị** (chạy hàm thật, so `null` với `0`) thay vì bằng chính tả.
+
+Sống: `/twin?pv=line:2` — dải trạm 24 ô, WIP thật (121/116/113), **0 pageerror**, 6 lệnh vẽ.
+
+## ② `demCapChongNhau` — từ MÃ CHẾT thành THƯỚC SỐNG (`b545bdb8d`)
+
+Hàm có lưới riêng nhưng **chưa ai gọi ở đường sản phẩm**, nên con số *"6/6 đạt 24×24"* đứng cạnh
+một câu hỏi không ai trả lời được từ ngoài. Một lưới xanh cho một hàm không ai gọi chứng minh
+đúng một điều: hàm ấy đúng **khi được gọi**.
+
+### ⚠⚠ Nối xong rồi đo sống mới thấy: HAI THƯỚC, HAI CÂU HỎI — tôi suýt khai chúng là một
+
+| thước | hỏi gì | 1280×720 | 1600×900 | 1920×1080 |
+|---|---|---|---|---|
+| `demCapChongNhau` (**MẶT BẰNG**) | hai cụm có giẫm lên nhau **trên sàn**? | **0** | — | **0** |
+| hộp bao 2D của khối ĐÃ VẼ | hai biểu tượng có đè nhau **trên màn**? | **3/15** (6,1 %) | 2/15 (1,1 %) | **0** |
+
+Mặt bằng **sạch**; cái đè trên màn đến từ **chiều cao khối + phối cảnh**, và ở 1920 nó tự hết.
+Gọi cả hai là *"chồng lấn"* là đúng lớp lỗi **"phép đo tự sinh ra kết cục"** mà vòng này đã dính
+bốn lần ⇒ trường khai rõ **`capCumChongNhauMatBang`**.
+
+### Kết cục người dùng — một số ÂM TÍNH, ghi lại để khỏi đo lại
+
+Bấm **tâm từng cụm** ⇒ **6/6 mở đúng 6 line riêng** (511…516) ở **cả hai** khung. ⇒ Dù đếm theo
+thước nào, chồng lấn **không làm hỏng kết cục**, nên **không giãn bố cục**: sửa một con số trung
+gian trong khi kết cục vốn đã đúng là mua một hồi quy mà không ai trả tiền.
+
+## ③ Trần 30 nhãn DOM — ĐO RỒI MỚI GIỮ, không phải "để yên vì ngại đụng"
+
+Lượt trước tôi viết *"không đổi"* nhưng **chưa đo** — tức mới là một ý kiến. Nay A/B bằng
+ablation (`TRAN_NHAN_DOM` 30 → 60 → hoàn nguyên), cùng một kịch bản kéo camera 40 bước:
+
+| | trần 30 | trần 60 | đổi |
+|---|---|---|---|
+| nhãn vẽ @1280×720 | 30/39 | **35/39** | **+5 tên** |
+| nhãn vẽ @1920×1080 | 23/39 | **23/39** | **0** |
+| cặp nhãn ĐÈ nhau | 0 | 0 | — |
+| long task @1920 | 1 | **5** | **+4** |
+
+⇒ **Không phải một cái thắng sạch.** Nó mua 5 cái tên ở một khung, **0** ở khung kia, và trả bằng
+long task. ⇒ **Giữ nguyên trần 30** — nay là một quyết định **có số**, không phải một chỗ tránh.
+
+### ★★ Và phép đo sửa lại chính lời khai của tôi
+
+Lượt trước tôi ghi *"lý do DUY NHẤT là trần 30"*. Đúng **ở trạng thái đứng yên** (`vuotTran` 8–9,
+mọi bộ lọc khác bằng 0). **Sai sau khi kéo camera**: ở tư thế đó `vuotTran` về **0 @1920** và cái
+chặn là `deKhoiKhac` (nhãn né khối khác). Cùng một màn, hai tư thế, hai nguyên nhân khác nhau —
+một câu *"lý do duy nhất"* phải kèm **tư thế** mới có nghĩa.
+
+## Cổng
+
+`tsc` **0** · `twin3d`+`pages` **950 tệp / 3.570 ca / 0 đỏ** · `i18n:check` **0** ·
+e2e `twin-dot47-bam-canh` **16/16**. Ablation trần nhãn **đã hoàn nguyên**, cây sạch.
+Thô: `.qa-v2/tho-v16/`, `.qa-v2/tho-v17/`.
