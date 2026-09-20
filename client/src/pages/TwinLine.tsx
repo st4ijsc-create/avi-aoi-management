@@ -157,6 +157,7 @@ import { tinhKpiNoi, type MayTongQuanKpi } from "@/components/twin3d/van-hanh/kp
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useMoPhongTwin } from "@/components/twin3d/van-hanh/useMoPhongTwin";
 import { chieuCaoTruDinh, useTruDinhKhung } from "@/components/twin3d/van-hanh/useTruDinhKhung";
+import { useKhungHep } from "@/components/twin3d/van-hanh/useKhungHep";
 import { khoaBanDo, khoaMayVanHanh, useOnDinhTheoGiaTri } from "@/components/twin3d/van-hanh/onDinhTheoGiaTri";
 import { giuKhiCungNhaMay } from "@/components/twin3d/van-hanh/giuDuLieuTruoc";
 import { rutTienTo, tienToChung } from "@/components/twin3d/van-hanh/maNgan";
@@ -272,7 +273,24 @@ export function ThanManLine({
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { hasPermission } = usePermissions();
-  const [moKpi, datMoKpi] = useState(true);
+  /*
+   * ════════════════════════════════════════════════════════════════════════
+   * ★★★ HM-2 CHO **BỀ MẶT KIA** — "vá xong phải kiểm NHÁNH KIA"
+   * ════════════════════════════════════════════════════════════════════════
+   * Màn Vận hành đã nhận luật này (`TwinVanHanh.tsx`: `useKhungHep(1366)`), màn Line thì KHÔNG —
+   * nó vẫn `useState(true)`, tức bảng KPI **luôn mở** kể cả ở khung hẹp. Đo ở `/twin/line/526`
+   * sau khi trải sơ đồ: **`biChe` = 5** tên máy bị lớp phủ che @1280×720, trong khi @1920×1080
+   * là **0** — tức đúng một khuyết tật BỐ CỤC, không phải khuyết tật nhãn.
+   *
+   * ★ `null` = người dùng CHƯA chọn ⇒ mặc định theo khung. Vừa bấm một lần là lựa chọn của họ
+   *   thắng suốt phiên — ép thu ở khung hẹp là lấy mất quyền quyết định của người đang nhìn.
+   *   (Cùng đánh đổi mà `daTuMoKpi` ở màn Vận hành đã chốt; ở đây gói gọn trong MỘT biến vì màn
+   *   này không ghi ngược `?thu=`.)
+   */
+  const khungHep = useKhungHep(1366);
+  const [moKpiTay, datMoKpiTay] = useState<boolean | null>(null);
+  const moKpi = moKpiTay ?? !khungHep;
+  const datMoKpi = datMoKpiTay;
   const [moMoPhong, datMoMoPhong] = useState(moPhongMoBanDau);
 
   /*
