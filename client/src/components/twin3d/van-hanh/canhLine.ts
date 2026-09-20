@@ -46,6 +46,13 @@ export interface DatChoTho {
   viTriXMm: number;
   viTriYMm: number;
   viTriZMm: number;
+  /**
+   * Tầng chứa chỗ đặt — khoá để tra chỗ dời của TOÀ (xem {@link TuyChonHinhLine.gocToaTheoTang}).
+   *
+   * Thiếu/`null` ⇒ **không dời**, giữ đúng hành vi trước Task 17c. Bịa một `0` ở đây là biến
+   * "chưa biết tầng nào" thành "biết rồi, tầng gốc" — đúng lớp lỗi NT-3.
+   */
+  tangId?: number | null;
 }
 
 /** Trạm trong cảnh thiết kế. */
@@ -91,6 +98,23 @@ export interface HinhLine {
  */
 export interface TuyChonHinhLine {
   boQuaDatCho?: boolean;
+  /**
+   * ════════════════════════════════════════════════════════════════════════════
+   * ★★★ TASK 17c — CHỖ DỜI CỦA TOÀ NHÀ, CHO **TÂM TRẠM**
+   * ════════════════════════════════════════════════════════════════════════════
+   * `hopNhatCanh.dungMayVe` cộng `twin_toa_nha.viTri*Mm` cho MÁY từ lâu; tâm trạm ở tệp này thì
+   * vẫn dựng từ `twin_dat_cho` **TRẦN**. Hôm nay không lệch — và lý do phải nói rõ: cả ba màn vận
+   * hành chỉ nạp tầng của MỘT toà và neo cảnh vào chính toà ấy, nên mọi chỗ dời đều bằng 0.
+   *
+   * ⚠ Đó là một tiền đề **không ai cưỡng chế**. Ngay khi một cảnh mang HAI toà, máy sẽ dời mà
+   *   trạm thì không: đường tâm chuyền **đứt khỏi chính máy của nó**, cột WIP đứng lệch, và
+   *   **không một lỗi nào nổ**. Vòng này vừa trả giá đúng lớp ấy: cột WIP sai 16,6 m qua nhiều
+   *   đợt mà không lưới nào đỏ.
+   *
+   * ⇒ Truyền CÙNG bản đồ mà `dungMayVe` dùng. Thiếu ⇒ không dời (hành vi cũ), nên bản vá này
+   *   **không đổi một pixel nào hôm nay** — nó chỉ gỡ ngòi.
+   */
+  gocToaTheoTang?: ReadonlyMap<number, { xMm: number; yMm: number; zMm: number }>;
 }
 
 /**
@@ -131,10 +155,19 @@ export function dungHinhLine(
   const datChoTram = new Map<number, { x: number; y: number; z: number }>();
   for (const d of datCho) {
     if (d.loaiThucThe === "station") {
+      /*
+       * ★★★ HOÁN TRỤC **KÈM** CHỖ DỜI, và hai thứ phải hoán CÙNG MỘT KIỂU.
+       *   cảnh `y` (chiều cao) ← bản ghi `Z`; cảnh `z` (chiều sâu) ← bản ghi `Y`.
+       *   Cộng `g.yMm` vào `y` thay vì `g.zMm` là dựng đứng chỗ dời của toà — trạm bay lên trời
+       *   hoặc chui xuống đất đúng bằng toạ độ NGANG của toà, và không lỗi nào nổ.
+       */
+      const g =
+        (d.tangId != null ? tuyChon.gocToaTheoTang?.get(d.tangId) : undefined) ??
+        { xMm: 0, yMm: 0, zMm: 0 };
       datChoTram.set(d.thucTheId, {
-        x: mmSangMet(d.viTriXMm),
-        y: mmSangMet(d.viTriZMm),
-        z: mmSangMet(d.viTriYMm),
+        x: mmSangMet(g.xMm + d.viTriXMm),
+        y: mmSangMet(g.zMm + d.viTriZMm),
+        z: mmSangMet(g.yMm + d.viTriYMm),
       });
     }
   }

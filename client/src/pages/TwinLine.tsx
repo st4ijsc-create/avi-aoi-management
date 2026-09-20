@@ -743,6 +743,8 @@ export function ThanManLine({
     () =>
       dungHinhLine(lineId, tram, mayVe, mayTatCa, canhQ.data?.datCho ?? [], {
         boQuaDatCho: soDo !== null,
+        // ★ Task 17c — CÙNG bản đồ chỗ dời mà `dungMayVe` dùng cho máy. Xem `TuyChonHinhLine`.
+        gocToaTheoTang: gocToa,
       }),
     [lineId, tram, mayVe, mayTatCa, canhQ.data, soDo],
   );

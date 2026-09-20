@@ -2224,8 +2224,11 @@ export function ThanTwinVanHanh() {
         mayVe,
         mayVanHanh,
         canhQ.data?.datCho ?? [],
+        // ★ Task 17c — CÙNG bản đồ chỗ dời mà `dungMayVe` dùng cho máy: máy đã cộng gốc toà từ
+        //   lâu, tâm trạm thì chưa. Hôm nay bằng 0 ở mọi cảnh một-toà; xem `TuyChonHinhLine`.
+        { gocToaTheoTang: gocToa },
       ),
-    [phamVi, tram, mayVe, mayVanHanh, canhQ.data],
+    [phamVi, tram, mayVe, mayVanHanh, canhQ.data, gocToa],
   );
 
   /* ══════════════════════════════════════════════════════════════════════ */
