@@ -72,7 +72,7 @@ import { LopVung } from "../thiet-ke/LopVung";
 import type { VungVe } from "../thiet-ke/vungAnToan";
 import { laCheDoDo } from "../loi/cheDoDo";
 import { LopSaBan } from "./LopSaBan";
-import { cumThanhHopVe, dungCumTram, type MayDeGopCum } from "./cumTram";
+import { cumThanhHopVe, demCapChongNhau, dungCumTram, type MayDeGopCum } from "./cumTram";
 /** Khoảng hở giữa nóc cụm và điểm neo nhãn/badge (mét) — cùng bậc với `HO_NHAN_MAY` của máy. */
 const HO_NEO_TREN_CUM_M = 1.2;
 /**
@@ -1066,6 +1066,32 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
       donViVe,
       soMayDeGop: mayDeGop.length,
       soCum: cumVe ? cumVe.hop.length : 0,
+      /*
+       * ★★★ `demCapChongNhau` — TỪ MÃ CHẾT THÀNH THƯỚC SỐNG.
+       *
+       * Hàm này có từ lượt dựng bậc cụm, có lưới riêng, và **chưa ai gọi ở đường sản phẩm** —
+       * tức con số *"6/6 đạt 24×24"* đứng cạnh một câu hỏi không ai trả lời được từ bên ngoài:
+       * *biểu tượng có đè nhau không?* Nối nó vào đây là đo được **trên chính cảnh đang vẽ**,
+       * không phải trên một bản dựng lại ở ngoài trang.
+       *
+       * ⚠⚠⚠ **NÓ ĐO MẶT BẰNG TRÊN SÀN, KHÔNG ĐO HỘP BAO TRÊN MÀN** — và tôi đã suýt khai sai
+       *   đúng chỗ này. `demCapChongNhau` so `viTri.x/z` với `rongM/sauM`, tức hỏi *"hai cụm có
+       *   giẫm lên nhau trên sàn không"*. Nối xong rồi đo sống mới thấy nó trả **0** ở cả hai
+       *   khung, trong khi phép đo ngoài trang (hộp bao 2D của khối ĐÃ VẼ) đếm **3/15 cặp
+       *   @1280×720**. Cả hai đều đúng — chúng trả lời **hai câu khác nhau**:
+       *     · mặt bằng chồng = **0** ⇒ bố cục sạch, `dungCumTram` không đặt hai cụm đè nhau;
+       *     · hộp bao trên màn chồng = 3 cặp (6,1 % diện tích) ⇒ do **chiều cao khối + phối
+       *       cảnh**, không do bố cục; ở 1920×1080 nó về 0 vì góc nhìn thoáng hơn.
+       *   Lẫn hai con số này là đúng lớp lỗi *"phép đo tự sinh ra kết cục"* mà vòng này đã dính
+       *   bốn lần. Tên trường vì thế khai rõ **`MatBang`**.
+       *
+       * ★ Kết cục người dùng thì đã đo, và nó ÂM TÍNH — ghi lại để lần sau khỏi đo lại: bấm TÂM
+       *   từng cụm ⇒ **6/6 mở đúng 6 line riêng** (511…516) ở CẢ HAI khung. ⇒ dù đếm theo thước
+       *   nào, chồng lấn cũng **không làm hỏng kết cục**, nên KHÔNG giãn bố cục: sửa một con số
+       *   trung gian trong khi kết cục vốn đã đúng là mua một hồi quy không ai trả tiền.
+       * ⚠ Số này là THƯỚC, không phải hàng rào: nó KHÔNG đổi hành vi vẽ (`laCheDoDo()` gác).
+       */
+      capCumChongNhauMatBang: cumVe ? demCapChongNhau([...cumVe.theoId.values()]) : 0,
       soLineTheoMay: lineTheoMay ? lineTheoMay.size : -1,
       chanDoan: chanDoanRef.current,
       caoCanvasPx: kichThuocKhung.height,
