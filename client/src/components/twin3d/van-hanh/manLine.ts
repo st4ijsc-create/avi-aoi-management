@@ -69,6 +69,7 @@
  */
 
 import { gopNhieuBBox, type BBox } from "../heToaDo";
+import { TRAN_NHAN_DOM } from "../loi/locNhan";
 import { conHieuLuc, type KhaiNghen, type TinhWip } from "./wipTram";
 import type { PhamVi } from "./duongDanTwin";
 
@@ -224,6 +225,41 @@ export interface ThamSoTinhWipLine {
  * ⚠ Khoá không phân giải được (`station:abc`, chuỗi rỗng) ⇒ **BỎ QUA**, không `NaN` làm khoá:
  *   `Map` chấp nhận `NaN` làm khoá và mọi lượt tra sau đó trượt im lặng.
  */
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ NGÂN SÁCH NHÃN **THEO MÀN** — chủ dự án chốt 2026-09-20
+ * ════════════════════════════════════════════════════════════════════════════
+ * `TRAN_NHAN_DOM = 30` là một **hằng toàn cục** của bảng ngân sách §4, và nó được hiệu chỉnh cho
+ * **ca xấu nhất**: cảnh nhiều nhà máy với **1.108 máy**. Áp đúng con số ấy lên màn Line — nơi tập
+ * ứng viên bị chặn bởi **chính một chuyền** — là mang giá của ca xấu nhất sang một ca không xấu.
+ *
+ * Đo ở `/twin/line/526` (39 máy): **30/39** tên hiện, 9 tên bị giấu, và ở trạng thái đứng yên
+ * `vuotTran` = **8–9** ⇒ đúng cái trần đang chặn, không phải chồng lấn (`chongLap` 0–1,
+ * `vuotMep` 0, `biChe` 0 sau khi màn Line nhận HM-2).
+ *
+ * ★ Trần ở đây **không phải một hằng thứ hai**, mà là **chính số máy của chuyền** — tức thứ đã
+ *   chặn tập ứng viên từ trước. Hai mốc kẹp, mỗi mốc một lý do:
+ *     · **sàn `TRAN_NHAN_DOM`**: chuyền nhỏ KHÔNG được nhận trần thấp hơn mặc định — một ngân
+ *       sách theo màn chỉ được NỚI cho ca nhẹ, không được siết thêm;
+ *     · **trần {@link TRAN_NHAN_MAN_LINE_TOI_DA}**: một chuyền bệnh lý 500 máy vẫn phải dừng lại,
+ *       vì DOM là chi phí thật. Con số 60 lấy từ A/B đã đo (xem docblock hằng).
+ *
+ * ⚠ Trần cao hơn **KHÔNG** hứa hiện đủ tên: `chongLap`/`vuotMep`/`biChe` vẫn chặn như cũ, và chip
+ *   *"còn N tên bị ẩn"* vẫn khai phần thiếu. Nó chỉ thôi chặn **vì một con số của màn khác**.
+ */
+export const TRAN_NHAN_MAN_LINE_TOI_DA = 60;
+
+/**
+ * Trần nhãn DOM cho màn Line, suy từ số máy của chính chuyền.
+ *
+ * ⚠ `soMay` rác (`NaN`, âm) ⇒ rơi về `TRAN_NHAN_DOM`: một trần `NaN` làm `so >= tran` luôn sai
+ *   và **mọi** nhãn lọt qua — đúng kiểu hỏng mà một ngân sách sinh ra để chặn.
+ */
+export function tranNhanManLine(soMay: number): number {
+  if (!Number.isFinite(soMay)) return TRAN_NHAN_DOM;
+  return Math.min(TRAN_NHAN_MAN_LINE_TOI_DA, Math.max(TRAN_NHAN_DOM, Math.trunc(soMay)));
+}
+
 export function tamTramTheoId(
   tram: readonly { khoa: string; tam: { x: number; y: number; z: number } }[],
 ): Map<number, { x: number; y: number; z: number }> {

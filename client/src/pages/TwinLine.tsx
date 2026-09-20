@@ -191,6 +191,7 @@ import {
   mayCuaLine,
   phamViCuaManLine,
   tamTramTheoId,
+  tranNhanManLine,
   tinhWipLine,
   tomTatLine,
 } from "@/components/twin3d/van-hanh/manLine";
@@ -1281,6 +1282,10 @@ export function ThanManLine({
               sanRongM={sanRongM}
               sanSauM={sanSauM}
               tatNhan={false}
+              /* ★★★ NGÂN SÁCH NHÃN THEO MÀN (chủ dự án chốt 2026-09-20): trần của màn Line là
+                   CHÍNH số máy của chuyền, không phải hằng §4 hiệu chỉnh cho 1.108 máy. Đo trước
+                   khi đổi: 30/39 tên, `vuotTran` 8–9 ở trạng thái đứng yên. Xem `tranNhanManLine`. */
+              tranNhan={tranNhanManLine(mayVe.length)}
               chuNhanAn={(n) => t("twin3d.vanHanh.nhanBiAn", "còn {{n}} tên bị ẩn", { n })}
               /* ★ Đợt 35 (Pareto #5): chip "N sự cố ngoài khung" — andon trên máy ngoài frustum
                    không được câm (QA Đợt 32 `raised/`). `t()` ở đây, cảnh không gọi (RB-8.3). */

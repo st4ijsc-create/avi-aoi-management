@@ -154,6 +154,14 @@ export interface CanhVanHanhProps {
    * chính sách chọn thay vì chỉ một con số trần.
    */
   chiNhanBatThuong?: boolean;
+  /**
+   * Trần số nhãn DOM đồng thời — **ngân sách THEO MÀN** (chủ dự án chốt 2026-09-20).
+   *
+   * Thiếu ⇒ `LopNhan` dùng `TRAN_NHAN_DOM` (30), tức hằng §4 hiệu chỉnh cho ca xấu nhất
+   * (cảnh nhiều nhà máy, 1.108 máy). Màn nào có tập ứng viên bị chặn sẵn bởi chính phạm vi của
+   * nó thì truyền trần của mình — xem `manLine.tranNhanManLine`.
+   */
+  tranNhan?: number;
   /** Chữ ĐÃ dịch cho chip "còn N tên bị ẩn" (RB-8.3 — cảnh không gọi `t()`). */
   chuNhanAn?: (n: number) => string;
   /** ★ Đợt 45 (mục 4) — chữ ĐÃ dịch cho chip khi chỉ-nhãn-bất-thường bật (lý do ẩn = chính sách). */
@@ -1231,6 +1239,8 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         dangHover={chon.dangHover}
         tat={tatNhan}
         chiNhanBatThuong={chiNhanBatThuong}
+        /* ★ Ngân sách nhãn THEO MÀN — thiếu thì `LopNhan` tự dùng `TRAN_NHAN_DOM`. */
+        tranNhan={props.tranNhan}
         chuNhanAn={chuNhanAn}
         chuNhanAnTheoChinhSach={props.chuNhanAnTheoChinhSach}
         chuSuCoNgoaiKhung={props.chuSuCoNgoaiKhung}
@@ -1407,6 +1417,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       sanSauM={props.sanSauM}
       tatNhan={props.tatNhan}
       chiNhanBatThuong={props.chiNhanBatThuong}
+      tranNhan={props.tranNhan}
       chuMatContext={props.chuMatContext}
       ariaLabel={props.ariaLabel}
       sanCaoPx={props.sanCaoPx}
