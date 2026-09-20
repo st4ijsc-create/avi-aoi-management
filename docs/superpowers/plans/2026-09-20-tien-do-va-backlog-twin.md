@@ -97,3 +97,98 @@ Xếp theo **rủi ro im lặng × giá phải trả**, không theo thứ tự d
 - **Một câu "lý do duy nhất" phải kèm TƯ THẾ.** Cùng màn Line, ở trạng thái đứng yên thì cái chặn
   nhãn là **trần 30**; sau khi kéo camera thì là **`deKhoiKhac`**. Kết luận không kèm điều kiện đo
   là kết luận sẽ sai ở lần đo sau.
+
+---
+
+# VÒNG 4 (2026-09-20) — HAI QUYẾT ĐỊNH ĐƯỢC THI HÀNH, BỐN MỤC ĐÓNG
+
+## Q2 · Dọn sạch (`340e30ac7`)
+
+Đo **trước** khi xoá: **32 thư mục · 9,12 GB · 59.000+ tệp** — không phải 378 MB như tôi báo ở
+hồ sơ backlog. Lần ấy `du` timeout và tôi đọc hụt **24 lần**.
+
+⇒ Xoá hết, nhưng **giữ lại 2.422 tệp `*.json`/`*.md` (40,1 MB = 0,4 %)** vào `.do-luutru/`, vì
+các hồ sơ trong `docs/superpowers/plans/` trích dẫn **thẳng** tới chúng — xoá sạch thì mọi trích
+dẫn thành trích dẫn treo và không ai kiểm lại được con số nào. Loại: ảnh, video, `src-nen/` (bản
+sao mã nguồn), `dist-*/`, log test. Còn nguyên `.qa-tapdoan/BAN-CHUAN.md` (bản khai của phiên khác).
+
+★ Kho tên `.do-luutru` chứ **không** `.qa-luutru`: đặt trùng khuôn thì chính lệnh dọn ăn mất nó.
+
+## Q1 · Ngân sách nhãn THEO MÀN (`0bf254248`)
+
+Không nâng một hằng — **thay hằng bằng chính số máy của chuyền**, kẹp giữa **sàn 30** (ngân sách
+theo màn chỉ được NỚI cho ca nhẹ, không được siết) và **trần 60** (DOM là chi phí thật).
+
+| | trần 30 | trần theo màn | |
+|---|---|---|---|
+| @1280×720 | 30/39 · vượtTrần 8 | **37/39** · vượtTrần 0 | **+7 tên** |
+| @1920×1080 | 30/39 · vượtTrần 9 | **39/39 — đủ hết** | **+9 tên** |
+| long task TB @1920 | 70,3 | **64,3** | không tăng |
+
+### ⚠ Đính chính một kết luận của chính tôi
+
+Lượt trước tôi báo *"long task 1 → 5"* khi A/B trần 30↔60 và dùng nó để nói nâng trần **có giá**.
+Đo lại bằng harness đúng (N=3, observer cùng chỗ, cùng trạng thái cảnh) thì **nền cũng 70,3** —
+tức ~64 kia là **của cảnh**, không phải của nhãn. Con số cũ là **n=1** và tôi đã đọc nhiễu thành
+tín hiệu. ★ **Một phép đo n=1 không đủ để biến "có giá" thành một lý do quyết định.**
+
+## M1 · Màn Máy — đo trước, vá sau (`fd40e1108`)
+
+Đề xuất #1 là *đo màn Máy trước khi vá bất cứ gì*, vì hai màn kia đều lòi khuyết tật **ngay khi**
+bị đo. Nó cũng hỏng, và hỏng **theo một kiểu khác**.
+
+Mỗi khối hàng xóm là **đích bấm thật** (§15.3.3 đường ra ⑥), và màn ấy **không có một link
+`/twin/may/:id` nào** ⇒ bấm khối 3D là đường đổi máy **duy nhất**. Bấm tâm từng hàng xóm (n = 38):
+
+| cạnh nhỏ | bấm đúng |
+|---|---|
+| **≥ 24×24 px** | **5/5 = 100 %** |
+| **< 24×24 px** | **3/33 = 9 %** |
+
+⇒ **30/38** khối trông như đích bấm mà bấm thì **không đi đâu cả, im lặng**.
+
+★★★ Và ngưỡng WCAG 2.5.8 hoá ra **gần đúng bằng chỗ phép bấm bắt đầu hỏng** — một **xác nhận
+thực nghiệm** cho con số mà cả đợt này đã dùng, thay vì một quy ước mượn về.
+
+Chữa bằng **khai ra**, không bằng phóng to (phóng to = phá chính ngữ cảnh *"máy nào cạnh máy
+nào"* mà §10C.2 cố ý giữ): chip *"33 máy quá nhỏ để bấm — mở ở màn Chuyền"*.
+
+## N1 · Task 17c — gỡ ngòi (`de42157d8`)
+
+Tâm trạm nay cộng **gốc toà nhà**, cùng bản đồ mà `dungMayVe` dùng cho máy. **Không đổi một pixel
+nào hôm nay** (đo lại: cột WIP 39/39 đúng chỗ, khối 39, đạt24 39/39, `/twin` ô trạm 24 với WIP
+thật) — và đó chính là điểm: nó chỉ gỡ ngòi.
+
+★ Lưới phải đo **ca TƯƠNG LAI** (gốc toà ≠ 0, hai toà), vì một lưới chỉ đo ca hôm nay sẽ xanh
+**cả trước lẫn sau** bản vá — tức không đo gì cả.
+
+## N2 + M2 — ĐÓNG BẰNG ĐO, và một mục backlog của tôi là mục CŨ
+
+**N2 (PH-45)**: đo ở `/twin?pv=tapdoan` — cả ba truy vấn trạng thái **đều chạy**, KPI phủ
+**1699 máy**. Tức PH-45 **đã được vá từ trước** bởi `doiSoNhaMay`; con số *"~737 máy không có lời
+khai trạng thái"* là số tôi **bê từ hồ sơ 09-15 sang mà chưa đo lại**.
+
+⚠ Và phép đo ấy suýt sinh ra một phát hiện GIẢ: lần đầu KPI ra `Running 0 · Offline 1699 · OEE
+trên 0 máy`. Bơm nhịp tim rồi đo lại: **Running 442 · Down 39 · Maintenance 27 · rate 26 %**.
+⇒ số 0 là **DỮ LIỆU hết hạn**, không phải lỗi sản phẩm — đúng ba loại mà chủ dự án đòi tách:
+**LOGIC / DỮ LIỆU / VẬN HÀNH**.
+
+**M2 (chất lượng chọn 30 nhãn)**: đo `__demNhan` ở ba phạm vi — `vuotTran` = **0** ở tất cả.
+Sau HM-1 (bậc cụm) cộng chính sách *chỉ-nhãn-bất-thường*, tập ứng viên còn **6** (FUYU-F) hoặc
+**1/49** (nhà máy mặc định), nên **trần 30 không còn chạm tới ở bất kỳ phạm vi nào của `/twin`**.
+Chỗ duy nhất nó từng chạm là màn Line — và **Q1 vừa gỡ**. ⇒ M2 **moot**: không có lựa chọn nào
+để mà chọn sai.
+
+## CÒN MỞ — cập nhật
+
+- **Khoảng trống ĐO ở cấp tập đoàn**: `__demNhan` **không tồn tại** ở `pv=tapdoan` (sa bàn dùng
+  `LopSaBan` với lớp nhãn riêng, chưa gắn sổ). Tức câu *"có bao nhiêu nhãn toà bị giấu"* **không
+  đo được từ ngoài**. Đúng lớp *"một lưới xanh cho một hàm không ai gọi"*.
+- **~60–70 long task mỗi 3 s kéo camera @1920×1080** trên màn Line — phát hiện mới của vòng này,
+  **của cảnh** chứ không của nhãn (ablation đã tách). Chưa truy gốc.
+- N3 (PH-42) · N4 (V-21 mục 1) · V1 (ép ghi BUILD-INFO) · V2 (ca chập chờn có sẵn).
+
+## Cổng
+
+`tsc` **0** · `twin3d`+`pages` **958 tệp / 3.602 ca / 0 đỏ** · `i18n:check` **0** ·
+e2e `twin-dot47-bam-canh` **16/16** · cây sạch.
