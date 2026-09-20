@@ -639,3 +639,82 @@ e2e `twin-dot47-bam-canh` **16/16** (`--workers=1`, cả `/twin` lẫn `/twin/li
 > ⚠ **MSA**: lượt e2e đầu tiên là **16/16 ĐỎ** vì **cổng 3000 chết** (`ECONNREFUSED`), không phải
 > vì sản phẩm. Dựng lại server, kiểm bản đang phục vụ **có** chứa mã mới **qua HTTP**, rồi mới
 > chạy lại. Thô: `.qa-v2/tho-v12/`.
+
+---
+
+# HAI MÓN LỘ RA TRONG LÚC CHẨN ĐOÁN L2 (`1608be156`, `8801bff26`)
+
+Cả hai đều do tôi nhìn thấy khi truy lỗi khung nhìn sơ đồ và **để lại** — nay xử nốt.
+
+## ① Cột WIP đứng ở CỐT 0 thay vì sàn của trạm
+
+`OngWip` đặt tâm trụ ở `(w.x, cao/2, w.z)` — đáy ở **`y = 0` tuyệt đối** — còn `CotWip` thì
+**không có trường nào cho chiều đứng** để mà truyền. Đo bằng phép chiếu lại từ chính camera:
+
+| khung | lệch DỌC | lệch trên màn (trung vị) | đứng đúng chỗ |
+|---|---|---|---|
+| 1280×720 | **16,6 m** | **111,3 px** (max 163,8) | **0/39** |
+| 1920×1080 | **16,6 m** | **239,7 px** (max 358,3) | **0/39** |
+
+Xa hơn một ô lưới, nên người vận hành đọc *"trạm này đang ùn"* từ một cây cột đứng dưới **một
+cái máy khác**. Và nó câm hoàn toàn.
+
+**Chuỗi đứt ở BỐN chỗ**, mỗi chỗ đều "hợp lệ" khi nhìn riêng: `dungHinhLine` viết cứng `y: 0` ·
+trang bỏ `y` khi dựng `tamTram` (**cả hai** trang) · `TinhWip`/`CotWip` không có trường đứng ·
+`OngWip` đặt đáy ở 0 **và** `bboxKemCotWip` ép `minY: 0` cho khớp. ★ Hai cái sai cùng hướng thì
+**im lặng** — đó là lý do nó sống sót.
+
+**Kết cục: 0/39 → 39/39**, lệch 111 px → **0 px**, cả hai khung.
+
+### ⚠ Bản vá lộ ra khuyết tật THỨ HAI — và nó là HỆ QUẢ của sơ đồ
+
+Cột nay dựng **lên trên** mặt máy thay vì treo dưới. Trần chiều cao cột (**6 m**) hiệu chỉnh cho
+bố cục DẢI (chuyền 229 m); trên lưới sơ đồ **14,2 × 5,1 m** nó **cao hơn cả bề rộng lưới**, và vì
+dựng *về phía* camera nhìn gần thẳng xuống, khung nhìn phải lùi **gấp đôi** (11,65 → 22,72 m):
+
+> đích bấm nhỏ nhất **41,00 → 26,69 px** — vẫn *"đạt 24"* nên **không ca nghiệm thu nào đỏ**,
+> chỉ biên an toàn bốc hơi từ 71 % xuống 11 %.
+
+⇒ `thangCotWipSoDo`: **giữ ý định thiết kế gốc, suy lại con số**. `CAO_MOI_WIP_M` ghi nguyên văn
+*"0,25 m × 20 WIP = 5 m — cao ngang một máy lớn"*; ở sơ đồ "một máy" cao **1,8 m** chứ không 5 m,
+nên trần suy từ chính chiều cao máy (×1,2). **Tỉ số trần/mỗi-WIP giữ nguyên 24**, nên ánh xạ
+WIP→chiều cao chỉ đổi **đơn vị**: trạm nào cao hơn trạm nào, và cao hơn bao nhiêu lần, không đổi
+một chút nào. Kết cục **26,69 → 39,23 px** (96 % của 41,00), 39/39 vẫn đạt.
+
+## ② Màn Line chưa nhận HM-2 — "vá xong phải kiểm NHÁNH KIA"
+
+HM-2 (*bảng KPI mặc định thu ở khung ≤ 1366 px*) chỉ vào `TwinVanHanh.tsx`. Màn Line giữ
+`useState(true)` — bảng **luôn mở**. Đo: `biChe` = **5** @1280×720, **0** @1920×1080.
+`biChe = 0` ở khung rộng chứng minh đây là khuyết tật **BỐ CỤC**, không phải khuyết tật nhãn.
+
+Sau khi áp cùng luật: **5 → 0**, và nghiệm thu bấm **không đổi một ô** (39/39, 46,88 px).
+
+## ★★★ Thước đo của TÔI dính bẫy G92 của chính repo
+
+Ca đầu ghim `toContain("useKhungHep(1366)")` trên văn bản **thô** — và docblock tôi vừa viết
+trong `TwinLine.tsx` nhắc **nguyên văn** chuỗi ấy. Đột biến `const khungHep = false;` **sống
+sót**: thước báo ĐẠT cho một trang đã gỡ mất bản vá. Sau khi tước chú thích: **3/3 đột biến ĐỎ**.
+
+> **Một chú thích tốt không được biến thành một phép đo giả.** Repo đã ghi luật này ở
+> `manLineNoiVaoTrang`; tôi viết một lưới mới và vẫn đi vào đúng cái bẫy ấy.
+
+## ⚠ Vận hành — đã dính HAI lần trong lượt này
+
+`npm run build` **ghi đè `dist/index.js` đang chạy** ⇒ giết server, và lượt đo kế tiếp báo
+`ECONNREFUSED` trông y như một hồi quy sản phẩm. Thứ tự đúng: **build TRƯỚC, restart SAU**, rồi
+kiểm bản đang phục vụ qua HTTP.
+
+## CÒN MỞ — nói thẳng
+
+- **Màn Line vẽ 30/39 tên** (9 bị giấu). Đo: `chongLap 0 · vuotMep 0 · biChe 0 · vuotTran 9` —
+  tức **lý do duy nhất** là trần **30 nhãn DOM** (`TRAN_NHAN_DOM`), một **ngân sách hiệu năng có
+  chủ ý của §4**, không phải tai nạn. Chip *"9 more names hidden"* khai ra đủ. **Không đổi.**
+- **`demCapChongNhau()` vẫn chưa được gọi ở đường sản phẩm** (đo ngoài: 3 cặp / 6,1 % @1280×720,
+  0 @1920×1080).
+- **`TwinVanHanh.tinhWip` là BẢN SAO inline của `manLine.tinhWipLine`** (G12). Lượt này vá **cả
+  hai cùng lúc** và ghi chú chéo; **không gộp** để khỏi đổi hành vi màn Vận hành ngoài phạm vi.
+
+## Cổng
+
+`tsc` **0** · `twin3d`+`pages` **943 tệp / 3.550 ca / 0 đỏ** · `i18n:check` **0** ·
+e2e `twin-dot47-bam-canh` **16/16**. Thô: `.qa-v2/tho-v13/`, `.qa-v2/tho-v14/`.
