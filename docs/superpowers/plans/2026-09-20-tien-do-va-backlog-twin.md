@@ -192,3 +192,81 @@ Chỗ duy nhất nó từng chạm là màn Line — và **Q1 vừa gỡ**. ⇒ 
 
 `tsc` **0** · `twin3d`+`pages` **958 tệp / 3.602 ca / 0 đỏ** · `i18n:check` **0** ·
 e2e `twin-dot47-bam-canh` **16/16** · cây sạch.
+
+---
+
+# M5 — ĐÓNG BẰNG MỘT KẾT QUẢ ÂM TÍNH: THIẾT BỊ ĐO TỰ SINH RA PHÁT HIỆN, LẦN NỮA
+
+Phát hiện *"~60–70 long task mỗi 3 s kéo camera @1920×1080 trên màn Line"* là **hiện vật của
+trình kết xuất phần mềm trong trình duyệt headless**, **không** phải khuyết tật sản phẩm.
+
+## Bước 0 — phép đo có phân biệt được NỘI DUNG với SỐ PIXEL không?
+
+Cùng một kịch bản kéo, ba màn × hai khung:
+
+| khung | màn | canvas | lệnh vẽ / tam giác | long task |
+|---|---|---|---|---|
+| 1280×720 | Line (39 khối, 35 nhãn) | 424k px | 6 / 3.686 | **0** |
+| 1280×720 | Máy | 190k px | 5 / 254 | 0 |
+| 1280×720 | /twin (cụm) | 473k px | 5 / 7.538 | 0 |
+| 1920×1080 | **Line (39 khối)** | 1.282k px | 6 / 3.566 | **54 (3.263 ms)** |
+| 1920×1080 | Máy | 475k px | 5 / 254 | **0** |
+| 1920×1080 | **/twin (45 khối)** | **1.365k px** | 5 / **9.998** | **0** |
+
+⇒ **Không phải số pixel**: `/twin` canvas **lớn hơn** và tam giác **gấp ba** mà vẫn **0**.
+Đặc thù của **màn Line ở khung lớn**.
+
+## Ablation A — gỡ đúng một lớp
+
+`dongChay = null` (mũi tên dòng chảy) ⇒ màn Line @1920: **54 → 0** long task.
+⇒ lớp gây ra là `DongChayLine`. Cơ chế đọc được trong mã: `useFrame` coi **camera đổi = một
+kích**, nên suốt lúc kéo nó gọi `datMuiTen` + `invalidate()` **mỗi khung** — tức cảnh vẽ liên
+tục ở tốc độ tối đa thay vì vài khung rời rạc.
+
+## ★★★ Nhưng "vẽ liên tục lúc kéo" là ĐÚNG — và đây mới là chỗ tôi suýt báo sai
+
+Đo lại cùng trang, cùng kịch bản, chỉ đổi **trình kết xuất**:
+
+| trình kết xuất | long task | khung/s | thời gian kịch bản |
+|---|---|---|---|
+| **SwiftShader** (headless mặc định) | **51 (3.250 ms)** | **19** | 8,5 s |
+| **GPU thật** (RTX 5090, ANGLE/D3D11) | **0 (0 ms)** | **60** | 3,7 s |
+
+Trên GPU thật, chính màn ấy chạy **60 khung/s, 0 long task**. Tức `DongChayLine` không "gây"
+long task; nó chỉ **yêu cầu vẽ 60 khung/s**, và một trình rasterise **bằng CPU** biến mỗi khung
+thành một tác vụ dài. Trình kết xuất phần mềm còn **kéo dài cả kịch bản** 3,7 s → 8,5 s.
+
+⇒ **KHÔNG vá gì.** Sửa `DongChayLine` để nó vẽ ít khung hơn là hạ chất lượng hoạt ảnh trên máy
+thật để làm đẹp một con số chỉ tồn tại trong máy đo.
+
+## Hệ quả cho HỆ ĐO — phần đáng giá nhất của lượt này
+
+**Mọi con số hiệu năng đo bằng harness headless của repo này là con số SwiftShader**, trừ khi ép
+GPU. Cờ đã kiểm được:
+
+```
+chromium.launch({ headless: true, args: [
+  "--use-gl=angle", "--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist",
+]})
+```
+Kiểm nhanh trình kết xuất thật đang dùng:
+`gl.getParameter(gl.getExtension("WEBGL_debug_renderer_info").UNMASKED_RENDERER_WEBGL)`
+— ra `SwiftShader Device` hay `NVIDIA … Direct3D`.
+
+★ **Đã kiểm: không cổng nào đang bị SwiftShader quyết.** Trong `e2e/`, khẳng định duy nhất chạm
+`longTask` là `toBeGreaterThanOrEqual(0)` — ghi số, **không phán quyết**; và không ca nào ghim
+một ngưỡng `khung/s`. Nên không có gì phải sửa lại, chỉ có một luật phải nhớ.
+
+⚠ Các con số fps của những vòng trước (ví dụ *"9,2 → 60 khung/s"* của `byteMau`) là **so sánh
+tương đối dưới cùng một trình kết xuất** và đều có ablation, nên **kết luận vẫn đứng**; chỉ là
+trị tuyệt đối của chúng là trị phần mềm, không phải trị trên máy người dùng.
+
+## ⚠ Một nhiễu khác bắt được cùng lượt
+
+Ở lượt ablation, `/twin` ra `8 long task` trong khi hai lượt khác ra `0` — cùng bản dựng, cùng
+kịch bản. Tức **long task trên máy đo là biến ồn**; một mẫu `n=1` không đủ để kết luận, đúng bài
+học vừa ghi ở Q1.
+
+## Cổng
+
+Cây sạch (ablation đã hoàn nguyên), `tsc` **0**, không đổi một dòng mã sản phẩm nào.
