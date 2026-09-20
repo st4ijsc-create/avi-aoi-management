@@ -270,3 +270,66 @@ học vừa ghi ở Q1.
 ## Cổng
 
 Cây sạch (ablation đã hoàn nguyên), `tsc` **0**, không đổi một dòng mã sản phẩm nào.
+
+---
+
+# M4 — CŨNG ĐÓNG BẰNG ÂM TÍNH, VÀ MỤC BACKLOG CỦA TÔI LẠI SAI
+
+Tôi ghi: *"`__demNhan` **không tồn tại** ở `?pv=tapdoan` ⇒ câu «có bao nhiêu nhãn toà bị giấu»
+**không đo được từ ngoài**"*.
+
+**Sai.** Sổ đo **có sẵn** — chỉ là dưới **tên khác**, vì nó là một lớp khác:
+`window.__demSaBan.soNhan()` (và `__demSaBan.bieuTuong()`), gác bởi cùng `laCheDoDo()`.
+Thước của tôi tra `__demNhan`, không thấy, rồi kết luận *"không đo được"*.
+
+> ★★★ Đây là **lần thứ bảy** trong mạch việc này mà **phép đo của tôi tự sinh ra kết luận**:
+> lần này nó biến *"tôi tìm sai chỗ"* thành *"hệ thống thiếu thiết bị đo"* — và suýt biến thành
+> một hạng mục công việc.
+
+## Đo thật (ép GPU, xem M5)
+
+| khung | nhãn | biểu tượng | cạnh nhỏ nhất | đạt 24×24 |
+|---|---|---|---|---|
+| 1280×720 | **19/19 vẽ · 0 ẩn** | 14 (trong khung 14) | **21,7 px** | **13/14** |
+| 1920×1080 | **19/19 vẽ · 0 ẩn** | 14 (trong khung 14) | 42,6 px | **14/14** |
+
+`anVungCam` = 0, `anNgoaiKhung` = 0 ở cả hai khung ⇒ **không nhãn toà nào bị giấu**.
+
+## Con số 21,7 px có phải khuyết tật không — hỏi bằng KẾT CỤC
+
+Bấm tâm ba biểu tượng (nhỏ nhất **21,7 px**, giữa 49,1 px, lớn nhất 58,6 px):
+**cả ba đều KHÔNG điều hướng** — URL chỉ thêm `cam=`, tức cú bấm được hiểu là một cú xoay.
+⇒ Ở cấp tập đoàn, biểu tượng toà **không phải đích bấm**; đường đi phạm vi là ô `<select>`.
+
+Và sa bàn **không hứa** điều nó không giao — đo con trỏ, có đối chứng:
+
+| | con trỏ |
+|---|---|
+| nền trống (tập đoàn) | `auto` |
+| **biểu tượng toà** (tập đoàn) | **`auto`** |
+| **cụm** (cấp nhà máy — đối chứng, là đích bấm thật) | **`pointer`** |
+
+⇒ **Ngược hẳn khuyết tật M1.** Ở màn Máy, 30/38 khối hiện `pointer` rồi không làm gì —
+*affordance không có chức năng*. Ở sa bàn tập đoàn, không có lời hứa nào để mà lỗi hẹn.
+Tiêu chí 24 px vì thế **không ràng buộc** ở đây theo nghĩa bấm; 21,7 px chỉ là **biên đọc**,
+và tiêu chí nghiệm thu của Task 20 vốn đòi ≥ 24 px cho **đọc được**, không cho bấm.
+
+## ⚠ MỘT CÂU HỎI THIẾT KẾ — để lại cho chủ dự án
+
+Ở **cấp nhà máy**, một biểu tượng = một phạm vi **bấm được** (cụm ⇒ `/twin/line/:id`).
+Ở **cấp tập đoàn**, một biểu tượng trông tương đương nhưng **không bấm được**; đổi phạm vi phải
+qua ô `<select>`.
+
+Hai lối, mỗi lối một cái giá:
+
+| | làm gì | được | giá |
+|---|---|---|---|
+| **(a)** | giữ nguyên | 0 | người dùng học hai luật cho hai cấp, nhưng **không ai bị lừa** (con trỏ `auto` nói thật) |
+| **(b)** | cho bấm biểu tượng toà ⇒ vào nhà máy/toà ấy | một luật duy nhất cho mọi cấp | phải kéo cỡ biểu tượng lên **≥ 24 px ở mọi khung** (hiện 13/14 @1280), tức chạm bố cục Task 20 |
+
+Tôi **không tự chọn**: (b) thêm một đường điều hướng mới ở một cấp mà tiêu chí nghiệm thu Task 20
+**cố ý không có tiêu chí bấm** — đó là đổi phạm vi, không phải chi tiết kỹ thuật.
+
+## Cổng
+
+Không đổi một dòng mã sản phẩm nào; cây sạch.
