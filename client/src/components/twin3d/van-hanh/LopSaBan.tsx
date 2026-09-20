@@ -30,11 +30,12 @@
  */
 
 import { Html } from "@react-three/drei";
-import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 import { laCheDoDo } from "../loi/cheDoDo";
+import { laBam } from "../loi/phanBietBamKeo";
 import { TAM_CANVAS, layVungCam } from "../loi/LopNhan";
 import type { CuaSoDoTwin3d } from "../loi/KhungCanh";
 import { datNhanSaBan, type CoNhanPx } from "./datNhanSaBan";
@@ -51,6 +52,21 @@ export interface LopSaBanProps {
   toa: readonly BieuTuongToaVe[];
   cum: readonly CumSaBanVe[];
   toi: boolean;
+  /**
+   * ★★★ Bấm một biểu tượng TOÀ ⇒ vào nhà máy của nó (chủ dự án chốt 2026-09-20, lối **(b)**).
+   *
+   * Trước quyết định này, sa bàn cấp tập đoàn **không phải đích bấm** — và nó không hứa gì nó
+   * không giao: đo con trỏ có đối chứng cho `auto` trên biểu tượng toà vs `pointer` trên cụm ở
+   * cấp nhà máy. Tức nó **trung thực nhưng không nhất quán**: cùng một hình khối, hai cấp hai
+   * luật, và người dùng phải học hai lần.
+   *
+   * ⇒ Lối (b): một luật duy nhất — **một biểu tượng là một phạm vi đi xuống được**.
+   * ⚠ Kèm theo là một ràng buộc mới: biểu tượng phải đạt **≥ 24×24 px ở MỌI khung** (WCAG 2.5.8),
+   *   vì từ nay nó là đích bấm thật. Đo trước khi đổi: **13/14 @1280×720**, cạnh nhỏ nhất
+   *   **21,7 px**. Xem `HE_SO_CAO.tapDoan`.
+   * ⚠ Thiếu prop ⇒ **không bấm được, không con trỏ** — giữ nguyên hành vi cũ, không hứa hão.
+   */
+  onChonToa?: (v: { toaNhaId: number; factoryId: number }) => void;
   /** Tắt nhãn (bậc `tat_nhan` của `matDoKhungHinh`) — khối vẫn vẽ. */
   tatNhan: boolean;
 }
@@ -134,7 +150,7 @@ function hopChieu(
   return { trai, phai, tren, duoi };
 }
 
-export function LopSaBan({ toa, cum, toi, tatNhan }: LopSaBanProps) {
+export function LopSaBan({ toa, cum, toi, tatNhan, onChonToa }: LopSaBanProps) {
   const refToa = useRef<THREE.InstancedMesh | null>(null);
   const refNen = useRef<THREE.InstancedMesh | null>(null);
   const invalidate = useThree((s) => s.invalidate);
@@ -425,12 +441,56 @@ export function LopSaBan({ toa, cum, toi, tatNhan }: LopSaBanProps) {
     };
   }, [size.width, size.height, tatNhan, toa.length, cum.length]);
 
+  /*
+   * ════════════════════════════════════════════════════════════════════════════
+   * ★★★ BẤM BIỂU TƯỢNG TOÀ — dùng lại LUẬT bấm/kéo đã có, không viết luật thứ hai
+   * ════════════════════════════════════════════════════════════════════════════
+   * `laBam({ lechPx, ms })` là chính hàm mà `LoBatchMay` dùng để phân biệt "bấm" với "kéo xoay
+   * camera rồi nhả trên vật thể". Viết một ngưỡng riêng ở đây là G12: hai con số rồi sẽ lệch,
+   * và cái lệch ấy hiện ra dưới dạng "thỉnh thoảng kéo xong thì nhảy màn".
+   *
+   * ★ `e.instanceId` cho biết biểu tượng thứ mấy — cùng thứ tự với mảng `toa` đã dựng ma trận.
+   */
+  const tPointerDown = useRef(0);
+  const [hover, datHover] = useState<number | null>(null);
+  useEffect(() => {
+    if (!onChonToa) return;
+    gl.domElement.style.cursor = hover !== null ? "pointer" : "";
+    return () => {
+      gl.domElement.style.cursor = "";
+    };
+  }, [hover, gl, onChonToa]);
+
+  const khiBamToa = (e: ThreeEvent<MouseEvent>) => {
+    if (!onChonToa) return;
+    e.stopPropagation();
+    const bayGio = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (!laBam({ lechPx: e.delta, ms: bayGio - tPointerDown.current })) return;
+    const i = e.instanceId;
+    if (i === undefined) return;
+    const v = toa[i];
+    if (!v) return;
+    onChonToa({ toaNhaId: v.toaNhaId, factoryId: v.factoryId });
+  };
+
   if (toa.length === 0) return null;
 
   return (
     <group name={TEN_NHOM_SA_BAN}>
       <instancedMesh ref={refNen} args={[hinhNen, vlNen, Math.max(1, cum.length)]} frustumCulled={false} />
-      <instancedMesh ref={refToa} args={[hinhToa, vlToa, Math.max(1, toa.length)]} frustumCulled={false} />
+      <instancedMesh
+        ref={refToa}
+        args={[hinhToa, vlToa, Math.max(1, toa.length)]}
+        frustumCulled={false}
+        onPointerDown={() => {
+          tPointerDown.current = typeof performance !== "undefined" ? performance.now() : Date.now();
+        }}
+        onClick={khiBamToa}
+        onPointerOver={(e) => {
+          if (onChonToa) datHover(e.instanceId ?? null);
+        }}
+        onPointerOut={() => datHover(null)}
+      />
       {tatNhan ? null : (
         <Html fullscreen calculatePosition={TAM_CANVAS} zIndexRange={Z_INDEX_NHAN} style={KIEU_LOP}>
           {/* ★ `data-testid` phải ở phần tử DOM BÊN TRONG `<Html>` — xem `LopNhan`. */}

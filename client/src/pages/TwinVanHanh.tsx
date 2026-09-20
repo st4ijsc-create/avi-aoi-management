@@ -4400,6 +4400,13 @@ export function ThanTwinVanHanh() {
               */
               saBan={saBanToa}
               saBanCum={saBanCum}
+              /* ★★★ Lối (b) — chủ dự án chốt 2026-09-20: bấm biểu tượng TOÀ ⇒ xuống nhà máy của
+                   nó. Trước đó sa bàn cấp tập đoàn không bấm được, và đổi phạm vi phải qua ô
+                   `<select>` — tức cùng một hình khối mà hai cấp hai luật. Nay một luật duy
+                   nhất: **một biểu tượng là một phạm vi đi xuống được**.
+                 ★ Đi qua `chonPhamVi` chứ không `doiPhamVi` thẳng: `chonPhamVi` là chỗ DUY NHẤT
+                   biết hai cấp dưới phải đổi MÀN chứ không đổi tham số (G12). */
+              onChonToa={({ factoryId: fid }) => chonPhamVi({ cap: "nhaMay", id: fid })}
               nhanTrangThai={(tt) => t(mauChoTrangThai(tt).khoaNhan)}
               ariaLabel={ariaLabel}
             />
@@ -4425,6 +4432,13 @@ export function ThanTwinVanHanh() {
               /* ★★★ Task 20 — sa bàn THAY lớp máy ở cấp tập đoàn (rỗng ⇒ cảnh cũ y nguyên). */
               saBan={saBanToa}
               saBanCum={saBanCum}
+              /* ★★★ Lối (b) — chủ dự án chốt 2026-09-20: bấm biểu tượng TOÀ ⇒ xuống nhà máy của
+                   nó. Trước đó sa bàn cấp tập đoàn không bấm được, và đổi phạm vi phải qua ô
+                   `<select>` — tức cùng một hình khối mà hai cấp hai luật. Nay một luật duy
+                   nhất: **một biểu tượng là một phạm vi đi xuống được**.
+                 ★ Đi qua `chonPhamVi` chứ không `doiPhamVi` thẳng: `chonPhamVi` là chỗ DUY NHẤT
+                   biết hai cấp dưới phải đổi MÀN chứ không đổi tham số (G12). */
+              onChonToa={({ factoryId: fid }) => chonPhamVi({ cap: "nhaMay", id: fid })}
               sanRongM={sanRongM}
               sanSauM={sanSauM}
               tatNhan={false}

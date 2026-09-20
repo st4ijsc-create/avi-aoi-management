@@ -167,6 +167,11 @@ export interface CanhVanHanhProps {
    * Thiếu ⇒ không đếm, không chip (màn nào không có đường "bấm hàng xóm" thì không cần khai).
    */
   chuDichQuaNho?: (n: number) => string;
+  /**
+   * Bấm một biểu tượng TOÀ trên sa bàn cấp tập đoàn ⇒ đi xuống nhà máy của nó.
+   * Thiếu ⇒ sa bàn KHÔNG bấm được và KHÔNG có con trỏ — xem `LopSaBan.onChonToa`.
+   */
+  onChonToa?: (v: { toaNhaId: number; factoryId: number }) => void;
   /** Chữ ĐÃ dịch cho chip "còn N tên bị ẩn" (RB-8.3 — cảnh không gọi `t()`). */
   chuNhanAn?: (n: number) => string;
   /** ★ Đợt 45 (mục 4) — chữ ĐÃ dịch cho chip khi chỉ-nhãn-bất-thường bật (lý do ẩn = chính sách). */
@@ -1215,7 +1220,14 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
           "/twin một nhà máy không đổi một ô nào".
       */}
       {veSaBan ? (
-        <LopSaBan toa={saBan} cum={saBanCum} toi={toi} tatNhan={tatNhan} />
+        <LopSaBan
+          toa={saBan}
+          cum={saBanCum}
+          toi={toi}
+          tatNhan={tatNhan}
+          /* ★ Bấm biểu tượng toà ⇒ xuống nhà máy (chủ dự án chốt lối (b) 2026-09-20). */
+          onChonToa={props.onChonToa}
+        />
       ) : (
         <>
       {/* ★ A-6 — VÙNG AN TOÀN, sát sàn nhất, dưới cả vòng sức khoẻ. Nó là NỀN
@@ -1319,6 +1331,7 @@ type PropsHam = Pick<
   | "chuCanhBaoAn"
   | "chuTenBiChe"
   | "chuDichQuaNho"
+  | "onChonToa"
   | "onChonCum"
   | "chuNhanCum"
 >;
@@ -1357,6 +1370,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuCanhBaoAn: props.chuCanhBaoAn,
     chuTenBiChe: props.chuTenBiChe,
     chuDichQuaNho: props.chuDichQuaNho,
+    onChonToa: props.onChonToa,
     onChonCum: props.onChonCum,
     chuNhanCum: props.chuNhanCum,
   });
@@ -1369,6 +1383,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuCanhBaoAn: props.chuCanhBaoAn,
     chuTenBiChe: props.chuTenBiChe,
     chuDichQuaNho: props.chuDichQuaNho,
+    onChonToa: props.onChonToa,
     onChonCum: props.onChonCum,
     chuNhanCum: props.chuNhanCum,
   };
@@ -1400,6 +1415,11 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
   );
   const coChuTenBiChe = props.chuTenBiChe !== undefined;
   const chuTenBiCheOnDinh = useCallback((n: number) => hamRef.current.chuTenBiChe?.(n) ?? "", []);
+  const coOnChonToa = props.onChonToa !== undefined;
+  const onChonToaOnDinh = useCallback(
+    (v: { toaNhaId: number; factoryId: number }) => hamRef.current.onChonToa?.(v),
+    [],
+  );
   const coChuDichQuaNho = props.chuDichQuaNho !== undefined;
   const chuDichQuaNhoOnDinh = useCallback((n: number) => hamRef.current.chuDichQuaNho?.(n) ?? "", []);
 
@@ -1432,6 +1452,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       chiNhanBatThuong={props.chiNhanBatThuong}
       tranNhan={props.tranNhan}
       chuDichQuaNho={coChuDichQuaNho ? chuDichQuaNhoOnDinh : undefined}
+      onChonToa={coOnChonToa ? onChonToaOnDinh : undefined}
       chuMatContext={props.chuMatContext}
       ariaLabel={props.ariaLabel}
       sanCaoPx={props.sanCaoPx}

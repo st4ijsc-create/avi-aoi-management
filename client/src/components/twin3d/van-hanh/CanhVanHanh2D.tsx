@@ -66,6 +66,9 @@ import {
   type CumSaBanVe,
 } from "./hopNhatCanh";
 import type { MayTrongLo } from "../loi";
+import { khungNhinBan2D, type HopCanvas2D } from "./khungNhinBan2D";
+import { vungDungCanvas } from "./phamViCanh";
+import { layVungCam, THUOC_TINH_CHE_NHAN } from "../loi/LopNhan";
 
 /**
  * Mặc định RỖNG bằng HẰNG MODULE, không `[]` literal ở chỗ khai tham số: một
@@ -175,6 +178,15 @@ export interface CanhVanHanh2DProps {
   lineTheoMay?: ReadonlyMap<number, number | null>;
   /** Bấm vào biểu tượng cụm. `null` = cụm chưa gán line ⇒ người gọi tự quyết. */
   onChonCum?: (lineId: number | null) => void;
+  /**
+   * Bấm biểu tượng TOÀ ở cấp tập đoàn ⇒ xuống nhà máy của nó.
+   *
+   * ★★★ HAI NÚT, MỘT BỘ LUẬT (bài học Task 20). Bản 3D nhận `onChonToa` từ cùng lượt này; nếu
+   *   bản 2D không nhận, thì cùng một biểu tượng ở hai bề mặt trả lời KHÁC NHAU cho cùng một cú
+   *   bấm — đúng lớp lỗi mà Task 20 đã phải vá một lần.
+   * ⚠ Thiếu ⇒ không bấm được, không con trỏ — giữ nguyên hành vi cũ, không hứa hão.
+   */
+  onChonToa?: (v: { toaNhaId: number; factoryId: number }) => void;
   sanRongM: number;
   sanSauM: number;
   /** Nhãn trạng thái ĐÃ qua `t()` — component không gọi `t()` (RB-8.3). */
@@ -208,6 +220,7 @@ export function CanhVanHanh2D({
   onChonMay,
   lineTheoMay,
   onChonCum,
+  onChonToa,
   sanRongM,
   sanSauM,
   nhanTrangThai,
@@ -245,16 +258,33 @@ export function CanhVanHanh2D({
    *   thu/mở hoặc cửa sổ đổi cỡ, thay vì đọc một lần rồi đóng băng.
    */
   const [khungPx, setKhungPx] = useState({ rong: 0, cao: 0 });
+  /*
+   * ★★★ VÙNG CANVAS CÒN DÙNG ĐƯỢC — thứ bản 3D đã có từ lâu và bản 2D thì KHÔNG.
+   *
+   * Lớp phủ DOM (panel trái/phải, thanh công cụ) che một phần khung, nên khớp cảnh vào CẢ khung
+   * là đẩy chính nội dung xuống dưới chúng. Đo ở `?pv=tapdoan` bản 2D sau khi biểu tượng toà
+   * thành đích bấm: **8/14** biểu tượng có điểm giữa rơi trúng lớp phủ ⇒ bấm không tới, dù mỗi
+   * cái rộng **88,2 × 64,1 px** (không phải vấn đề kích thước).
+   *
+   * ★ Quan sát CẢ lớp phủ, không chỉ `<svg>`: panel thu/mở mà không đổi cỡ khung thì vùng dùng
+   *   được đổi trong khi `contentRect` của svg y nguyên — đo một lần rồi đóng băng là sai ngay
+   *   lần người dùng thu panel đầu tiên.
+   */
+  const [vungDung, setVungDung] = useState<HopCanvas2D | null>(null);
   useEffect(() => {
     const el = svgRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver((ds) => {
-      const r = ds[0]?.contentRect;
-      if (r) setKhungPx({ rong: r.width, cao: r.height });
-    });
+    const doLai = () => {
+      const r = el.getBoundingClientRect();
+      setKhungPx({ rong: r.width, cao: r.height });
+      setVungDung(vungDungCanvas(r.width, r.height, layVungCam(el)));
+    };
+    const ro = new ResizeObserver(doLai);
     ro.observe(el);
-    const r0 = el.getBoundingClientRect();
-    setKhungPx({ rong: r0.width, cao: r0.height });
+    if (typeof document !== "undefined") {
+      for (const ph of document.querySelectorAll(`[${THUOC_TINH_CHE_NHAN}]`)) ro.observe(ph);
+    }
+    doLai();
     return () => ro.disconnect();
   }, []);
 
@@ -277,7 +307,34 @@ export function CanhVanHanh2D({
    *   luật riêng (Task 20).
    */
   const hopNoiDung = useMemo(() => {
-    if (veSaBan || may.length === 0) return null;
+    /*
+     * ★★★ SA BÀN CŨNG PHẢI KHỚP THEO NỘI DUNG — bản đầu của phép này **loại trừ** nhánh sa bàn
+     *   (`if (veSaBan …) return null`), và loại trừ ấy là một khuyết tật do chính tôi để lại:
+     *   nhánh sa bàn rơi về `sanRongM/sanSauM` (SÀN KHAI BÁO), tức đúng cái đã phải vá một lần
+     *   cho nhánh máy.
+     *
+     * Hậu quả đo được ở `?pv=tapdoan` bản 2D, sau khi biểu tượng toà thành ĐÍCH BẤM (lối (b)):
+     * **8/14** biểu tượng có điểm giữa rơi trúng lớp phủ DOM (`ngan-xu-ly`, `nut-dieu-huong-*`,
+     * `trang-thai-ket-noi`) ⇒ bấm không tới, dù mỗi biểu tượng **86,2 × 62,7 px** — tức KHÔNG
+     * phải vấn đề kích thước.
+     *
+     * ⚠ Khớp theo nội dung **không** tự tránh lớp phủ: bản 3D làm việc ấy bằng `vungDungCanvas`,
+     *   bản 2D chưa có. Ở đây chỉ gỡ đúng một nguyên nhân (khung quá rộng); phần còn lại phải ĐO
+     *   lại rồi mới nói, không hứa trước.
+     */
+    if (veSaBan) {
+      if (saBan.length === 0) return null;
+      const xs = saBan.map((v) => v.viTri.x);
+      const zs = saBan.map((v) => v.viTri.z);
+      const bien = Math.max(...saBan.map((v) => Math.max(v.co.rong, v.co.sau))) / 2;
+      return {
+        xMin: Math.min(...xs) - bien,
+        xMax: Math.max(...xs) + bien,
+        zMin: Math.min(...zs) - bien,
+        zMax: Math.max(...zs) + bien,
+      };
+    }
+    if (may.length === 0) return null;
     const xs = may.map((m) => m.viTri.x);
     const zs = may.map((m) => m.viTri.z);
     const bien = Math.max(...may.map((m) => Math.max(m.kichThuocMm.rongMm, m.kichThuocMm.sauMm) / 1000));
@@ -287,17 +344,33 @@ export function CanhVanHanh2D({
       zMin: Math.min(...zs) - bien,
       zMax: Math.max(...zs) + bien,
     };
-  }, [veSaBan, may]);
+  }, [veSaBan, may, saBan]);
 
-  const goc = hopNoiDung
-    ? { x: hopNoiDung.xMin - le, z: hopNoiDung.zMin - le }
-    : { x: -le, z: -le };
-  const rong = hopNoiDung
-    ? Math.max(hopNoiDung.xMax - hopNoiDung.xMin, 10) + le * 2
-    : Math.max(sanRongM, 10) + le * 2;
-  const sau = hopNoiDung
-    ? Math.max(hopNoiDung.zMax - hopNoiDung.zMin, 10) + le * 2
-    : Math.max(sanSauM, 10) + le * 2;
+  /*
+   * ★★★ Đặt nội dung vào VÙNG DÙNG ĐƯỢC chứ không vào cả khung — xem `khungNhinBan2D`.
+   * ⚠ Thiếu dữ kiện (chưa đo được khung/lớp phủ) ⇒ `null` ⇒ rơi về đúng đường cũ bên dưới.
+   *   Không bịa một vùng: đặt cảnh vào một chỗ không ai thấy còn tệ hơn đặt nó hơi rộng.
+   */
+  const khungVung = khungNhinBan2D(
+    hopNoiDung ? { ...hopNoiDung } : null,
+    khungPx.rong > 0 && khungPx.cao > 0 ? khungPx : null,
+    vungDung,
+  );
+  const goc = khungVung
+    ? { x: khungVung.x, z: khungVung.z }
+    : hopNoiDung
+      ? { x: hopNoiDung.xMin - le, z: hopNoiDung.zMin - le }
+      : { x: -le, z: -le };
+  const rong = khungVung
+    ? khungVung.rong
+    : hopNoiDung
+      ? Math.max(hopNoiDung.xMax - hopNoiDung.xMin, 10) + le * 2
+      : Math.max(sanRongM, 10) + le * 2;
+  const sau = khungVung
+    ? khungVung.sau
+    : hopNoiDung
+      ? Math.max(hopNoiDung.zMax - hopNoiDung.zMin, 10) + le * 2
+      : Math.max(sanSauM, 10) + le * 2;
 
   /**
    * Đơn vị vẽ của bản 2D. Cùng ngưỡng WCAG và cùng hệ số trễ với bản 3D — hai lối vào, một bộ luật.
@@ -615,6 +688,9 @@ export function CanhVanHanh2D({
               fill={toi ? MAU_BIEU_TUONG_TOA.toi : MAU_BIEU_TUONG_TOA.sang}
               stroke={quangChu}
               strokeWidth={Math.max(v.co.rong, v.co.sau) * 0.012}
+              /* ★ Cùng luật với bản 3D: một biểu tượng là một phạm vi đi xuống được. */
+              style={onChonToa ? { cursor: "pointer" } : undefined}
+              onClick={onChonToa ? () => onChonToa({ toaNhaId: v.toaNhaId, factoryId: v.factoryId }) : undefined}
             >
               <title>{nhanKhoiCoCum(tenCumTheoFactory.get(v.factoryId), v.nhan)}</title>
             </rect>
