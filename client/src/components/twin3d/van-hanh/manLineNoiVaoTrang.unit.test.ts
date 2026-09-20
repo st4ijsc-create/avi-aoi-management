@@ -190,7 +190,13 @@ describe("★★★ ④ `daDo` phải là `isSuccess` — 403 KHÔNG được th
 
 describe("★★★ ⑤ Cột WIP 3D và dải trạm 2D KHÔNG THỂ lệch nhau", () => {
   it("`cotWipCanh` và `bangWip` cùng ra từ `tinhWip` + `khaiNghen`", () => {
-    expect(MA).toContain("cotWip(tinhWip, khaiNghen)");
+    /*
+     * ⚠ Ghim TÍNH CHẤT ("cùng `tinhWip` + `khaiNghen`"), không ghim SỐ ĐỐI SỐ. Ca cũ tra nguyên
+     *   văn `cotWip(tinhWip, khaiNghen)` và đỏ khi bố cục sơ đồ thêm đối số thứ ba (thang chiều
+     *   cao cột) — trong khi thứ nó ghim, *"2D và 3D không thể lệch nhau"*, không đổi một chữ.
+     * ★ Không nới: đổi `tinhWip` thành một nguồn khác, hoặc bỏ `khaiNghen`, vẫn đỏ.
+     */
+    expect(MA).toMatch(/cotWip\(tinhWip, khaiNghen[,)]/);
     expect(MA).toContain("xepHangWip(tinhWip, khaiNghen)");
   });
 
@@ -658,6 +664,17 @@ describe("★★★ Bố cục sơ đồ màn Line — năm khớp nối (G93)",
     const t = than("soDo");
     expect(t).toContain("dungSoDoLine(mayVeThat, thuTuTheoMay");
     expect(t).toContain("kichThuocKhung.rongPx / kichThuocKhung.caoPx");
+  });
+
+  it("★★★ ⑥ `cotWip` nhận THANG của thế giới sơ đồ, không dùng trần 6 m của bố cục dải", () => {
+    /*
+     * Gỡ khớp nối này ⇒ cột WIP cao 6 m trên một lưới 14,2 × 5,1 m, khung nhìn phải lùi gấp
+     * đôi và đích bấm nhỏ nhất tụt **39,23 → 26,69 px** — vẫn "đạt 24" nên KHÔNG ca nghiệm thu
+     * nào đỏ, chỉ biên an toàn bốc hơi. Đúng lớp G93: hỏng ở CHỖ GỌI, im lặng.
+     */
+    expect(MA).toContain("cotWip(tinhWip, khaiNghen, thangCot)");
+    const t = than("thangCot");
+    expect(t).toContain("soDo ? thangCotWipSoDo(mayVe) : {}");
   });
 
   it("★★ mũi tên dòng chảy đi theo `soDo.duongTam` khi có sơ đồ", () => {

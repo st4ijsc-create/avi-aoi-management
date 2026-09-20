@@ -192,7 +192,7 @@ export interface ThamSoTinhWipLine {
   lineId: number | null;
   tram: readonly TramCuaLine[];
   /** Tâm trạm ĐÃ quy về mét, khoá `station:<id>` — ra từ `dungHinhLine`. */
-  tamTram: ReadonlyMap<number, { x: number; z: number }>;
+  tamTram: ReadonlyMap<number, { x: number; y?: number; z: number }>;
   /** Đã có câu trả lời THÀNH CÔNG chưa. `false` ⇒ mọi `soWip` là `null`. */
   daDo: boolean;
   soTheoTram: ReadonlyMap<number, number>;
@@ -227,6 +227,8 @@ export function tinhWipLine(ts: ThamSoTinhWipLine): TinhWip[] {
         soWip: ts.daDo ? (ts.soTheoTram.get(s.id) ?? 0) : null,
         x: v?.x ?? 0,
         z: v?.z ?? 0,
+        // ★ Cao độ SÀN của trạm — cột WIP đứng lên nó. Thiếu ⇒ 0 (hành vi cũ), xem `TinhWip.y`.
+        y: v?.y ?? 0,
       };
     })
     .sort((a, b) => a.thuTu - b.thuTu || a.ma.localeCompare(b.ma));
@@ -374,12 +376,17 @@ export function tomTatLine(
  */
 export function bboxKemCotWip(
   bbox: BBox,
-  cot: readonly { x: number; z: number; cao: number }[],
+  cot: readonly { x: number; y?: number; z: number; cao: number }[],
 ): BBox {
   if (cot.length === 0) return bbox;
   return gopNhieuBBox([
     bbox,
-    ...cot.map((c) => ({ minX: c.x, maxX: c.x, minY: 0, maxY: Math.max(0, c.cao), minZ: c.z, maxZ: c.z })),
+    // ★ Cột đứng từ SÀN CỦA TRẠM, không từ cốt 0: trên tầng 3 thì `minY: 0` kéo hộp bao xuống
+    //   thấp hơn máy 16,6 m và khung nhìn phải ôm một khoảng rỗng không có gì trong đó.
+    ...cot.map((c) => {
+      const day = Number.isFinite(c.y) ? (c.y as number) : 0;
+      return { minX: c.x, maxX: c.x, minY: day, maxY: day + Math.max(0, c.cao), minZ: c.z, maxZ: c.z };
+    }),
   ]);
 }
 

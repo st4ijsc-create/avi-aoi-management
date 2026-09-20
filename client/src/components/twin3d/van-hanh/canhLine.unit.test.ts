@@ -75,19 +75,35 @@ describe("★★★ luật TRẠM CHƯA CÓ ĐẶT CHỖ — suy tâm từ MÁY 
     expect(t!.tam.y).toBe(0);
   });
 
-  it("★ ĐẶT CHỖ THẮNG tâm-suy-từ-máy khi cả hai cùng có", () => {
+  /*
+   * ★★★ CA NÀY ĐÃ ĐỔI — và đây là lý do, bằng số.
+   *
+   * Nó từng khẳng định *"đặt chỗ thắng CẢ BA TRỤC"*. Quyết định ấy còn đúng **ở mặt bằng**, và
+   * sai **ở cao độ** — vì `twin_dat_cho.viTriZMm` (chiều cao) **chưa cộng gốc toà nhà** (món nợ
+   * Task 17c ghi ngay trong `canhLine.ts`), trong khi `mayVe` thì ĐÃ cộng.
+   *
+   * Hậu quả đo được ở `/twin/line/526` (chuyền nằm trên **tầng 3, y = 16,6 m**): cột WIP dựng
+   * lên từ cao độ trạm, nên **0/39** cột đứng đúng chỗ trạm của nó — lệch **111 px @1280×720**
+   * và **240 px @1920×1080**, xa hơn một ô lưới. Người vận hành đọc *"trạm này đang ùn"* từ
+   * một cây cột đứng dưới **một cái máy khác**, và không một lỗi nào nổ.
+   *
+   * ⇒ Luật mới: **mặt bằng theo ĐẶT CHỖ, cao độ theo MÁY**. Ca vẫn ghim đặt-chỗ-thắng ở x/z —
+   *   nên nó KHÔNG bị nới; nó chỉ thôi khẳng định một điều đã được đo là sai.
+   */
+  it("★★★ ĐẶT CHỖ thắng ở MẶT BẰNG, nhưng CAO ĐỘ lấy từ MÁY của trạm", () => {
     const kq = dungHinhLine(
       1,
       [tram(7, 1, 1)],
-      [{ machineId: 100, viTri: { x: 99, y: 0, z: 99 } }],
+      [{ machineId: 100, viTri: { x: 99, y: 16.6, z: 99 } }],
       [{ id: 100, lineId: 1, stationId: 7 }],
       [datCho(7, 1000, 2000, 3000)],
     );
     const t = kq!.tram.find((x) => x.khoa === "station:7")!;
     // mm → m, và HOÁN TRỤC: y ← viTriZMm, z ← viTriYMm.
-    expect(t.tam.x).toBeCloseTo(1);
-    expect(t.tam.y).toBeCloseTo(3);
+    expect(t.tam.x).toBeCloseTo(1); // ĐẶT CHỖ vẫn thắng ở mặt bằng
     expect(t.tam.z).toBeCloseTo(2);
+    expect(t.tam.y).toBeCloseTo(16.6); // …và cao độ theo MÁY, không theo `viTriZMm` (= 3)
+    expect(t.tam.y).not.toBeCloseTo(3, 3);
   });
 
   it("★ trạm không đặt chỗ và KHÔNG máy ⇒ vẫn có mặt tại gốc, không bị loại", () => {

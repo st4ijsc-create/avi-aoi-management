@@ -99,7 +99,7 @@ export interface CanhVanHanhProps {
   /** Đường tâm Line + hướng — chỉ có ở phạm vi Line (§10C.3). */
   dongChay: DiemDongChay | null;
   /** Cột WIP theo trạm — chỉ có ở phạm vi Line (§10C.3). */
-  wip: readonly { x: number; z: number; cao: number; nghen: boolean }[];
+  wip: readonly { x: number; y?: number; z: number; cao: number; nghen: boolean }[];
   /**
    * ★★★ A-4 (§14.5.1, mục G-1) — VÒNG VIỀN SỨC KHOẺ quanh ĐẾ máy.
    *
@@ -525,8 +525,16 @@ function OngWip({ wip }: { wip: CanhVanHanhProps["wip"] }) {
     const mauThuong = mauThree("--info", "#3b82f6");
     wip.forEach((w, i) => {
       const cao = Math.max(0.05, w.cao);
+      /*
+       * ★★★ ĐÁY TRỤ Ở **SÀN CỦA TRẠM**, KHÔNG Ở CỐT 0.
+       * Hình học là trụ đơn vị **tâm ở giữa**, nên tâm = đáy + nửa chiều cao. Bản cũ viết
+       * `cao / 2` — tức đáy ở `y = 0` tuyệt đối. Đo ở `/twin/line/526` (chuyền trên tầng 3):
+       * **0/39** cột đứng đúng chỗ trạm, lệch **111 px @1280×720** / **240 px @1920×1080**.
+       * ⚠ `?? 0` giữ hành vi cũ cho người gọi chưa truyền — nó KHÔNG phải một giá trị an toàn.
+       */
+      const day = Number.isFinite(w.y) ? (w.y as number) : 0;
       mt.compose(
-        new THREE.Vector3(w.x, cao / 2, w.z),
+        new THREE.Vector3(w.x, day + cao / 2, w.z),
         new THREE.Quaternion(),
         new THREE.Vector3(1, cao, 1),
       );

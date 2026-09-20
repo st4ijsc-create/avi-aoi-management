@@ -2249,10 +2249,19 @@ export function ThanTwinVanHanh() {
   const tinhWip = useMemo<TinhWip[]>(() => {
     if (lineDangXem === null || !hinhLine) return [];
     // `khoa` của `hinhLine.tram` là `station:<id>` — nguồn toạ độ ĐÃ quy về mét.
-    const tamTram = new Map<number, { x: number; z: number }>();
+    /*
+     * ★★★ GIỮ `y` — cao độ SÀN của trạm, thứ mà cột WIP đứng lên (`OngWip`).
+     *   Bản cũ bỏ nó ngay ở dòng này và `OngWip` đặt đáy trụ ở cốt 0 tuyệt đối. Đo ở
+     *   `/twin/line/526` (chuyền trên **tầng 3, y = 16,6 m**): **0/39** cột đứng đúng chỗ trạm,
+     *   lệch **111 px @1280×720** / **240 px @1920×1080** — người vận hành đọc "trạm này ùn"
+     *   từ cây cột đứng dưới MỘT CÁI MÁY KHÁC.
+     * ⚠ G12 — khối này là BẢN SAO của `manLine.tinhWipLine`; cả hai phải vá cùng lúc, và bản
+     *   sao ấy là món nợ CÓ TRƯỚC (không gộp trong lượt này để không đổi hành vi màn Vận hành).
+     */
+    const tamTram = new Map<number, { x: number; y: number; z: number }>();
     for (const t of hinhLine.tram) {
       const id = Number(t.khoa.slice("station:".length));
-      if (Number.isFinite(id)) tamTram.set(id, { x: t.tam.x, z: t.tam.z });
+      if (Number.isFinite(id)) tamTram.set(id, { x: t.tam.x, y: t.tam.y, z: t.tam.z });
     }
     const daDo = wipQ.isSuccess;
     const soTheoTram = new Map<number, number>();
@@ -2270,6 +2279,7 @@ export function ThanTwinVanHanh() {
           soWip: daDo ? (soTheoTram.get(s.id) ?? 0) : null,
           x: v?.x ?? 0,
           z: v?.z ?? 0,
+          y: v?.y ?? 0,
         };
       })
       .sort((a, b) => a.thuTu - b.thuTu || a.ma.localeCompare(b.ma));

@@ -115,7 +115,12 @@ import { mauCss } from "@/components/twin3d/van-hanh/mauThree";
 import { mauChoTrangThai, type MucTuoi } from "@/components/twin3d/mauTrangThai";
 import { hinhKhoiCho } from "@/components/twin3d/hinhKhoiMay";
 import { dungHinhLine } from "@/components/twin3d/van-hanh/canhLine";
-import { apSoDoVaoMay, dungSoDoLine, hopBaoSoDo } from "@/components/twin3d/van-hanh/soDoLine";
+import {
+  apSoDoVaoMay,
+  dungSoDoLine,
+  hopBaoSoDo,
+  thangCotWipSoDo,
+} from "@/components/twin3d/van-hanh/soDoLine";
 import { laCheDoDo } from "@/components/twin3d/loi/cheDoDo";
 import {
   dungCanhBao3D,
@@ -724,10 +729,12 @@ export function ThanManLine({
 
   /* ── WIP: một phép ghép, hai người đọc (§11.5 + G12) ─────────────────── */
   const tamTram = useMemo(() => {
-    const m = new Map<number, { x: number; z: number }>();
+    const m = new Map<number, { x: number; y: number; z: number }>();
     for (const s of hinhLine?.tram ?? []) {
       const id = Number(s.khoa.slice("station:".length));
-      if (Number.isFinite(id)) m.set(id, { x: s.tam.x, z: s.tam.z });
+      // ★★★ GIỮ `y` — cao độ sàn của trạm. Bản cũ bỏ nó ở đúng dòng này, và con số bị bỏ ấy
+      //   là thứ làm 39/39 cột WIP rơi xuống cốt 0 trong khi chuyền nằm trên tầng 3.
+      if (Number.isFinite(id)) m.set(id, { x: s.tam.x, y: s.tam.y, z: s.tam.z });
     }
     return m;
   }, [hinhLine]);
@@ -765,7 +772,16 @@ export function ThanManLine({
     };
   }, [canBangQ.data, bayGioThat]);
 
-  const cotWipTho = useMemo(() => cotWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);
+  /*
+   * ★★★ Ở chế độ SƠ ĐỒ, cột WIP phải theo thang của THẾ GIỚI SƠ ĐỒ. Trần mặc định 6 m được
+   *   hiệu chỉnh cho chuyền dài 229 m; trên lưới 14,2 × 5,1 m nó cao hơn cả bề rộng lưới và
+   *   ép khung nhìn lùi gấp đôi (đích bấm nhỏ nhất 41,0 → 26,69 px). Xem `thangCotWipSoDo`.
+   */
+  const thangCot = useMemo(() => (soDo ? thangCotWipSoDo(mayVe) : {}), [soDo, mayVe]);
+  const cotWipTho = useMemo(
+    () => cotWip(tinhWip, khaiNghen, thangCot),
+    [tinhWip, khaiNghen, thangCot],
+  );
   // ★ Đợt 38 — `CanhVanHanh` có `useEffect([wip]) → invalidate()`; gói WIP 2 s dựng mảng mới dù số y nguyên ⇒ ổn định theo giá trị.
   const cotWipCanh = useOnDinhTheoGiaTri(cotWipTho, JSON.stringify(cotWipTho));
   const bangWip = useMemo(() => xepHangWip(tinhWip, khaiNghen), [tinhWip, khaiNghen]);
@@ -966,6 +982,10 @@ export function ThanManLine({
       may3: mayVe.slice(0, 3).map((m) => ({ id: m.machineId, v: m.viTri, co: m.kichThuocMm })),
       mayThat3: mayVeThat.slice(0, 3).map((m) => ({ id: m.machineId, v: m.viTri })),
       cotWip3: cotWipCanh.slice(0, 3),
+      // ★ Danh sách ĐẦY ĐỦ cho phép đo ngoài trang tự chiếu lại — nó cần CẶP (cột, máy), không
+      //   lấy được từ ba phần tử đầu. `yDay` là cao độ ĐÁY cột: chưa có trường ấy nghĩa là 0.
+      cotWipTatCa: cotWipCanh.map((w) => ({ x: w.x, z: w.z, cao: w.cao, yDay: (w as { y?: number }).y ?? 0 })),
+      mayTatCa: mayVe.map((m) => ({ id: m.machineId, v: m.viTri })),
       khungNhin,
       kichThuocKhung,
     };

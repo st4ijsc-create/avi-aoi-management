@@ -48,12 +48,26 @@ export interface TinhWip {
   /** Tâm trạm trong mét (hệ toạ độ cảnh). */
   x: number;
   z: number;
+  /**
+   * ★★★ Cao độ SÀN của trạm (mét) — cái mà cột WIP phải đứng lên.
+   *
+   * Trước bản vá này `CotWip` không có trường nào cho chiều đứng và `OngWip` đặt đáy trụ ở
+   * `y = 0` TUYỆT ĐỐI. Đo ở `/twin/line/526` (chuyền nằm trên **tầng 3, y = 16,6 m**):
+   * **0/39** cột đứng đúng chỗ trạm của nó, lệch **16,6 m** theo chiều đứng, tức **111 px
+   * @1280×720** và **240 px @1920×1080** trên màn — xa hơn một ô lưới. Người vận hành đọc
+   * *"trạm này đang ùn"* từ một cây cột đứng dưới **một cái máy khác**.
+   *
+   * ⚠ Thiếu ⇒ `0`, giữ đúng hành vi cũ cho người gọi chưa truyền.
+   */
+  y?: number;
 }
 
 /** Một cột WIP 3D — đúng hình dạng `CanhVanHanhProps["wip"]`. */
 export interface CotWip {
   x: number;
   z: number;
+  /** Cao độ ĐÁY cột (mét) — sàn của trạm. Xem `TinhWip.y`. */
+  y: number;
   /** Chiều cao mét. */
   cao: number;
   nghen: boolean;
@@ -228,7 +242,38 @@ export function laNghen(
  * Trạm ĐO ĐƯỢC và bằng 0 cũng không dựng cột — nhưng đó là vì "không có gì để
  * vẽ", và bảng 2D vẫn liệt kê nó với số `0`, nên thông tin không mất.
  */
-export function cotWip(tram: readonly TinhWip[], khai?: KhaiNghen): CotWip[] {
+/**
+ * Thang chiều cao cột — để người gọi áp thang của **thế giới đang vẽ**.
+ *
+ * ★★★ VÌ SAO CẦN: hai hằng mặc định được hiệu chỉnh cho bố cục DẢI (chuyền dài 229 m), nơi một
+ *   cột 6 m là chi tiết nhỏ. Màn Line nay trải chuyền thành **sơ đồ 14,2 × 5,1 m** — cùng cây
+ *   cột ấy nay **cao hơn bề rộng lưới**, và vì nó dựng đứng *về phía* camera nhìn từ trên xuống,
+ *   khung nhìn phải lùi **gấp đôi**: đo được đích bấm nhỏ nhất tụt **41,0 → 26,69 px**.
+ *
+ * ⚠ Đây KHÔNG phải "thu nhỏ cho vừa mắt". Ý định thiết kế gốc ghi ngay tại `CAO_MOI_WIP_M`:
+ *   *"0,25 m × 20 WIP = 5 m — cao ngang một máy lớn"*. Ở sơ đồ, máy cao 1,8 m chứ không 5 m,
+ *   nên **giữ ý định** đòi phải suy lại con số, chứ giữ nguyên mét mới là bỏ ý định.
+ * ★ Tỉ số `trần / mỗi-WIP` GIỮ NGUYÊN (= 24), nên hình dạng ánh xạ WIP→chiều cao không đổi:
+ *   trạm nào cao hơn trạm nào, và cao hơn bao nhiêu lần, vẫn y hệt. Chỉ đơn vị đổi.
+ */
+export interface ThangCotWip {
+  caoMoiWipM?: number;
+  caoToiDaM?: number;
+}
+
+export function cotWip(
+  tram: readonly TinhWip[],
+  khai?: KhaiNghen,
+  thang: ThangCotWip = {},
+): CotWip[] {
+  const moiWip =
+    Number.isFinite(thang.caoMoiWipM) && (thang.caoMoiWipM as number) > 0
+      ? (thang.caoMoiWipM as number)
+      : CAO_MOI_WIP_M;
+  const tran =
+    Number.isFinite(thang.caoToiDaM) && (thang.caoToiDaM as number) > 0
+      ? (thang.caoToiDaM as number)
+      : CAO_TOI_DA_M;
   const tv = trungViWip(tram);
   const ra: CotWip[] = [];
   for (const t of tram) {
@@ -236,7 +281,10 @@ export function cotWip(tram: readonly TinhWip[], khai?: KhaiNghen): CotWip[] {
     ra.push({
       x: t.x,
       z: t.z,
-      cao: Math.min(CAO_TOI_DA_M, t.soWip * CAO_MOI_WIP_M),
+      // ⚠ `?? 0` là **hành vi cũ**, không phải một giá trị an toàn: nó đặt cột xuống cốt 0.
+      //   Người gọi có cao độ trạm thì PHẢI truyền — xem `TinhWip.y`.
+      y: Number.isFinite(t.y) ? (t.y as number) : 0,
+      cao: Math.min(tran, t.soWip * moiWip),
       nghen: laNghen(t.soWip, tv, khai ? { ...khai, stationId: t.stationId } : undefined),
     });
   }

@@ -151,15 +151,34 @@ export function dungHinhLine(
         mayCuaTram.length > 0
           ? {
               x: mayCuaTram.reduce((a, m) => a + m.viTri.x, 0) / mayCuaTram.length,
-              y: 0,
+              /*
+               * ★★★ CAO ĐỘ SÀN CỦA TRẠM — trước đây viết cứng `0`, và con số 0 ấy đi thẳng
+               *   xuống cột WIP: `OngWip` đặt đáy trụ ở `y` này. Đo ở `/twin/line/526`, chuyền
+               *   nằm trên **tầng 3 (y = 16,6 m)**: **0/39** cột đứng đúng chỗ trạm của nó,
+               *   lệch **111 px @1280×720** / **240 px @1920×1080** — xa hơn một ô lưới, nên
+               *   người vận hành đọc "trạm này ùn" từ cây cột đứng dưới MỘT CÁI MÁY KHÁC.
+               * ★ Lấy trung bình cao độ máy của chính trạm: một trạm ở đâu là nơi máy của nó ở.
+               */
+              y: mayCuaTram.reduce((a, m) => a + m.viTri.y, 0) / mayCuaTram.length,
               z: mayCuaTram.reduce((a, m) => a + m.viTri.z, 0) / mayCuaTram.length,
             }
           : null;
+      /*
+       * ★★★ MẶT BẰNG lấy từ đặt chỗ, CAO ĐỘ lấy từ MÁY — và hai nguồn khác nhau ở đây là có lý
+       *   do, không phải cẩu thả. `twin_dat_cho.viTriZMm` (chiều cao) **chưa cộng gốc toà nhà**
+       *   — chính món nợ Task 17c ghi ở đầu tệp này — trong khi `mayVe` thì ĐÃ cộng
+       *   (`gocToaTheoTang`). Lấy cao độ từ đặt chỗ là đặt cột WIP vào một hệ toạ độ khác với
+       *   hệ của máy, tức tái tạo đúng khuyết tật vừa vá, chỉ khác con số.
+       * ⚠ Trạm KHÔNG có máy nào ⇒ vẫn dùng trọn `v` (cả ba trục): không có gì tốt hơn để lấy.
+       */
+      const datCho = tuyChon.boQuaDatCho ? null : v;
+      const tamGhep =
+        datCho && tamMay ? { x: datCho.x, y: tamMay.y, z: datCho.z } : (datCho ?? tamMay);
       return {
         khoa: `station:${s.id}`,
         // ★ `boQuaDatCho` ⇒ BỎ HẲN `v`, không "ưu tiên `tamMay` rồi mới tới `v`": nửa vời thì
         //   trạm rỗng lại nhảy về toạ độ thật và ta có hai hệ toạ độ trong cùng một cảnh.
-        tam: (tuyChon.boQuaDatCho ? null : v) ?? tamMay ?? { x: 0, y: 0, z: 0 },
+        tam: tamGhep ?? { x: 0, y: 0, z: 0 },
         thuTu: s.thuTu ?? undefined,
       };
     });

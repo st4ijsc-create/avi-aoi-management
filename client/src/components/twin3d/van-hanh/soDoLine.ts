@@ -80,6 +80,7 @@
  */
 
 import type { BBox } from "../heToaDo";
+import { CAO_MOI_WIP_M, CAO_TOI_DA_M } from "./wipTram";
 import type { MayTrongLo } from "../loi/LoBatchMay";
 
 /** Khe giữa hai ô = 35 % cạnh mặt bằng — đủ để mắt (và phép đo chồng lấn) đọc ra từng khối. */
@@ -356,4 +357,39 @@ export function hopBaoSoDo(soDo: SoDoLine, may: readonly MayTrongLo[]): BBox {
     yMax = Math.max(yMax, vt.y + caoMax);
   }
   return { minX: xMin, maxX: xMax, minY: yMin, maxY: yMax, minZ: zMin, maxZ: zMax };
+}
+
+/** Cột WIP được phép cao hơn khối máy cao nhất 20 % — đủ nổi, chưa lấn át lưới. */
+export const TI_LE_CAO_COT_TREN_MAY = 1.2;
+
+/**
+ * Thang chiều cao cột WIP cho **thế giới của sơ đồ**.
+ *
+ * ★★★ KHUYẾT TẬT ĐANG CHỮA (đo ở `/twin/line/526`): hai hằng mặc định của `wipTram` hiệu chỉnh
+ * cho bố cục DẢI (chuyền 229 m), nơi trần 6 m là chi tiết nhỏ. Sơ đồ co thế giới còn
+ * **14,2 × 5,1 m**, nên cùng cây cột ấy **cao hơn bề rộng lưới**; và vì nó dựng đứng *về phía*
+ * camera nhìn gần thẳng xuống, khung nhìn phải lùi **gấp đôi** (11,65 m → 22,72 m). Đích bấm
+ * nhỏ nhất tụt **41,0 → 26,69 px** @1280×720 — vẫn đạt 24 nhưng biên chỉ còn 11 %.
+ *
+ * ★ Giữ **ý định thiết kế gốc**, không giữ con số: `CAO_MOI_WIP_M` ghi *"0,25 m × 20 WIP = 5 m
+ *   — cao ngang một máy lớn"*. Ở sơ đồ, "một máy" cao {@link MayTrongLo.kichThuocMm}`.caoMm`
+ *   chứ không 5 m, nên trần suy lại từ chính chiều cao ấy.
+ * ★ Tỉ số `trần / mỗi-WIP` giữ nguyên **24**, nên ánh xạ WIP→chiều cao chỉ đổi ĐƠN VỊ: trạm nào
+ *   cao hơn trạm nào, và cao hơn bao nhiêu lần, không đổi một chút nào.
+ *
+ * ⚠ Tập rỗng / cao độ rác ⇒ trả `{}` (người gọi dùng mặc định của `wipTram`), KHÔNG trả 0 —
+ *   một thang 0 làm mọi cột biến mất và màn hình trông y như "chuyền không có WIP".
+ */
+export function thangCotWipSoDo(may: readonly MayTrongLo[]): {
+  caoMoiWipM?: number;
+  caoToiDaM?: number;
+} {
+  let caoMax = 0;
+  for (const m of may) {
+    const c = Math.max(0, m.kichThuocMm.caoMm) / 1000;
+    if (Number.isFinite(c)) caoMax = Math.max(caoMax, c);
+  }
+  if (!(caoMax > 0)) return {};
+  const caoToiDaM = caoMax * TI_LE_CAO_COT_TREN_MAY;
+  return { caoToiDaM, caoMoiWipM: caoToiDaM / (CAO_TOI_DA_M / CAO_MOI_WIP_M) };
 }
