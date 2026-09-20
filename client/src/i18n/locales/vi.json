@@ -19806,7 +19806,8 @@
       "chuaDatChoMo": "Xếp chỗ trong Twin Studio để thấy máy giữa hàng xóm của nó. Buồng lái và ngăn xử lý bên dưới vẫn dùng được.",
       "ariaCanh": "Cảnh 3D của {{ten}}",
       "sucKhoe": "Sức khoẻ",
-      "dangTaiCockpit": "Đang tải buồng lái…"
+      "dangTaiCockpit": "Đang tải buồng lái…",
+      "dichQuaNho": "{{n}} máy quá nhỏ để bấm — mở ở màn Chuyền"
     },
     "line": {
       "idKhongHopLe": "Không đọc được chuyền từ đường dẫn",

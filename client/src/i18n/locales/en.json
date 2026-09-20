@@ -19826,7 +19826,8 @@
       "chuaDatChoMo": "Place it in Twin Studio to see the machine among its neighbours. The cockpit and the action panel below still work.",
       "ariaCanh": "3D scene of {{ten}}",
       "sucKhoe": "Health",
-      "dangTaiCockpit": "Loading cockpit…"
+      "dangTaiCockpit": "Loading cockpit…",
+      "dichQuaNho": "{{n}} machines too small to click — open them on the Line view"
     },
     "line": {
       "idKhongHopLe": "Could not read the line from the URL",

@@ -135,7 +135,13 @@ describe("D.2 — sổ SỐ dùng chung (một cụm chip, không hai cụm ch�
    *   nếu ai đó xoá cả điều kiện thì cả hai vế cùng mất.
    */
   it("★★★ lớp nhãn KHÔNG được `return null` khi chỉ còn chip cảnh báo — nếu không chip câm", () => {
-    const m = LOP_NHAN.match(/if \(tat \|\|([\s\S]{0,200}?)\)\s*\n?\s*return null;/);
+    /*
+     * ⚠ Cửa sổ 200 ký tự của bản cũ đã GÃY khi điều kiện dài thêm một mệnh đề (chip
+     *   `chip-dich-qua-nho`) và được xuống dòng cho dễ đọc — ca đỏ trong khi bất biến nó bảo vệ
+     *   **rộng ra** chứ không hẹp đi. Nới cửa sổ là sửa CƠ CHẾ của thước; hai khẳng định dưới
+     *   vẫn nguyên, nên ca không bị nới.
+     */
+    const m = LOP_NHAN.match(/if \(\s*tat \|\|([\s\S]{0,400}?)\)\s*\n?\s*return null;/);
     expect(m, "không tìm thấy điều kiện `return null` của LopNhan").not.toBeNull();
     const dieuKien = m![1];
     expect(dieuKien).toMatch(/hienThi\.length === 0/);

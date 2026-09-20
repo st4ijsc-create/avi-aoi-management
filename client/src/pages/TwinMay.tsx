@@ -910,6 +910,20 @@ export function ThanManMay({ machineId, camUrl = null, duongVe = null }: ThanMan
                     sanSauM={sanSauM}
                     tatNhan={false}
                     chuNhanAn={(n) => t("twin3d.vanHanh.nhanBiAn", "còn {{n}} tên bị ẩn", { n })}
+                    /* ★★★ Chip "N máy quá nhỏ để bấm" — AFFORDANCE KHÔNG CÓ CHỨC NĂNG.
+                         Đo `/twin/may/8019` @1280×720, bấm tâm từng hàng xóm: ≥24×24 px ⇒ 5/5
+                         đúng; <24×24 px ⇒ **3/33**. Tức 30/38 khối trông như đích bấm mà bấm
+                         thì không đi đâu, IM LẶNG — và màn này KHÔNG có một link `/twin/may/:id`
+                         nào, nên bấm khối là đường đổi máy tại chỗ duy nhất (§15.3.3 đường ra ⑥).
+                         Chip không làm chúng bấm được; nó chỉ tay sang màn Chuyền, nơi đích bấm
+                         nay đạt 39/39. `t()` ở trang, cảnh không gọi (RB-8.3). */
+                    chuDichQuaNho={(n) =>
+                      t(
+                        "twin3d.may.dichQuaNho",
+                        "{{n}} máy quá nhỏ để bấm — mở ở màn Chuyền",
+                        { n },
+                      )
+                    }
                     chuMatContext={t("twin3d.loi.matContext")}
                     ariaLabel={t("twin3d.may.ariaCanh", "Cảnh 3D của {{ten}}", { ten: tenMay })}
                   />

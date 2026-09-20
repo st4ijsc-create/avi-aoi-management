@@ -19834,7 +19834,8 @@
       "chuaDatChoMo": "请在 Twin Studio 中为其布置位置，即可看到机台及其相邻设备。下方的驾驶舱与处理面板仍可使用。",
       "ariaCanh": "{{ten}} 的 3D 场景",
       "sucKhoe": "健康度",
-      "dangTaiCockpit": "正在加载驾驶舱…"
+      "dangTaiCockpit": "正在加载驾驶舱…",
+      "dichQuaNho": "{{n}} 台设备太小无法点击 — 请在产线视图中打开"
     },
     "line": {
       "idKhongHopLe": "无法从地址读取产线",

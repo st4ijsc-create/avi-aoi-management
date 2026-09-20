@@ -38,6 +38,49 @@
  * kích thước thật (khung đầu tiên, trước khi DOM tồn tại) — xem {@link hopNhan}.
  */
 
+/**
+ * Đếm **đích bấm quá nhỏ** trong tập khối ĐÃ CHIẾU LÊN MÀN.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ AFFORDANCE KHÔNG CÓ CHỨC NĂNG — đo được, không suy
+ * ════════════════════════════════════════════════════════════════════════════
+ * Trên `/twin/may/:id`, mỗi khối hàng xóm là một **đích bấm thật** (§15.3.3 đường ra ⑥: *"chọn
+ * máy khác — thay tại chỗ"*), và màn ấy **không có một link `/twin/may/:id` nào** nên bấm khối
+ * là đường đổi máy duy nhất. Bấm tâm từng hàng xóm ở `/twin/may/8019` @1280×720 (n = 38):
+ *
+ *   | cạnh nhỏ | bấm đúng |
+ *   |---|---|
+ *   | **≥ 24×24 px** | **5/5 = 100 %** |
+ *   | **< 24×24 px** | **3/33 = 9 %** |
+ *
+ * Tức **30/38** khối trông như đích bấm và bấm thì **không đi đâu cả, im lặng**. Ngưỡng WCAG
+ * 2.5.8 hoá ra gần như đúng bằng chỗ phép bấm bắt đầu hỏng — một xác nhận **thực nghiệm** cho
+ * con số mà cả đợt này đã dùng.
+ *
+ * ★ Hàm này KHÔNG làm chúng bấm được; nó cho màn **khai ra** con số, để một hỏng im lặng thành
+ *   một hỏng có tên và có đường đi.
+ * ⚠ Bỏ qua khối ĐANG CHỌN: nó là tiêu điểm, không phải một đích để đổi sang. Tính cả nó là
+ *   khai thừa một cái mà người dùng không hề định bấm.
+ * ⚠ Ngưỡng TRUYỀN VÀO, không khai lại ở đây: nguồn sự thật là `nguongDonViVe` ở tầng `van-hanh`,
+ *   và `loi/` không được phụ thuộc ngược lên nó. Hai hằng `24` là G12.
+ */
+export function demDichQuaNho(
+  hopKhoi: readonly { machineId: number; hop: HinhChuNhat }[],
+  dangChon: number | null,
+  nguongPx: number,
+): number {
+  if (!Number.isFinite(nguongPx)) return 0;
+  let so = 0;
+  for (const k of hopKhoi) {
+    if (k.machineId === dangChon) continue;
+    const canhNho = Math.min(k.hop.phai - k.hop.trai, k.hop.duoi - k.hop.tren);
+    // ⚠ `<` chứ không `<=`: đúng 24 px là ĐẠT (WCAG 2.5.8 nói "ít nhất 24×24"), khai nó là
+    //   thiếu thì chip nói quá — và một chip nói quá cũng là một lời khai sai, chỉ lệch chiều.
+    if (canhNho < nguongPx) so += 1;
+  }
+  return so;
+}
+
 /** Trần cứng số nhãn DOM đồng thời (§4 — bảng ngân sách hiệu năng). */
 export const TRAN_NHAN_DOM = 30;
 

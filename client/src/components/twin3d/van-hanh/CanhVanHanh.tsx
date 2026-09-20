@@ -162,6 +162,11 @@ export interface CanhVanHanhProps {
    * nó thì truyền trần của mình — xem `manLine.tranNhanManLine`.
    */
   tranNhan?: number;
+  /**
+   * Chữ cho chip **"N máy quá nhỏ để bấm"** — xem docblock `LopNhan.chuDichQuaNho`.
+   * Thiếu ⇒ không đếm, không chip (màn nào không có đường "bấm hàng xóm" thì không cần khai).
+   */
+  chuDichQuaNho?: (n: number) => string;
   /** Chữ ĐÃ dịch cho chip "còn N tên bị ẩn" (RB-8.3 — cảnh không gọi `t()`). */
   chuNhanAn?: (n: number) => string;
   /** ★ Đợt 45 (mục 4) — chữ ĐÃ dịch cho chip khi chỉ-nhãn-bất-thường bật (lý do ẩn = chính sách). */
@@ -1241,6 +1246,9 @@ function NoiDung(props: CanhVanHanhProps & { toi: boolean }) {
         chiNhanBatThuong={chiNhanBatThuong}
         /* ★ Ngân sách nhãn THEO MÀN — thiếu thì `LopNhan` tự dùng `TRAN_NHAN_DOM`. */
         tranNhan={props.tranNhan}
+        /* ★ Chip "N máy quá nhỏ để bấm" — ngưỡng truyền XUỐNG từ đây, `loi/` không đọc ngược. */
+        chuDichQuaNho={props.chuDichQuaNho}
+        nguongDichBamPx={NGUONG_CANH_NHO_PX}
         chuNhanAn={chuNhanAn}
         chuNhanAnTheoChinhSach={props.chuNhanAnTheoChinhSach}
         chuSuCoNgoaiKhung={props.chuSuCoNgoaiKhung}
@@ -1310,6 +1318,7 @@ type PropsHam = Pick<
   | "chuSuCoNgoaiKhung"
   | "chuCanhBaoAn"
   | "chuTenBiChe"
+  | "chuDichQuaNho"
   | "onChonCum"
   | "chuNhanCum"
 >;
@@ -1347,6 +1356,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
     chuCanhBaoAn: props.chuCanhBaoAn,
     chuTenBiChe: props.chuTenBiChe,
+    chuDichQuaNho: props.chuDichQuaNho,
     onChonCum: props.onChonCum,
     chuNhanCum: props.chuNhanCum,
   });
@@ -1358,6 +1368,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
     chuSuCoNgoaiKhung: props.chuSuCoNgoaiKhung,
     chuCanhBaoAn: props.chuCanhBaoAn,
     chuTenBiChe: props.chuTenBiChe,
+    chuDichQuaNho: props.chuDichQuaNho,
     onChonCum: props.onChonCum,
     chuNhanCum: props.chuNhanCum,
   };
@@ -1389,6 +1400,8 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
   );
   const coChuTenBiChe = props.chuTenBiChe !== undefined;
   const chuTenBiCheOnDinh = useCallback((n: number) => hamRef.current.chuTenBiChe?.(n) ?? "", []);
+  const coChuDichQuaNho = props.chuDichQuaNho !== undefined;
+  const chuDichQuaNhoOnDinh = useCallback((n: number) => hamRef.current.chuDichQuaNho?.(n) ?? "", []);
 
   return (
     <CanhVanHanhOnDinh
@@ -1418,6 +1431,7 @@ export function CanhVanHanh(props: CanhVanHanhProps) {
       tatNhan={props.tatNhan}
       chiNhanBatThuong={props.chiNhanBatThuong}
       tranNhan={props.tranNhan}
+      chuDichQuaNho={coChuDichQuaNho ? chuDichQuaNhoOnDinh : undefined}
       chuMatContext={props.chuMatContext}
       ariaLabel={props.ariaLabel}
       sanCaoPx={props.sanCaoPx}

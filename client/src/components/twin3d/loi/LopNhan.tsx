@@ -61,6 +61,7 @@ import {
   type HinhChuNhat,
   type NhanUngVien,
   uocLuongRongNhanPx,
+  demDichQuaNho,
 } from "./locNhan";
 import { LOP_BADGE, docHopDaVe, docSoAn } from "./hopDaVe";
 import { laBam, lechPx } from "./phanBietBamKeo";
@@ -241,6 +242,29 @@ export interface LopNhanProps {
    */
   khoiMay?: readonly MayTrongLo[];
   /**
+   * ★★★ Chữ cho chip **"N máy quá nhỏ để bấm"** — AFFORDANCE KHÔNG CÓ CHỨC NĂNG.
+   *
+   * Đo ở `/twin/may/8019` @1280×720 (38 hàng xóm, mỗi cái là một đích bấm thật theo §15.3.3
+   * đường ra ⑥ *"chọn máy khác — thay tại chỗ"*): bấm tâm từng cái thì
+   *   · **≥ 24×24 px ⇒ 5/5 đúng (100 %)**
+   *   · **< 24×24 px ⇒ 3/33 đúng (9 %)**
+   * Tức **30/38** khối trông như đích bấm và bấm thì **không đi đâu cả, im lặng**. Và màn Máy
+   * **không có một link `/twin/may/:id` nào** — bấm khối 3D là đường đổi máy tại chỗ DUY NHẤT.
+   *
+   * ★ Chip KHÔNG làm chúng bấm được. Nó biến một hỏng **im lặng** thành một hỏng **có tên và có
+   *   đường đi** (màn Chuyền nay 39/39 bấm được) — cùng khuôn `chip-ten-bi-che`.
+   * ⚠ Máy ĐANG CHỌN không tính: nó là tiêu điểm, không phải một đích để đổi sang.
+   */
+  chuDichQuaNho?: (n: number) => string;
+  /**
+   * Ngưỡng cạnh nhỏ (px) của một đích bấm — WCAG 2.5.8 AA.
+   *
+   * ⚠ Truyền XUỐNG chứ không khai lại ở tầng này: nguồn sự thật là `nguongDonViVe` ở tầng
+   *   `van-hanh`, và `loi/` **không được** phụ thuộc ngược lên nó (sẽ thành vòng). Khai một hằng
+   *   `24` thứ hai ở đây là G12 — hai con số rồi sẽ lệch nhau trong im lặng.
+   */
+  nguongDichBamPx?: number;
+  /**
    * ★★★ Đợt 47 (N2) — BẤM LÊN NHÃN cũng chọn máy.
    *
    * Nhãn là chỉ báo `pointer-events: none` THEO THIẾT KẾ (kéo xoay camera phải xuyên
@@ -353,6 +377,8 @@ export function LopNhan({
   chuCanhBaoAn,
   chuTenBiChe,
   khoiMay,
+  chuDichQuaNho,
+  nguongDichBamPx,
   onChonNhan,
 }: LopNhanProps) {
   // ★ Đợt 45 — một chỗ chọn câu cho chip: theo chính sách khi bật (và có câu), không thì câu chật chỗ.
@@ -449,6 +475,7 @@ export function LopNhan({
    * hình học (thu panel / nới khung). Gộp chúng lại là giấu cái hành động được ngay.
    */
   const [soTenBiChe, setSoTenBiChe] = useState(0);
+  const [soDichQuaNho, setSoDichQuaNho] = useState(0);
   const tamRef = useRef(new THREE.Vector3());
   const chuKyRef = useRef("");
   /**
@@ -502,6 +529,7 @@ export function LopNhan({
       if (soAn !== 0) setSoAn(0);
       if (soSuCoNgoai !== 0) setSoSuCoNgoai(0);
       if (soTenBiChe !== 0) setSoTenBiChe(0);
+      if (soDichQuaNho !== 0) setSoDichQuaNho(0);
       return;
     }
 
@@ -564,6 +592,15 @@ export function LopNhan({
       }
     }
     hopKhoiRef.current = hopKhoiMay;
+    /*
+     * ★ Đếm trên **hộp màn hình THẬT** vừa chiếu xong, không qua một công thức thứ hai: đây đúng
+     *   là những hộp mà `locNhan` và phép bấm cùng nhìn. Một phép chiếu thứ hai ở đây là một bộ
+     *   luật thứ hai, và nó sẽ lệch khỏi cái đang vẽ trong im lặng.
+     */
+    if (chuDichQuaNho && Number.isFinite(nguongDichBamPx)) {
+      const nho = demDichQuaNho(hopKhoiMay, dangChon, nguongDichBamPx as number);
+      if (nho !== soDichQuaNho) setSoDichQuaNho(nho);
+    } else if (soDichQuaNho !== 0) setSoDichQuaNho(0);
     const kq = locNhan(ungVien, {
       tranNhan,
       chiNhanBatThuong,
@@ -741,7 +778,15 @@ export function LopNhan({
   // hàm chỉ chạy khi có ai đó gọi `invalidate()` (xoay camera, đổi dữ liệu).
   useFrame(tinhLai);
 
-  if (tat || (hienThi.length === 0 && soAn === 0 && soSuCoNgoai === 0 && soCanhBaoAn === 0 && soTenBiChe === 0))
+  if (
+    tat ||
+    (hienThi.length === 0 &&
+      soAn === 0 &&
+      soSuCoNgoai === 0 &&
+      soCanhBaoAn === 0 &&
+      soTenBiChe === 0 &&
+      soDichQuaNho === 0)
+  )
     return null;
 
   /*
@@ -795,9 +840,15 @@ export function LopNhan({
           ★ `pointer-events:none` như mọi thứ trong lớp này: nó là chỉ báo,
             không phải nút. Đổi mật độ nhãn là việc của thanh công cụ.
         */}
+        {/*
+          ⚠ ĐIỀU KIỆN BỌC NGOÀI PHẢI LIỆT KÊ **MỌI** CHIP — nếu không, chip mới dựng xong, đếm
+            xong, mà hàng chứa nó không bao giờ render. Đã dính đúng thế với
+            `chip-dich-qua-nho`: đếm ra 33 mà DOM không có gì, và **không lỗi nào nổ**.
+        */}
         {(chuNhanAn && soAn > 0) ||
         (chuSuCoNgoaiKhung && soSuCoNgoai > 0) ||
         (chuCanhBaoAn && soCanhBaoAn > 0) ||
+        (chuDichQuaNho && soDichQuaNho > 0) ||
         (chuTenBiChe && chiNhanBatThuong && soTenBiChe > 0) ? (
           <div
             data-testid="cum-chip-nhan"
@@ -893,6 +944,29 @@ export function LopNhan({
                 }}
               >
                 {chuTenBiChe(soTenBiChe)}
+              </div>
+            ) : null}
+            {/*
+              ★★★ Chip "N máy quá nhỏ để bấm". Viền hổ phách như `chip-ten-bi-che`: đây KHÔNG
+              phải một sự cố mới, nó là lời khai rằng màn đang bày ra những đích bấm mà chính nó
+              không phục vụ được. Số đo bằng hộp màn hình THẬT — xem docblock `chuDichQuaNho`.
+            */}
+            {chuDichQuaNho && soDichQuaNho > 0 ? (
+              <div
+                data-testid="chip-dich-qua-nho"
+                data-so={soDichQuaNho}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  background: "var(--muted, rgba(15,23,42,0.78))",
+                  color: "var(--warning, #b45309)",
+                  border: "1px solid var(--warning, #b45309)",
+                }}
+              >
+                {chuDichQuaNho(soDichQuaNho)}
               </div>
             ) : null}
             {chuChipAn && soAn > 0 ? (

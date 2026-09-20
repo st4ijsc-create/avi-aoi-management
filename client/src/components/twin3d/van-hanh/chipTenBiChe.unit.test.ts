@@ -107,7 +107,13 @@ describe("V3.2 — chip `chip-ten-bi-che` và điều kiện render", () => {
   });
 
   it("★★★ lớp nhãn KHÔNG `return null` khi chỉ còn MỖI chip này — nếu không chip câm", () => {
-    expect(LOP_NHAN).toMatch(/soCanhBaoAn === 0 && soTenBiChe === 0/);
+    /*
+     * ⚠ Bản cũ ghim NGUYÊN VĂN `soCanhBaoAn === 0 && soTenBiChe === 0` trên một dòng, và gãy khi
+     *   điều kiện được xuống dòng để nhận thêm mệnh đề của `chip-dich-qua-nho` — tức ca đỏ trong
+     *   khi bất biến nó bảo vệ **rộng ra**. Cho phép xuống dòng giữa hai mệnh đề; thứ vẫn bị ghim
+     *   là **hai mệnh đề ấy đứng cạnh nhau trong cùng một điều kiện**, nên không bị nới.
+     */
+    expect(LOP_NHAN).toMatch(/soCanhBaoAn === 0 &&\s*soTenBiChe === 0/);
   });
 
   it("về RỖNG thì số phải được xoá — chip không in số của một cảnh đã chết", () => {
