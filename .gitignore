@@ -246,3 +246,11 @@ vscode-extension/test-real-host-out/
 # (`runTests()` không còn trỏ `vscodeExecutablePath` vào bản đã cài — bản cài bị chặn bởi
 # mutex "vscode-updating" kẹt trên máy dev). Vài trăm MB nhị phân đã giải nén — KHÔNG commit.
 vscode-extension/.vscode-test/
+
+# ── Kho lưu trữ SỐ LIỆU ĐO (2026-09-20) ────────────────────────────────────
+# 32 thư mục `.qa-*` (9,12 GB) đã được chủ dự án duyệt xoá. Trước khi xoá, toàn bộ
+# tệp `*.json`/`*.md` — tức CON SỐ và các bản khai "bản chuẩn" — được giữ lại ở đây
+# (2.422 tệp / 40,1 MB, tức 0,4 %), để mọi trích dẫn trong `docs/superpowers/plans/`
+# không thành trích dẫn treo. Đã loại: ảnh, video, bản sao mã nguồn (`src-nen/`),
+# bản dựng (`dist-*/`), log chạy test.
+.do-luutru/
