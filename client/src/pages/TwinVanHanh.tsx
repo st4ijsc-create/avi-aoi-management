@@ -260,6 +260,7 @@ import {
   xepHangWip,
   type TinhWip,
 } from "@/components/twin3d/van-hanh/wipTram";
+import { tamTramTheoId, tinhWipLine } from "@/components/twin3d/van-hanh/manLine";
 
 /*
  * ════════════════════════════════════════════════════════════════════════════
@@ -2248,41 +2249,29 @@ export function ThanTwinVanHanh() {
    */
   const tinhWip = useMemo<TinhWip[]>(() => {
     if (lineDangXem === null || !hinhLine) return [];
-    // `khoa` của `hinhLine.tram` là `station:<id>` — nguồn toạ độ ĐÃ quy về mét.
     /*
-     * ★★★ GIỮ `y` — cao độ SÀN của trạm, thứ mà cột WIP đứng lên (`OngWip`).
-     *   Bản cũ bỏ nó ngay ở dòng này và `OngWip` đặt đáy trụ ở cốt 0 tuyệt đối. Đo ở
-     *   `/twin/line/526` (chuyền trên **tầng 3, y = 16,6 m**): **0/39** cột đứng đúng chỗ trạm,
-     *   lệch **111 px @1280×720** / **240 px @1920×1080** — người vận hành đọc "trạm này ùn"
-     *   từ cây cột đứng dưới MỘT CÁI MÁY KHÁC.
-     * ⚠ G12 — khối này là BẢN SAO của `manLine.tinhWipLine`; cả hai phải vá cùng lúc, và bản
-     *   sao ấy là món nợ CÓ TRƯỚC (không gộp trong lượt này để không đổi hành vi màn Vận hành).
+     * ★★★ G12 — GỌI `tinhWipLine`, KHÔNG CHÉP LẠI NÓ. Khối inline cũ ở đây là bản sao của
+     *   `manLine.tinhWipLine`, và bản sao ấy vừa tính tiền: cả hai bản đều bỏ `y` (cao độ sàn
+     *   trạm) ở cùng một vòng lặp, nên cột WIP đứng ở cốt 0 trong khi chuyền nằm trên tầng 3 —
+     *   **0/39** cột đúng chỗ, và phải vá **hai** tệp cho **một** khuyết tật.
+     * ★ Gộp lại KHÔNG đổi đầu ra: `tinhWipLine` cùng luật lọc, cùng `soWip = null` khi chưa đo,
+     *   cùng thứ tự sắp (`thuTu` rồi `ma`). Khác duy nhất là nó có câu dự phòng cho `ma`/`ten`/
+     *   `thuTu` thiếu — bản inline sẽ **ném** ở `a.ma.localeCompare(b.ma)` trong đúng ca đó.
+     *   Tức đây là refactor giữ nguyên đầu ra ở dữ liệu lành, và chặt hơn ở dữ liệu rách (G5/G32).
+     * ⚠ Guard `!hinhLine` GIỮ NGUYÊN: không có hình học thì không có tâm trạm, và `tinhWipLine`
+     *   sẽ rải mọi trạm về gốc toạ độ thay vì im lặng trả rỗng.
      */
-    const tamTram = new Map<number, { x: number; y: number; z: number }>();
-    for (const t of hinhLine.tram) {
-      const id = Number(t.khoa.slice("station:".length));
-      if (Number.isFinite(id)) tamTram.set(id, { x: t.tam.x, y: t.tam.y, z: t.tam.z });
-    }
-    const daDo = wipQ.isSuccess;
     const soTheoTram = new Map<number, number>();
     for (const s of wipQ.data?.stations ?? []) soTheoTram.set(s.stationId, s.wipCount);
-    return tram
-      .filter((s) => s.lineId === lineDangXem)
-      .map((s) => {
-        const v = tamTram.get(s.id);
-        return {
-          stationId: s.id,
-          ma: s.ma,
-          ten: s.ten,
-          thuTu: s.thuTu,
-          // trạm vắng mặt trong kết quả THÀNH CÔNG ⇒ 0 thật; chưa/không trả lời ⇒ null
-          soWip: daDo ? (soTheoTram.get(s.id) ?? 0) : null,
-          x: v?.x ?? 0,
-          z: v?.z ?? 0,
-          y: v?.y ?? 0,
-        };
-      })
-      .sort((a, b) => a.thuTu - b.thuTu || a.ma.localeCompare(b.ma));
+    return tinhWipLine({
+      lineId: lineDangXem,
+      tram,
+      tamTram: tamTramTheoId(hinhLine.tram),
+      // ★★★ `isSuccess`, KHÔNG `!isLoading`: 403/lỗi cũng tắt `isLoading`, và khi ấy mọi trạm
+      //   nhận `0` — lời khai *"đã kiểm tra, chuyền trống"* cho người chỉ đơn giản là không có quyền.
+      daDo: wipQ.isSuccess,
+      soTheoTram,
+    });
   }, [lineDangXem, hinhLine, tram, wipQ.isSuccess, wipQ.data]);
 
   /**

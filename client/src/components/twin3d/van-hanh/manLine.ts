@@ -213,6 +213,33 @@ export interface ThamSoTinhWipLine {
  *   giữ đúng bản gốc. (Trạm CHƯA đặt chỗ vẫn được `dungHinhLine` suy tâm từ máy
  *   của nó, nên ca này chỉ xảy ra khi trạm không có cả máy lẫn đặt chỗ.)
  */
+/**
+ * `hinhLine.tram` → bản đồ `stationId → tâm trạm (x, y, z)`.
+ *
+ * ★★★ RÚT RA VÌ NÓ ĐÃ ĐƯỢC CHÉP HAI LẦN, và bản chép ấy vừa tính tiền: cả hai trang đều bỏ `y`
+ *   ở đúng vòng lặp này, nên cột WIP đứng ở cốt 0 trong khi chuyền nằm trên tầng 3 — **0/39**
+ *   cột đúng chỗ, và phải vá **hai** tệp cho **một** khuyết tật. Một phép biến đổi chép hai lần
+ *   là hai chỗ để quên (G12).
+ *
+ * ⚠ Khoá không phân giải được (`station:abc`, chuỗi rỗng) ⇒ **BỎ QUA**, không `NaN` làm khoá:
+ *   `Map` chấp nhận `NaN` làm khoá và mọi lượt tra sau đó trượt im lặng.
+ */
+export function tamTramTheoId(
+  tram: readonly { khoa: string; tam: { x: number; y: number; z: number } }[],
+): Map<number, { x: number; y: number; z: number }> {
+  const m = new Map<number, { x: number; y: number; z: number }>();
+  for (const t of tram) {
+    if (!t.khoa.startsWith("station:")) continue;
+    const phanId = t.khoa.slice("station:".length);
+    // ⚠ `phanId === ""` PHẢI chặn riêng: `Number("")` là **0**, một số hữu hạn hoàn toàn hợp lệ,
+    //   nên `"station:"` rỗng sẽ lặng lẽ thành trạm số 0. Chính ca kiểm của tệp này bắt được.
+    if (phanId === "") continue;
+    const id = Number(phanId);
+    if (Number.isFinite(id)) m.set(id, { x: t.tam.x, y: t.tam.y, z: t.tam.z });
+  }
+  return m;
+}
+
 export function tinhWipLine(ts: ThamSoTinhWipLine): TinhWip[] {
   if (ts.lineId === null) return [];
   return ts.tram

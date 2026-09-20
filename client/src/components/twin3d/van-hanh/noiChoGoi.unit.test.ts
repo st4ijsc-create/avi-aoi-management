@@ -224,7 +224,24 @@ describe("★★★ NT-3 tại chỗ nối — 'chưa đo được' KHÔNG đư�
     // toàn khác nhau, và quy cả hai về 0 là đúng lớp lỗi CHẶN-2 (in "0 cảnh
     // báo" cho người không có quyền thấy cảnh báo).
     expect(TRANG).toContain("wipQ.isSuccess");
-    expect(TRANG).toContain("daDo ? (soTheoTram.get(s.id) ?? 0) : null");
+    /*
+     * ★★★ CA NÀY ĐÃ NÂNG HẠNG — từ đo VĂN BẢN lên đo GIÁ TRỊ.
+     *
+     * Nó từng ghim nguyên văn `daDo ? (soTheoTram.get(s.id) ?? 0) : null` **trong trang**. Biểu
+     * thức ấy nay nằm trong `manLine.tinhWipLine`: khối inline của trang là BẢN SAO của hàm đó
+     * (G12), và bản sao ấy vừa tính tiền — cả hai bản cùng đánh rơi `y` (cao độ sàn trạm) nên
+     * **0/39** cột WIP đứng đúng chỗ, phải vá HAI tệp cho MỘT khuyết tật.
+     *
+     * Thứ ca này bảo vệ — *"`soWip` chỉ là 0 khi truy vấn ĐÃ THÀNH CÔNG"* — **không đổi một
+     * chữ**, và nay được chứng minh **bằng giá trị** ở `tamTramMotNoi.unit.test.ts` (chạy hàm
+     * thật, so `null` với `0`) thay vì bằng chính tả. Ở đây chỉ còn giữ khớp nối: trang phải
+     * truyền `daDo: wipQ.isSuccess` — **không** `!isLoading`, vì 403/lỗi cũng tắt `isLoading`
+     * và khi ấy mọi trạm nhận `0`, tức lời khai *"đã kiểm tra, chuyền trống"* cho một người chỉ
+     * đơn giản là không có quyền (CHẶN-2).
+     */
+    expect(TRANG).toMatch(/daDo:\s*wipQ\.isSuccess/);
+    expect(TRANG).not.toMatch(/daDo:\s*!wipQ\.isLoading/);
+    expect(TRANG).toContain("tinhWipLine({");
   });
 
   it("★★★ chỗ gọi `DaiLine` dùng `?? null`, KHÔNG `?? 0`", () => {

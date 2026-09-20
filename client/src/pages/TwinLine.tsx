@@ -190,6 +190,7 @@ import {
   idLineTuDuongDan,
   mayCuaLine,
   phamViCuaManLine,
+  tamTramTheoId,
   tinhWipLine,
   tomTatLine,
 } from "@/components/twin3d/van-hanh/manLine";
@@ -747,14 +748,9 @@ export function ThanManLine({
 
   /* ── WIP: một phép ghép, hai người đọc (§11.5 + G12) ─────────────────── */
   const tamTram = useMemo(() => {
-    const m = new Map<number, { x: number; y: number; z: number }>();
-    for (const s of hinhLine?.tram ?? []) {
-      const id = Number(s.khoa.slice("station:".length));
-      // ★★★ GIỮ `y` — cao độ sàn của trạm. Bản cũ bỏ nó ở đúng dòng này, và con số bị bỏ ấy
-      //   là thứ làm 39/39 cột WIP rơi xuống cốt 0 trong khi chuyền nằm trên tầng 3.
-      if (Number.isFinite(id)) m.set(id, { x: s.tam.x, y: s.tam.y, z: s.tam.z });
-    }
-    return m;
+    // ★ MỘT phép biến đổi, MỘT nơi (`tamTramTheoId`) — nó từng được chép ở hai trang và cả hai
+    //   bản chép đều bỏ mất `y`, làm 39/39 cột WIP rơi xuống cốt 0.
+    return tamTramTheoId(hinhLine?.tram ?? []);
   }, [hinhLine]);
 
   const tinhWip = useMemo(
