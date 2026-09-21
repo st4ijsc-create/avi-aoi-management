@@ -386,16 +386,35 @@ describe("§6 — NGƯỜI DÙNG PHẢI THẤY: chân nguồn nói đúng tệp,
     expect(s).toContain("server/auth.ts");
     expect(s).toContain("server/routers.ts");
     expect(s).toContain("3000/9000");
-    expect(s).toContain("ĐỌC TỪ ĐĨA");
+    // ★ G10/P9 2026-09-21: câu cũ "ĐỌC TỪ ĐĨA / dựa trên" khai MẠNH HƠN SỰ THẬT — xem dưới.
+    expect(s).toContain("NGỮ CẢNH");
+    // ★ ĐIỂM liên quan phải hiện ra: đây là thứ biến lời khai không-kiểm-được thành sự thật kiểm được.
+    expect(s).toMatch(/\(0\.\d{2}\)/);
+  });
+
+  /**
+   * ★★★ G10/P9 (audit 2026-09-21) — CHÂN NGUỒN **KHÔNG ĐƯỢC KHẲNG ĐỊNH QUÁ**.
+   * Đo được 3/3 lượt: hỏi "cộng hai số" ⇒ chân nguồn dẫn `twin3d/van-hanh/phamViCanh.ts`;
+   * hỏi `tinhTyLeLoi` ⇒ dẫn `aiCodingLoiViTri.ts` + `productRouters.ts`. Không tệp nào liên quan.
+   * Ngưỡng NẠP là 0,25 nên chuyện đó là THƯỜNG — cái sai là CÂU CHỮ: "Câu trả lời DỰA TRÊN…" /
+   * "Answer GROUNDED IN…" là khẳng định về CÂU TRẢ LỜI mà không gì ở đây kiểm được.
+   */
+  it("★★★ KHÔNG khẳng định câu trả lời 'dựa trên' các tệp — chỉ khai chúng được NẠP làm ngữ cảnh", () => {
+    for (const lang of ["vi", "en", "zh"] as const) {
+      const s = chanNguonNguCanhMa(TEP, lang);
+      expect(s).not.toMatch(/Câu trả lời dựa trên/i);
+      expect(s).not.toMatch(/grounded in/i);
+      expect(s).not.toMatch(/回答依据/);
+    }
   });
 
   for (const lang of ["vi", "en", "zh"] as const) {
     it(`★★ locale ${lang} có câu riêng (không rơi về tiếng Việt)`, () => {
       const s = chanNguonNguCanhMa(TEP, lang);
       expect(s).toContain("server/auth.ts");
-      if (lang === "en") expect(s).toContain("read from disk this turn");
-      if (lang === "zh") expect(s).toContain("本轮从磁盘读取");
-      if (lang === "vi") expect(s).toContain("ĐỌC TỪ ĐĨA trong lượt này");
+      if (lang === "en") expect(s).toContain("loaded as CONTEXT this turn");
+      if (lang === "zh") expect(s).toContain("作为上下文载入的文件");
+      if (lang === "vi") expect(s).toContain("nạp làm NGỮ CẢNH trong lượt này");
     });
   }
 });

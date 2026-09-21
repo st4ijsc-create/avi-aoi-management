@@ -581,14 +581,35 @@ export function chanNguonNguCanhMa(tep: readonly TepNguCanh[], lang: "vi" | "en"
             ? ` — 仅前 ${t.kyTuVaoPrompt}/${t.byteTrenDia} 字节`
             : ` — chỉ ${t.kyTuVaoPrompt}/${t.byteTrenDia} byte đầu`
         : "";
-    return `• \`${t.duong}\`${cat}`;
+    /**
+     * ★★★ G10/P9 (audit 2026-09-21) — HIỆN ĐIỂM LIÊN QUAN. Đây là phần biến một lời khai
+     * KHÔNG KIỂM ĐƯỢC thành một sự thật KIỂM ĐƯỢC: người đọc tự thấy tệp được chọn vì điểm 0,70
+     * hay vì điểm 0,26 (sát ngưỡng nạp 0,25).
+     */
+    return `• \`${t.duong}\` (${t.diem.toFixed(2)})${cat}`;
   });
+  /**
+   * ★★★ G10/P9 (audit 2026-09-21) — **CÂU CŨ KHAI MẠNH HƠN SỰ THẬT.**
+   *
+   * Cũ: *"Câu trả lời DỰA TRÊN các tệp sau"* / *"Answer GROUNDED IN these files"*.
+   * Đó là một khẳng định về **CÂU TRẢ LỜI**, và không gì ở đây kiểm được nó. Sự thật hẹp hơn:
+   * đây là các tệp mục lục chấm điểm cao nhất và server đã NẠP vào prompt — model có dùng tới
+   * hay không thì khối này không biết.
+   *
+   * Đo được 3/3 lượt: hỏi *"cộng hai số"* ⇒ dẫn `twin3d/van-hanh/phamViCanh.ts`;
+   * hỏi `tinhTyLeLoi` ⇒ dẫn `aiCodingLoiViTri.ts` + `productRouters.ts`. Không tệp nào liên quan.
+   * Ngưỡng nạp là **0,25** (`NGUONG_DIEM_NGU_CANH_MA`) — rất thấp, nên chuyện này là THƯỜNG.
+   *
+   * ⚠ Bản vá KHÔNG dựng một ngưỡng trích dẫn thứ hai: một con số mới mà chưa đo thì chỉ là đổi
+   *   một lời khai sai lấy một lời khai chưa kiểm. Nó sửa đúng cái sai được: **câu chữ**, và
+   *   đưa ra **ĐIỂM** để người đọc tự phán.
+   */
   const dau =
     lang === "en"
-      ? "📄 Answer grounded in these files, read from disk this turn:"
+      ? "📄 Files loaded as CONTEXT this turn (relevance score; not a claim that the answer used them):"
       : lang === "zh"
-        ? "📄 本轮回答依据以下文件（本轮从磁盘读取）："
-        : "📄 Câu trả lời dựa trên các tệp sau, ĐỌC TỪ ĐĨA trong lượt này:";
+        ? "📄 本轮作为上下文载入的文件（相关性分数；不代表回答一定用到）："
+        : "📄 Các tệp được nạp làm NGỮ CẢNH trong lượt này (điểm liên quan — KHÔNG khẳng định câu trả lời có dùng tới):";
   return `\n\n${dau}\n${dong.join("\n")}`;
 }
 
