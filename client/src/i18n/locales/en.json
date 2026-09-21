@@ -19398,7 +19398,7 @@
       "files": "Files",
       "viewer": "Viewer",
       "chat": "Chat",
-      "terminalTab": "Terminal",
+      "terminalTab": "Commands & Logs",
       "problemsTab": "Problems",
       "problemsCount": "{{n}}"
     },

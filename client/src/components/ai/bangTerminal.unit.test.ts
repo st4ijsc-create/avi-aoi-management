@@ -271,3 +271,63 @@ describe("§8 MÃ THOÁT · QUÁ HẠN · THỜI LƯỢNG", () => {
     expect(html).not.toContain("data-thoi-luong");
   });
 });
+
+/**
+ * ★★★ §7 · G17 (audit 2026-09-22 · phản hồi chủ dự án) — **Ô GÕ LỆNH.**
+ *
+ * Chủ dự án: *"Terminal trong /ai-coding-workspace không đúng với terminal thông thường của
+ * vscode … vốn dĩ terminal là để gõ lệnh, để check log khi chạy phần mềm"*. Đúng: pane cũ chỉ
+ * ĐỌC được. Bản vá cho gõ — nhưng KHÔNG mở một shell tự do, vì `run_command` chỉ nhận 11 khuôn
+ * và mọi lượt đều qua cửa duyệt HITL.
+ *
+ * Hai vế của lưới này, và vế thứ hai mới là vế giữ an toàn:
+ *   1. gõ được, và trang nhận được đúng chuỗi đã gõ;
+ *   2. bảng vẫn **0 mutation** — không một đường chạy thẳng nào mọc ra ở đây.
+ */
+describe("§7 Ô GÕ LỆNH — G17", () => {
+  it("★★★ vắng `onGoLenh` ⇒ KHÔNG có ô nhập (tương thích ngược từng byte với 19 ca cũ)", () => {
+    expect(veBang()).not.toContain("data-o-go-lenh");
+  });
+
+  it("★★★ có `onGoLenh` ⇒ hiện ô nhập và nút gửi duyệt", () => {
+    const html = veBang({ onGoLenh: () => {} } as never);
+    expect(html).toContain("data-o-go-lenh");
+    expect(html).toContain("data-nut-go-lenh");
+  });
+
+  it("★★★ PHẢI NÓI THẲNG đây không phải shell tự do — người dùng không được hiểu nhầm lần nữa", () => {
+    const html = veBang({ onGoLenh: () => {} } as never);
+    expect(html).toMatch(/KHÔNG phải shell tự do|11 khuôn lệnh/);
+    expect(html).toMatch(/Duyệt|duyệt/);
+  });
+
+  it("★ tiêu đề pane nói đúng bản chất: nhật ký lệnh, không phải 'Terminal'", () => {
+    expect(veBang()).toContain("Lệnh &amp; Nhật ký");
+  });
+
+  it("★ có danh sách trắng ⇒ hiện số lệnh gõ được + datalist gợi ý", () => {
+    const html = veBang({
+      onGoLenh: () => {},
+      lenhChoPhep: [
+        { nhan: "dotnet test <đường-dẫn>", ghiDia: false },
+        { nhan: "dotnet format <đường-dẫn>", ghiDia: true },
+      ],
+    } as never);
+    expect(html).toContain("ds-lenh-cho-phep");
+    expect(html).toContain("xem 2 lệnh gõ được");
+  });
+
+  it("★★★ BẢNG VẪN 0 MUTATION: không form, không action, không đường chạy thẳng", () => {
+    const html = veBang({
+      onGoLenh: () => {},
+      lenhChoPhep: [{ nhan: "git status", ghiDia: false }],
+    } as never);
+    expect(html).not.toMatch(/<form[\s>]/);
+    expect(html).not.toContain("action=");
+  });
+
+  it("★ đang stream ⇒ ô nhập và nút bị KHOÁ (không xếp chồng hai lượt gửi)", () => {
+    const html = veBang({ dangGui: true, onGoLenh: () => {} } as never);
+    expect(html).toMatch(/data-o-go-lenh[\s\S]*?disabled/);
+  });
+});

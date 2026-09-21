@@ -62,6 +62,7 @@
  * `aiCodingWorkspacePhien.unit.test.ts` đo cả ba trên chính mã nguồn file này.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ThanhTrangThaiAiLocal } from "@/components/aiCoding/ThanhTrangThaiAiLocal";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageContainer } from "@/components/patterns";
@@ -1290,6 +1291,11 @@ export default function AICodingWorkspace() {
    */
   const modelQ = trpc.repoWorkspace.modelDangDung.useQuery(undefined, { staleTime: 5 * 60_000 });
   /**
+   * ★ G17 (2026-09-22) — danh sách trắng lệnh, để pane "Lệnh & Nhật ký" NÓI THẲNG cái gì gõ được.
+   * Hằng của mã nguồn ⇒ cache dài; server vẫn là hàng rào, đây chỉ là bảng chỉ dẫn.
+   */
+  const dsLenhChoPhepQ = trpc.repoWorkspace.danhSachLenhChoPhep.useQuery(undefined, { staleTime: 30 * 60_000 });
+  /**
    * ★★★ G3 (audit 2026-09-21 · P3) — ĐỒNG HỒ NGÂN SÁCH. `refetchInterval` 20 s là cố ý: sổ chỉ đổi
    * khi CHÍNH người này gọi tool đọc, nên không cần realtime; 20 s đủ để huy hiệu kịp đổi màu
    * trước khi người dùng đâm vào tường. Thủ tục server CHỈ ĐỌC và không tiêu byte nào.
@@ -2088,7 +2094,15 @@ export default function AICodingWorkspace() {
 
   return (
     <DashboardLayout>
-      <PageContainer fluid className="p-0">
+      <PageContainer
+        fluid
+        /* ★ G14 (2026-09-22) — KHÔNG gian là tài nguyên khan hiếm nhất của một IDE.
+           Đo được ở 1920×1080: vùng làm việc bắt đầu ở y=291 ⇒ 27% chiều cao màn hình là khung
+           vỏ. `p-0` cũ KHÔNG thắng `md:px-6 md:py-6` của PageContainer (biến thể `md:` thắng ở
+           mọi màn ≥768px), nên trang vẫn mất 24px mỗi bên cộng nhịp dọc 24px. Ba lớp dưới đây
+           tắt cả ba, trả lại ~48px chiều cao và 48px bề ngang cho MÃ. */
+        className="p-0 md:p-0 space-y-0"
+      >
         {/* Đầu trang */}
         <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
           <FolderTree className="h-5 w-5 text-primary" />
@@ -2098,6 +2112,32 @@ export default function AICodingWorkspace() {
           </span>
           {/* ★ UX (B2) — ba huy hiệu trần trụi ("đọc"/"chạy lệnh"/"Cục bộ") không tự giải nghĩa cho
               người lần đầu; tooltip nói chúng LÀ GÌ (Radix Tooltip, provider đã bọc cả App). */}
+          {/* ★★★ 2026-08-24 · RIBBON TÁC VỤ — MỘT HÀNG nút icon NGOÀI `khungRef`, giữa đầu trang và
+              khung làm việc. Đặt TRƯỚC `khungRef` là cố ý: `useKhungVua` đo ĐỈNH tuyệt đối của
+              `khungRef`, nên chiều cao khung TỰ trừ đi phần ribbon (đã xác minh) — KHÔNG chạm
+              `khungVuaManHinh.ts`. Nút "Chạy kiểm chứng" đi qua ĐÚNG đường ba nút gợi ý (chat →
+              propose → NGƯỜI DUYỆT → chạy); ribbon KHÔNG nới quyền (ẩn khi thiếu `coTheChayKiemChung`). */}
+          <RibbonTacVu
+            hep={hep}
+            dangStream={isStreaming}
+            coTheChayKiemChung={canExec && !!goiYKiemChung}
+            lenhKiemChung={lenhKiemChungHienThi}
+            onLamMoiCay={lamMoiCay}
+            onChayKiemChung={chayKiemChungNhanh}
+            onDung={stopKbStream}
+            onNhayTep={() => setKhungHep("tep")}
+            onNhayChat={() => setKhungHep("chat")}
+            duoiChat={duoiChat}
+            onToggleTerminal={() => setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"))}
+            onToggleProblems={() => setDuoiChat((v) => (v === "problems" ? "dong" : "problems"))}
+            soVanDe={soVanDe}
+            onPhienMoi={phienMoi}
+            /* ★ G14 (2026-09-22) — ribbon gộp vào ĐÚNG hàng đầu trang thay vì chiếm hàng thứ hai:
+               cả hai đều là một dải nút cao ~40px, và ở 1920px hàng đầu còn thừa chỗ. Giữ nguyên vị
+               trí TRƯỚC `khungRef` nên phép đo `useKhungVua` (đo đỉnh tuyệt đối) không đổi một byte;
+               khung làm việc chỉ đơn giản CAO THÊM đúng phần hàng vừa bỏ đi. */
+            className="shrink-0"
+          />
           <div className="ml-auto flex items-center gap-1.5">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -2119,56 +2159,13 @@ export default function AICodingWorkspace() {
                   : t("repoWs.badgeTip.execOff", "Tài khoản KHÔNG có quyền CHẠY LỆNH (ai_repo_exec) — gợi ý chạy test bị ẩn; server vẫn chặn nếu gọi thẳng.")}
               </TooltipContent>
             </Tooltip>
-            {tokenQ.data && (tokenQ.data.tokensIn > 0 || tokenQ.data.tokensOut > 0) && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="outline" data-huy-hieu-token className="cursor-help text-[10px] tabular-nums">
-                    {t("repoWs.model.tokens", "{{vao}}↓ {{ra}}↑", {
-                      vao: tokenQ.data.tokensIn >= 1000 ? `${(tokenQ.data.tokensIn / 1000).toFixed(1)}k` : tokenQ.data.tokensIn,
-                      ra: tokenQ.data.tokensOut >= 1000 ? `${(tokenQ.data.tokensOut / 1000).toFixed(1)}k` : tokenQ.data.tokensOut,
-                    })}
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[300px] text-xs">
-                  {t("repoWs.model.tokensTip", "Lượt VỪA RỒI: {{vao}} token vào · {{ra}} token ra · {{giay}}s ({{model}}). Ngữ cảnh vào càng lớn thì model local càng chậm — đây là con số của lượt gần nhất, không phải tổng phiên.", {
-                    vao: tokenQ.data.tokensIn, ra: tokenQ.data.tokensOut,
-                    giay: (tokenQ.data.latencyMs / 1000).toFixed(1), model: tokenQ.data.model,
-                  })}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {/* ★★★ G3 (audit 2026-09-21 · P3) — ĐỒNG HỒ NGÂN SÁCH HỘP CÁT.
-                Trần byte/15 phút là một quyết định ĐÚNG (chống rò), nhưng trước lượt này nó VÔ HÌNH:
-                đo sống, người dùng chỉ biết mình cạn khi cú bấm mở một tệp 1 KB trả về "đã rút hết
-                ngân sách", rồi tác nhân MÙ và CÂM cho tới khi cửa sổ đặt lại. Huy hiệu này chỉ hiện
-                khi đã tiêu ≥1% (im lặng lúc còn nhiều, kêu khi sắp hết) và ĐỔI MÀU ở ngưỡng 80%. */}
-            {nganSachQ.data && nganSachQ.data.tran > 0 && nganSachQ.data.phanTramDaDung >= 1 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge
-                    variant={nganSachQ.data.phanTramDaDung >= 80 ? "destructive" : "outline"}
-                    data-huy-hieu-ngan-sach
-                    className="cursor-help text-[10px] tabular-nums"
-                  >
-                    {t("repoWs.budget.badge", "đọc {{pc}}%", { pc: nganSachQ.data.phanTramDaDung })}
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[320px] text-xs">
-                  {t(
-                    "repoWs.budget.tip",
-                    "Ngân sách ĐỌC của hộp cát: đã dùng {{daDung}} / {{tran}} KB trong cửa sổ {{phut}} phút. Hết ngân sách thì tác nhân KHÔNG đọc được tệp và KHÔNG chạy được kiểm chứng cho tới khi sổ đặt lại{{datLai}}. Đếm theo byte RỜI hộp cát (chống rò dữ liệu), không phải byte đọc từ đĩa.",
-                    {
-                      daDung: Math.round(nganSachQ.data.daDung / 1024),
-                      tran: Math.round(nganSachQ.data.tran / 1024),
-                      phut: Math.round(nganSachQ.data.cuaSoMs / 60000),
-                      datLai: nganSachQ.data.datLaiSauMs > 0
-                        ? ` (còn ~${Math.ceil(nganSachQ.data.datLaiSauMs / 60000)} phút)`
-                        : "",
-                    },
-                  )}
-                </TooltipContent>
-              </Tooltip>
-            )}
+            {/* ★★★ G14 (audit 2026-09-22 · UI) — THANH TRẠNG THÁI CỖ MÁY AI LOCAL.
+                THAY hai huy hiệu rời (token lượt cuối · ngân sách đọc) bằng MỘT hàng gom đủ sáu ô
+                mà một người lập trình AI local cần: máy · model · VRAM còn · độ trễ · tok/s ·
+                ngân sách. Vì sao gộp chứ không thêm: hai huy hiệu cũ đã nằm trong sáu ô này, để cả
+                hai bản là nhân đôi cùng một sự thật ngay cạnh nhau — đúng thứ làm màn hình rối mà
+                chủ dự án nêu. Lý lẽ đầy đủ (ba sự cố im lặng đã đo) ở đầu `ThanhTrangThaiAiLocal`. */}
+            <ThanhTrangThaiAiLocal />
             {/* ★★★ G4 (audit 2026-09-21 · P4) — BỘ CHỌN TẦNG MODEL.
                 Claude có `/model`, Cursor có dropdown; AI Local trước lượt này KHÔNG CÓ GÌ — đổi
                 model đòi sửa `.env` + khởi động lại server. Lựa chọn đi theo TỪNG yêu cầu qua
@@ -2208,28 +2205,6 @@ export default function AICodingWorkspace() {
           </div>
         </div>
 
-        {/* ★★★ 2026-08-24 · RIBBON TÁC VỤ — MỘT HÀNG nút icon NGOÀI `khungRef`, giữa đầu trang và
-            khung làm việc. Đặt TRƯỚC `khungRef` là cố ý: `useKhungVua` đo ĐỈNH tuyệt đối của
-            `khungRef`, nên chiều cao khung TỰ trừ đi phần ribbon (đã xác minh) — KHÔNG chạm
-            `khungVuaManHinh.ts`. Nút "Chạy kiểm chứng" đi qua ĐÚNG đường ba nút gợi ý (chat →
-            propose → NGƯỜI DUYỆT → chạy); ribbon KHÔNG nới quyền (ẩn khi thiếu `coTheChayKiemChung`). */}
-        <RibbonTacVu
-          hep={hep}
-          dangStream={isStreaming}
-          coTheChayKiemChung={canExec && !!goiYKiemChung}
-          lenhKiemChung={lenhKiemChungHienThi}
-          onLamMoiCay={lamMoiCay}
-          onChayKiemChung={chayKiemChungNhanh}
-          onDung={stopKbStream}
-          onNhayTep={() => setKhungHep("tep")}
-          onNhayChat={() => setKhungHep("chat")}
-          duoiChat={duoiChat}
-          onToggleTerminal={() => setDuoiChat((v) => (v === "terminal" ? "dong" : "terminal"))}
-          onToggleProblems={() => setDuoiChat((v) => (v === "problems" ? "dong" : "problems"))}
-          soVanDe={soVanDe}
-          onPhienMoi={phienMoi}
-          className="shrink-0 border-b px-3 py-1"
-        />
 
         {/* ⚠ BỐ CỤC: ba khung (cây tệp · trình xem · hội thoại) giữ nguyên thứ tự và vai trò.
             Cột phiên của doc 79 ĐÃ THU thành nút + popover trên thanh đầu Hội thoại (2026-08-23,
@@ -3297,9 +3272,9 @@ export default function AICodingWorkspace() {
                   aria-label={t("repoWs.chat.placeholder", "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…")}
                 />
                 {isStreaming ? (
-                  <Button variant="destructive" size="icon" className="shrink-0" onClick={stopKbStream}><StopCircle className="h-4 w-4" /></Button>
+                  <Button variant="destructive" size="icon" className="shrink-0" onClick={stopKbStream} aria-label={t("repoWs.chat.stopAria", "Dừng lượt đang chạy")}><StopCircle className="h-4 w-4" /></Button>
                 ) : (
-                  <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim()}><Send className="h-4 w-4" /></Button>
+                  <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim()} aria-label={t("repoWs.chat.sendAria", "Gửi câu hỏi cho tác nhân")}><Send className="h-4 w-4" /></Button>
                 )}
               </div>
               <p className="mt-1 px-1 text-[10px] text-muted-foreground">
@@ -3330,7 +3305,7 @@ export default function AICodingWorkspace() {
               )}
             >
               <Terminal className="h-3.5 w-3.5" />
-              {t("repoWs.pane.terminalTab", "Terminal")}
+              {t("repoWs.pane.terminalTab", "Lệnh & Nhật ký")}
               {lenhDaChay.length > 0 && (
                 <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{lenhDaChay.length}</span>
               )}
@@ -3373,6 +3348,12 @@ export default function AICodingWorkspace() {
                   luotSong={dangChayLenhSong ? songQ.data ?? null : null}
                   onChayLai={(lenh) => handleSend(t("repoWs.terminal.rerunPrompt", "chạy {{lenh}}", { lenh }))}
                   onXoaLichSu={() => setLenhDaChay([])}
+                  /* ★★★ G17 (2026-09-22 · phản hồi chủ dự án) — GÕ ĐƯỢC LỆNH.
+                     Đường đi y HỆT nút chạy-nhanh và nút chạy-lại: dựng câu → `handleSend` →
+                     model → propose → **cùng thẻ duyệt HITL**. Không một đường chạy thẳng nào
+                     mọc ra ở đây, nên bất biến "0 mutation trong BangTerminal" không đổi. */
+                  onGoLenh={(lenh) => handleSend(t("repoWs.terminal.rerunPrompt", "chạy {{lenh}}", { lenh }))}
+                  lenhChoPhep={dsLenhChoPhepQ.data ?? undefined}
                 />
               ) : (
                 <BangProblems

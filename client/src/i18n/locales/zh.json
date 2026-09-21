@@ -19406,7 +19406,7 @@
       "files": "文件",
       "viewer": "查看器",
       "chat": "对话",
-      "terminalTab": "终端",
+      "terminalTab": "命令与日志",
       "problemsTab": "问题",
       "problemsCount": "{{n}}"
     },

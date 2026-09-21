@@ -14833,7 +14833,7 @@
         "fillCorpusAria": "Điền tên corpus gợi ý \"{{corpus}}\" vào ô Tên corpus",
         "step1Note": "Bấm một gợi ý chỉ ĐIỀN tên vào ô \"Tên corpus\" bên dưới (không tự tạo corpus rỗng) — corpus chỉ thật sự tồn tại sau khi tài liệu đầu tiên được nạp vào nó.",
         "currentlySelected": "Đang chọn:",
-        "step1WebWarning": "Miền lập trình web/app (C#, React, Node.js, HTML, CSS, JavaScript): model đã biết sẵn các ngôn ngữ này từ lúc huấn luyện — nạp tài liệu cho miền này KHÔNG dạy thêm gì mà còn làm NHIỄU câu trả lời (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi ngoài miền tài liệu hãng bị gán trích dẫn lạc đề). Đừng mất công tạo corpus cho miền này.",
+        "step1WebWarning": "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN là vô ích và gây nhiễu — model đã nắm cú pháp từ lúc huấn luyện (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi bị gán trích dẫn lạc đề). Nhưng tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN thì có ích thật, vì model sai ở đúng tầng đó: đo 2026-09-22, nó sinh reader.GetInt32(\"MaHocSinh\") trong khi SqlDataReader.GetInt32 chỉ nhận SỐ THỨ TỰ CỘT — một lỗi gốc lặp 5 lần, đủ để dotnet build chặn cả tệp. ⇒ Nạp tài liệu tra cứu API, chuẩn mã và quy ước; đừng nạp giáo trình.",
         "step2Title": "2. Chọn tệp",
         "step2Accepts": "Nhận: {{formats}}",
         "step2AcceptsUrl": ", URL (dán link ở khung bên phải)",
@@ -19353,7 +19353,7 @@
       }
     },
     "terminal": {
-      "title": "Kết quả lệnh",
+      "title": "Lệnh & Nhật ký",
       "empty": "Chưa có lệnh nào chạy. Duyệt một lệnh kiểm chứng để thấy đầu ra ở đây.",
       "count": "{{n}} lệnh",
       "exitCode": "Mã thoát: {{code}}",
@@ -19378,7 +19378,7 @@
       "files": "Tệp",
       "viewer": "Trình xem",
       "chat": "Hội thoại",
-      "terminalTab": "Terminal",
+      "terminalTab": "Lệnh & Nhật ký",
       "problemsTab": "Vấn đề",
       "problemsCount": "{{n}}"
     },

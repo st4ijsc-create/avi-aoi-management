@@ -93,15 +93,74 @@ export interface KbCorpusDomainSuggestion {
   corpus: string;
   /** Nhãn hiển thị trên nút gợi ý. */
   label: string;
+  /**
+   * ★ G15 (2026-09-22) — nhóm để xếp nút thành HÀNG CÓ NGHĨA thay vì một dải phẳng. Một dải 15
+   * nút không nhóm thì người dùng phải đọc hết mới biết có cái mình cần hay không.
+   */
+  nhom: "ngon-ngu" | "cong-nghiep" | "du-an";
 }
 
+/**
+ * ★★★ G15 (audit 2026-09-22) — **CORPUS CHO NGÔN NGỮ LẬP TRÌNH, ĐỦ MIỀN.**
+ *
+ * Trước bản này danh sách chỉ có năm miền CÔNG NGHIỆP, và màn hình còn khuyên thẳng rằng nạp tài
+ * liệu lập trình *"KHÔNG dạy thêm gì"*. Đo được trong đợt audit ba dự án thật (2026-09-22) cho
+ * thấy lời khuyên ấy **quá mạnh**: model nắm cú pháp, nhưng sai ở tầng **API**. Ca cụ thể, ổn định
+ * 0/3 lượt: nó sinh `reader.GetInt32("MaHocSinh")` — `SqlDataReader.GetInt32` nhận **số thứ tự
+ * cột**, không nhận tên cột. Một lỗi gốc lặp 5 lần, và `dotnet build` chặn cả tệp.
+ *
+ * Đó chính là loại sai mà một corpus **tham chiếu API + quy ước** chữa được, và là loại sai mà
+ * "model đã biết ngôn ngữ này rồi" không chữa nổi. Phân biệt phải nói rõ:
+ *   • tài liệu **tham chiếu API / quy ước dự án** ⇒ CÓ ÍCH (đúng chỗ model sai);
+ *   • giáo trình nhập môn chung chung ⇒ vô ích và gây nhiễu (đúng cảnh báo cũ đã đo).
+ *
+ * ⚠ Đây vẫn chỉ là NHÃN GỢI Ý: bấm một nút chỉ ĐIỀN tên vào ô "Tên corpus". Không nút nào gọi
+ *   `createCorpus`, nên thêm bao nhiêu gợi ý cũng KHÔNG đẻ ra một corpus rỗng nào trên server.
+ * ⚠ C++ nằm trong danh sách dù chủ dự án đã hoãn phần C++ — một cái tên gợi ý không tốn gì, và
+ *   ngày cần tới thì nó đã ở đúng khuôn `<miền>-<hãng>` thay vì được đặt tên tuỳ hứng.
+ */
 export const KB_CORPUS_DOMAIN_SUGGESTIONS: readonly KbCorpusDomainSuggestion[] = [
-  { corpus: "plc-ladder-mitsubishi", label: "PLC ladder — Mitsubishi" },
-  { corpus: "plc-ladder-omron", label: "PLC ladder — Omron" },
-  { corpus: "robot-fanuc", label: "Robot 6 trục — Fanuc" },
-  { corpus: "robot-mitsubishi", label: "Robot 6 trục — Mitsubishi" },
-  { corpus: "cobot-techman", label: "Cobot — Techman" },
+  // ── Ngôn ngữ & nền tảng lập trình ─────────────────────────────────────────────
+  { corpus: "csharp-dotnet", label: "C# / .NET", nhom: "ngon-ngu" },
+  { corpus: "sql-tsql-sqlserver", label: "SQL Server — T-SQL", nhom: "ngon-ngu" },
+  { corpus: "sql-postgresql", label: "PostgreSQL", nhom: "ngon-ngu" },
+  { corpus: "typescript-node", label: "TypeScript / Node.js", nhom: "ngon-ngu" },
+  { corpus: "react-frontend", label: "React / frontend", nhom: "ngon-ngu" },
+  { corpus: "python", label: "Python", nhom: "ngon-ngu" },
+  { corpus: "cpp", label: "C++", nhom: "ngon-ngu" },
+  // ── Miền công nghiệp ──────────────────────────────────────────────────────────
+  { corpus: "plc-ladder-mitsubishi", label: "PLC ladder — Mitsubishi", nhom: "cong-nghiep" },
+  { corpus: "plc-ladder-omron", label: "PLC ladder — Omron", nhom: "cong-nghiep" },
+  { corpus: "plc-st-iec61131", label: "PLC Structured Text — IEC 61131-3", nhom: "cong-nghiep" },
+  { corpus: "gcode-cnc", label: "G-code CNC", nhom: "cong-nghiep" },
+  { corpus: "zmotion", label: "ZMotion", nhom: "cong-nghiep" },
+  { corpus: "robot-fanuc", label: "Robot 6 trục — Fanuc", nhom: "cong-nghiep" },
+  { corpus: "robot-mitsubishi", label: "Robot 6 trục — Mitsubishi", nhom: "cong-nghiep" },
+  { corpus: "cobot-techman", label: "Cobot — Techman", nhom: "cong-nghiep" },
+  // ── Quy ước của chính dự án này ───────────────────────────────────────────────
+  { corpus: "repo-conventions", label: "Quy ước repo này", nhom: "du-an" },
 ];
+
+/** Nhãn tiếng Việt của từng nhóm, dùng làm tiêu đề hàng nút trong SourceTab. */
+export const NHAN_NHOM_CORPUS: Readonly<Record<KbCorpusDomainSuggestion["nhom"], string>> = {
+  "ngon-ngu": "Ngôn ngữ & nền tảng lập trình",
+  "cong-nghiep": "Miền công nghiệp",
+  "du-an": "Quy ước dự án",
+};
+
+/** Gom gợi ý theo nhóm, GIỮ NGUYÊN thứ tự khai báo trong mỗi nhóm. Hàm THUẦN. */
+export function goiYCorpusTheoNhom(): ReadonlyArray<{
+  nhom: KbCorpusDomainSuggestion["nhom"];
+  nhan: string;
+  muc: readonly KbCorpusDomainSuggestion[];
+}> {
+  const thuTu: ReadonlyArray<KbCorpusDomainSuggestion["nhom"]> = ["ngon-ngu", "cong-nghiep", "du-an"];
+  return thuTu.map((n) => ({
+    nhom: n,
+    nhan: NHAN_NHOM_CORPUS[n],
+    muc: KB_CORPUS_DOMAIN_SUGGESTIONS.filter((s) => s.nhom === n),
+  }));
+}
 
 /**
  * Task V9 — định dạng tệp KHÔNG được `kbDocParser.normalizeSourceType` (server) nhận qua đường

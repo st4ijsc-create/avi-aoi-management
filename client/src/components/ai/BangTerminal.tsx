@@ -101,10 +101,34 @@ interface BangTerminalProps {
   onChayLai?: (lenh: string) => void;
   /** ★ ĐỢT A — XOÁ lịch sử lượt lệnh (chỉ trạng thái HIỂN THỊ ở trang; sổ audit server không đổi). */
   onXoaLichSu?: () => void;
+  /**
+   * ★★★ G17 (audit 2026-09-22 · phản hồi chủ dự án) — **Ô GÕ LỆNH.**
+   *
+   * Chủ dự án nói: *"vốn dĩ terminal là để gõ lệnh, để check log khi chạy phần mềm"* — và pane này
+   * trước đó KHÔNG có ô nhập nào, tức cái tên "Terminal" hứa một thứ khung không làm.
+   *
+   * ⚠⚠ ĐÂY VẪN KHÔNG PHẢI MỘT SHELL, và đó là một RÀNG BUỘC AN TOÀN chứ không phải thiếu sót:
+   *   `run_command` chỉ nhận 11 KHUÔN lệnh (`DANH_SACH_TRANG`) và mọi lượt đều qua cửa duyệt HITL.
+   *   Ranh giới thật nằm ở *"chạy khi chưa duyệt"*, không nằm ở *"gõ"*. Nên ô này CHỈ là một
+   *   callback: gõ xong ⇒ `onGoLenh(lenh)` ⇒ TRANG dựng câu qua `handleSend` → model → propose →
+   *   **đúng cái thẻ duyệt** như nút chạy-nhanh. Bảng giữ nguyên bất biến 0-mutation của nó.
+   * ⚠ Vắng prop ⇒ không có ô nhập (tương thích ngược từng byte với mọi lưới cũ).
+   */
+  onGoLenh?: (lenh: string) => void;
+  /** Danh sách trắng để hiện thẳng trên màn + gợi ý tự điền. Vắng ⇒ không hiện phần gợi ý. */
+  lenhChoPhep?: readonly { nhan: string; ghiDia: boolean }[];
 }
 
-export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSong, onChayLai, onXoaLichSu }: BangTerminalProps): React.JSX.Element {
+export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSong, onChayLai, onXoaLichSu, onGoLenh, lenhChoPhep }: BangTerminalProps): React.JSX.Element {
   const { t } = useTranslation();
+  const [lenhGo, setLenhGo] = React.useState("");
+  const [moDanhSach, setMoDanhSach] = React.useState(false);
+  const guiLenhGo = () => {
+    const l = lenhGo.trim();
+    if (!l || !onGoLenh || dangGui) return;
+    onGoLenh(l);
+    setLenhGo("");
+  };
 
   /** ★ ĐỢT A — chép đầu ra MỘT lượt vào clipboard (hành động hiển thị, 0 tRPC; lỗi ⇒ im lặng an toàn). */
   const chepDauRa = (dauRa: string) => { void navigator.clipboard?.writeText(dauRa).catch(() => {}); };
@@ -132,7 +156,7 @@ export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSo
       <div className="flex shrink-0 items-center gap-2">
         <div className="flex min-w-0 items-center gap-1.5 font-semibold text-foreground">
           <Terminal className="size-4 shrink-0" />
-          <span className="min-w-0 truncate">{t("repoWs.terminal.title", "Kết quả lệnh")}</span>
+          <span className="min-w-0 truncate">{t("repoWs.terminal.title", "Lệnh & Nhật ký")}</span>
         </div>
         {luotLenh.length > 0 && (
           <span
@@ -156,6 +180,85 @@ export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSo
           </Button>
         )}
       </div>
+
+      {/* ★★★ G17 (2026-09-22) — Ô GÕ LỆNH. Xem docblock `onGoLenh`: gõ được, nhưng lượt chạy vẫn
+          đi qua ĐÚNG thẻ duyệt HITL, và chỉ 11 khuôn trong danh sách trắng được server nhận. */}
+      {onGoLenh && (
+        <div data-o-go-lenh className="shrink-0 rounded-md border bg-background p-2">
+          <div className="flex items-center gap-1.5">
+            <span className="shrink-0 select-none font-mono text-[13px] text-muted-foreground">$</span>
+            <input
+              value={lenhGo}
+              onChange={(e) => setLenhGo(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); guiLenhGo(); } }}
+              list="ds-lenh-cho-phep"
+              disabled={dangGui}
+              spellCheck={false}
+              aria-label={t("repoWs.terminal.typeAria", "Gõ một lệnh trong danh sách trắng")}
+              placeholder={t("repoWs.terminal.typePlaceholder", "vd: dotnet test CalculatorDemo.sln — Enter để gửi đi duyệt")}
+              className="min-w-0 flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
+            />
+            {lenhChoPhep && lenhChoPhep.length > 0 && (
+              <datalist id="ds-lenh-cho-phep">
+                {lenhChoPhep.map((l) => <option key={l.nhan} value={l.nhan} />)}
+              </datalist>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              className="h-6 shrink-0 px-2 text-[11px]"
+              disabled={dangGui || !lenhGo.trim()}
+              onClick={guiLenhGo}
+              data-nut-go-lenh
+            >
+              <Play className="mr-1 size-3" />
+              {t("repoWs.terminal.send", "Gửi duyệt")}
+            </Button>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+            <span>
+              {t(
+                "repoWs.terminal.notAShell",
+                "Đây KHÔNG phải shell tự do: server chỉ nhận 11 khuôn lệnh và mọi lượt đều phải bấm Duyệt. Gõ được — nhưng lệnh đi qua đúng cửa duyệt ấy.",
+              )}
+            </span>
+            {lenhChoPhep && lenhChoPhep.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setMoDanhSach((v) => !v)}
+                aria-expanded={moDanhSach}
+                data-xem-danh-sach
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                {moDanhSach
+                  ? t("repoWs.terminal.hideList", "ẩn danh sách")
+                  : t("repoWs.terminal.showList", "xem {{n}} lệnh gõ được", { n: lenhChoPhep.length })}
+              </button>
+            )}
+          </div>
+          {moDanhSach && lenhChoPhep && (
+            <ul data-danh-sach-lenh className="mt-1.5 grid gap-0.5 sm:grid-cols-2">
+              {lenhChoPhep.map((l) => (
+                <li key={l.nhan}>
+                  <button
+                    type="button"
+                    onClick={() => setLenhGo(l.nhan.replace(/\s*<[^>]*>\s*$/, " "))}
+                    disabled={dangGui}
+                    className="w-full truncate rounded px-1 py-0.5 text-left font-mono text-[11px] hover:bg-muted disabled:opacity-50"
+                  >
+                    {l.nhan}
+                    {l.ghiDia && (
+                      <span className="ml-1 font-sans text-[10px] text-amber-600 dark:text-amber-400">
+                        {t("repoWs.terminal.writesDisk", "⚠ ghi đè tệp")}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* ── Ô CHẠY-NHANH: chỉ lệnh trong danh sách trắng của dự án (canChayLenh) ───────────────── */}
       <div data-o-chay-nhanh className="shrink-0 rounded-md border border-dashed bg-muted/40 p-2">

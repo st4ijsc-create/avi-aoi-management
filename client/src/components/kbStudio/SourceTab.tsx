@@ -22,6 +22,7 @@ import {
   Info,
   AlertTriangle,
   ArrowRight,
+  ChevronDown,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -36,7 +37,7 @@ import {
   isQueuedFileStillPending,
   formatAllowedTypesLabel,
   acceptsImageUploads,
-  KB_CORPUS_DOMAIN_SUGGESTIONS,
+  goiYCorpusTheoNhom,
   KB_STUDIO_REJECTED_EXTENSIONS_FOR_GUIDANCE,
 } from "./sourceTabLogic";
 
@@ -116,21 +117,65 @@ function IngestGuidanceCard({
 }) {
   const { t } = useTranslation();
   const showsImages = acceptsImageUploads(allowedTypes);
+  /**
+   * ★★★ G16 (audit 2026-09-22 · UI) — **HƯỚNG DẪN GẤP ĐƯỢC, MẶC ĐỊNH GẤP.**
+   *
+   * Đo được ở 1920×1080: toàn bộ màn hình đầu của Training Studio là bốn bước hướng dẫn cộng hai
+   * hộp cảnh báo; ô nhập "Tên corpus" — thứ duy nhất người dùng cần chạm để bắt đầu — nằm ở
+   * **y ≈ 1050**, tức DƯỚI nếp gấp. Một trang tài liệu đội lốt công cụ: người quay lại lần thứ
+   * mười vẫn phải cuộn qua đúng bức tường chữ họ đã đọc lần đầu.
+   *
+   * Hướng dẫn KHÔNG bị xoá — nội dung ấy đắt và đã cứu người dùng khỏi bẫy PDF-quét-ảnh. Nó chỉ
+   * thôi chiếm chỗ mặc định. Trạng thái nhớ trong `localStorage` nên người mới (chưa có khoá) vẫn
+   * thấy nó MỞ ở lần đầu, còn người đã từng gấp thì không bị bắt gấp lại mỗi lần vào.
+   */
+  const KHOA = "kbStudio.huongDan.mo";
+  const [moHuongDan, setMoHuongDan] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(KHOA);
+      return v === null ? true : v === "1";
+    } catch {
+      return true; // localStorage bị chặn ⇒ hành vi CŨ (luôn mở), không im lặng giấu hướng dẫn
+    }
+  });
+  const doiHuongDan = () => {
+    setMoHuongDan((v) => {
+      try { localStorage.setItem(KHOA, v ? "0" : "1"); } catch { /* không lưu được thì thôi */ }
+      return !v;
+    });
+  };
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Info className="h-4 w-4" />
-          {t("kbStudio.source.guidance.title", "Hướng dẫn tự nạp tài liệu")}
-        </CardTitle>
+        <button
+          type="button"
+          onClick={doiHuongDan}
+          aria-expanded={moHuongDan}
+          className="flex w-full items-center gap-2 text-left"
+          data-testid="nut-gap-huong-dan"
+        >
+          <Info className="h-4 w-4 shrink-0" />
+          <CardTitle className="text-base">
+            {t("kbStudio.source.guidance.title", "Hướng dẫn tự nạp tài liệu")}
+          </CardTitle>
+          <ChevronDown
+            className={`ml-auto h-4 w-4 shrink-0 transition-transform ${moHuongDan ? "" : "-rotate-90"}`}
+            aria-hidden
+          />
+        </button>
         <CardDescription>
-          {t(
-            "kbStudio.source.guidance.subtitle",
-            "Bốn bước để tự đưa tài liệu vào AI Local — làm đúng thứ tự, hệ thống lo phần còn lại.",
-          )}
+          {moHuongDan
+            ? t(
+                "kbStudio.source.guidance.subtitle",
+                "Bốn bước để tự đưa tài liệu vào AI Local — làm đúng thứ tự, hệ thống lo phần còn lại.",
+              )
+            : t(
+                "kbStudio.source.guidance.subtitleCollapsed",
+                "Đã gấp — bấm để mở lại bốn bước nạp tài liệu.",
+              )}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 text-sm">
+      <CardContent className="space-y-4 text-sm" hidden={!moHuongDan}>
         <ol className="space-y-4">
           <li>
             <p className="font-medium text-foreground">
@@ -142,22 +187,33 @@ function IngestGuidanceCard({
                 "Vì sao phải tách miền: đã đo được — trộn nhiều miền vào MỘT corpus khiến hỏi về web lại lôi ra tài liệu PLC (5 trích dẫn điểm 0,85–0,91 từ tài liệu lạc đề). Rác trong corpus làm câu trả lời TỆ ĐI, không phải trung tính — corpus càng nhiều tài liệu lạc đề, càng nhiều câu trả lời bị kéo sai hướng.",
               )}
             </p>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {KB_CORPUS_DOMAIN_SUGGESTIONS.map((s) => (
-                <Button
-                  key={s.corpus}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setCorpus(s.corpus)}
-                  aria-label={t("kbStudio.source.guidance.fillCorpusAria", {
-                    corpus: s.corpus,
-                    defaultValue: 'Điền tên corpus gợi ý "{{corpus}}" vào ô Tên corpus',
-                  })}
-                >
-                  {s.label}
-                </Button>
+            {/* ★ G15 (2026-09-22) — xếp theo NHÓM. Một dải phẳng 16 nút thì người dùng phải đọc
+                hết mới biết có miền mình cần hay không; ba hàng có tiêu đề thì liếc một cái là thấy. */}
+            <div className="mt-2 space-y-1.5">
+              {goiYCorpusTheoNhom().map((g) => (
+                <div key={g.nhom}>
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                    {g.nhan}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {g.muc.map((s) => (
+                      <Button
+                        key={s.corpus}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setCorpus(s.corpus)}
+                        aria-label={t("kbStudio.source.guidance.fillCorpusAria", {
+                          corpus: s.corpus,
+                          defaultValue: 'Điền tên corpus gợi ý "{{corpus}}" vào ô Tên corpus',
+                        })}
+                      >
+                        {s.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
             <p className="text-xs text-muted-foreground mt-1.5">
@@ -177,7 +233,7 @@ function IngestGuidanceCard({
               <p className="text-xs text-amber-800 dark:text-amber-300">
                 {t(
                   "kbStudio.source.guidance.step1WebWarning",
-                  "Miền lập trình web/app (C#, React, Node.js, HTML, CSS, JavaScript): model đã biết sẵn các ngôn ngữ này từ lúc huấn luyện — nạp tài liệu cho miền này KHÔNG dạy thêm gì mà còn làm NHIỄU câu trả lời (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi ngoài miền tài liệu hãng bị gán trích dẫn lạc đề). Đừng mất công tạo corpus cho miền này.",
+                  "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN là vô ích và gây nhiễu — model đã nắm cú pháp từ lúc huấn luyện (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi bị gán trích dẫn lạc đề). Nhưng tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN thì có ích thật, vì model sai ở đúng tầng đó: đo 2026-09-22, nó sinh reader.GetInt32(\"MaHocSinh\") trong khi SqlDataReader.GetInt32 chỉ nhận SỐ THỨ TỰ CỘT — một lỗi gốc lặp 5 lần, đủ để dotnet build chặn cả tệp. ⇒ Nạp tài liệu tra cứu API, chuẩn mã và quy ước; đừng nạp giáo trình.",
                 )}
               </p>
             </div>

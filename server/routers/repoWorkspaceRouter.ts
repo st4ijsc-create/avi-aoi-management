@@ -491,6 +491,173 @@ export const repoWorkspaceRouter = router({
     };
   }),
 
+  /**
+   * ★★★ G14 (audit 2026-09-22 · UI) — **MỘT NGƯỜI LẬP TRÌNH AI LOCAL PHẢI THẤY CỖ MÁY CỦA MÌNH.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * VÌ SAO MÀN NÀY THIẾU ĐÚNG THỨ QUAN TRỌNG NHẤT
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Dùng Claude hay Cursor thì suy luận chạy ở đâu đó rất xa, và người dùng không cần biết. Với
+   * AI **local** thì ngược lại: model nằm trên chính cái card trong máy này, và **mọi cách nó
+   * hỏng đều im lặng**. Đo được trong chính đợt audit này, trên chính máy này:
+   *
+   *   • `llama-server` **chết giữa chừng**; đường ống vẫn trả lời, chỉ là trả lời tệ đi — suýt
+   *     nữa "0/9 đạt + 79 lượt OOM" được ghi thành một khuyết tật của model;
+   *   • một tiến trình khác chiếm 23,5 GB VRAM khiến broker hứa 22 GiB trên một card còn 3 GiB;
+   *   • trần ngân sách hộp cát cạn ⇒ tác nhân MÙ và CÂM, và người dùng chỉ biết khi mở một tệp
+   *     1 KB cũng bị từ chối.
+   *
+   * Không một triệu chứng nào trong ba cái đó nhìn thấy được từ màn hình. Người dùng chỉ thấy
+   * "AI hôm nay dốt hơn". ⇒ Thủ tục này gom đúng những con số phân biệt được **"model kém"** với
+   * **"cỗ máy đang hỏng"**, để câu hỏi ấy trả lời được bằng MỘT cái liếc mắt.
+   *
+   * ⚠ CHỈ ĐỌC, và **fail-safe theo từng ô**: mỗi nguồn nằm trong `try` riêng, hỏng thì ô đó về
+   *   `null` và phần còn lại vẫn hiện. Một cái đồng hồ phụ không bao giờ được làm hỏng trang —
+   *   cùng kỷ luật đã ghi ở `tokenLuotCuoi`.
+   * ⚠ KHÔNG tiêu một byte nào của ngân sách hộp cát (không gọi tool đọc nào).
+   */
+  /**
+   * ★★★ G17 (audit 2026-09-22 · phản hồi chủ dự án) — **PHƠI DANH SÁCH TRẮNG RA MÀN HÌNH.**
+   *
+   * Chủ dự án nói đúng một điều rất chính xác: *"vốn dĩ terminal là để gõ lệnh"*. Pane cũ tên là
+   * **Terminal** nhưng chỉ ĐỌC được — không có ô nhập nào. Cái tên hứa một thứ mà khung không làm,
+   * và đó là lỗi của **cái tên**, không phải của chức năng.
+   *
+   * Nhưng một shell tự do thì KHÔNG thể có ở đây, và lý do không phải khẩu vị: `run_command` chỉ
+   * nhận **11 khuôn lệnh** (`DANH_SACH_TRANG`), mỗi lượt đều phải qua cửa duyệt HITL, và đó là một
+   * hàng rào ĐÃ ĐO (một shell tự do biến mọi lớp còn lại thành trang trí). Ranh giới thật nằm ở
+   * *"chạy khi chưa duyệt"*, **không** nằm ở *"gõ"* — nên người dùng hoàn toàn được gõ, chỉ là
+   * lệnh gõ ra đi qua đúng cái thẻ duyệt như mọi lệnh khác.
+   *
+   * ⇒ Thủ tục này trả về danh sách trắng để màn hình **nói thẳng cái gì gõ được**, thay vì để
+   *   người dùng gõ mò rồi nhận `[CMD_NOT_ALLOWED]` — đúng lỗi đã đo ở dự án D2, nơi chính model
+   *   cũng đoán một lệnh ngoài danh sách.
+   *
+   * ⚠ CHỈ ĐỌC một hằng của mã nguồn. Không nới, không thêm, không nhận tham số.
+   */
+  danhSachLenhChoPhep: protectedProcedure.query(async () => {
+    const { DANH_SACH_TRANG } = await import("../services/aiLocalTools/repoCommandSandbox");
+    return DANH_SACH_TRANG.map((m) => ({
+      nhan: m.nhan,
+      /** `true` ⇒ lệnh GHI ĐÈ tệp mã nguồn. Màn hình phải cảnh báo khác màu. */
+      ghiDia: !!(m as { ghiDia?: boolean }).ghiDia,
+      hanGioMs: Number((m as { hanGioMs?: number }).hanGioMs ?? 0),
+    }));
+  }),
+
+  trangThaiAiLocal: protectedProcedure.query(async ({ ctx }) => {
+    const userId = Number((ctx as any).user?.id);
+
+    let mayMoc: {
+      /** Đường ĐANG phục vụ suy luận — quyết định ô nào được dùng để kết luận sức khoẻ. */
+      duongPhucVu: "llama-server" | "trong-tien-trinh";
+      engineOk: boolean;
+      llamaServerBat: boolean;
+      llamaServerKhoe: boolean | null;
+      vramTongByte: number | null;
+      vramConByte: number | null;
+      vramPhanTramDung: number | null;
+      cheDoGpu: string | null;
+      soModelDaNap: number;
+    } | null = null;
+    try {
+      const { getEngineHealth } = await import("../services/aiGgufEngine");
+      const h = await getEngineHealth();
+      const tong = h.vram?.total ?? null;
+      const con = h.vram?.free ?? null;
+      /**
+       * ★★★ SỨC KHOẺ PHẢI HỎI ĐÚNG ĐƯỜNG ĐANG PHỤC VỤ — bản đầu của chính thủ tục này đã sai.
+       *
+       * `h.operational` = `engineReady && loadedModels.size > 0`, tức nói về **binding node trong
+       * tiến trình**. Nhưng bản triển khai này chạy bằng `llama-server` NGOÀI (`:8091`), nên ô đó
+       * `false` trong khi máy hoàn toàn khoẻ. Đo được ngay ở lần dựng đầu: thanh trạng thái hiện
+       * **"ENGINE HỎNG" màu đỏ** trong khi `curl :8091/health` trả **200**.
+       *
+       * Một đồng hồ báo cháy kêu khi không cháy còn nguy hiểm hơn không có đồng hồ: người dùng
+       * học cách phớt lờ nó, rồi phớt lờ luôn lần cháy thật. ⇒ Hỏi ĐÚNG đường đang phục vụ:
+       *   • `llama-server` bật  ⇒ sức khoẻ = kết quả dò `:8091/health`;
+       *   • không bật           ⇒ sức khoẻ = binding trong tiến trình (`operational`).
+       */
+      const dungLlamaServer = !!h.llamaServer?.enabled;
+      const khoe = dungLlamaServer ? h.llamaServer?.healthy === true : !!h.operational;
+      mayMoc = {
+        duongPhucVu: dungLlamaServer ? ("llama-server" as const) : ("trong-tien-trinh" as const),
+        engineOk: khoe,
+        llamaServerBat: !!h.llamaServer?.enabled,
+        llamaServerKhoe: h.llamaServer?.healthy ?? null,
+        vramTongByte: tong,
+        vramConByte: con,
+        vramPhanTramDung: tong && tong > 0 && con !== null ? Math.round(((tong - con) / tong) * 100) : null,
+        cheDoGpu: h.gpuMode ?? null,
+        soModelDaNap: Number(h.modelsLoaded ?? 0),
+      };
+    } catch {
+      mayMoc = null;
+    }
+
+    let model: { task: string; tier: number; modelId: string | null; modelSau: string | null } | null = null;
+    try {
+      const { route, activeRouterProfile } = await import("../services/aiModelRouter");
+      const task = process.env.AI_CODING_MODEL_TASK === "code" ? "code" : "chat";
+      const qd = route({ task: task as never, text: "" });
+      model = { task, tier: qd.tier, modelId: qd.modelId ?? null, modelSau: activeRouterProfile().deepModel ?? null };
+    } catch {
+      model = null;
+    }
+
+    let nganSach: { phanTramDaDung: number; conLai: number; tran: number; datLaiSauMs: number } | null = null;
+    try {
+      const { trangThaiNganSach } = await import("../services/aiLocalTools/repoSandbox");
+      if (Number.isInteger(userId) && userId > 0) {
+        const t = trangThaiNganSach(`u:${userId}`);
+        nganSach = {
+          phanTramDaDung: t.tran > 0 ? Math.round((t.daDung / t.tran) * 100) : 0,
+          conLai: t.conLai, tran: t.tran, datLaiSauMs: t.datLaiSauMs,
+        };
+      }
+    } catch {
+      nganSach = null;
+    }
+
+    /**
+     * Lượt gần nhất — và **tok/s là con số quan trọng nhất của suy luận cục bộ**: nó là thứ tụt
+     * xuống trước tiên khi card bị tranh chấp hoặc khi model bị tràn sang RAM. Chỉ tính khi
+     * `latencyMs > 0`, vì chia cho 0 đẻ ra `Infinity` — một con số trông như một thành tích.
+     */
+    let luotCuoi: {
+      tokensIn: number; tokensOut: number; latencyMs: number; tokMoiGiay: number | null; model: string; tier: number;
+    } | null = null;
+    try {
+      if (Number.isInteger(userId) && userId > 0) {
+        const { getDb } = await import("../db");
+        const db = await getDb();
+        if (db) {
+          const { sql } = await import("drizzle-orm");
+          const r: any = await db.execute(sql`
+            SELECT "tokensIn", "tokensOut", "latencyMs", "model", "tier"
+            FROM ai_gateway_metrics
+            WHERE "userId" = ${userId} AND "createdAt" > NOW() - INTERVAL '30 minutes' AND "outcome" = 'ok'
+            ORDER BY "createdAt" DESC LIMIT 1
+          `);
+          const h = r.rows?.[0] ?? r[0];
+          if (h) {
+            const ms = Number(h.latencyMs ?? 0);
+            const out = Number(h.tokensOut ?? 0);
+            luotCuoi = {
+              tokensIn: Number(h.tokensIn ?? 0), tokensOut: out, latencyMs: ms,
+              tokMoiGiay: ms > 0 ? Math.round((out / ms) * 1000 * 10) / 10 : null,
+              model: String(h.model ?? ""), tier: Number(h.tier ?? 0),
+            };
+          }
+        }
+      }
+    } catch {
+      luotCuoi = null;
+    }
+
+    return { mayMoc, model, nganSach, luotCuoi, luc: Date.now() };
+  }),
+
   deXuatThayTheLo: protectedProcedure
     .input(
       z.object({
