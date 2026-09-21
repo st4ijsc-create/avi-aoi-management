@@ -501,3 +501,69 @@ Bản đầu của bài A2 reset `src/` bằng một biến thể KHÁC với th
 ⇒ hàng rào *"tệp có thay đổi CHƯA LƯU — không ghi đè"* (hoạt động ĐÚNG) chặn mọi lượt ghi ⇒ **A2
 không bao giờ có thể đạt**. Con số 0/3 khi ấy là **hiện vật công cụ**, không phải giới hạn model.
 Vá: mỗi bài có **dự án riêng được commit kèm sẵn lỗi của nó** (`sandbox-projects/agentic-demo2`).
+
+---
+
+# PHỤ LỤC 5 — G7 · P9 · Qwen3.8 · và VÌ SAO KHÔNG LÀM G9
+
+## G7 ✅ — broker hứa 22 GiB trên card còn 3 GiB
+| | TRƯỚC | SAU |
+|---|---|---|
+| thiết bị còn trống | 3,15 GiB | 5,82 GiB |
+| broker `raw` | 22,03 GiB | 25,63 GiB (công thức cũ, vẫn lạc quan) |
+| **broker `effective` (số CƯỠNG CHẾ)** | **19,03 GiB** | **5,23 GiB** |
+| kiểm | — | 31,84 − 25,61 − 1,00 = **5,23** ✓ khớp từng chữ số |
+| `degradedReasons` | `['unverified-baseline']` | `[…, **'device-free-cap'**]` |
+
+**Gốc rễ**: `attributable = deviceUsed − baselineUsed` trả lời *"TA tiêu bao nhiêu kể từ lúc chụp nền"*.
+`llama-server` giữ 23,5 GB mà **nền đã nuốt trọn** ⇒ phần ấy biến thành dư địa. Với
+`baseline.verified=false` (đúng trạng thái đo được) sai số là HỆ THỐNG.
+**Vá**: thêm số hạng CUỐI `effective = min(effective, deviceTotal − deviceUsed − đệm)` — một phép
+**MIN**, nên chỉ làm nhỏ đi ⇒ **không phá** bất biến đã viết ra của `vramEnforcement`. 12 lưới thuần.
+
+⚠ **Dây đứt cuối cùng mất lâu nhất để tìm**: `readDecisionTick()` dựng đối tượng LIỆT KÊ TƯỜNG MINH
+(không spread). Thêm trường mà quên dòng ở đó ⇒ trường **luôn `undefined`** ở đường cưỡng chế,
+`tsc` KHÔNG kêu (`?? null` nuốt `undefined`), trần **im lặng không bao giờ áp**. Triệu chứng: bản vá
+CÓ trong `dist`, node chạy ĐÚNG bản, mà `effective` vẫn 19,34 GiB trên card còn 3,64 GiB.
+
+**Kèm theo** — bảng điểm danh cấp phát 172 → 185 dòng, không dòng nào `wired:true`. 9 dòng là **trôi
+CÓ SẴN** khai muộn, đã kiểm từng cái; đáng chú ý: 5 script `do-twin` mở Playwright với cờ GPU THẬT
+(`--use-gl=angle --use-angle=d3d11 --enable-gpu`) ⇒ hộ tiêu thụ VRAM mà không sổ nào thấy.
+
+## P9 ✅ — chân nguồn khai mạnh hơn sự thật
+Câu cũ *"Câu trả lời **DỰA TRÊN** các tệp sau"* là khẳng định về CÂU TRẢ LỜI mà không gì kiểm được.
+Sự thật hẹp hơn: đây là tệp mục lục chấm điểm cao nhất và server đã **NẠP** vào prompt.
+Ngưỡng nạp là **0,25** nên dẫn tệp lạc đề là THƯỜNG. Vá: đổi câu chữ (3 ngôn ngữ) + **hiện ĐIỂM**
+từng tệp — đổi một lời khai không-kiểm-được lấy một sự thật kiểm-được.
+⚠ CỐ Ý không dựng ngưỡng trích dẫn thứ hai: một con số chưa đo chỉ là đổi lời khai sai lấy lời khai chưa kiểm.
+
+## Qwen3.8-27B — đo xong, và bẫy trần token suýt tạo ra số giả
+Lượt đầu (trần 4.000 token): **2/9 = 22 %**. **VỨT SỐ** — kiểm ra **7/9 bài cụt ở đúng trần**, sinh
+**0 ký tự mã**. Đó là đo HARNESS, không đo MODEL, và đúng cái bẫy chủ dự án cảnh báo.
+
+Đo lại với trần 12.000 (trục M, harness của chính nó):
+
+| Model (bộ KHÓ, trục model thuần) | Chạy được | token/bài | thời gian/bài |
+|---|---|---|---|
+| Qwen3-Coder-30B-A3B | 12/27 = **44 %** | 133 | **~0,7 s** |
+| **Qwen3.8-27B** (thinking) | 6/9 = **67 %** (n=1) | **6.665** | **~98 s** (×140) |
+
+⚠ **3/9 bài VẪN cụt ở 12k** (`H-ts3`·`H-py3`·`H-cs2` — đúng ba bài thuật toán khó nhất) ⇒ 67 % là
+**CHẶN DƯỚI**, không phải trần của nó. Và nó **giải được `H-ts2`**, bài Coder trượt 0/3.
+⇒ Qwen3.8 chính xác hơn thật, nhưng **140× chậm hơn** ⇒ hợp vai **bậc T3 gọi có chọn lọc**, không
+hợp vai mặc định. Khớp đúng chỗ bản thiết kế đã dành cho nó.
+
+## G9 (LoRA) — **KHÔNG khởi động, và đây là lý do bằng số**
+Bản thiết kế gác G9 sau (1) model tốt hơn, (2) ngữ cảnh mã, và **chỉ khi số đo còn khoảng trống mà
+LoRA lấp được**. Ba bài còn trượt ổn định của đường ống:
+
+| Bài | Đạt | Loại lỗi |
+|---|---|---|
+| H-ts2 | 0/3 | gộp khoảng — hỏng ca biên khoảng RỖNG `[5,5)` |
+| H-ts3 | 0/3 | sắp xếp topo + phát hiện chu trình |
+| H-cs2 | 0/3 | máy tính biểu thức (đệ quy xuống, độ ưu tiên) |
+
+Cả ba là **lỗi suy luận thuật toán**, không phải thiếu kiến thức repo. LoRA trên mã repo dạy *quy ước
+và API của repo* — nó **không** dạy model xử lý đúng một khoảng rỗng hay viết đúng bộ phân tích đệ quy.
+⇒ **Cổng điều kiện KHÔNG đạt.** Cần gạt đúng cho ba bài này là **model mạnh hơn** (Qwen3.8 đã giải
+được 1 trong 3), không phải fine-tune.

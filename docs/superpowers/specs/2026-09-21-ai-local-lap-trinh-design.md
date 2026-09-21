@@ -156,7 +156,7 @@ Khoảng cách lớn nhất về *hình dạng* so với Claude/Cursor: **≤3 v
 **Cổng ra**: ≥ 70 % bài agentic nhiều tệp kết thúc **xanh thật** (test chạy, không phải model tự khai).
 ⚠ Ngưỡng 70 % là **giả định chưa có cơ sở đo** — lượt chạy đầu sẽ thiết lập đường cơ sở, rồi mới chốt ngưỡng.
 
-### G7 — VRAM BROKER NÓI ĐÚNG SỰ THẬT  🟠 lớn · công sức: ngày
+### G7 — ✅ **ĐÃ THỰC THI 2026-09-21** · VRAM broker nói đúng sự thật
 Vá **P8**. Broker khai 27,88 GiB trống khi card còn 2,6 GiB ⇒ sẽ cấp phép cho lượt nạp chắc chắn OOM —
 và G4 (nạp T3 theo yêu cầu) **dựa vào** con số này nên phải sửa trước.
 
@@ -179,7 +179,7 @@ Trả lời trực tiếp mối lo của chủ dự án: *"model mới cần har
 
 **Cổng ra**: đo được một model **chưa từng thấy** mà không sửa runner — chỉ thêm hồ sơ.
 
-### G9 — HỌC TỪ REPO: LÀM ĐÚNG CẦN GẠT  🟡 vừa · công sức: tuần+
+### G9 — ⛔ **KHÔNG KHỞI ĐỘNG** (cổng điều kiện KHÔNG đạt, có số — xem phụ lục 5 của audit)
 Vá **P5**, nhưng **có điều kiện** và phải nói thẳng điều này:
 
 ⚠ **Training Studio hiện tại KHÔNG phục vụ mục tiêu này**, và chính nó đã đo ra điều đó:
@@ -198,7 +198,7 @@ endpoint server **đã có**; đó là lời khai đã lạc hậu.
 
 **Cổng ra cho (3)**: LoRA nâng ≥ 5 điểm % trên bộ bài §3 **và** không tụt ở bộ bài an toàn. Không đạt ⇒ ghi nhận âm tính, đóng gói việc, không giữ cờ bật.
 
-### G10 — HAI LỖI VỪA  🟡 vừa · công sức: giờ
+### G10 — ✅ **ĐÃ THỰC THI 2026-09-21** (P9 + P10)
 - **P9** chú thích nguồn lạc đề: chỉ liệt kê tệp khi nó **thật sự** đóng góp vào câu trả lời (ngưỡng
   điểm tương đồng + có trích dẫn). Thà **không** chú thích còn hơn chú thích sai.
 - **P10** nhầm ý định "viết test" → "chạy test": thêm ca này vào bộ lưới phân loại ý định
@@ -210,9 +210,11 @@ endpoint server **đã có**; đó là lời khai đã lạc hậu.
 
 ```
 Đợt 1 (chặn)   : G1 ✅ → G2b ✅ → G2 ✅ → G3 ✅   ⇒ ĐỢT 1 XONG
-Đợt 2 (nền)    : G4 ✅ → G8 ✅ → G7 (CÒN MỞ)   ⇒ G7 cố ý hoãn: cần vòng đo riêng
-Đợt 3 (mở rộng): G5 ✅(Python) → G10 ✅(P10) → G6 ✅ (A1 3/3 · A2 3/3)
-Đợt 4 (có điều kiện): G9             ⇒ chỉ khi Đợt 1-3 xong và số đo còn khoảng trống
+Đợt 2 (nền)    : G4 ✅ → G8 ✅ → G7 ✅
+Đợt 3 (mở rộng): G5 ✅(Python) → G10 ✅(P9+P10) → G6 ✅ (A1 3/3 · A2 3/3)
+Đợt 4 (có điều kiện): G9 ⛔ KHÔNG khởi động — 3 bài còn trượt đều là lỗi SUY LUẬN THUẬT TOÁN
+                      (khoảng rỗng · topo+chu trình · máy tính biểu thức), không phải thiếu kiến
+                      thức repo. LoRA dạy quy ước repo, không dạy việc đó. Cần gạt đúng: MODEL MẠNH HƠN.
 ```
 
 G7 **phải trước** G4: bộ chọn model sẽ nạp model theo yêu cầu, và nó dựa vào headroom mà broker đang khai sai.
