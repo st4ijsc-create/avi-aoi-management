@@ -120,7 +120,15 @@ export type VramDegradationReason =
    */
   | "shared-ledger-unasked"
   | "shared-ledger-stale"
-  | "shared-ledger-unsynced";
+  | "shared-ledger-unsynced"
+  /**
+   * ★★★ G7 (audit 2026-09-21 · P8) — **TRẦN SỰ-THẬT-THIẾT-BỊ ĐÃ CẮT dư địa.**
+   * Lý do này xuất hiện ⇔ con số tính từ sổ/attributable LỚN HƠN số byte card THỰC SỰ còn trống,
+   * tức nó là một lời hứa mà phần cứng không giữ nổi. Đo sống: broker khai 22,03 GiB trên card còn
+   * 3,15 GiB, và sổ `vram_events` ghi `reserve 16.846 MB → driver_refused → retry` lặp 79 lần.
+   * ⚠ KHÁC mọi lý do trên ở CHỖ: chúng nói *"số của tôi kém tin"*, lý do này nói *"số của tôi SAI"*.
+   */
+  | "device-free-cap";
 
 /** Một hộ đang giữ chỗ trong SỔ. ⚠ `bytes` có thể là ƯỚC LƯỢNG — xem `measured`. */
 export interface VramHolderFact {

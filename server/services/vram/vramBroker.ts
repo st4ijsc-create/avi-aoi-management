@@ -877,6 +877,13 @@ export function decisionStateFor(ctx: VramDecisionContext): VramDecisionState {
     tickConsecutiveFailures: ctx.tick === null ? 0 : ctx.tick.consecutiveFailures,
     unledgered: ctx.unledgered,
     sharedLedger: ctx.sharedLedger,
+    /**
+     * ★★★ G7 (audit 2026-09-21 · P8) — SỰ THẬT CỦA THIẾT BỊ, để dư địa không bao giờ lớn hơn số
+     * byte card thực sự còn trống. `ceilingBytes` CHÍNH LÀ tổng của card, nên hai ô này cùng nguồn.
+     * `deviceUsedBytes = null` (nhịp không đọc được) ⇒ không cap ⇒ hành vi CŨ y nguyên.
+     */
+    deviceFact: { totalBytes: ceilingBytes, usedBytes: ctx.tick?.deviceUsedBytes ?? null },
+    safetyReserveBytes: safetyBytes,
   });
   return {
     ceilingBytes,

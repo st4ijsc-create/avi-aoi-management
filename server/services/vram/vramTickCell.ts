@@ -34,6 +34,22 @@ export interface VramDecisionTickFields {
    * ⚠ `null` là **CHẶN TRÊN** của mọi headroom, KHÔNG phải "an toàn" (ràng buộc toàn cục 10).
    */
   readonly attributableBytes: number | null;
+  /**
+   * ★★★ G7 (audit 2026-09-21 · P8) — **BYTE THIẾT BỊ ĐANG DÙNG, THÔ**, chưa trừ nền.
+   *
+   * Khác `attributableBytes` ở đúng một chỗ, và chỗ đó là toàn bộ lý do trường này tồn tại:
+   * `attributable = deviceUsed − baselineUsed` trả lời *"TA đã tiêu bao nhiêu kể từ lúc chụp nền"*,
+   * còn trường này trả lời *"card đang bị chiếm bao nhiêu, bởi BẤT KỲ AI"*.
+   *
+   * Đo được: một `llama-server` khởi sau lúc chụp nền giữ 23,5 GB thì **không** vào nền và
+   * **không** vào sổ ⇒ `attributable` không thấy nó ⇒ broker khai còn **22 GiB** khi card còn
+   * **3 GiB**, và sổ `vram_events` ghi chuỗi `reserve 16.846 MB → driver_refused → retry`.
+   * ⇒ Số thô này là nguồn DUY NHẤT để dựng trần sự-thật-thiết-bị (`vramTranThietBi`).
+   *
+   * ⚠ `null` = nhịp không đọc được thiết bị ⇒ **KHÔNG cap** (giữ hành vi cũ), chứ KHÔNG phải
+   *   "card trống".
+   */
+  readonly deviceUsedBytes: number | null;
   readonly baselineVerified: boolean;
   /**
    * ★★★ Pha 4 Task 1 (D) — **VÌ SAO cờ trên tắt. ĐI CÙNG MỘT Ô, KHÔNG PHẢI HAI.**
@@ -95,6 +111,16 @@ export function readDecisionTick(): VramDecisionTick | null {
   if (o === null) return null;
   return {
     attributableBytes: o.fields.attributableBytes,
+    /**
+     * ★★★ G7 (audit 2026-09-21 · P8) — **Ô NÀY TỪNG BỊ BỎ QUÊN Ở ĐÂY, VÀ ĐÓ LÀ DÂY ĐỨT CUỐI CÙNG.**
+     * Hàm này dựng một đối tượng LIỆT KÊ TƯỜNG MINH (không spread) — đúng kỷ luật, nhưng nó cũng
+     * có nghĩa: thêm một trường vào `VramDecisionTickFields` mà quên dòng ở đây thì trường ấy
+     * **luôn `undefined`** ở đường cưỡng chế, `tsc` KHÔNG kêu (kiểu vẫn khớp vì trường là
+     * `number | null` và `undefined` bị `?? null` nuốt), và trần thiết bị **im lặng không bao giờ áp**.
+     * Đo được đúng triệu chứng đó: bản vá có trong `dist`, node chạy đúng bản, mà `effective` vẫn
+     * 19,34 GiB trên card còn 3,64 GiB.
+     */
+    deviceUsedBytes: o.fields.deviceUsedBytes,
     baselineVerified: o.fields.baselineVerified,
     // ★ (D) — CÙNG một `fields`, cùng một nhịp. Không có đường nào để hai vế lệch nhau.
     baselineUnverifiedReasons: o.fields.baselineUnverifiedReasons,

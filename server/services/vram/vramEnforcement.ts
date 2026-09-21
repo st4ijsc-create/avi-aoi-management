@@ -86,6 +86,7 @@ import type { HeadroomResult } from "./vramHeadroom";
 import type { VramDegradationReason, VramUnledgeredFact } from "./vramRefusal";
 // ⚠ CHỈ KIỂU: `import type` bị xoá sạch lúc biên dịch, nên file này vẫn "không import gì ngoài
 // KIỂU" và vẫn đồng bộ tuyệt đối (ràng buộc 1).
+import { tranTheoThietBi, apTranThietBi, type SoThietBi } from "./vramTranThietBi";
 import type { SharedLedgerFact } from "./vramSharedLedger";
 
 const MIB = 1024 * 1024;
@@ -271,11 +272,23 @@ export interface EnforcementInput {
    * mà một tiến trình anh em có thể đang giữ 17 GB.
    */
   readonly sharedLedger: SharedLedgerFact;
+  /**
+   * ★★★ G7 (audit 2026-09-21 · P8) — SỐ ĐỌC THÔ CỦA THIẾT BỊ ở nhịp gần nhất.
+   * `null` (hoặc ô nào đó `null`) ⇒ **KHÔNG áp trần**, giữ nguyên hành vi cũ từng byte.
+   * Xem `vramTranThietBi.ts` cho lý lẽ đầy đủ + số đo.
+   */
+  readonly deviceFact?: SoThietBi | null;
+  /** Đệm an toàn (byte) để trừ khỏi dư địa VẬT LÝ. Vắng ⇒ 0. */
+  readonly safetyReserveBytes?: number;
 }
 
 export interface EnforcementDecision {
   /** Con số mà cưỡng chế thật sự so với lượt xin. **Luôn ≤ `headroom.headroomBytes`.** */
   readonly effectiveHeadroomBytes: number;
+  /** ★ G7 — trần vật lý của thiết bị (đã trừ đệm). `null` = không đo được ⇒ không cap. */
+  readonly deviceCapBytes: number | null;
+  /** ★ G7 — số byte bị trần thiết bị CẮT ĐI (≥ 0). > 0 ⇔ con số cũ là lời hứa card không giữ nổi. */
+  readonly deviceCapTrimmedBytes: number;
   /** Biên theo tuổi tick (BYTE) — đã kẹp trần. */
   readonly staleMarginBytes: number;
   /**
@@ -441,15 +454,40 @@ export function applyEnforcement(input: EnforcementInput): EnforcementDecision {
    * ⚠ MỘT PHÉP TRỪ, BA SỐ HẠNG, KHÔNG SỐ HẠNG NÀO ĐƯỢC ĐỔI DẤU. `-Infinity − hữu hạn = -Infinity`
    * (fail-closed giữ nguyên); không nhánh nào cho ra `NaN` vì cả ba số hạng đã được lọc hữu hạn.
    */
-  const effectiveHeadroomBytes =
+  const truocTran =
     input.headroom.headroomBytes -
     staleMarginBytes -
     sharedLedgerMarginBytes -
     unledgeredChargeBytes -
     distrustChargeBytes;
 
+  /**
+   * ── ★★★ G7 — TRẦN SỰ-THẬT-THIẾT-BỊ (số hạng CUỐI, và là một phép MIN) ────────────────────
+   *
+   * Bốn số hạng trên đều trả lời *"số của ta kém tin tới mức nào"*. Không số hạng nào trả lời
+   * *"card CÒN TRỐNG THẬT bao nhiêu"* — và đó chính là con số đã sai 16–19 GiB khi đo sống:
+   * broker khai 22,03 GiB dư địa trên một card còn 3,15 GiB, rồi sổ `vram_events` ghi
+   * `reserve 16.846 MB → driver_refused → release → retry` lặp 79 lần trong một phiên.
+   *
+   * Gốc rễ: `attributable = deviceUsed − baselineUsed` chỉ đếm phần QUY ĐƯỢC CHO TA; một
+   * `llama-server` khởi SAU lúc chụp nền giữ 23,5 GB thì không nằm trong nền lẫn trong sổ ⇒ công
+   * thức không trừ nó. Với `baseline.verified = false` (đúng trạng thái đo được) sai số là HỆ THỐNG.
+   *
+   * ⚠ Đây là phép **MIN**, nên nó chỉ có thể làm con số NHỎ ĐI — **không phá** bất biến ở đầu file
+   *   (`effective ≤ headroomBytes`, thêm lý do chỉ làm nhỏ đi). `vramTranThietBi.test.ts` khoá
+   *   chính bất biến ấy trên mọi cặp đầu vào.
+   * ⚠ Không có số thiết bị ⇒ KHÔNG cap. Đó KHÔNG phải fail-open: mọi lý do suy giảm cũ
+   *   (`no-tick`/`probe-blind`/`unverified-baseline`) vẫn áp nguyên như trước.
+   */
+  const tranTB = tranTheoThietBi(input.deviceFact ?? null, input.safetyReserveBytes ?? 0);
+  const cap = apTranThietBi(truocTran, tranTB);
+  if (cap.daCap) reasons.push("device-free-cap");
+  const effectiveHeadroomBytes = cap.bytes;
+
   return {
     effectiveHeadroomBytes,
+    deviceCapBytes: tranTB,
+    deviceCapTrimmedBytes: cap.catBotBytes,
     staleMarginBytes,
     sharedLedgerMarginBytes,
     unledgeredChargeBytes,
