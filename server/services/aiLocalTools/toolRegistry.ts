@@ -69,8 +69,23 @@ export interface ToolResult<T = unknown> {
   type: ToolResultType;
   title: string;
   data: T;
-  /** Compact text representation (for LLM context injection). */
+  /**
+   * Compact text representation shown to the HUMAN (and, when `textModel` is absent, also injected
+   * into the LLM prompt — the historical behaviour, unchanged for every tool that does not set
+   * `textModel`).
+   */
   textSummary: string;
+  /**
+   * ★★★ G2 (audit 2026-09-21 · P2) — chữ dành RIÊNG cho model. Vắng ⇒ dùng `textSummary`.
+   *
+   * Vì sao cần kênh thứ hai: `textSummary` của một lượt TỪ CHỐI được viết để **trấn an người**
+   * ("Đây là một cái TRẦN, không phải một sự cố"). Nạp đúng chuỗi ấy cho **model** thì nó đọc
+   * thành "không có lỗi gì" rồi trả lời tiếp từ trí nhớ — đo được: hỏi `server/routers.ts` khi
+   * hết ngân sách, model khai "router Express, đọc data/machines.json, dùng fs"; tệp thật là 786
+   * dòng tRPC, `express`=0. Người cần được trấn an, model cần một MỆNH LỆNH.
+   * Xem `server/services/ai/vanBanChoModel.ts`.
+   */
+  textModel?: string;
   /** Optional human-readable note for empty / error cases. */
   note?: string;
 }

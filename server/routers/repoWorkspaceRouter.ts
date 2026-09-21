@@ -458,6 +458,26 @@ export const repoWorkspaceRouter = router({
     }
   }),
 
+  /**
+   * ★★★ G3 (audit 2026-09-21 · P3) — ĐỒNG HỒ NGÂN SÁCH HỘP CÁT.
+   *
+   * Trần 1 MiB / 15 phút / NGƯỜI DÙNG là quyết định ĐÚNG (đếm byte RỜI hộp cát — chống rò), nhưng
+   * trước lượt này nó VÔ HÌNH: đo sống, 23 lượt đọc tệp là cạn, và người dùng chỉ biết khi cú bấm
+   * mở một tệp 1 KB trả về "đã rút hết ngân sách". Sau đó tác nhân MÙ (không đọc nổi tệp) và CÂM
+   * (không chạy nổi kiểm chứng) cho tới khi cửa sổ đặt lại. Một cái trần vô hình = một sự cố ngẫu nhiên.
+   *
+   * Thủ tục này CHỈ ĐỌC và KHÔNG tiêu một byte nào của chính sổ.
+   */
+  nganSachHopCat: protectedProcedure.query(async ({ ctx }) => {
+    const { trangThaiNganSach } = await import("../services/aiLocalTools/repoSandbox");
+    const userId = Number((ctx as any).user?.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return { daDung: 0, conLai: 0, tran: 0, cuaSoMs: 0, datLaiSauMs: 0, phanTramDaDung: 0 };
+    }
+    const t = trangThaiNganSach(`u:${userId}`);
+    return { ...t, phanTramDaDung: t.tran > 0 ? Math.round((t.daDung / t.tran) * 100) : 0 };
+  }),
+
   modelDangDung: protectedProcedure.query(async () => {
     const { route, activeRouterProfile } = await import("../services/aiModelRouter");
     const task = process.env.AI_CODING_MODEL_TASK === "code" ? "code" : "chat";

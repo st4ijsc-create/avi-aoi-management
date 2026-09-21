@@ -57,6 +57,9 @@ import { TRAN_TEP_MOI_LO } from "./aiLocalTools/writeHandlers/applyDiffBatch";
  * Xem docblock đầu `ai/dotnetNewScaffold.ts`.
  */
 import { anhXaTemplateDotnet, chayDotnetNewVaoTam, slugDuAn } from "./ai/dotnetNewScaffold";
+import { quyetDinhDuongTat, moiVongDeuTuChoi, TOOL_MANG_NGU_CANH } from "./ai/toolDuongTat";
+import { laCauSinhMa } from "./ai/cauSinhMa";
+import { vanBanChoModel } from "./ai/vanBanChoModel";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
@@ -298,6 +301,12 @@ export interface KbQueryContext {
    * `streamAnswer`). Được `parseContext` (aiLocalKnowledgeApi.ts) đọc từ body, chỉ chấp nhận `true`.
    */
   codingMode?: boolean;
+  /**
+   * ★ G4 (audit 2026-09-21 · P4) — tầng model người dùng chọn cho LƯỢT NÀY: `"auto"|"fast"|"code"`.
+   * Chỉ có nghĩa khi `codingMode === true`. Vắng/lạ ⇒ mặc định của hệ (hành vi cũ y nguyên).
+   * Lọc qua danh sách TRẮNG ở `ai/chonTacVuModel.locTacVuNguoiChon` — client KHÔNG đặt được task lạ.
+   */
+  modelTask?: string;
   /**
    * ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn (bộ chọn dự án ở đầu cây tệp). **Là một ID, KHÔNG phải
    * đường dẫn** — server tra danh sách TRẮNG (`repoProjects.gocTheoId`) để ra gốc; id lạ / đường dẫn
@@ -1522,6 +1531,41 @@ export function toolKhongCoGiDeNoi(
   const note = toolResult?.note;
   if (typeof note !== "string" || note === "") return false;
   return !TOOL_NOTE_VAN_DIEN_GIAI.has(note);
+}
+
+/**
+ * ★★★ G2b (audit 2026-09-21 · P11) — CÂU NÓI THẬT khi lượt sinh chữ hỏng SAU một tool MANG NGỮ CẢNH.
+ *
+ * Trước bản vá, đường này trả `toolResult.textSummary` — nghĩa là người hỏi *"viết cho tôi một lớp
+ * LRU"* nhận về **nguyên văn `server/services/aiLocalTools/toolRegistry.ts`** (26.004 byte) và
+ * không có một dấu hiệu nào rằng model chưa hề trả lời. Đo được 6/9 tác vụ lập trình khó đi đúng
+ * đường ấy; tỷ lệ chạy-được của đường ống là **0 %** trong khi model thuần đạt 44–56 %.
+ *
+ * Sự thật ở đây là "chưa trả lời được", KHÔNG phải "đây là tệp của bạn". Câu dưới nói đúng điều đó,
+ * nêu cả tool đã chạy lẫn lý do hỏng — để người dùng biết phải làm gì tiếp, thay vì đọc một tệp lạ.
+ */
+function cauHongSinhChu(lang: KbLanguage, tenTool: string, lyDo: string | undefined): string {
+  const chiTiet = lyDo ? ` (\`${lyDo.slice(0, 200)}\`)` : "";
+  if (lang === "en") {
+    return (
+      `⚠ **I could not produce an answer for this request.** The \`${tenTool}\` tool ran and its ` +
+      `output was loaded as CONTEXT, but the generation step failed${chiTiet}.\n\n` +
+      `That tool output is context, not an answer — showing it to you as one would be misleading. ` +
+      `Try narrowing the request, or ask again.`
+    );
+  }
+  if (lang === "zh") {
+    return (
+      `⚠ **本次请求未能生成回答。** 工具 \`${tenTool}\` 已运行，其输出已作为**上下文**载入，` +
+      `但生成步骤失败${chiTiet}。\n\n该工具输出是上下文而非答案，直接展示会造成误导。请缩小问题范围或重试。`
+    );
+  }
+  return (
+    `⚠ **Chưa trả lời được yêu cầu này.** Tool \`${tenTool}\` đã chạy và đầu ra của nó được nạp làm ` +
+    `**NGỮ CẢNH**, nhưng bước sinh chữ đã hỏng${chiTiet}.\n\n` +
+    `Đầu ra của tool đó là ngữ cảnh, **không phải câu trả lời** — đưa nó ra như một câu trả lời là ` +
+    `nói sai sự thật. Hãy thu hẹp yêu cầu, hoặc hỏi lại.`
+  );
 }
 
 /** Rủi ro tiêm gộp của toàn bộ chunk KB đưa vào prompt (chỉ để BÁO, không chặn câu trả lời). */
@@ -3131,7 +3175,7 @@ export async function answerQuestion(
   // Fall back to LLM augmentation only when textSummary is thin.
   // G2-C — khối đưa vào prompt: nhiều vòng thì lấy khối ĐÃ BỌC của vòng lặp, một vòng thì bọc
   // tại đây bằng CHÍNH cặp primitive đó. `toolInj` là rủi ro tiêm để nói thật ở cuối.
-  const bocMotVong = bocDuLieuTool(toolResult?.textSummary, `tool:${toolExec.decision.tool ?? "?"}`);
+  const bocMotVong = bocDuLieuTool(vanBanChoModel(toolResult), `tool:${toolExec.decision.tool ?? "?"}`);
   const toolPromptBlock = loop?.promptBlock ?? bocMotVong.block;
   const toolInjRisk: InjectionRisk = loop ? (loop.injection ? "high" : "none") : bocMotVong.risk;
 
@@ -3146,7 +3190,26 @@ export async function answerQuestion(
     // tool đã nói bằng trạng thái có cấu trúc rằng nó không có gì ⇒ trả thẳng câu ấy, KHÔNG
     // đưa cho LLM diễn giải một cái rỗng.
     const khongCoGiDeNoi = toolKhongCoGiDeNoi(toolResult, loop?.rounds.length ?? 1);
-    if (khongCoGiDeNoi || (!daDaBuoc && summary.length >= TOOL_SHORTCIRCUIT_MIN)) {
+    /**
+     * ★★★ G2b (audit 2026-09-21 · P11) — phép quyết định NAY LÀ MỘT HÀM THUẦN CÓ LƯỚI.
+     * Xem `ai/toolDuongTat.ts` cho lý lẽ đầy đủ. Tóm tắt: `read_file`/`grep_repo`/`list_files`
+     * mang NGỮ CẢNH (đầu vào cho lượt sinh chữ), không mang CÂU TRẢ LỜI — trả thẳng đầu ra của
+     * chúng là nhầm vai, và đã đo được hậu quả: 6/9 tác vụ lập trình khó trả về **0 khối mã**,
+     * câu trả lời là nguyên văn một tệp của chính repo.
+     * Tên tool lấy ở vòng CUỐI CÓ DỮ LIỆU (đúng vòng sinh ra `toolResult`), không lấy vòng 1.
+     */
+    const tenToolCuoi =
+      [...(loop?.rounds ?? [])].reverse().find((v) => v.summary != null)?.tool ??
+      toolExec.decision.tool ??
+      null;
+    const qdDuongTat = quyetDinhDuongTat({
+      tenTool: tenToolCuoi,
+      doDaiSummary: summary.length,
+      daDaBuoc,
+      khongCoGiDeNoi,
+      tranDoDai: TOOL_SHORTCIRCUIT_MIN,
+    });
+    if (qdDuongTat.dungDuongTat) {
       provider = "tool";
       answer = appendNavHint(summary, retrieve);
     } else {
@@ -3937,6 +4000,17 @@ async function* streamCodingAnswer(
       .map((v) => v.result.textSummary ?? "")
       .filter((s) => s.trim() !== "")
       .join("\n\n");
+    /**
+     * ★★★ G2 (audit 2026-09-21 · P2) — HAI CHUỖI, HAI NGƯỜI ĐỌC.
+     * `answer` (trên) đi ra MÀN HÌNH: người dùng đọc câu đã dịch, có cả câu trấn an khi bị từ chối.
+     * `chuChoModel` (dưới) đi vào PROMPT: với một lượt TỪ CHỐI đó là câu MỆNH LỆNH ("bạn KHÔNG có
+     * nội dung này, KHÔNG ĐƯỢC mô tả hay suy đoán"). Dùng chung một chuỗi là nguyên nhân đo được
+     * của việc model bịa nguyên nội dung `server/routers.ts`. Xem `ai/vanBanChoModel.ts`.
+     */
+    const chuChoModel = cacVong
+      .map((v) => vanBanChoModel(v.result))
+      .filter((s) => s.trim() !== "")
+      .join("\n\n");
 
     /**
      * ══════════════════════════════════════════════════════════════════════════════════════════
@@ -3957,8 +4031,37 @@ async function* streamCodingAnswer(
      * ⚠ Thẻ `tool` đã phát ở trên rồi ⇒ người dùng vẫn THẤY nội dung thật, kể cả khi phần chữ là
      *   văn xuôi của model. Không có nguồn nào bị giấu đi.
      */
-    if (answer.trim() !== "" && laCauCanSuyLuan(question)) {
-      const sach = sanitizeUntrustedBlock(answer, { maxChars: TRAN_KY_TU_KET_QUA_TOOL });
+    /**
+     * ★★★ G2 (audit 2026-09-21 · P2) — **CẦU CHÌ CỨNG, ĐỨNG TRƯỚC MỌI CỔNG GỌI MODEL.**
+     *
+     * Mệnh lệnh trong prompt (`textModel`) là hàng rào MỀM, và đo sống cho thấy nó KHÔNG đủ:
+     * 10 lượt cùng một câu hỏi khi ngân sách cạn ⇒ **3/10 sạch, 7/10 vẫn BỊA** (có lượt viết nguyên
+     * một Express router không tồn tại, kèm câu *"dựa trên nội dung đã được cung cấp từ hệ thống"*).
+     *
+     * Khi **MỌI** vòng đọc đều bị từ chối thì không có gì để tổng hợp — gọi model lúc này là MỜI nó
+     * bịa. Trả thẳng lời từ chối của tool (vốn đã trung thực và đã dịch 3 thứ tiếng).
+     * ⚠ CHỈ khi TẤT CẢ bị từ chối; một vòng đọc được ⇒ model vẫn chạy như cũ.
+     */
+    if (moiVongDeuTuChoi(cacVong.map((v) => v.result.note))) {
+      console.warn(
+        `[aiLocalKnowledge] G2 cầu chì: ${cacVong.length} vòng đọc ĐỀU bị từ chối ` +
+          `(${cacVong.map((v) => v.result.note).join(",")}) — KHÔNG gọi model, trả lời từ chối trung thực.`,
+      );
+      yield { type: "token", token: answer };
+      yield done(answer);
+      return;
+    }
+
+    /**
+     * ★★★ G2b (audit 2026-09-21 · P11) — THÊM VẾ `laCauSinhMa`.
+     * `laCauCanSuyLuan` trả lời câu hỏi *"có cần suy luận không"*; nó KHÔNG phủ câu **SINH MÃ**.
+     * Đo được: *"Viết TypeScript: export class BoNhoLRU…"* (không dấu hỏi, không động từ giải
+     * thích) ⇒ vị từ cũ = false ⇒ **nguyên văn `toolRegistry.ts` (26.004 byte) thành câu trả lời**.
+     * 6/9 tác vụ lập trình khó trả về 0 khối mã; đường ống 0 % trong khi model thuần 44–56 %.
+     * Xem `ai/cauSinhMa.ts` cho đánh đổi sót/thừa (cố ý lệch về phía gọi model).
+     */
+    if (answer.trim() !== "" && (laCauCanSuyLuan(question) || laCauSinhMa(question))) {
+      const sach = sanitizeUntrustedBlock(chuChoModel, { maxChars: TRAN_KY_TU_KET_QUA_TOOL });
       const khoiBoc = wrapUntrustedBlock(NHAN_NGUON_KET_QUA_TOOL, sach.text);
       const ketCucSuyLuan = yield* streamCodingGenerate(
         question, language, context, execCtx2, history, khoiBaiHocLuot, khoiBoc,
@@ -5605,6 +5708,8 @@ async function* streamCodingGenerate(
 
   const it = rutChuCoCanh(
     streamCodingModel({
+      // ★ G4 — tầng model người dùng chọn cho lượt này (bộ chọn ở màn lập trình). Vắng ⇒ mặc định hệ.
+      tacVu: (context as { modelTask?: unknown })?.modelTask,
       systemPrompt: heThong,
       prompt: promptSinhMa(question, language, lich.khoi, khoiMa, khoiBai),
       maxTokens: MAX_TOKENS_SINH,
@@ -6494,6 +6599,8 @@ export async function* streamAnswer(
   // the streamed garbage is discarded and a clean fallback is sent on `done`.
   let streamDegraded = false;
   let streamDegradedReason: string | undefined;
+  /** ★ G2b — lý do lượt sinh chữ hỏng; `undefined` = không hỏng. Dùng để NÓI THẬT, không nuốt. */
+  let loiLlmStream: string | undefined;
 
   // ★ G3-C VIỆC 2 — CỔNG THỨ TÁM trên đường STREAM. Cùng vị từ, cùng lý lẽ (xem
   // `toolKhongCoGiDeNoi`). Một cổng an toàn chỉ áp cho `answerQuestion` mà bỏ `streamAnswer` là
@@ -6537,7 +6644,7 @@ export async function* streamAnswer(
     !toolKhongCoGiDeNoi(toolResult, loop?.rounds.length ?? 1);
 
   // G2-C — cùng phép bọc như `answerQuestion` (xem `bocDuLieuTool`).
-  const bocMotVong = bocDuLieuTool(toolResult?.textSummary, `tool:${toolExec.decision.tool ?? "?"}`);
+  const bocMotVong = bocDuLieuTool(vanBanChoModel(toolResult), `tool:${toolExec.decision.tool ?? "?"}`);
   const toolPromptBlock = loop?.promptBlock ?? bocMotVong.block;
   const toolInjRisk: InjectionRisk = loop ? (loop.injection ? "high" : "none") : bocMotVong.risk;
 
@@ -6585,14 +6692,36 @@ export async function* streamAnswer(
         }
         if (accumulated.trim()) provider = "ollama";
       }
-    } catch {
-      // fall through to extractive/tool fallback below
+    } catch (e) {
+      /**
+       * ★★★ G2b (audit 2026-09-21 · P11) — `catch {}` TRỐNG Ở ĐÂY LÀ MỘT LỖI, KHÔNG PHẢI SỰ CẨN THẬN.
+       * Đo được: lượt sinh chữ hỏng, lỗi bị nuốt **tuyệt đối im lặng** (không một dòng stderr), rồi
+       * khối dự phòng bên dưới trả `toolResult.textSummary` — tức **nguyên văn một tệp của repo** —
+       * ra cho người dùng như thể đó là câu trả lời. 6/9 tác vụ lập trình khó đi đúng đường này.
+       * Repo có bất biến "im lặng là nói dối"; khối này đang vi phạm chính nó.
+       */
+      loiLlmStream = (e as { message?: string } | null)?.message ?? String(e);
+      console.error(`[aiLocalKnowledge] lượt sinh chữ HỎNG (stream): ${loiLlmStream}`);
     }
   }
 
   // Fallback when LLM was skipped or produced nothing.
   if (!accumulated.trim()) {
-    if (toolResult) {
+    /**
+     * ★★★ G2b — KHÔNG trả đầu ra của tool MANG NGỮ CẢNH ra như câu trả lời.
+     * `read_file`/`grep_repo`/`list_files` mang ĐẦU VÀO cho lượt sinh chữ, không mang CÂU TRẢ LỜI.
+     * Khi lượt sinh chữ hỏng, sự thật là "chưa trả lời được" — không phải "đây là tệp của bạn".
+     * Xem `ai/toolDuongTat.ts`. Tool dữ-liệu-sống (`get_today_stats`…) giữ NGUYÊN hành vi cũ.
+     */
+    const tenToolFb =
+      [...(loop?.rounds ?? [])].reverse().find((v) => v.summary != null)?.tool ??
+      toolExec.decision.tool ??
+      null;
+    const toolLaNguCanh = !!tenToolFb && TOOL_MANG_NGU_CANH.has(tenToolFb);
+    if (toolResult && toolLaNguCanh) {
+      provider = "extractive";
+      accumulated = cauHongSinhChu(retrieve.language, tenToolFb, loiLlmStream);
+    } else if (toolResult) {
       provider = "tool";
       accumulated = toolResult.textSummary;
     } else if (retrieve.citations.length === 0) {

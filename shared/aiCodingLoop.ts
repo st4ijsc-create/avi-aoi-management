@@ -138,6 +138,28 @@ export function docKetQuaTest(dauRa: string | null | undefined, maThoat: number 
       const np = s.match(/^[\s#ℹ]*pass\s+(\d+)\s*$/im);
       if (nf) soDo = Number(nf[1]);
       if (np) soXanh = Number(np[1]);
+      /**
+       * ★★★ G5 (audit 2026-09-21 · P7) — KHUÔN THỨ TƯ: **pytest**.
+       * Đo sống sau khi mở cổng lệnh Python: lượt `python -m pytest` trả `xanh=true, exitCode=0`
+       * ĐÚNG, nhưng `soXanh`/`soDo` = `null` ⇒ dòng kết luận CHẮC-MỚI-NÓI im lặng và vòng tự động
+       * mất một tín hiệu dừng. Mở cổng chạy mà không dạy bộ đọc là mở nửa đường.
+       * Khuôn pytest: `===== 3 passed in 0.12s =====` · `= 1 failed, 2 passed in 0.3s =`
+       * (thứ tự failed/passed cố định, con số nằm trên CÙNG một dòng tổng kết).
+       */
+      if (soDo === null && soXanh === null) {
+        const pf = s.match(/^=+\s*(?:(\d+)\s+failed[,\s].*?)?(\d+)\s+passed\b.*$/im);
+        if (pf) {
+          soDo = pf[1] === undefined ? 0 : Number(pf[1]);
+          soXanh = Number(pf[2]);
+        } else {
+          // pytest có thể kết thúc CHỈ có failed (không ca nào xanh).
+          const pfo = s.match(/^=+\s*(\d+)\s+failed\b.*$/im);
+          if (pfo) {
+            soDo = Number(pfo[1]);
+            soXanh = 0;
+          }
+        }
+      }
     }
   }
 

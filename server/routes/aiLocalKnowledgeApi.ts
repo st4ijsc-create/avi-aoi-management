@@ -1,4 +1,5 @@
 import type express from "express";
+import { locTacVuNguoiChon } from "../services/ai/chonTacVuModel";
 import fs from "node:fs";
 import path from "node:path";
 import { thuXacThucRest, thanTuChoiRest } from "./_xacThucRest";
@@ -127,6 +128,16 @@ export function parseContext(raw: unknown): KbQueryContext | undefined {
   // ★★★ doc 79 · TRỤC 1 (A) — cờ phiên lập trình. CHỈ chấp nhận literal `true` (một client vận hành
   // không bao giờ vô tình bật nó); mọi giá trị khác ⇒ vắng ⇒ đường vận hành mặc định.
   if (r.codingMode === true) ctx.codingMode = true;
+  /**
+   * ★★★ G4 (audit 2026-09-21 · P4) — TẦNG MODEL NGƯỜI DÙNG CHỌN cho lượt này.
+   * Trường client-khai ⇒ lọc qua danh sách TRẮNG ngay tại cửa (`locTacVuNguoiChon`): một chuỗi lạ
+   * KHÔNG được phép đi tiếp thành một `task` mà `aiModelRouter` chưa biết. Vắng/lạ ⇒ `"auto"` ⇒
+   * mặc định của hệ ⇒ hành vi CŨ y nguyên.
+   */
+  {
+    const t = locTacVuNguoiChon(r.modelTask);
+    if (t !== "auto") ctx.modelTask = t;
+  }
   // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN. Chỉ nhận chuỗi HÌNH DẠNG id (`[A-Za-z0-9_-]`, 1..64). Một client
   // gửi ĐƯỜNG DẪN (`../../etc`, `C:\…`, `/a/b`) trượt regex ⇒ bị BỎ ở đây (lớp 1); và kể cả lọt thì
   // `gocTheoId` không tìm thấy id ⇒ TỪ CHỐI (lớp 2). Server KHÔNG BAO GIỜ nhận đường dẫn từ client.

@@ -165,7 +165,7 @@ export const TRAN_TOKEN_NGU_CANH_MA = 4_000;
  * Số tệp tối đa. 3 vì hai lý do đo được, không phải vì tròn số:
  *   • ngân sách 4.000 token chia 3 ⇒ ~1.330 token/tệp ≈ 3.700 ký tự — đủ để thấy khai báo, import
  *     và vài hàm đầu của một tệp TypeScript thật;
- *   • trần byte MỖI PHIÊN của hộp cát là 1 MB/15 phút (`TRAN_BYTE_MOI_PHIEN`). 3 × 12 KB = 36 KB
+ *   • trần byte MỖI PHIÊN của hộp cát là 4 MiB/15 phút (`TRAN_BYTE_MOI_PHIEN`; nâng từ 1 MiB ở G3 2026-09-21, có số đo). 3 × 12 KB = 36 KB
  *     mỗi lượt ⇒ ~29 lượt sinh mã trước khi chạm trần. 5 tệp × 12 KB sẽ hạ xuống ~17 lượt và bắt
  *     đầu **ăn vào ngân sách của chính người dùng** khi họ tự gọi `read_file`.
  */

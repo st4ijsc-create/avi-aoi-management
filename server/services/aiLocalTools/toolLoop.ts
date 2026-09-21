@@ -51,6 +51,7 @@ import {
 // 2,8 ký tự/token đã ĐO bằng chính tokenizer của model đang phục vụ. KHÔNG viết lại phép ước
 // lượng ở đây — hai bản sao sẽ trôi khỏi nhau và cái yếu hơn sẽ là cái đang canh.
 import { uocLuongSoToken, serverSlotContextTokens } from "../aiLlamaServerClient";
+import { vanBanChoModel } from "../ai/vanBanChoModel";
 import type { ToolDecision } from "./intentClassifier";
 import type { ClientActionDirective, ToolResult } from "./toolRegistry";
 import type { PendingActionDTO } from "../aiCopilotActions";
@@ -402,7 +403,13 @@ export async function runToolLoop(deps: RunToolLoopDeps): Promise<ToolLoopResult
     }
 
     // ── Làm sạch + bọc hàng rào TRƯỚC KHI bất kỳ ai (kể cả bộ chọn vòng sau) nhìn thấy ──
-    const sach = sanitizeUntrustedBlock(outcome.result.textSummary ?? "", {
+    /**
+     * ★★★ G2 (audit 2026-09-21 · P2) — chữ nạp cho MODEL lấy qua `vanBanChoModel`, KHÔNG lấy thẳng
+     * `textSummary`. Với một lượt TỪ CHỐI, `textSummary` là câu TRẤN AN cho người ("không phải
+     * một sự cố") và model đọc nó thành "không có lỗi" rồi BỊA tiếp — đo được ở `server/routers.ts`.
+     * `textModel` (nếu có) là câu MỆNH LỆNH. Tool không khai `textModel` ⇒ y hệt hành vi cũ.
+     */
+    const sach = sanitizeUntrustedBlock(vanBanChoModel(outcome.result), {
       maxChars: capChoVongNay(capKhoi, limits.maxToolTokens - tokensUsed),
     });
     ghi.summary = sach.text;

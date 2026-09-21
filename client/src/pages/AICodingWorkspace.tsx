@@ -1290,6 +1290,32 @@ export default function AICodingWorkspace() {
    */
   const modelQ = trpc.repoWorkspace.modelDangDung.useQuery(undefined, { staleTime: 5 * 60_000 });
   /**
+   * ★★★ G3 (audit 2026-09-21 · P3) — ĐỒNG HỒ NGÂN SÁCH. `refetchInterval` 20 s là cố ý: sổ chỉ đổi
+   * khi CHÍNH người này gọi tool đọc, nên không cần realtime; 20 s đủ để huy hiệu kịp đổi màu
+   * trước khi người dùng đâm vào tường. Thủ tục server CHỈ ĐỌC và không tiêu byte nào.
+   */
+  /**
+   * ★★★ G4 (audit 2026-09-21 · P4) — TẦNG MODEL NGƯỜI DÙNG CHỌN.
+   * Khoảng trống đo được: Claude có `/model`, Cursor có dropdown, AI Local **không có gì** — đổi
+   * model đòi sửa `.env` + khởi động lại server. Lựa chọn này đi theo TỪNG yêu cầu
+   * (`context.modelTask`), KHÔNG qua biến môi trường ⇒ không cần khởi động lại.
+   * Nhớ theo trình duyệt để người dùng không phải chọn lại mỗi lần mở màn.
+   */
+  const [tangModel, datTangModel] = useState<"auto" | "code">(() => {
+    try {
+      const v = localStorage.getItem("repoWs.tangModel");
+      return v === "code" ? v : "auto";
+    } catch { return "auto"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("repoWs.tangModel", tangModel); } catch { /* chế độ riêng tư */ }
+  }, [tangModel]);
+
+  const nganSachQ = trpc.repoWorkspace.nganSachHopCat.useQuery(undefined, {
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+  });
+  /**
    * ★ 2026-09-03 · ĐỢT F3 — TOKEN CỦA LƯỢT VỪA RỒI. Đọc lại từ sổ `ai_gateway_metrics` (SSE không
    * mang token — xem docblock `tokenLuotCuoi` phía server). Refetch ở CẠNH XUỐNG của `isStreaming`:
    * lượt vừa xong thì `plan.record()` đã ghi sổ, hỏi lúc ấy mới có số; hỏi liên tục là vô ích.
@@ -1375,6 +1401,8 @@ export default function AICodingWorkspace() {
         // ★★★ doc 79 · TRỤC 2 — projectId (ID, KHÔNG phải đường dẫn): tác nhân bám gốc dự án đang chọn.
         context: {
           route: "/ai-coding-workspace", uiLanguage: i18n.language, codingMode: true, projectId,
+          // ★ G4 — tầng model người dùng chọn cho LƯỢT NÀY. Server lọc qua danh sách TRẮNG.
+          modelTask: tangModel,
           ...(tuVong ? { codingEditPath: tuVong.tep } : {}),
           // ★★★ 2026-08-23 — ĐẦU RA MÁY đi Ô RIÊNG, KHÔNG nối vào `question`. Xem `TuVongSend`.
           ...(tuVong?.dauRaMay ? { dauRaKhongTinCay: tuVong.dauRaMay } : {}),
@@ -2109,6 +2137,62 @@ export default function AICodingWorkspace() {
                 </TooltipContent>
               </Tooltip>
             )}
+            {/* ★★★ G3 (audit 2026-09-21 · P3) — ĐỒNG HỒ NGÂN SÁCH HỘP CÁT.
+                Trần byte/15 phút là một quyết định ĐÚNG (chống rò), nhưng trước lượt này nó VÔ HÌNH:
+                đo sống, người dùng chỉ biết mình cạn khi cú bấm mở một tệp 1 KB trả về "đã rút hết
+                ngân sách", rồi tác nhân MÙ và CÂM cho tới khi cửa sổ đặt lại. Huy hiệu này chỉ hiện
+                khi đã tiêu ≥1% (im lặng lúc còn nhiều, kêu khi sắp hết) và ĐỔI MÀU ở ngưỡng 80%. */}
+            {nganSachQ.data && nganSachQ.data.tran > 0 && nganSachQ.data.phanTramDaDung >= 1 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant={nganSachQ.data.phanTramDaDung >= 80 ? "destructive" : "outline"}
+                    data-huy-hieu-ngan-sach
+                    className="cursor-help text-[10px] tabular-nums"
+                  >
+                    {t("repoWs.budget.badge", "đọc {{pc}}%", { pc: nganSachQ.data.phanTramDaDung })}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[320px] text-xs">
+                  {t(
+                    "repoWs.budget.tip",
+                    "Ngân sách ĐỌC của hộp cát: đã dùng {{daDung}} / {{tran}} KB trong cửa sổ {{phut}} phút. Hết ngân sách thì tác nhân KHÔNG đọc được tệp và KHÔNG chạy được kiểm chứng cho tới khi sổ đặt lại{{datLai}}. Đếm theo byte RỜI hộp cát (chống rò dữ liệu), không phải byte đọc từ đĩa.",
+                    {
+                      daDung: Math.round(nganSachQ.data.daDung / 1024),
+                      tran: Math.round(nganSachQ.data.tran / 1024),
+                      phut: Math.round(nganSachQ.data.cuaSoMs / 60000),
+                      datLai: nganSachQ.data.datLaiSauMs > 0
+                        ? ` (còn ~${Math.ceil(nganSachQ.data.datLaiSauMs / 60000)} phút)`
+                        : "",
+                    },
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {/* ★★★ G4 (audit 2026-09-21 · P4) — BỘ CHỌN TẦNG MODEL.
+                Claude có `/model`, Cursor có dropdown; AI Local trước lượt này KHÔNG CÓ GÌ — đổi
+                model đòi sửa `.env` + khởi động lại server. Lựa chọn đi theo TỪNG yêu cầu qua
+                `context.modelTask`, server lọc bằng danh sách TRẮNG và nó KHÔNG nới quyền gì. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <select
+                  data-chon-tang-model
+                  aria-label={t("repoWs.modelPick.label", "Chọn tầng model")}
+                  value={tangModel}
+                  onChange={(e) => datTangModel(e.target.value as "auto" | "code")}
+                  className="h-[22px] cursor-pointer rounded-md border bg-background px-1.5 text-[10px]"
+                >
+                  <option value="auto">{t("repoWs.modelPick.auto", "model: tự động")}</option>
+                  <option value="code">{t("repoWs.modelPick.code", "model: Coder")}</option>
+                </select>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[320px] text-xs">
+                {t(
+                  "repoWs.modelPick.tip",
+                  "Tự động = theo mặc định của hệ + độ khó câu hỏi. Coder = ép tầng chuyên sinh mã (đo được: chính xác hơn trên tác vụ lập trình). Đổi có hiệu lực NGAY ở lượt sau — KHÔNG cần khởi động lại. Huy hiệu bên cạnh cho biết model THẬT SỰ được chọn. Cố ý KHÔNG có lựa chọn \"Nhanh\": bộ định tuyến leo tầng theo ĐỘ KHÓ, mà prompt lập trình luôn là câu khó, nên một lựa chọn như thế sẽ bị bỏ qua trong im lặng.",
+                )}
+              </TooltipContent>
+            </Tooltip>
             {modelQ.data && (
               <Tooltip>
                 <TooltipTrigger asChild>

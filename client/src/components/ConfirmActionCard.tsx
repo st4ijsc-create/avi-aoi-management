@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
  * ★★★ 2026-08-23 · UX LÔ 1 (A2/B3) — dấu máy-đọc-được server đặt trong `preview.warnings`:
  *   • `[CMD_*] …` (`timMaChan`)       — lời chặn-CHẮC-CHẮN: `execute` chạy LẠI đúng phán quyết đã
  *     chặn ở preview, nên cú bấm Xác nhận KHÔNG THỂ thành công ⇒ khoá nút + nói "gõ lại".
- *   • `[DANH_SACH_LENH]` (`docDanhSachLenh`) — bảng 9 lệnh đầy đủ, GẤP sau nút "Xem cả danh sách"
+ *   • `[DANH_SACH_LENH]` (`docDanhSachLenh`) — bảng 11 lệnh đầy đủ, GẤP sau nút "Xem cả danh sách"
  *     (trước đây nó là bức tường ~2.300 ký tự đập vào mặt người dùng mỗi lượt gõ sai).
  * MỘT nguồn ở `shared/` — server ghi dấu, client đọc dấu bằng đúng cặp hàm này; xem docblock ở đó.
  * ⚠ Cảnh báo THÔNG TIN (tệp sạch/ghi đè/hạn giờ…) KHÔNG mang dấu ⇒ `timMaChan` trả `null` ⇒ nút

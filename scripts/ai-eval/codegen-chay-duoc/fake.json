@@ -1,0 +1,28 @@
+{
+ "fake-ok": {
+  "ts1": "export function tinhTyLeLoi(tong: number, loi: number): number { if (tong <= 0) return 0; return Math.round((loi / tong) * 10000) / 100; }",
+  "ts2": "export function parseViTriLoi(s: string): {hang:number, cot:number} | null { const m = /^R(\\d+)C(\\d+)$/.exec(s); return m ? { hang: Number(m[1]), cot: Number(m[2]) } : null; }",
+  "ts3": "export function topNLoi(items: {ma:string}[], n: number) { if (n <= 0) return []; const m = new Map<string, number>(); for (const it of items) m.set(it.ma, (m.get(it.ma) ?? 0) + 1); return [...m.entries()].map(([ma, soLan]) => ({ ma, soLan })).sort((a, b) => b.soLan - a.soLan || a.ma.localeCompare(b.ma)).slice(0, n); }",
+  "ts4": "export function gomTheoCa(moc: string[], gioBatDauCa: number): Record<string, string[]> { const r: Record<string, string[]> = { CA1: [], CA2: [], CA3: [] }; for (const s of moc) { const h = new Date(s).getUTCHours(); const d = ((h - gioBatDauCa) % 24 + 24) % 24; r['CA' + (Math.floor(d / 8) + 1)].push(s); } return r; }",
+  "ts5": "export async function thuLaiCoBackoff<T>(fn: () => Promise<T>, soLan: number, treMs: number): Promise<T> { let last: any; for (let i = 0; i <= soLan; i++) { try { return await fn(); } catch (e: any) { last = e; if (e && e.retryable === false) throw e; if (i === soLan) throw e; await new Promise(r => setTimeout(r, treMs * Math.pow(2, i))); } } throw last; }",
+  "py1": "def ty_le_loi(tong: int, loi: int) -> float:\n    if tong <= 0:\n        return 0.0\n    return round(loi / tong * 100, 2)",
+  "py2": "import re\n\ndef parse_vi_tri(s: str):\n    m = re.fullmatch(r'R(\\d+)C(\\d+)', s or '')\n    return (int(m.group(1)), int(m.group(2))) if m else None",
+  "py3": "from collections import Counter\n\ndef top_n_loi(ma_list: list, n: int) -> list:\n    if n <= 0:\n        return []\n    c = Counter(ma_list)\n    return sorted(c.items(), key=lambda kv: (-kv[1], kv[0]))[:n]",
+  "cs1": "using System;\nnamespace Sol { public static class Loi { public static double TinhTyLeLoi(int tong, int loi) { if (tong <= 0) return 0; return Math.Round((double)loi / tong * 100, 2); } } }",
+  "cs2": "using System;\nusing System.Text.RegularExpressions;\nnamespace Sol { public static class May { public static string ChuanHoaMaMay(string ma) { if (string.IsNullOrWhiteSpace(ma)) return \"\"; var s = ma.Trim().ToUpperInvariant(); s = Regex.Replace(s, \"[ _-]+\", \"-\"); return s.Trim('-'); } } }",
+  "cs3": "using System.Collections.Generic;\nusing System.Linq;\nnamespace Sol { public static class ThongKe { public static List<(string Ma,int SoLan)> TopNLoi(IEnumerable<string> maList, int n) { if (n <= 0) return new List<(string,int)>(); return maList.GroupBy(x => x).Select(g => (Ma: g.Key, SoLan: g.Count())).OrderByDescending(x => x.SoLan).ThenBy(x => x.Ma).Take(n).ToList(); } } }"
+ },
+ "fake-bad": {
+  "ts1": "export function tinhTyLeLoi(tong: number, loi: number): number { return Math.round((loi / tong) * 10000) / 100; }",
+  "ts2": "export function parseViTriLoi(s: string): {hang:number, cot:number} | null { const m = /R(\\d+)C(\\d+)/i.exec(s); return m ? { hang: Number(m[1]), cot: Number(m[2]) } : null; }",
+  "ts3": "export function topNLoi(items: {ma:string}[], n: number) { const m = new Map<string, number>(); for (const it of items) m.set(it.ma, (m.get(it.ma) ?? 0) + 1); return [...m.entries()].map(([ma, soLan]) => ({ ma, soLan })).sort((a, b) => b.soLan - a.soLan).slice(0, n); }",
+  "ts4": "export function gomTheoCa(moc: string[], gioBatDauCa: number): Record<string, string[]> { const r: Record<string, string[]> = { CA1: [], CA2: [], CA3: [] }; for (const s of moc) { const h = new Date(s).getUTCHours(); const d = h - gioBatDauCa; r['CA' + (Math.floor(d / 8) + 1)].push(s); } return r; }",
+  "ts5": "export async function thuLaiCoBackoff<T>(fn: () => Promise<T>, soLan: number, treMs: number): Promise<T> { let last: any; for (let i = 0; i <= soLan; i++) { try { return await fn(); } catch (e: any) { last = e; if (i === soLan) throw e; await new Promise(r => setTimeout(r, treMs)); } } throw last; }",
+  "py1": "def ty_le_loi(tong: int, loi: int) -> float:\n    if tong == 0:\n        return 0.0\n    return round(loi / tong * 100, 2)",
+  "py2": "import re\n\ndef parse_vi_tri(s: str):\n    m = re.search(r'R(\\d+)C(\\d+)', s or '', re.I)\n    return (int(m.group(1)), int(m.group(2))) if m else None",
+  "py3": "from collections import Counter\n\ndef top_n_loi(ma_list: list, n: int) -> list:\n    c = Counter(ma_list)\n    return c.most_common(n)",
+  "cs1": "using System;\nnamespace Sol { public static class Loi { public static double TinhTyLeLoi(int tong, int loi) { if (tong <= 0) return 0; return Math.Round((double)loi / tong * 100, 1); } } }",
+  "cs2": "using System;\nnamespace Sol { public static class May { public static string ChuanHoaMaMay(string ma) { if (ma == null) return \"\"; return ma.Trim().ToUpperInvariant().Replace(' ', '-').Replace('_', '-'); } } }",
+  "cs3": "using System.Collections.Generic;\nusing System.Linq;\nnamespace Sol { public static class ThongKe { public static List<(string Ma,int SoLan)> TopNLoi(IEnumerable<string> maList, int n) { return maList.GroupBy(x => x).Select(g => (Ma: g.Key, SoLan: g.Count())).OrderByDescending(x => x.SoLan).Take(n).ToList(); } } }"
+ }
+}

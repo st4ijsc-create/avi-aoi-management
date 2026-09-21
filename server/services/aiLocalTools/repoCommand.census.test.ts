@@ -122,7 +122,7 @@ describe("§0 — CẦU CHÌ: lưới đang quét vật thật", () => {
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chính bảng, không phải trên hành vi)", () => {
-  it("★ đúng CHÍN mục, và mỗi mục có hạn giờ dương ≤ trần hệ", () => {
+  it("★ đúng MƯỜI MỘT mục, và mỗi mục có hạn giờ dương ≤ trần hệ", () => {
     // ★ 2026-08-19 (doc 79 TRỤC 1 (D)) — BỐN mục MỚI cho vòng khép kín dự án thử: ba `dotnet` (build/
     //   test/format) cho C# và một `node --test` cho react/node. Mỗi mục vẫn là "subcommand cố định +
     //   một đường trong hộp cát"; xem khối lý lẽ ở `repoCommandSandbox.DANH_SACH_TRANG`.
@@ -136,6 +136,12 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
       "dotnet test <đường-dẫn>",
       "dotnet format <đường-dẫn>",
       "node --test <đường-dẫn>",
+      // ★ 2026-09-21 (G5 · audit P7) — HAI mục Python. Máy CÓ Python 3.14.6 nhưng danh sách trắng
+      //   không có mục nào ⇒ tác nhân sinh được mã Python mà KHÔNG BAO GIỜ chạy nổi nó. Chỉ nhận
+      //   hai TRÌNH CHẠY TEST (`-m pytest`, `-m unittest`); `python <tệp>.py` (chạy script tuỳ ý)
+      //   cố ý KHÔNG có mặt — đúng thứ danh sách trắng tồn tại để chặn.
+      "python -m pytest <đường-dẫn>",
+      "python -m unittest <đường-dẫn>",
     ]);
     for (const m of DANH_SACH_TRANG) {
       expect(m.hanGioMs, m.nhan).toBeGreaterThan(0);
@@ -1124,7 +1130,7 @@ describe("§L — dòng catalog quyền `ai_repo_exec` khai ĐÚNG bảng SỐNG
     return ra!;
   }
 
-  it("★★★ catalog nêu ĐỦ CẢ CHÍN lệnh — suy từ bảng SỐNG, không chép tay", () => {
+  it("★★★ catalog nêu ĐỦ CẢ MƯỜI MỘT lệnh — suy từ bảng SỐNG, không chép tay", () => {
     const mo = moTaCatalog();
     const thieu = DANH_SACH_TRANG.filter((m) => !mo.includes(m.nhan)).map((m) => m.nhan);
     expect(

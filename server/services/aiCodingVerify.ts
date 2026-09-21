@@ -33,7 +33,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠⚠ VÌ SAO `dotnet format` BỊ LOẠI KHỎI TẬP KIỂM CHỨNG — LỖ THẬT, KHÔNG PHẢI LO XA
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * `DANH_SACH_TRANG` có chín mục và tám mục CHỈ HỎI. Mục thứ chín — `dotnet format <đường>` — **GHI
+ * `DANH_SACH_TRANG` có MƯỜI MỘT mục và mười mục CHỈ HỎI (G5 2026-09-21 thêm 2 mục Python). Mục GHI ĐÈ duy nhất — `dotnet format <đường>` — **GHI
  * ĐÈ TỆP MÃ NGUỒN** theo `.editorconfig`. Nó nằm trong danh sách trắng là ĐÚNG (người bấm duyệt,
  * người biết mình xin gì). Nhưng nếu vòng TỰ ĐỘNG được phép chọn nó thì ta vừa dựng đúng cái đường
  * mà cả thiết kế này tồn tại để chặn: **byte rời ra đĩa mà không ai bấm duyệt.**
@@ -119,6 +119,16 @@ export const NHAN_KIEM_CHUNG: ReadonlySet<string> = new Set([
   "dotnet build <đường-dẫn>",
   "dotnet test <đường-dẫn>",
   "node --test <đường-dẫn>",
+  /**
+   * ★★★ G5 (audit 2026-09-21 · P7) — hai TRÌNH CHẠY TEST Python. Chúng vào được tập KIỂM CHỨNG vì
+   * thoả đúng bất biến của tập này: **CHỈ HỎI, không ghi đè tệp mã nguồn** — cùng hạng với
+   * `node --test`/`dotnet test`, khác hẳn `dotnet format` (mục duy nhất GHI ĐÈ, đã bị loại và
+   * `verifySubset.test.ts` canh cho nó ở ngoài).
+   * ⚠ `python <tệp>.py` KHÔNG có ở đây và cũng KHÔNG có trong danh sách trắng: đó là chạy script
+   *   tuỳ ý, đúng thứ cả hai danh sách tồn tại để chặn.
+   */
+  "python -m pytest <đường-dẫn>",
+  "python -m unittest <đường-dẫn>",
 ]);
 
 /**

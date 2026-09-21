@@ -39,6 +39,7 @@
  *   mặc định trôi vào.
  */
 import { StreamingSecretRedactor, redactSecretsAndPII } from "./ai/aiSafety";
+import { chonTacVuModel } from "./ai/chonTacVuModel";
 /**
  * ★★★ doc 81 VIỆC 1 — CỔNG NGÂN SÁCH NGỮ CẢNH, nhập TĨNH và dùng NGUYÊN.
  *
@@ -168,9 +169,17 @@ export type MaKhoiHong =
   | "NEO_NHIEU_CHO"
   | "KHOI_KHONG_DOI";
 
-/** Xem khối ⚠⚠ VRAM ở đầu file. `"code"` là opt-in có ý thức. */
-function tacVuModel(): "chat" | "code" {
-  return process.env.AI_CODING_MODEL_TASK === "code" ? "code" : "chat";
+/**
+ * Xem khối ⚠⚠ VRAM ở đầu file. `"code"` là opt-in có ý thức.
+ *
+ * ★★★ G4 (audit 2026-09-21 · P4) — nay nhận LỰA CHỌN CỦA NGƯỜI DÙNG cho từng lượt. Trước lượt này
+ * hàm đọc thẳng env ⇒ một tiến trình = một lựa chọn cho MỌI người, MỌI câu, và đổi model đòi
+ * **khởi động lại server** (Claude có `/model`, Cursor có dropdown; AI Local không có gì).
+ * `undefined`/"auto" ⇒ theo env, tức hành vi cũ Y NGUYÊN. Lọc qua danh sách TRẮNG — xem
+ * `ai/chonTacVuModel.ts`.
+ */
+function tacVuModel(nguoiChon?: unknown): "chat" | "code" | "fast" {
+  return chonTacVuModel(nguoiChon, process.env.AI_CODING_MODEL_TASK);
 }
 
 /**
@@ -191,6 +200,11 @@ export async function codingModelSanSang(): Promise<boolean> {
 // CỬA GỌI MODEL — **MỘT** điểm gọi `generateTextStream` cho cả sinh mã lẫn sửa tệp
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 export interface YeuCauSinhChu {
+  /**
+   * ★ G4 — tầng model người dùng chọn cho LƯỢT NÀY (`"auto"|"fast"|"code"`). Vắng ⇒ mặc định của hệ.
+   * Giá trị đến từ client nên `chonTacVuModel` lọc qua danh sách TRẮNG; không nới quyền gì.
+   */
+  tacVu?: unknown;
   systemPrompt: string;
   prompt: string;
   maxTokens: number;
@@ -241,7 +255,7 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
   const catSuyLuan = new StreamingThinkingStripper({ startInsideThinking: thinkingStartsOpen() });
   const cheBiMat = new StreamingSecretRedactor();
 
-  const plan = await planInference({ task: tacVuModel(), text: y.prompt, userId: y.userId });
+  const plan = await planInference({ task: tacVuModel(y.tacVu) as never, text: y.prompt, userId: y.userId });
   if (y.nguyenVanPrompt === true && plan.safeText !== y.prompt) {
     plan.record({ latencyMs: 0, outcome: "error" });
     throw new Error("CODING_PROMPT_REDACTED");

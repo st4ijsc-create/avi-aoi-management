@@ -149,7 +149,7 @@ export function congGhiDiaBat(): boolean {
  * thẩm mỹ. `checkPermission` cần CSDL; nếu vị từ *"mục này có đòi bit thứ hai không"* nằm lẫn trong
  * lượt gọi ấy thì cách duy nhất để đo nó là **mock một module**, đúng thứ đã cắn hôm 2026-08-19
  * (một lưới mock-module XANH khi chạy riêng, **ĐỎ trong suite**). Tách ra thì chính sách là **hàm
- * thuần** — đo được đủ hai chiều cờ, cho cả chín mục, không CSDL, không mock.
+ * thuần** — đo được đủ hai chiều cờ, cho cả MƯỜI MỘT mục, không CSDL, không mock.
  */
 export function canDoiBitGhiThem(muc: MucDanhSachTrang): boolean {
   return muc.ghiDia && congGhiDiaBat();
@@ -193,7 +193,7 @@ function cauTuChoiLenh(ma: MaTuChoiLenh, chiTiet: string, lang: ToolLang, argv0?
   /**
    * ⚠⚠ SỐ LƯỢNG LẤY TỪ **CHÍNH BẢNG**, KHÔNG VIẾT TAY. Bản trước viết cứng *"Năm lệnh được phép"* /
    * *"The five allowed commands"* / *"允许的五条命令"* rồi in **chín** dòng ngay bên dưới — một câu tự
-   * mâu thuẫn với chính nó, ở cả ba ngôn ngữ, suốt từ lượt mở bảng lên chín mục. Đọc `.length` thì
+   * mâu thuẫn với chính nó, ở cả ba ngôn ngữ, suốt từ lượt mở bảng lên mười một mục. Đọc `.length` thì
    * lớp lỗi ấy **không còn chỗ tồn tại**, thay vì phải nhớ sửa ở ba chỗ mỗi lần bảng đổi.
    */
   const so = DANH_SACH_TRANG.length;

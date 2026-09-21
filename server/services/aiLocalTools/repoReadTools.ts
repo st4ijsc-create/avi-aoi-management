@@ -46,6 +46,7 @@
  *   chối. Muốn đa ngữ thì phải đa ngữ hoá `cauTuChoi` TRƯỚC.
  */
 import { z } from "zod";
+import { menhLenhTuChoiChoModel } from "../ai/vanBanChoModel";
 import { authCtxParam, authCtxSchema, rbacGate } from "./readToolRbac";
 import {
   HAN_GIO_GREP_MS,
@@ -100,27 +101,61 @@ const projectRootParam = z.string().optional();
  * viết `note: BANG[ma]` thì §1 mù (không thấy mã nào) và §2 ĐỎ (bảng kê thành hoá thạch). Viết
  * hằng chữ là cách duy nhất để cả hai vế của lưới ấy nói cùng một sự thật.
  */
+/**
+ * ★★★ G2 (audit 2026-09-21 · P2) — GIẢI THÍCH NGẮN cho MODEL, theo từng mã từ chối.
+ * Cố ý KHÔNG mang cụm trấn-an ("không phải sự cố") — chính cụm ấy làm model tưởng không có lỗi
+ * rồi bịa tiếp. `vanBanChoModel.test.ts` canh chuỗi cấm.
+ */
+function lyDoChoModel(ma: MaTuChoiHopCat, chiTiet: string): { doiTuong: string; giaiThich: string } {
+  switch (ma) {
+    case "BUDGET_EXCEEDED":
+      return { doiTuong: "tệp/thư mục vừa yêu cầu", giaiThich: `ngân sách byte của phiên đã cạn (${chiTiet})` };
+    case "DENIED_SECRET":
+      return { doiTuong: chiTiet, giaiThich: "tệp bí mật, hộp cát CẤM đọc" };
+    case "DENIED_DIR":
+      return { doiTuong: chiTiet, giaiThich: "nằm trong thư mục bị hộp cát loại trừ" };
+    case "DENIED_EXT":
+      return { doiTuong: chiTiet, giaiThich: "phần mở rộng không nằm trong danh sách TRẮNG" };
+    case "NOT_FOUND":
+      return { doiTuong: chiTiet, giaiThich: "không tồn tại trong hộp cát repo" };
+    case "NOT_A_FILE":
+      return { doiTuong: chiTiet, giaiThich: "không phải một tệp thường" };
+    case "NOT_A_DIRECTORY":
+      return { doiTuong: chiTiet, giaiThich: "không phải một thư mục" };
+    case "READ_ERROR":
+      return { doiTuong: chiTiet, giaiThich: "lỗi hệ tệp khi đọc" };
+    default:
+      return { doiTuong: chiTiet, giaiThich: "đường dẫn bị hộp cát TỪ CHỐI" };
+  }
+}
+
 function ketQuaTuChoiHopCat<T>(title: string, rong: T, ma: MaTuChoiHopCat, chiTiet: string): ToolResult<T> {
+  /**
+   * ★★★ G2 — MỌI nhánh dưới đây nay mang THÊM `textModel`. `textSummary` giữ NGUYÊN từng byte
+   * (người dùng vẫn đọc đúng câu cũ, đã dịch và đã có lưới); chỉ chữ nạp vào PROMPT là đổi.
+   */
+  const { doiTuong, giaiThich } = lyDoChoModel(ma, chiTiet);
+  const textModel = menhLenhTuChoiChoModel(doiTuong, ma, giaiThich);
   switch (ma) {
     case "DENIED_SECRET":
-      return { type: KIEU, title, data: rong, note: "DENIED_SECRET", textSummary: `Tệp "${chiTiet}" nằm trong danh sách CẤM ĐỌC của hộp cát (tệp bí mật: .env*, khoá riêng, chứng thư). Đây là thiết kế, không phải sự cố — không có đường vòng nào, kể cả cho quản trị viên.` };
+      return { type: KIEU, title, textModel, data: rong, note: "DENIED_SECRET", textSummary: `Tệp "${chiTiet}" nằm trong danh sách CẤM ĐỌC của hộp cát (tệp bí mật: .env*, khoá riêng, chứng thư). Đây là thiết kế, không phải sự cố — không có đường vòng nào, kể cả cho quản trị viên.` };
     case "DENIED_DIR":
-      return { type: KIEU, title, data: rong, note: "DENIED_DIR", textSummary: `Đường dẫn "${chiTiet}" nằm trong một thư mục bị hộp cát loại trừ (node_modules, .git, dist, build, uploads, coverage, knowledge/embeddings…). Hãy hỏi ở cây mã nguồn: server/, client/, shared/, drizzle/, scripts/.` };
+      return { type: KIEU, title, textModel, data: rong, note: "DENIED_DIR", textSummary: `Đường dẫn "${chiTiet}" nằm trong một thư mục bị hộp cát loại trừ (node_modules, .git, dist, build, uploads, coverage, knowledge/embeddings…). Hãy hỏi ở cây mã nguồn: server/, client/, shared/, drizzle/, scripts/.` };
     case "DENIED_EXT":
-      return { type: KIEU, title, data: rong, note: "DENIED_EXT", textSummary: `Phần mở rộng ${chiTiet} không nằm trong danh sách TRẮNG của hộp cát. Hộp cát chỉ mở cho tệp mã nguồn/cấu hình dạng văn bản; mọi đuôi khác bị từ chối theo mặc định (danh sách TRẮNG, không phải danh sách đen).` };
+      return { type: KIEU, title, textModel, data: rong, note: "DENIED_EXT", textSummary: `Phần mở rộng ${chiTiet} không nằm trong danh sách TRẮNG của hộp cát. Hộp cát chỉ mở cho tệp mã nguồn/cấu hình dạng văn bản; mọi đuôi khác bị từ chối theo mặc định (danh sách TRẮNG, không phải danh sách đen).` };
     case "BUDGET_EXCEEDED":
-      return { type: KIEU, title, data: rong, note: "BUDGET_EXCEEDED", textSummary: `Phiên này đã rút hết ngân sách byte của hộp cát (${chiTiet} byte, trần ${TRAN_BYTE_MOI_PHIEN}). Đây là một cái TRẦN, không phải một sự cố: hãy thu hẹp câu hỏi hoặc chờ cửa sổ ngân sách đặt lại.` };
+      return { type: KIEU, title, textModel, data: rong, note: "BUDGET_EXCEEDED", textSummary: `Phiên này đã rút hết ngân sách byte của hộp cát (${chiTiet} byte, trần ${TRAN_BYTE_MOI_PHIEN}). Đây là một cái TRẦN, không phải một sự cố: hãy thu hẹp câu hỏi hoặc chờ cửa sổ ngân sách đặt lại.` };
     case "NOT_FOUND":
-      return { type: KIEU, title, data: rong, note: "NOT_FOUND", textSummary: `Không có tệp/thư mục "${chiTiet}" trong hộp cát repo.` };
+      return { type: KIEU, title, textModel, data: rong, note: "NOT_FOUND", textSummary: `Không có tệp/thư mục "${chiTiet}" trong hộp cát repo.` };
     case "NOT_A_FILE":
-      return { type: KIEU, title, data: rong, note: "NOT_A_FILE", textSummary: `"${chiTiet}" không phải một tệp thường (có thể là thư mục). Dùng list_files để liệt kê thư mục.` };
+      return { type: KIEU, title, textModel, data: rong, note: "NOT_A_FILE", textSummary: `"${chiTiet}" không phải một tệp thường (có thể là thư mục). Dùng list_files để liệt kê thư mục.` };
     case "NOT_A_DIRECTORY":
-      return { type: KIEU, title, data: rong, note: "NOT_A_DIRECTORY", textSummary: `"${chiTiet}" không phải một thư mục. Dùng read_file để đọc một tệp.` };
+      return { type: KIEU, title, textModel, data: rong, note: "NOT_A_DIRECTORY", textSummary: `"${chiTiet}" không phải một thư mục. Dùng read_file để đọc một tệp.` };
     case "READ_ERROR":
-      return { type: KIEU, title, data: rong, note: "READ_ERROR", textSummary: `Không đọc được "${chiTiet}" (lỗi hệ tệp). Đây là lỗi ĐỌC THẬT, không phải một lượt từ chối vì chính sách.` };
+      return { type: KIEU, title, textModel, data: rong, note: "READ_ERROR", textSummary: `Không đọc được "${chiTiet}" (lỗi hệ tệp). Đây là lỗi ĐỌC THẬT, không phải một lượt từ chối vì chính sách.` };
     case "PATH_REJECTED":
     default:
-      return { type: KIEU, title, data: rong, note: "PATH_REJECTED", textSummary: `Đường dẫn bị hộp cát TỪ CHỐI (${chiTiet}). Hộp cát chặn: đường dẫn tuyệt đối, ".." , ký tự NUL, đoạn dạng ổ đĩa "C:" ở BẤT KỲ vị trí nào, symlink/junction trỏ ra ngoài gốc, và tệp có nhiều liên kết cứng. Hãy dùng đường dẫn TƯƠNG ĐỐI so với thư mục repo.` };
+      return { type: KIEU, title, textModel, data: rong, note: "PATH_REJECTED", textSummary: `Đường dẫn bị hộp cát TỪ CHỐI (${chiTiet}). Hộp cát chặn: đường dẫn tuyệt đối, ".." , ký tự NUL, đoạn dạng ổ đĩa "C:" ở BẤT KỲ vị trí nào, symlink/junction trỏ ra ngoài gốc, và tệp có nhiều liên kết cứng. Hãy dùng đường dẫn TƯƠNG ĐỐI so với thư mục repo.` };
   }
 }
 

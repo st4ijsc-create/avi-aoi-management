@@ -272,7 +272,33 @@ export const TRAN_BYTE_MOI_TEP = 65_536;
  * thứ phải đếm. Chi phí QUÉT được chặn bằng một cái trần khác, đúng loại: `TRAN_TEP_QUET` +
  * `HAN_GIO_GREP_MS`.
  */
-export const TRAN_BYTE_MOI_PHIEN = 1_048_576;
+/**
+ * ★★★ G3 (audit 2026-09-21 · P3) — NÂNG 1 MiB → 4 MiB. **Con số này đến từ PHÉP ĐO, không từ cảm giác.**
+ *
+ * ĐƠN VỊ ĐẾM KHÔNG ĐỔI (vẫn là byte RỜI hộp cát) và lý lẽ chống rò ở trên VẪN NGUYÊN — chỉ cái
+ * TRẦN đổi. Đây là điều kiện để bản vá này không phá thứ khối chú thích trên vừa dựng ra.
+ *
+ * ── SỐ ĐO (phiên lập trình THẬT, 10 lượt, trộn: sinh mã tự chứa · hỏi sự thật repo · đa bước) ──
+ *   trung vị **28.589** byte/lượt · p90 **42.869** · max **74.680** · trung bình 30.937
+ *   ⇒ một phiên **30 lượt**: ~0,89 MiB (trung bình) · **~1,23 MiB (p90)** · ~2,14 MiB (theo max)
+ *
+ * ── VÌ SAO 1 MiB LÀ SAI ──
+ * Trần cũ nằm NGAY DƯỚI nhu cầu của một phiên 30 lượt bình thường ⇒ nó bị chạm giữa chừng, và khi
+ * chạm thì tác nhân **MÙ** (không đọc nổi một tệp 1 KB) và **CÂM** (không chạy nổi kiểm chứng) cho
+ * tới khi cửa sổ đặt lại. Đo sống: **23 lượt đọc tệp là cạn**. Đó không phải một cái trần an toàn,
+ * đó là một cái bẫy đặt đúng giữa đường làm việc.
+ *
+ * ── VÌ SAO 4 MiB, KHÔNG PHẢI 8 HAY 16 ──
+ * 4 MiB = **1,9× hồ sơ phiên xấu nhất quan sát được** (2,14 MiB) và ~3,3× hồ sơ p90 (1,23 MiB).
+ * Đủ dư cho một phiên dài mà vẫn là một cái trần THẬT: nó vẫn chặn đúng kịch bản rò mà bản gốc
+ * dựng ra để chặn (rút cả cây mã ra cửa sổ chat — cây nhìn-thấy của hộp cát ~7.616 tệp).
+ * Một con số lớn hơn không có số đo nào đỡ lưng, nên không lấy.
+ *
+ * ⚠ Trần này đi CÙNG đồng hồ ngân sách ở giao diện (`repoWorkspace.nganSachHopCat` +
+ *   `trangThaiNganSach`). Nâng trần mà vẫn để nó vô hình là chữa nửa vời: người dùng vẫn sẽ đâm
+ *   vào tường, chỉ là muộn hơn.
+ */
+export const TRAN_BYTE_MOI_PHIEN = 4 * 1_048_576;
 /** Cửa sổ trượt của sổ ngân sách. */
 export const CUA_SO_NGAN_SACH_MS = 15 * 60_000;
 /** Số mục tối đa `list_files` trả về trong MỘT lượt. */
@@ -416,6 +442,38 @@ export function tieuNganSach(khoa: string, byte: number, bayGio = Date.now()): T
 /** Chỉ dùng trong lưới — một ca không được kế thừa ngân sách của ca trước. */
 export function xoaSoNganSach(): void {
   soNganSach.clear();
+}
+
+/**
+ * ★★★ G3 (audit 2026-09-21 · P3) — TRẠNG THÁI ĐẦY ĐỦ CỦA SỔ, CHO ĐỒNG HỒ Ở GIAO DIỆN.
+ *
+ * Vì sao cần: trần 1 MiB/15 phút là một quyết định ĐÚNG (đếm byte RỜI hộp cát, chống rò), nhưng
+ * trước lượt này nó **vô hình**. Đo sống: 23 lượt đọc tệp là cạn, và người dùng **chỉ biết khi đã
+ * đâm vào tường** — cú bấm mở một tệp 1 KB trả về "đã rút hết ngân sách". Không có đồng hồ nào,
+ * không có cảnh báo nào trước đó. Một cái trần vô hình thì không khác gì một sự cố ngẫu nhiên.
+ *
+ * ⚠ Hàm này CHỈ ĐỌC — không ghi, không tạo mục mới trong sổ (gọi nó không được làm hao ngân sách).
+ * `datLaiSauMs = 0` khi chưa tiêu gì (cửa sổ chưa mở).
+ */
+export interface TrangThaiNganSach {
+  readonly daDung: number;
+  readonly conLai: number;
+  readonly tran: number;
+  readonly cuaSoMs: number;
+  /** Còn bao nhiêu ms nữa thì sổ đặt lại. 0 = chưa mở cửa sổ nào (đang đầy). */
+  readonly datLaiSauMs: number;
+}
+
+export function trangThaiNganSach(khoa: string, bayGio = Date.now()): TrangThaiNganSach {
+  const m = soNganSach.get(khoa);
+  const chua = m === undefined || m.hetHan <= bayGio;
+  return {
+    daDung: chua ? 0 : m.daDung,
+    conLai: chua ? TRAN_BYTE_MOI_PHIEN : Math.max(0, TRAN_BYTE_MOI_PHIEN - m.daDung),
+    tran: TRAN_BYTE_MOI_PHIEN,
+    cuaSoMs: CUA_SO_NGAN_SACH_MS,
+    datLaiSauMs: chua ? 0 : Math.max(0, m.hetHan - bayGio),
+  };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════

@@ -625,6 +625,56 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     },
     phanGiai: (oTuDo) => (oTuDo === null ? null : { file: process.execPath, args: ["--test", oTuDo] }),
   },
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ G5 (audit 2026-09-21 · P7) — PYTHON. **Khoảng trống đo được, không phải tính năng "thêm cho đủ".**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Chủ dự án đặt mục tiêu *"sinh được code tự động và phải CHẠY ĐƯỢC"*. Đo sống trước bản vá:
+   *
+   *   TS/Node ✅ (`npm run check`, `npx vitest run`, `node --test`)
+   *   C#/.NET ✅ (`dotnet build/test`, dotnet 10.0.302 có sẵn)
+   *   Python  ❌ — máy CÓ Python 3.14.6 nhưng danh sách trắng KHÔNG có một mục Python nào
+   *                ⇒ tác nhân sinh được mã Python mà KHÔNG BAO GIỜ chạy nổi nó.
+   *   C++     ❌ — không lệnh, và máy không có `g++`/`gcc`/`cl`/`cmake` (hoãn theo chỉ đạo).
+   *
+   * Hai mục dưới đây đóng đúng ô Python, và CHỈ ô đó.
+   *
+   * ⚠ VÌ SAO `-m pytest` / `-m unittest` CHỨ KHÔNG PHẢI `python <tệp>`:
+   *   `python duong/tep.py` là **chạy một script TUỲ Ý** — đúng thứ danh sách trắng tồn tại để chặn.
+   *   `-m pytest` / `-m unittest` là hai TRÌNH CHẠY TEST: chúng nạp và chạy test, không phải một
+   *   cửa thực thi mã tự do. Cùng lý lẽ đã chọn `node --test <đường>` thay vì `node <tệp>`.
+   *
+   * ⚠ `ghiDia: false` — hai lệnh này KHÔNG sinh sản phẩm dựng. (`__pycache__` là bộ nhớ đệm của
+   *   trình thông dịch, cùng hạng với `tsbuildinfo` mà `npm run check` đã được chấp nhận.)
+   */
+  {
+    nhan: "python -m pytest <đường-dẫn>",
+    khuon: ["python", "-m", "pytest", null],
+    hanGioMs: 180_000,
+    moTa: "Chạy pytest cho MỘT đường dẫn. CHỈ chế độ -m pytest — KHÔNG chạy script Python tuỳ ý.",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: false,
+    phanQuyetOTuDo: (v) => {
+      const ma = phanQuyetDuongDan(v);
+      return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
+    },
+    phanGiai: (oTuDo) => (oTuDo === null ? null : { file: "python", args: ["-m", "pytest", oTuDo] }),
+  },
+  {
+    nhan: "python -m unittest <đường-dẫn>",
+    khuon: ["python", "-m", "unittest", null],
+    hanGioMs: 180_000,
+    moTa: "Chạy unittest tích hợp của Python cho MỘT đường dẫn. CHỈ chế độ -m unittest — KHÔNG chạy script tuỳ ý.",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: false,
+    phanQuyetOTuDo: (v) => {
+      const ma = phanQuyetDuongDan(v);
+      return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
+    },
+    phanGiai: (oTuDo) => (oTuDo === null ? null : { file: "python", args: ["-m", "unittest", oTuDo] }),
+  },
 ];
 
 export type KetQuaPhanQuyetLenh =
@@ -724,7 +774,7 @@ export function phanQuyetLenh(argv: readonly string[], goc = gocHopCat()): KetQu
  * ★ 2026-08-23 · UX LÔ 1 (B3) — **GỢI Ý LỆNH GẦN ĐÚNG NHẤT theo `argv[0]`**, cho câu từ chối
  * `CMD_NOT_ALLOWED`.
  *
- * Sự việc đo được: mỗi lượt gõ sai, người dùng "ăn nguyên bức tường 9 lệnh (~2.300 ký tự)" — trong
+ * Sự việc đo được: mỗi lượt gõ sai, người dùng "ăn nguyên bức tường 11 lệnh (~2.800 ký tự)" — trong
  * khi họ chỉ cần 1–3 mục CÙNG HỌ với thứ vừa gõ. Hàm này trả về các mục danh sách trắng có
  * `khuon[0]` trùng chữ đầu của lệnh bị từ chối (`dotnet` ⇒ 3 mục dotnet · `npm` ⇒ 2 · `git` ⇒ 2 ·
  * `npx`/`node` ⇒ 1); không đoán được ⇒ `[]` (câu từ chối khi ấy chỉ nói "N lệnh được phép, xem
