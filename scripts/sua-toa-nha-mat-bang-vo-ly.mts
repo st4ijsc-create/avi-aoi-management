@@ -3,39 +3,48 @@
  * sua-toa-nha-mat-bang-vo-ly.mts — **SỬA MẶT BẰNG TOÀ NHÀ DO BỘ SINH LẤY NHẦM PHẠM VI.**
  *
  * ════════════════════════════════════════════════════════════════════════════
- * ★★★ KHUYẾT TẬT — ĐO ĐƯỢC 2026-09-21
+ * ★★★ ĐỌC KHỐI NÀY TRƯỚC KHI CHẠY — LẦN DÙNG ĐẦU TIÊN CỦA NÓ LÀ MỘT SAI LẦM
  * ════════════════════════════════════════════════════════════════════════════
- * `twin_toa_nha` có toà **90** (`FUYU-F-TN1`, *"FUYU-F (tai tong hop) — toa chinh"*, `nguon`
- * = `sinh`) khai mặt bằng **3.000.000 × 2.000.000 mm = 3 km × 2 km**. Không toà nhà nào dài
- * 3 km; đây gần như chắc chắn là bộ sinh lấy **phạm vi khuôn viên** làm mặt bằng toà.
+ * 2026-09-21, bản đầu của kịch bản này chỉ hỏi **một** câu: *"cạnh có > 1 km không?"*.
+ * `twin_toa_nha` id=90 (`FUYU-F-TN1`) khai 3.000 × 2.000 m ⇒ vượt ngưỡng ⇒ tôi gọi nó là lỗi
+ * bộ sinh, trình chủ dự án, được duyệt, và **đã sửa về 110 × 80 m**.
  *
- * Hậu quả đo được: chính nó tạo ra tỉ số cạnh **78:1** trên tập `qatd_admin`, và tỉ số ấy là
- * lý do sa bàn tập đoàn phải **ước lệ mặt bằng** (vẽ mọi toà cùng một cỡ) — một sự ước lệ mà
- * banner phải đứng ra khai với người dùng.
+ * Rồi `scripts/do-twin/ra-soat-du-lieu-twin.mts` bắt được hậu quả ở phép kiểm **B4**: ba tầng
+ * của toà ấy vẫn 3.000 × 2.000 m. Đo tiếp: ba tầng đang giữ **1.119 đặt chỗ** trải tới
+ * **x = 1.500 m, y = 1.000 m**.
  *
- * ⚠ Nó **KHÔNG** ảnh hưởng tiêu chí 24 px (đo: bỏ toà này ra vẫn đúng 13/14, vì mặt bằng vốn
- *   đã được chuẩn hoá về TRUNG VỊ nên một ngoại lai không kéo được trung vị). Sửa nó là sửa
- *   **nguyên nhân gốc của việc phải ước lệ**, không phải sửa để đạt một con số.
+ * ⇒ **3 km không phải con số rác.** Cả nhà máy FUYU-F được mô hình hoá thành MỘT khối gộp
+ *   ("tải tổng hợp"), và toà + tầng + đặt chỗ **nhất quán với nhau**. Thứ làm chúng lệch nhau
+ *   chính là bản vá của tôi. Đã hoàn nguyên.
+ *
+ * ★★★ BÀI HỌC, NAY LÀ HÀNG RÀO TRONG CHÍNH KỊCH BẢN:
+ *   **Một con số chỉ vô lý khi nó KHÔNG ĂN KHỚP với thứ nó chứa.** Đừng phán một cột bằng cách
+ *   nhìn riêng cột ấy. Toà to mà bên trong trải đúng cỡ ⇒ mô hình gộp. Toà to mà bên trong
+ *   trống trơn ⇒ mới là lỗi.
+ *
+ * ⇒ Từ nay kịch bản **TỪ CHỐI thu nhỏ** một toà mà tầng hoặc đặt chỗ của nó còn trải ra ngoài
+ *   cỡ mới. Muốn thu thật thì phải xử cả cụm (toà + tầng + đặt chỗ) trong một lượt có tính
+ *   toán, không phải bằng một lệnh `UPDATE` trên một bảng.
  *
  * ════════════════════════════════════════════════════════════════════════════
- * ★★★ CHỈ SỬA MẶT BẰNG — KHÔNG ĐỤNG CHIỀU CAO
+ * ★ CÁCH LÀM
  * ════════════════════════════════════════════════════════════════════════════
- * Chiều cao 25 m là một con số **hợp lý** và không có dấu hiệu sai. Đặt nó về "chuẩn QATD
- * 42 m" là **bịa** một con số cho khớp cái nhìn — đúng lớp *"sửa đề thi cho khớp bài làm"* mà
- * dự án này đã bác hai lần. Mặt bằng lấy **trung vị của các toà còn lại**, không lấy một hằng
- * viết tay: trung vị là con số đã có mặt trong dữ liệu, không phải ý kiến của tôi.
+ * · Mặt bằng mới lấy **trung vị của các toà lành mạnh** — con số đã có trong dữ liệu, không
+ *   phải ý kiến của tôi.
+ * · **KHÔNG đụng chiều cao.** Đặt nó về "chuẩn" là bịa một con số cho khớp cái nhìn.
+ * · In **nguyên văn giá trị cũ** trước khi ghi ⇒ đảo ngược được (chính nhờ dòng ấy mà lần sai
+ *   ở trên khôi phục được trong một phút).
+ * · Dừng nếu **mọi** toà đều vượt ngưỡng: không còn trung vị lành mạnh nào để lấy ⇒ không đoán.
  *
- * ⚠ ĐẢO NGƯỢC ĐƯỢC: kịch bản in **nguyên văn giá trị cũ** trước khi ghi. Chép lại dòng ấy là
- *   đủ để khôi phục.
- * ⚠ Chủ dự án đã duyệt (2026-09-21) sau khi được trình số đo. Quy ước của dự án: **báo trước
- *   khi seed lại**, vì phiên khác có thể đang giữ bằng chứng đo trên chính tập dữ liệu này.
+ * ⚠ Quy ước dự án: **báo trước khi seed lại**, vì phiên khác có thể đang giữ bằng chứng đo trên
+ *   chính tập dữ liệu này.
  *
  * Chạy:  npx tsx scripts/sua-toa-nha-mat-bang-vo-ly.mts          (chỉ XEM, không ghi)
  *        npx tsx scripts/sua-toa-nha-mat-bang-vo-ly.mts --sua    (ghi thật)
  */
 import postgres from "postgres";
 
-/** Mặt bằng lớn hơn ngưỡng này thì không còn là một toà nhà — nó là một khuôn viên. */
+/** Mặt bằng lớn hơn ngưỡng này thì ĐÁNG NGỜ — chưa phải kết luận, xem hàng rào nhất quán. */
 const NGUONG_VO_LY_MM = 1_000_000; // 1 km
 
 const url = process.env.DATABASE_URL;
@@ -51,19 +60,21 @@ try {
     { id: number; ma: string; ten: string; rongMm: string; sauMm: string; caoMm: string }[]
   >`SELECT id, ma, ten, "rongMm", "sauMm", "caoMm" FROM twin_toa_nha WHERE "isActive" = true ORDER BY id`;
 
-  const voLy = tatCa.filter(
+  const dangNgo = tatCa.filter(
     (b) => Number(b.rongMm) > NGUONG_VO_LY_MM || Number(b.sauMm) > NGUONG_VO_LY_MM,
   );
-  const lanhManh = tatCa.filter((b) => !voLy.includes(b));
+  const lanhManh = tatCa.filter((b) => !dangNgo.includes(b));
 
-  console.log(`toà đang hoạt động: ${tatCa.length} · vô lý (> ${NGUONG_VO_LY_MM / 1000} m): ${voLy.length}`);
-  if (voLy.length === 0) {
-    console.log("Không có toà nào cần sửa.");
+  console.log(
+    `toà đang hoạt động: ${tatCa.length} · vượt ngưỡng ${NGUONG_VO_LY_MM / 1000} m: ${dangNgo.length}`,
+  );
+  if (dangNgo.length === 0) {
+    console.log("Không có toà nào cần xét.");
     await sql.end();
     process.exit(0);
   }
   if (lanhManh.length === 0) {
-    console.error("MỌI toà đều vô lý ⇒ không có trung vị lành mạnh để lấy. DỪNG, không đoán.");
+    console.error("MỌI toà đều vượt ngưỡng ⇒ không có trung vị lành mạnh để lấy. DỪNG, không đoán.");
     await sql.end();
     process.exit(1);
   }
@@ -77,18 +88,61 @@ try {
   const sauMoi = Math.round(trungVi(lanhManh.map((b) => Number(b.sauMm))));
   console.log(`trung vị của ${lanhManh.length} toà lành mạnh: ${rongMoi} × ${sauMoi} mm`);
 
-  for (const b of voLy) {
+  let daGhi = 0;
+  for (const b of dangNgo) {
+    /*
+     * ★★★ HÀNG RÀO NHẤT QUÁN — thứ mà bản đầu KHÔNG có, và thiếu nó tôi đã phá một tập đúng.
+     *   Hỏi thẳng: bên trong toà này có gì trải ra ngoài cỡ mới không?
+     */
+    const [{ tang_dai, tang_rong, dat_x, dat_y, so_tang, so_dat }] = await sql<
+      {
+        tang_dai: number | null; tang_rong: number | null;
+        dat_x: number | null; dat_y: number | null;
+        so_tang: number; so_dat: number;
+      }[]
+    >`SELECT max(t."daiMm")::float AS tang_dai, max(t."rongMm")::float AS tang_rong,
+             max(dc."viTriXMm")::float AS dat_x, max(dc."viTriYMm")::float AS dat_y,
+             count(DISTINCT t.id)::int AS so_tang, count(dc.*)::int AS so_dat
+        FROM twin_tang t
+        LEFT JOIN twin_dat_cho dc ON dc."tangId" = t.id AND dc."hienThi"
+       WHERE t."toaNhaId" = ${b.id} AND t."isActive"`;
+
+    const vuot: string[] = [];
+    if ((tang_dai ?? 0) > rongMoi) vuot.push(`tầng dài ${tang_dai} > ${rongMoi}`);
+    if ((tang_rong ?? 0) > sauMoi) vuot.push(`tầng rộng ${tang_rong} > ${sauMoi}`);
+    if ((dat_x ?? 0) > rongMoi) vuot.push(`đặt chỗ x tới ${dat_x} > ${rongMoi}`);
+    if ((dat_y ?? 0) > sauMoi) vuot.push(`đặt chỗ y tới ${dat_y} > ${sauMoi}`);
+
+    console.log(`\n  toà ${b.id} (${b.ma}) "${b.ten}"`);
+    console.log(`    hiện: ${b.rongMm} × ${b.sauMm} mm · ${so_tang} tầng · ${so_dat} đặt chỗ`);
+
+    if (vuot.length > 0) {
+      console.log(`    ⛔ BỎ QUA — NHẤT QUÁN, không phải lỗi. Bên trong trải đúng cỡ lớn ấy:`);
+      for (const v of vuot) console.log(`         · ${v}`);
+      console.log(
+        `    ⇒ Đây là MÔ HÌNH GỘP (cả nhà máy vẽ thành một khối). Thu nó về ${rongMoi} × ${sauMoi}`,
+      );
+      console.log(
+        `      sẽ ném ${so_dat} đặt chỗ ra ngoài sàn. Muốn thu thật thì phải xử CẢ CỤM trong một lượt.`,
+      );
+      continue;
+    }
+
     console.log(
-      `\n  toà ${b.id} (${b.ma}) "${b.ten}"\n` +
-        `    CŨ : rongMm=${b.rongMm}  sauMm=${b.sauMm}  caoMm=${b.caoMm}   ← chép dòng này để khôi phục\n` +
-        `    MỚI: rongMm=${rongMoi}  sauMm=${sauMoi}  caoMm=${b.caoMm} (GIỮ NGUYÊN)`,
+      `    CŨ : rongMm=${b.rongMm}  sauMm=${b.sauMm}  caoMm=${b.caoMm}   ← chép dòng này để khôi phục`,
     );
+    console.log(`    MỚI: rongMm=${rongMoi}  sauMm=${sauMoi}  caoMm=${b.caoMm} (GIỮ NGUYÊN)`);
     if (sua) {
       await sql`UPDATE twin_toa_nha SET "rongMm" = ${rongMoi}, "sauMm" = ${sauMoi}, "updatedAt" = now() WHERE id = ${b.id}`;
+      daGhi += 1;
       console.log(`    ⇒ ĐÃ GHI.`);
     }
   }
-  console.log(sua ? "\nXong — đã ghi." : "\nCHƯA ghi gì (thêm --sua để ghi thật).");
+  console.log(
+    sua
+      ? `\nXong — đã ghi ${daGhi}/${dangNgo.length} toà (số còn lại bị hàng rào nhất quán giữ lại).`
+      : "\nCHƯA ghi gì (thêm --sua để ghi thật).",
+  );
 } catch (e) {
   console.error("LỖI:", String(e).slice(0, 300));
   process.exitCode = 1;
