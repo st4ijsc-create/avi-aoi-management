@@ -838,3 +838,97 @@ hàng vô nghĩa**; hàng lịch sử chỉ dựng lại được bằng **ablat
 `tsc` **0** · `twin3d`+`pages` **177 tệp / 3.637 ca / 0 đỏ** · `i18n:check` **0**.
 Commit vòng 7: `f9bd6d1c` (dữ liệu toà 3 km) · `142e1e76` (sàn 20 m + banner) ·
 `3b4c2694` (`scripts/do-twin/`).
+
+---
+
+# VÒNG 8 (PDCA, 2026-09-21) — CÔNG CỤ VỪA THÊM BẮT TÔI ĐÃ PHÁ MỘT TẬP DỮ LIỆU ĐÚNG
+
+**Đề bài:** *"Tiếp tục phần còn lại cho đến khi hoàn tất."* Ba mục: rà dữ liệu sinh · hồi tố
+truy vấn · toà 94.
+
+## 1. ★★★ PHÁT HIỆN LỚN NHẤT — VÀ NẠN NHÂN LÀ BẢN VÁ CỦA CHÍNH TÔI Ở VÒNG 7
+
+Vòng 7 tôi sửa `twin_toa_nha` id=90 từ **3.000 × 2.000 m** về **110 × 80 m**, với lý lẽ *"không
+toà nhà nào dài 3 km; bộ sinh lấy nhầm phạm vi khuôn viên"*. Chủ dự án duyệt, tôi ghi.
+
+Lý lẽ ấy chỉ nhìn **đúng một cột**.
+
+`scripts/do-twin/ra-soat-du-lieu-twin.mts` — viết trong chính vòng này — bắt ngay ở phép kiểm
+**B4**: ba tầng của toà 90 vẫn 3.000 × 2.000 m. Đo tiếp:
+
+| tầng | cấp | đặt chỗ | x lớn nhất | y lớn nhất |
+|---|---|---|---|---|
+| 417 | 1 | 359 | 1.500 m | 1.000 m |
+| 418 | 2 | 391 | 1.500 m | 1.000 m |
+| 419 | 3 | 369 | 1.500 m | 1.000 m |
+
+⇒ **1.119 đặt chỗ đang trải tới 1,5 km × 1 km.** Cả nhà máy FUYU-F được mô hình hoá thành **một
+khối gộp** ("tải tổng hợp"), và toà + tầng + đặt chỗ **nhất quán với nhau**. Thứ làm chúng lệch
+nhau chính là bản vá của tôi.
+
+**Đã hoàn nguyên** (`rongMm=3000000, sauMm=2000000`; `caoMm` chưa bao giờ bị đụng). Khôi phục
+được trong một phút là nhờ dòng `CŨ : …` mà kịch bản in ra **trước khi ghi** — đúng lý do nó in.
+
+> ★★★ **Một con số chỉ vô lý khi nó KHÔNG ĂN KHỚP với thứ nó chứa.**
+> Đừng phán một cột bằng cách nhìn riêng cột ấy.
+
+### Bài học đã thành hàng rào, không chỉ thành chữ
+
+| chỗ | trước | sau |
+|---|---|---|
+| `sua-toa-nha-mat-bang-vo-ly.mts` | thu nhỏ mọi toà vượt ngưỡng | **TỪ CHỐI** thu nhỏ toà mà tầng/đặt chỗ còn trải ra ngoài cỡ mới |
+| phép kiểm **A1** | *"cạnh > 1 km?"* — **kêu oan** | *"to bất thường **MÀ bên trong KHÔNG trải tương ứng**?"* + một dòng **ghi chú** cho mô hình gộp |
+
+★ Chạy `--sua` **thật** sau khi vá: **ghi 0/1 toà**, in đủ bốn dòng vượt ngưỡng. Hàng rào sống,
+không phải một lời hứa trong docblock.
+★ Và A1 bản đầu vi phạm đúng bài học `BUILD-INFO` đã học một lần: **một cảnh báo LUÔN kêu thì
+không ai nghe**.
+
+## 2. Rà soát dữ liệu — 12 phép kiểm trên 4 bảng
+
+| nhóm | phép kiểm |
+|---|---|
+| **A** toà nhà | to-bất-thường-mà-rỗng · cao ngoài [3 m, 300 m] · toạ độ > 50 km · hai toà chồng lấn |
+| **B** tầng | trùng cao độ · cao độ không tăng theo cấp · sàn cao hơn nóc · sàn lớn hơn mặt bằng toà |
+| **C** đặt chỗ | kích thước ≤ 0 · nằm ngoài sàn · trỏ tới tầng chết |
+| **D** vật thể | kích thước ≤ 0 · nằm ngoài sàn |
+
+**Kết quả cuối: XANH HẾT, mã thoát 0** — cắm CI được. Một dòng ghi chú cho toà 90 (mô hình gộp).
+
+## 3. Backlog tự nó cũng là một ý kiến có tuổi
+
+Sau khi đóng N1…N4 / M1…M3 / V1…V3 ở các vòng 4–7, **sáu hàng** trong bảng C2/C3 vẫn ghi "chưa
+đo" hoặc giữ con số cũ. Đã đồng bộ cả sáu.
+
+★ Và một **lời khai hết hạn nằm trong chính mã**: `canhLine.ts` có khối
+*"⚠⚠⚠ MÓN NỢ CÒN MỞ — CHỖ NÀY CHƯA CỘNG GỐC TOÀ NHÀ"* trong khi mã **ba dòng dưới** đã cộng
+(`g.xMm + d.viTriXMm`, kèm hoán trục), có 8 ca kiểm. Khối ấy **tự nhận** là *"lời khai có hạn sử
+dụng, không phải một chú thích vĩnh viễn"* — rồi nằm quá hạn.
+
+> **Một cảnh báo hết hạn nguy hiểm hơn không có cảnh báo**: người đọc tin nó, và đi vá một thứ
+> đã được vá.
+
+## 4. SỔ TRUY VẤN — luật vòng 5 nay có chỗ thi hành
+
+Thêm mục *"Sổ truy vấn"*: mỗi con số còn được viện dẫn phải chỉ được về một kịch bản trong
+`scripts/do-twin/`. **Ba dòng** được đánh dấu ⛔ **hết hạn kiểm chứng** và nói thẳng là nợ
+(1.699 khoá sống · lớp phủ 58,2 % · 1.108 máy). Dòng cuối đã đo lại ngay: CSDL hôm nay có
+**1.700** máy, cảnh vẽ **1.699** — chênh đúng 1 máy, khớp ghi chép cũ.
+
+## 5. toà 94 — đóng bằng một phép tính, không bằng một bản vá
+
+Còn **64 %** diện tích, ô trống **32×32 px** ⇒ **đạt** 24×24, bấm vẫn đúng. Kẻ che là
+`nut-thu-phai` 21×42 px nép mép phải (**có** khai `data-che-nhan`, chỉ không cắt suốt chiều cao).
+
+**Giá nếu trừ:** vùng hẹp lại **21/488 = 4,3 %** bề ngang — và ở cấp tập đoàn bề **ngang** mới là
+chiều chặn (đo ở vòng 6) ⇒ **cả 14** biểu tượng nhỏ đi 4,3 %: 38,4 → **36,7 px**.
+⇒ **Không vá.** Bỏ 4,3 % của cả 14 để chữa một cái **đã đạt** là đúng lớp *"vá thành lùi"*.
+
+## 6. Cổng
+
+`tsc` **0** · `twin3d`+`pages` **177 tệp / 3.637 ca / 0 đỏ** · `i18n:check` **0** ·
+rà soát dữ liệu **12/12 xanh**.
+Kết cục sản phẩm **không đổi**: 3D **14/14** đạt 24 px (25,0 px @1280 · 49,4 px @1920);
+2D **14/14** thông tâm.
+Commit vòng 8: `7e78e095` (hoàn nguyên + hàng rào) · `cbecf60a` (đồng bộ backlog + sổ truy vấn) ·
+`b4c48bd7` (toà 94).
