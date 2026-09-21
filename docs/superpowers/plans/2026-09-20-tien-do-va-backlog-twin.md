@@ -50,7 +50,7 @@ mới lỗi · e2e `twin-dot47-bam-canh` **16/16** · cây sạch.
 |---|---|---|
 | **N1** | **Task 17c** — tâm trạm lấy **mặt bằng** từ `twin_dat_cho` mà bản ghi ấy **chưa cộng gốc toà nhà** | ⏳ **Bom hẹn giờ.** Hôm nay không lệch vì cả ba màn chỉ nạp **một** toà và neo cảnh vào chính toà ấy. Ngay khi một cảnh mang **hai** toà, máy dời mà trạm không ⇒ đường tâm chuyền **đứt khỏi chính máy của nó**, và **không lỗi nào nổ**. Vòng này đã chữa **cao độ** (lấy từ máy); **mặt bằng** thì chưa. |
 | **N2** | **PH-45** — `useTrangThaiSong` còn **3/4** truy vấn nhận một `factoryId` | ⏳ ~737 máy (số ghi ở kế hoạch 09-15) vẽ đúng chỗ mà **không có lời khai trạng thái**. Đã có banner nói ra, nên là *khoảng trống*, không phải *nói dối*. |
-| **N3** | **PH-42** — `/factory-command`: bấm nền xoá nhấn sáng nhưng **giữ viền và nhãn** | ◐ **Vòng 5: phần đo được từ DOM ĐẠT** — bấm nền đóng drawer chi tiết (`aside` 2→1). Phần *"viền còn sót trong cảnh WebGL"* **không đo được từ DOM**, cần phép đo **pixel** ⇒ còn mở, xem §7 vòng 5. |
+| **N3** | **PH-42** — `/factory-command`: bấm nền xoá nhấn sáng nhưng **giữ viền và nhãn** | ✅ **ĐÓNG 2026-09-21 (vòng 6), cả hai tầng.** Sổ `__demChonChiHuy()`: bốn bề mặt đều `null` sau khi bấm nền. Pixel (ẩn lớp nền mờ của ngăn chi tiết, camera đứng yên, đối chứng âm 0/672.570 px): **49.985 px = 7,43 %** đổi, vùng 624×301 bao quanh máy ⇒ **có xoá thật**. ⚠ Câu *"không đo được từ DOM"* của vòng 5 là **SAI** — nhạc cụ đã có sẵn. Xem §3 vòng 6. |
 | **N4** | **V-21(1)** — tỉ lệ cảnh báo dự đoán theo hạng sức khoẻ **53,5 / 49,6 / 49,7 / 55,8 %** | ✅ **ĐÓNG 2026-09-21 bằng đo.** Hôm nay: **14,5 → 31,3 → 45,5 → 58,2 %** — đơn điệu tăng, dốc **4×**; đối chứng xáo trộn 200 lượt cho biên độ **≤ 11,6** so với **43,7** thật (**0/200** chạm) ⇒ xu hướng ở **dữ liệu**, không ở truy vấn. ⚠ **Không** kết luận được *"bộ sinh đã chữa"*: mục cũ ghi bốn con số mà **không ghi truy vấn** ⇒ không so được. Xem §4 vòng 5. |
 
 ### C3 — CHƯA ĐO (không biết có hỏng không — và đó là cái đáng sợ hơn)
@@ -491,3 +491,166 @@ của nó: một mục **không mang theo truy vấn** thì đến *so sánh tr�
 `tsc` **0** · `twin3d` + `pages` **966 tệp / 3.629 ca / 0 đỏ** · `i18n:check` **0** ·
 e2e `twin-dot47` **16/16** (vòng 4; vòng này không đổi mã trên đường ấy).
 Commit vòng 5: `8a3eb08fa` (Q2 đính chính) · `bc1b8abf3` (M3) · `c2f0d1ed6` (V1).
+
+---
+
+# VÒNG 6 (PDCA, 2026-09-21) — ĐÓNG PHẦN CÒN MỞ, VÀ BA LỜI KHAI SAI CỦA VÒNG 5
+
+**Đề bài của chủ dự án:** *"Tiếp tục xử lý các phần còn mở, khảo sát chi tiết sau đó mới bắt tay
+vào làm."* ⇒ khảo sát trước, vá sau. Phạm vi: **N3 (PH-42)** · **2/14 biểu tượng 2D bị che** ·
+mọi thứ Bước 0 lôi ra.
+
+## 1. Bước 0 (MSA) — và nó lôi ra một việc mới ngay
+
+| kiểm | kết quả |
+|---|---|
+| ai đang sửa dở vùng này? | `git status` **KHÔNG pathspec** (bài học vòng 5): 28 tệp theo dõi bẩn, **toàn bộ** là `knowledge/` của tiến trình khác ⇒ ghi lại, không đụng |
+| thứ đang chạy = thứ vừa sửa? | chunk `TwinVanHanh-*.js` **qua HTTP** có `demTheoNhieuNhaMay` **và** `onChonToa` ⇒ client đang phục vụ CÓ bản vá M3 |
+| trình kết xuất | ép GPU (`--use-gl=angle --use-angle=d3d11`) ở mọi phép đo |
+| **lai lịch bản dựng** | ★ **`BUILD-INFO.txt` ĐANG NÓI SAI** — xem §2 |
+
+## 2. ★★★ V4 (MỚI) — CHÍNH BẢN VÁ V1 CỦA VÒNG 5 BỊ LÁCH
+
+| | |
+|---|---|
+| `dist/BUILD-INFO.txt` khai | `commit=8a3eb08fa` · `luc-dung=08:01` |
+| `dist/public/index.html` **đang phục vụ** | mtime **08:42**, dựng từ commit **muộn hơn** (đã có M3) |
+
+⇒ Tệp lai lịch **nói sai về chính thứ đang chạy** — đúng lớp PH-43 mà nó sinh ra để chặn. Đây là
+**lần thứ ba** dự án mất lai lịch, và lần này **chính bản vá bị lách**.
+
+**Gốc:** bước ghi lai lịch chỉ là mắt xích **cuối** của `npm run build`. Một lượt dựng **chỉ
+client** (`vite build` — việc ai cũng làm khi sửa UI cho nhanh) không chạm tới nó.
+
+> ★★★ **Một hàng rào chỉ chặn được lối chính thì không phải hàng rào.**
+
+**Đã vá** (`51fb9600`): tách `pluginGhiLaiLich()` và gắn vào **vite** (`closeBundle`,
+`apply:"build"`) ⇒ đường dựng nào cũng ghi; thêm `duong-dung=` (cli|vite); và thêm **hai dòng
+đối chiếu** `client-index-html-mtime=` / `server-index-js-mtime=` để người đọc **tự** so
+`luc-dung` với thứ đang nằm trên đĩa. Nếu mai này còn đường dựng nào lách được nữa, hai con số
+ấy **tự nói ra** thay vì im lặng.
+*Kiểm:* chạy thật ⇒ `duong-dung=vite`, và hai dòng mtime phơi đúng độ lệch **client 02:08 /
+server 01:42** — chính độ lệch đã đánh lừa tôi ở Bước 0.
+
+## 3. N3 / PH-42 — ĐÓNG, sau **bốn** lượt đo, mỗi lượt bị đối chứng bác một lần
+
+**Đính chính vòng 5:** tôi viết *"không đo được từ DOM, cần phép đo pixel"*. **Sai.**
+`CanhNhaMay.tsx` có sẵn **`window.__demChonChiHuy()`** trả đúng bốn bề mặt — nhạc cụ dựng riêng
+cho câu hỏi này. Nó đo **QUYẾT ĐỊNH**; pixel trả lời câu **khác** (màn hình có sạch theo không).
+
+### Sổ quyết định — sạch tuyệt đối
+
+| trạng thái | `trang` | `nhanSang` | `vien` | `nhan` |
+|---|---|---|---|---|
+| ① nền | null | null | null | null |
+| ② chọn | 9176 | 9176 | 9176 | 9176 |
+| ③ **bấm nền** | **null** | **null** | **null** | **null** |
+
+⇒ Khuyết tật gốc của PH-42 — *"bốn bề mặt nói một đằng, lô máy nói một nẻo"* (`{trang:202,
+nhanSang:null, vien:202, nhan:202}`) — **không còn tái hiện**.
+
+### Bốn lượt pixel, và vì sao ba lượt đầu vứt
+
+| lượt | thước | kết quả | đối chứng bác bằng gì |
+|---|---|---|---|
+| 1 | ô cắt **cố định** trên màn | 87,28 % khác | **lớn hơn cả đối chứng dương** (68,47 %) ⇒ cờ đỏ. Máy dò `dsMay()`: **40/40 máy đổi toạ độ** ⇒ đang đo **camera** |
+| 2 | ô cắt **neo vào máy** | đối chứng dương **0 px** | phép đo **mù** ⇒ không kết luận |
+| 3 | **toàn canvas** ở ②↔③ | 98,89 % khác | dò DOM ra thủ phạm: **lớp nền mờ 1600×900** của ngăn chi tiết Radix |
+| **4** | toàn canvas, **ẩn đúng 2 lớp DOM ấy** | **49.985/672.570 px = 7,43 %**, vùng khác **624×301** bao quanh máy | ba đối chứng đều đạt |
+
+Đối chứng lượt 4: camera **đứng yên** (toạ độ máy khớp tới 3 chữ số thập phân) · canvas **cùng
+cỡ** · đối chứng âm ④↔③ = **0/672.570 px**.
+
+⇒ **Bấm nền CÓ xoá dấu chọn khỏi cảnh.** N3 **ĐÓNG**, cả ở tầng quyết định lẫn tầng pixel.
+
+★ **Quan sát mới, không phải khuyết tật đã khai:** chọn một máy làm **camera bay** (máy 9176 từ
+`(224,420)` sang `(471,358)`, tỉ lệ màn 105,13 → 107,17) và **không quay về** khi bỏ chọn. Ghi
+lại để ai đo màn này còn biết, đừng như tôi ở lượt 1.
+
+## 4. 2/14 biểu tượng 2D — VÀ LỜI KHAI SAI THỨ HAI
+
+**Vòng 5 tôi viết:** *"hai huy hiệu nhỏ **không khai** `data-che-nhan`"*.
+**Đo lại bằng `elementFromPoint`:** kẻ chặn là `cum-trang-thai-du-lieu`, và nó **CÓ**
+`data-che-nhan=1`. **7/7** lớp phủ đều khai đủ. Cơ chế `layVungCam` chạy đúng.
+
+> ⇒ Tôi đổ lỗi cho **một thuộc tính bị quên** trong khi gốc là **một luật hình học**.
+> Cùng lớp với *"kết luận từ TÊN biến đếm"*: đọc tên cơ chế rồi đoán, thay vì hỏi DOM.
+
+**Gốc thật:** `vungDungCanvas` **chỉ trừ lớp phủ cắt SUỐT một chiều** — giới hạn **CỐ Ý**, đã ghi
+trong docblock của chính nó (trừ một thẻ **góc** thành cả dải là vứt mất một mảng canvas; PH-46
+đo được: cảnh MỘT cụm chỉ còn 233 px so với 430 px). Bản 3D bù lại bằng **NEO ĐÁY**; bản 2D thì
+neo **góc trên-trái** — tức ném nội dung vào đúng dải mà `bang-kpi-noi` + `cum-trang-thai-du-lieu`
+đang chiếm. **Hai bề mặt, một màn, hai luật.**
+
+### Mức độ, đo bằng lưới 2 px trong lòng từng biểu tượng
+
+| biểu tượng | % diện tích còn bấm trúng | ô vuông trống lớn nhất | ≥24 px |
+|---|---|---|---|
+| 11/14 khác | 100 % | 38×38 px | ✅ |
+| toà 97 | 69 % | 30×30 px | ✅ |
+| **toà 93** | **21 %** | **6×6 px** | ❌ |
+| **toà 94** | **34 %** | **8×8 px** | ❌ |
+
+Bấm tại điểm trống vẫn điều hướng đúng **3/3** ⇒ **đường đi không mất**; nhưng 2/14 phá đúng
+ràng buộc **≥24×24 px** mà chủ dự án đã nhận khi chọn lối (b).
+
+### Bản vá (`9562bb9c`) — đổi CHỖ NEO, không đụng `vungDungCanvas`
+
+| kết cục | trước | sau |
+|---|---|---|
+| thông tâm | 12/14 | **14/14** |
+| đạt 24×24 | 12/14 | **14/14** |
+| **cỡ biểu tượng** | 53×38 px | **53×38 px — KHÔNG đổi** |
+| nhãn sạch | 15/19 | **17/19** |
+| tỉ lệ nhánh MÁY | 10,0222 px/m | **10,0222 px/m — KHÔNG đổi** |
+
+★★★ **Và một con số bắt tôi thu hẹp luật lại.** Bản đầu chừa lề đáy ở **mọi** phạm vi:
+
+| phạm vi | không lề | có lề | nhãn treo dưới |
+|---|---|---|---|
+| tập đoàn (sa bàn) | 0,4801 px/m | **0,4801 px/m** (bề RỘNG chặn) | **19** |
+| một nhà máy | 10,0222 px/m | 9,4000 px/m (**−6,2 %**) | **0** |
+
+Tức ở nhánh máy, lề mua **0 nhãn** bằng **6,2 % cỡ đích bấm** — đúng lớp *"vá thành lùi"* mà
+PH-46 đã ghi. ⇒ `leDayPx` **chỉ cho nhánh sa bàn**.
+
+## 5. Ablation
+
+| bản vá | gỡ ra | kết quả |
+|---|---|---|
+| neo đáy + căn giữa (hàm thuần) | quay về neo trên-trái | lưới **ĐỎ 3/13**, và **đo sống quay về đúng 12/14** |
+| — | hoàn nguyên | xanh 13/13, **14/14** |
+| đối số ở **CHỖ GỌI** | bỏ `leDayPx` | lưới **ĐỎ 2/16** (G93 — đột biến chỗ gọi sống sót ca kiểm module) |
+| V4 | — | công cụ tự chứng minh: `duong-dung=vite` + hai dòng mtime phơi đúng độ lệch đã đánh lừa tôi |
+
+★ Ca cũ ghim `tt.px===VUNG.trai && tt.py===VUNG.tren` là ghim **CƠ CHẾ** (góc neo). Quyết định nó
+bảo vệ — *"nội dung phải nằm trong vùng dùng được"* — **không đổi**, nên ca được **nâng lên ghim
+TÍNH CHẤT** (nằm trọn trong vùng + lấp >95 % một chiều), **không nới**.
+
+## 6. Ba lời khai sai của vòng 5 — gom lại một chỗ
+
+| tôi đã viết | sự thật đo được |
+|---|---|
+| *"N3 không đo được từ DOM"* | có `__demChonChiHuy()`, dựng riêng cho câu hỏi ấy |
+| *"hai huy hiệu không khai `data-che-nhan`"* | **7/7** lớp phủ đều khai; gốc là luật hình học |
+| *"V1 — đã ép ghi lai lịch"* | chỉ ép được **một** đường dựng; `vite build` lách qua |
+
+⇒ Cả ba đều là **suy từ tên cơ chế** thay vì hỏi hệ thống. Và cả ba đều bị bắt bởi cùng một thứ:
+**đối chứng**.
+
+## 7. CÒN MỞ
+
+- **1/14 biểu tượng 3D ở 21,7 px** (<24) @1280×720 — ép đủ đòi dựng lại **mốc đo sống
+  673,2 × 553,2 m + hai đối chứng dương PH-46/47** ⇒ **chờ chủ dự án**.
+- **toà 94** còn 64 % diện tích (ô trống 32×32 px) — **đạt** 24×24 nhưng chưa thông hẳn.
+- **Kịch bản đo ngoài sổ** (`.qa-*/` đã gitignore) — phép đo nào thành bằng chứng lâu dài phải
+  chuyển vào `scripts/`. Đổi phạm vi ⇒ chờ chốt.
+- **Hồi tố truy vấn** cho các mục backlog còn số mà không có phép đo (luật vòng 5 §4).
+- **28 tệp `knowledge/`** bẩn từ trước phiên này — không đụng.
+- ⚠ **`MEMORY.md` 30,7 KB / trần 24,4 KB** ⇒ **bị cắt khi nạp**, một số mục ghi nhớ hiện không
+  được đọc. Rút gọn là một đợt riêng.
+
+## 8. Cổng
+
+`tsc` **0** · `twin3d`+`pages` **177 tệp / 3.635 ca / 0 đỏ** · `i18n:check` **0**.
+Commit vòng 6: `51fb9600` (V4) · `9562bb9c` (neo đáy 2D).
