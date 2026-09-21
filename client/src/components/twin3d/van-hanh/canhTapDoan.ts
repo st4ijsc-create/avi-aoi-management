@@ -427,8 +427,54 @@ export function khuonVienTapDoan(
 /** Bề rộng/bề sâu TỐI THIỂU của một biểu tượng toà (mm) — 20 m. */
 export const BIEU_TUONG_TOI_THIEU_MM = 20_000;
 
-/** Chiều cao TỐI THIỂU của một biểu tượng toà (mm) — 6 m, đủ để thấy là khối. */
-export const BIEU_TUONG_CAO_TOI_THIEU_MM = 6_000;
+/**
+ * Chiều cao TỐI THIỂU của một biểu tượng toà (mm).
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ 6 m → 20 m: MỘT HẰNG ĐẶT THEO CẢM TÍNH, NAY SUY TỪ TIÊU CHÍ
+ * ════════════════════════════════════════════════════════════════════════════
+ * Giá trị cũ là **6 m** với lý do *"đủ để thấy là khối"* — một câu không đối chiếu được với
+ * bất cứ tiêu chí nào. Tiêu chí thì có sẵn từ Task 20: biểu tượng phải đạt **24×24 px** ở khung
+ * nhỏ nhất (1280×720). Không ai từng đem hằng này ra so với nó.
+ *
+ * ★ Và nó CHÍNH LÀ nguyên nhân của "1/14 biểu tượng 21,7 px" — thứ tôi đã chẩn đoán SAI hai
+ *   vòng liền là *"phối cảnh nghiêng nén trục sâu"* rồi đi thử hai đòn bẩy KHUNG NHÌN (góc
+ *   camera, khe cụm) và bác cả hai. Đọc `twin_toa_nha` mới ra sự thật:
+ *
+ *     toà  24 (Nhà máy ảo SIM)   38,4 × 29,6 m   cao **8 m**    ← đúng cái 21,7 px
+ *     toà  90 (FUYU-F)            110 × 80 m     cao 42 m
+ *     toà  91…102 (QATD)          110 × 80 m     cao 42 m
+ *
+ *   Mặt bằng đã được chuẩn hoá về trung vị nên MỌI biểu tượng cùng 110 × 80 m; cạnh ngắn của
+ *   toà 24 ngắn **vì nó thấp 8 m**, không vì nó ở xa. Khoảng cách chỉ là yếu tố phụ.
+ *
+ * ★★★ QUÉT TRÊN DỮ LIỆU THẬT, QUA CHÍNH HÀM NÀY (`.qa-v2/v7-san-cao.mts`, khung 968×489 px —
+ *   vùng canvas thật ở 1280×720). Mô phỏng tái hiện ĐÚNG đường cơ sở sống (sàn 6 m → 21,7 px):
+ *
+ *   | sàn | cạnh nhỏ nhất | đạt ≥24 px | số toà bị nâng |
+ *   |---|---|---|---|
+ *   | 6 m (cũ) | 21,7 px | 13/14 | 0/14 |
+ *   | 16 m | 23,9 px | 13/14 | 1/14 |
+ *   | 18 m | 24,4 px | **14/14** | 1/14 |
+ *   | **20 m** | **25,0 px** | **14/14** | **1/14** |
+ *   | 30 m | 27,7 px | 14/14 | 2/14 |
+ *
+ *   Chọn **20 m**, không phải 18 m: 18 m chỉ hơn ngưỡng **0,4 px**, tức một bản vá sống bằng
+ *   làm tròn. 20 m cho biên **4 %** và vẫn chỉ đụng **đúng một** toà trong mười bốn.
+ *
+ * ⚠ CÁI GIÁ, VÀ NÓ PHẢI NẰM TRONG BANNER: `twin3d.vanHanh.viTriSoDo` trước đây kết bằng
+ *   *"chiều cao của mỗi khối là số thật"*. Với sàn 20 m câu ấy **thành sai** cho toà 24.
+ *   Banner nay nêu thẳng sàn. Một sàn không được khai là một lời nói dối im lặng — và docblock
+ *   ngay trên đã tự dặn: *"Một banner chỉ thỉnh thoảng nói thật là nửa sự thật."*
+ *
+ * ★ Thứ tự các toà CAO HƠN sàn **không đổi**: 25 m vẫn thấp hơn 42 m. Sàn chỉ cắt phần đuôi
+ *   dưới, không bóp lại cả thang.
+ *
+ * ⚠ Đây là quyết định của CHỦ DỰ ÁN (2026-09-21), không phải của tôi: nó đánh đổi tính đúng
+ *   của một con số hiển thị lấy một tiêu chí đọc được. Ba lối đã trình kèm số; chủ dự án chọn
+ *   *"nâng sàn 6 → 20 m, sửa banner"*.
+ */
+export const BIEU_TUONG_CAO_TOI_THIEU_MM = 20_000;
 
 /** Khe giữa hai toà TRONG một cụm = 20 % cạnh ô, sàn dưới 10 m. */
 export const KHE_TRONG_CUM_TI_LE = 0.2;

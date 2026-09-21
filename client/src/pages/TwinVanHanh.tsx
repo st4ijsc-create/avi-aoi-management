@@ -149,6 +149,8 @@ import {
 } from "@/components/twin3d/van-hanh/boChonNap";
 // ── Task 19 (Giai đoạn 6) — cảnh phạm vi TẬP ĐOÀN: chọn nhà máy + khuôn viên ──
 import {
+  // ★ Sàn chiều cao biểu tượng — banner PHẢI đọc từ hằng, không chép số (xem `sanCao` bên dưới).
+  BIEU_TUONG_CAO_TOI_THIEU_MM,
   nhaMayDeNap,
   // ★ PH-48 — nhãn thẻ `Metrics` khi tập đo là NHIỀU nhà máy (hàm thuần, có lưới).
   nhanTapNhaMay,
@@ -3397,7 +3399,7 @@ export function ThanTwinVanHanh() {
       hien: khuonVien !== null && khuonVien.laSoDo,
       noiDung: t(
         "twin3d.vanHanh.viTriSoDo",
-        "Cảnh cấp tập đoàn là SA BÀN SƠ ĐỒ: mỗi toà nhà là một biểu tượng, và {{soToa}} toà của {{soKhoi}} nhà máy được xếp thành cụm cho đọc được. Khuôn viên thật rộng {{rongThat}} m, sa bàn xếp lại còn {{rongSoDo}} m — vị trí và khoảng cách trên cảnh KHÔNG phải số thật. Mặt bằng mọi toà vẽ CÙNG MỘT CỠ {{rongBieuTuong}}×{{sauBieuTuong}} m, trong khi cạnh thật trải từ {{canhNho}} m tới {{canhLon}} m; chiều cao của mỗi khối là số thật.",
+        "Cảnh cấp tập đoàn là SA BÀN SƠ ĐỒ: mỗi toà nhà là một biểu tượng, và {{soToa}} toà của {{soKhoi}} nhà máy được xếp thành cụm cho đọc được. Khuôn viên thật rộng {{rongThat}} m, sa bàn xếp lại còn {{rongSoDo}} m — vị trí và khoảng cách trên cảnh KHÔNG phải số thật. Mặt bằng mọi toà vẽ CÙNG MỘT CỠ {{rongBieuTuong}}×{{sauBieuTuong}} m, trong khi cạnh thật trải từ {{canhNho}} m tới {{canhLon}} m; chiều cao là số thật, TRỪ toà thấp hơn sàn {{sanCao}} m — chúng vẽ đúng sàn ấy để còn thấy được.",
         {
           soToa: khuonVien?.bieuTuong.length ?? 0,
           soKhoi: khuonVien?.khoi.length ?? 0,
@@ -3407,6 +3409,13 @@ export function ThanTwinVanHanh() {
           sauBieuTuong: Math.round(mmSangMet(khuonVien?.bieuTuongSauMm ?? 0)),
           canhNho: Math.round(mmSangMet(khuonVien?.thatCanhNhoNhatMm ?? 0)),
           canhLon: Math.round(mmSangMet(khuonVien?.thatCanhLonNhatMm ?? 0)),
+          /*
+           * ★★★ SÀN PHẢI ĐƯỢC KHAI — đọc từ chính hằng, không chép con số.
+           *   Câu cũ kết bằng "chiều cao của mỗi khối là số thật"; sàn nâng lên 20 m làm câu ấy
+           *   SAI cho toà 24 (cao thật 8 m). Chép "20" vào đây là G12: đổi hằng thì banner nói
+           *   dối mà không ca kiểm nào đỏ.
+           */
+          sanCao: Math.round(mmSangMet(BIEU_TUONG_CAO_TOI_THIEU_MM)),
         },
       ),
       dataPhu: {

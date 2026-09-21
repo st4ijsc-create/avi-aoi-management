@@ -794,14 +794,62 @@ describe("★★★ saBanTapDoan — đổi ĐƠN VỊ VẼ, không đổi khung
     }
   });
 
-  it("★★★ PH-50 — CHIỀU CAO vẫn là số THẬT: chỉ MẶT BẰNG bị đồng cỡ, và banner phải nói đúng chừng ấy", () => {
+  it("★★★ PH-50 — CHIỀU CAO là số THẬT, TRỪ phần dưới SÀN; và banner phải nói đúng chừng ấy", () => {
+    /*
+     * ════════════════════════════════════════════════════════════════════════
+     * ★★★ CA NÀY GHIM MỘT **QUYẾT ĐỊNH**, VÀ QUYẾT ĐỊNH ẤY VỪA ĐƯỢC CHỦ DỰ ÁN LẬT
+     * ════════════════════════════════════════════════════════════════════════
+     * Bản cũ ghim `[8_000, 42_000, 25_000]` — tức *"chiều cao GIỮ NGUYÊN số thật"*. Luật của
+     * dự án: ca ghim quyết định thì **chỉ chủ dự án lật**, và ngày 2026-09-21 chủ dự án đã
+     * lật, sau khi được trình ba lối kèm số:
+     *
+     *   (a) nâng sàn 6 → 20 m, sửa banner   ⇒ 25,0 px · **14/14** · đụng 1/14 toà   ← ĐÃ CHỌN
+     *   (b) giữ nguyên 13/14                 ⇒ 21,7 px · 13/14 · đụng 0 toà
+     *   (c) seed lại toà 24 về chuẩn         ⇒ 31,0 px · 14/14 · nhưng là BỊA dữ liệu
+     *
+     * ⚠ Ba con số ấy đo trên **dữ liệu thật** qua chính `saBanTapDoan` (`.qa-v2/v7-san-cao.mts`),
+     *   và mô phỏng tái hiện ĐÚNG đường cơ sở sống 21,7 px — nên chúng so được với nhau.
+     *
+     * ★ Vì sao KHÔNG phải "bỏ luôn tính thật của chiều cao": sàn chỉ cắt phần đuôi dưới.
+     *   Mọi toà CAO HƠN sàn giữ nguyên số thật **và giữ nguyên thứ tự với nhau** — ca dưới
+     *   khẳng định đúng tính chất ấy, chứ không chỉ khẳng định ba con số.
+     */
     const sb = saBanTapDoan([
-      { id: 1, factoryId: 1, rongMm: 38_400, sauMm: 29_600, caoMm: 8_000 },
-      { id: 2, factoryId: 2, rongMm: 110_000, sauMm: 80_000, caoMm: 42_000 },
-      { id: 3, factoryId: 3, rongMm: 3_000_000, sauMm: 2_000_000, caoMm: 25_000 },
+      { id: 1, factoryId: 1, rongMm: 38_400, sauMm: 29_600, caoMm: 8_000 }, // toà 24 thật
+      { id: 2, factoryId: 2, rongMm: 110_000, sauMm: 80_000, caoMm: 42_000 }, // chuẩn QATD
+      { id: 3, factoryId: 3, rongMm: 3_000_000, sauMm: 2_000_000, caoMm: 25_000 }, // toà 90 thật
     ]);
     if (!sb) throw new Error("null");
-    expect(sb.bieuTuong.map((v) => v.caoMm)).toEqual([8_000, 42_000, 25_000]);
+    expect(sb.bieuTuong.map((v) => v.caoMm)).toEqual([BIEU_TUONG_CAO_TOI_THIEU_MM, 42_000, 25_000]);
+  });
+
+  it("★★★ SÀN chỉ cắt ĐUÔI DƯỚI — toà cao hơn sàn giữ NGUYÊN số và NGUYÊN thứ tự", () => {
+    // Tính chất này mới là thứ làm banner nói được "chiều cao là số thật, TRỪ toà thấp hơn X".
+    const cao = [3_000, 8_000, 21_000, 25_000, 42_000, 60_000];
+    const sb = saBanTapDoan(
+      cao.map((c, i) => ({ id: i + 1, factoryId: i + 1, rongMm: 110_000, sauMm: 80_000, caoMm: c })),
+    );
+    if (!sb) throw new Error("null");
+    const ra = sb.bieuTuong.map((v) => v.caoMm);
+    for (let i = 0; i < cao.length; i += 1) {
+      if (cao[i] >= BIEU_TUONG_CAO_TOI_THIEU_MM) expect(ra[i]).toBe(cao[i]);
+      else expect(ra[i]).toBe(BIEU_TUONG_CAO_TOI_THIEU_MM);
+    }
+    // Thứ tự KHÔNG bị đảo ở phần trên sàn.
+    const tren = cao.map((c, i) => [c, ra[i]] as const).filter(([c]) => c >= BIEU_TUONG_CAO_TOI_THIEU_MM);
+    for (let i = 1; i < tren.length; i += 1) expect(tren[i][1]).toBeGreaterThan(tren[i - 1][1]);
+  });
+
+  it("★★★ SÀN phải đủ cho tiêu chí 24 px — không được hạ về con số cảm tính cũ", () => {
+    /*
+     * Quét trên dữ liệu thật (`.qa-v2/v7-san-cao.mts`, khung 968×489 = vùng canvas ở 1280×720):
+     *   sàn  6 m → 21,7 px → 13/14      sàn 18 m → 24,4 px → 14/14
+     *   sàn 16 m → 23,9 px → 13/14      sàn 20 m → 25,0 px → 14/14  (biên 4 %)
+     * 18 m chỉ hơn ngưỡng 0,4 px — một bản vá sống bằng làm tròn. Ca này chặn cả hai chiều:
+     * hạ xuống dưới 18 m là mất 14/14, và hạ về 6 m là quay lại đúng khuyết tật vừa vá.
+     */
+    expect(BIEU_TUONG_CAO_TOI_THIEU_MM).toBeGreaterThanOrEqual(18_000);
+    expect(BIEU_TUONG_CAO_TOI_THIEU_MM).toBe(20_000);
   });
 
   it("★★★ NỚI TỚI TRẦN 8 NHÀ MÁY — tỉ số đọc-được VẪN đứng (không chỉ đúng với 3)", () => {

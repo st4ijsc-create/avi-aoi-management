@@ -19961,7 +19961,7 @@
       "chonTang": "Floor",
       "linkBiBoQua": "The link that opened this screen points to a factory/building/floor that no longer exists — showing the closest selection.",
       "nhaMayVuotTran": "Your scope has {{tong}} factories but one scene can load only {{tran}} — {{thieu}} factories are NOT in the scene.",
-      "viTriSoDo": "The corporate scene is a SCHEMATIC SITE MODEL: each building is an icon, and {{soToa}} buildings across {{soKhoi}} factories are grouped into clusters so they can be read. The real campus is {{rongThat}} m wide; the model compresses it to {{rongSoDo}} m — positions and distances on screen are NOT real values. Every building footprint is drawn at THE SAME SIZE {{rongBieuTuong}}×{{sauBieuTuong}} m, while real sides span {{canhNho}} m to {{canhLon}} m; each block height is a real value.",
+      "viTriSoDo": "The corporate view is a SCHEMATIC SITE MODEL: each building is one symbol, and the {{soToa}} buildings of {{soKhoi}} factories are grouped into clusters for legibility. The real campus is {{rongThat}} m wide; the model compresses it to {{rongSoDo}} m — positions and distances on screen are NOT real. Every footprint is drawn at ONE SIZE, {{rongBieuTuong}}×{{sauBieuTuong}} m, while real edges range from {{canhNho}} m to {{canhLon}} m; heights are real, EXCEPT buildings below the {{sanCao}} m floor — those are drawn at exactly that floor so they stay visible.",
       "toaKhongTen": "Building #{{id}}",
       "tangVuotTran": "This building has {{tong}} floors but one load can only request {{tran}} — {{thieu}} floors were NOT loaded, and machines on them are missing from the scene.",
       "mayTangKhac": "{{so}} more machines are placed on another floor of this building — change the Floor box to see them",

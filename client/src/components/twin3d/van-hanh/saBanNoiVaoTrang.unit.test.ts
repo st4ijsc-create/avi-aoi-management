@@ -156,7 +156,7 @@ describe("★★★ S4 — LỜI KHAI ĐI THEO BẢN VÁ TRONG CÙNG MỘT LƯ�
     expect(khoi).toContain("twin3d.vanHanh.viTriSoDo");
   });
 
-  it("★★★ banner nêu SỐ THẬT, không nêu tính từ — TÁM ô thay số có mặt ở chỗ gọi", () => {
+  it("★★★ banner nêu SỐ THẬT, không nêu tính từ — CHÍN ô thay số có mặt ở chỗ gọi", () => {
     const i = TRANG.indexOf('testId: "banner-vi-tri-tam-sinh"');
     const khoi = TRANG.slice(i, i + 2_600);
     for (const o of ["soToa:", "soKhoi:", "rongThat:", "rongSoDo:"]) {
@@ -166,6 +166,20 @@ describe("★★★ S4 — LỜI KHAI ĐI THEO BẢN VÁ TRONG CÙNG MỘT LƯ�
     for (const o of ["rongBieuTuong:", "sauBieuTuong:", "canhNho:", "canhLon:"]) {
       expect(khoi, `thiếu ${o}`).toContain(o);
     }
+    /*
+     * ★★★ 2026-09-21 — Ô THỨ CHÍN: `sanCao`.
+     *   Chủ dự án chốt nâng sàn chiều cao 6 → 20 m để đạt 24 px (1/14 toà bị nâng). Câu banner
+     *   cũ kết bằng *"chiều cao của mỗi khối là số thật"* — với sàn ấy nó **thành sai** cho toà
+     *   24 (cao thật 8 m). Cùng luật đã ghi ở ô trước: lời khai phải rộng ra TRONG CÙNG LƯỢT
+     *   với bản vá sinh ra nó.
+     */
+    expect(khoi, "thiếu sanCao:").toContain("sanCao:");
+    /*
+     * ⚠ G12 — phải ĐỌC TỪ HẰNG, không chép con số. Chép "20" vào đây thì đổi hằng sẽ làm banner
+     *   nói dối mà không ca kiểm nào đỏ.
+     */
+    expect(khoi).toContain("mmSangMet(BIEU_TUONG_CAO_TOI_THIEU_MM)");
+    expect(khoi).not.toMatch(/sanCao:\s*\d/);
     expect(khoi).toContain("khuonVien?.thatRongMm");
     expect(khoi).toContain("khuonVien?.bieuTuongRongMm");
     expect(khoi).toContain("khuonVien?.thatCanhLonNhatMm");
@@ -184,7 +198,7 @@ describe("★★★ S4 — LỜI KHAI ĐI THEO BẢN VÁ TRONG CÙNG MỘT LƯ�
    *   tỉ số kích thước 101 lần (`qatd_admin`: cạnh thật 29,6 m … 3.000 m). Lời
    *   khai phải rộng ra **trong cùng lượt** với bản vá sinh ra nó.
    */
-  it("★★★ CHỮ người dùng đọc có ĐỦ TÁM ô thay số ở CẢ BA ngôn ngữ", () => {
+  it("★★★ CHỮ người dùng đọc có ĐỦ CHÍN ô thay số ở CẢ BA ngôn ngữ", () => {
     for (const ngu of NGU) {
       const s = chuoi(ngu, "twin3d.vanHanh.viTriSoDo");
       expect(s, `${ngu} thiếu khoá viTriSoDo`).toBeTruthy();
@@ -197,6 +211,7 @@ describe("★★★ S4 — LỜI KHAI ĐI THEO BẢN VÁ TRONG CÙNG MỘT LƯ�
         "{{sauBieuTuong}}",
         "{{canhNho}}",
         "{{canhLon}}",
+        "{{sanCao}}",
       ]) {
         expect(s, `${ngu} thiếu ${o}`).toContain(o);
       }
