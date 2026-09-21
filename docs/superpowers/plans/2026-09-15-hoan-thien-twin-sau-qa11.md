@@ -1331,7 +1331,16 @@ git commit -m "feat(twin3d): canh pham vi tap doan gop nhieu nha may (muc 26 spe
 ### Nợ có tên, chưa vá
 - **PH-45** — 3/4 truy vấn của `useTrangThaiSong` vẫn nhận một `factoryId` ⇒ 737 máy vẽ đúng chỗ mà không có lời khai trạng thái. Đã có banner nói ra; gộp bốn truy vấn theo `factoryIds` là lượt sau.
 - **PH-42** — `/factory-command` bấm nền xoá nhấn sáng nhưng giữ viền và nhãn. Lệch CÓ SẴN; bản vá chỉ thêm một nguồn kích hoạt.
-- **V-21 mục (1)** — tỉ lệ cảnh báo dự đoán theo hạng sức khoẻ 53,5/49,6/49,7/55,8 % vẫn phẳng và ngược chiều. Lỗi bộ sinh.
+  → **ĐO 2026-09-21 (vòng 5): phần đo được từ DOM ĐẠT** — bấm nền đóng drawer chi tiết (`aside` 2→1).
+  Phần *"viền còn sót **trong cảnh**"* nằm trong WebGL nên **không đo được từ DOM**; cần phép đo **pixel** ⇒ **vẫn mở**.
+- ~~**V-21 mục (1)** — tỉ lệ cảnh báo dự đoán theo hạng sức khoẻ 53,5/49,6/49,7/55,8 % vẫn phẳng và ngược chiều. Lỗi bộ sinh.~~
+  → **ĐÓNG 2026-09-21 (vòng 5) bằng đo.** Đo lại với định nghĩa viết rõ (`healthScore` **mới nhất** mỗi máy,
+  tử số = số máy có **≥1** `predictive_alerts` trong **30 ngày**): **14,5 → 31,3 → 45,5 → 58,2 %** — **đơn điệu
+  tăng**, dốc **4×**. Đối chứng xáo trộn 200 lượt: biên độ thật **43,7** điểm %, xáo lớn nhất **11,6**, **0/200**
+  lượt chạm ⇒ xu hướng ở **dữ liệu**, không ở hình dạng truy vấn.
+  ⚠ **Không** kết luận được *"bộ sinh đã được chữa"*: mục này ghi bốn con số mà **không ghi truy vấn nào sinh ra
+  chúng** ⇒ không phân biệt được *dữ liệu đã đổi* với *phép đo cũ định nghĩa khác*. **Luật rút ra: một mục
+  backlog phải mang theo TRUY VẤN của nó, không chỉ con số.**
 - **G134** — luật chọn 30 nhãn trong 1.108 máy qua 3 nhà máy **vẫn chưa tồn tại**; chỉ đo được là không vỡ trần, chưa đo được là chọn đúng.
 - ~~`e2e/twin-lo-f.spec.ts` F3 chưa chạy~~ → **ĐÃ CHẠY 2026-09-16 08:4x, 4/4 xanh** (dựng `dist-t19`, cổng 3064, project `chromium-canh-3d`, dữ liệu `sinh-tai-twin.ts` 549 máy + nhịp tim làm tươi ngay trước khi đo). ★ F3 cho một số liệu **mạnh hơn cả thứ nó được giao kiểm**: tài khoản `e2e_tai_loE` (**supervisor, không-admin**, khác hẳn `qatd_giamdoc`) ở `?pv=tapdoan` thấy ô chọn nhà máy **2 mục**, breadcrumb `Corporate`, `dem-may` = **591**, và `banner ha cap` = **null**. Tức cảnh nhiều nhà máy chạy đúng cho cả một vai bị giới hạn phạm vi, không chỉ cho tài khoản tập đoàn của bộ dữ liệu QATD. F4 đo kèm: canvas 968×489 = **51,4 %** màn ở 1280×720 (lô E trước đây 13 %), 5 lệnh vẽ.
 - `.qa-tapdoan/t19-backup/` (3,3 MB bản sao mã nguồn cho ablation) còn untracked — không commit, và không tự xoá.

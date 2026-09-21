@@ -42,7 +42,7 @@ mới lỗi · e2e `twin-dot47-bam-canh` **16/16** · cây sạch.
 | | việc | số đã đo | vì sao phải hỏi |
 |---|---|---|---|
 | **Q1** | **Trần 30 nhãn DOM** (`TRAN_NHAN_DOM`) | A/B 30↔60: **+5 tên** @1280×720, **0** @1920×1080, long task **1 → 5** | Muốn màn Line hiện **39/39** tên thì phải đổi từ **một hằng toàn cục** sang **ngân sách theo MÀN** — đó là sửa bảng ngân sách **§4**, không phải một chi tiết kỹ thuật. Và A/B cho thấy nâng trần suông **không phải một cái thắng sạch**. |
-| **Q2** | **Dọn 32 thư mục `.qa-*`** (391 mục untracked; riêng `.qa-v2` **378 MB**) | — | Đây là **xoá tệp** ⇒ theo ràng buộc của chủ dự án phải hỏi. Trong đó có **bằng chứng đo** của vòng này và của **phiên khác**; cần tách "giữ làm mốc" khỏi "rác". |
+| **Q2** | **Dọn 32 thư mục `.qa-*`** (~~391 mục untracked; riêng `.qa-v2` **378 MB**~~ — **HAI SỐ NÀY ĐỀU SAI, đính chính 2026-09-21**: **4.731** tệp `.qa-*` nằm **TRONG HEAD** chứ không untracked, và tổng thật là **9,12 GB** chứ không 378 MB — `du` đã hết giờ mà tôi vẫn báo con số dở dang. Xem §5 vòng 5) | — | Đây là **xoá tệp** ⇒ theo ràng buộc của chủ dự án phải hỏi. Trong đó có **bằng chứng đo** của vòng này và của **phiên khác**; cần tách "giữ làm mốc" khỏi "rác". |
 
 ### C2 — Nợ CÓ TÊN, đã đo, chưa vá
 
@@ -50,8 +50,8 @@ mới lỗi · e2e `twin-dot47-bam-canh` **16/16** · cây sạch.
 |---|---|---|
 | **N1** | **Task 17c** — tâm trạm lấy **mặt bằng** từ `twin_dat_cho` mà bản ghi ấy **chưa cộng gốc toà nhà** | ⏳ **Bom hẹn giờ.** Hôm nay không lệch vì cả ba màn chỉ nạp **một** toà và neo cảnh vào chính toà ấy. Ngay khi một cảnh mang **hai** toà, máy dời mà trạm không ⇒ đường tâm chuyền **đứt khỏi chính máy của nó**, và **không lỗi nào nổ**. Vòng này đã chữa **cao độ** (lấy từ máy); **mặt bằng** thì chưa. |
 | **N2** | **PH-45** — `useTrangThaiSong` còn **3/4** truy vấn nhận một `factoryId` | ⏳ ~737 máy (số ghi ở kế hoạch 09-15) vẽ đúng chỗ mà **không có lời khai trạng thái**. Đã có banner nói ra, nên là *khoảng trống*, không phải *nói dối*. |
-| **N3** | **PH-42** — `/factory-command`: bấm nền xoá nhấn sáng nhưng **giữ viền và nhãn** | ⏳ Lệch **có sẵn**; bản vá trước chỉ thêm một nguồn kích hoạt. |
-| **N4** | **V-21(1)** — tỉ lệ cảnh báo dự đoán theo hạng sức khoẻ **53,5 / 49,6 / 49,7 / 55,8 %** | ⏳ Phẳng **và ngược chiều** ⇒ lỗi **bộ sinh dữ liệu**, không phải lỗi màn. |
+| **N3** | **PH-42** — `/factory-command`: bấm nền xoá nhấn sáng nhưng **giữ viền và nhãn** | ◐ **Vòng 5: phần đo được từ DOM ĐẠT** — bấm nền đóng drawer chi tiết (`aside` 2→1). Phần *"viền còn sót trong cảnh WebGL"* **không đo được từ DOM**, cần phép đo **pixel** ⇒ còn mở, xem §7 vòng 5. |
+| **N4** | **V-21(1)** — tỉ lệ cảnh báo dự đoán theo hạng sức khoẻ **53,5 / 49,6 / 49,7 / 55,8 %** | ✅ **ĐÓNG 2026-09-21 bằng đo.** Hôm nay: **14,5 → 31,3 → 45,5 → 58,2 %** — đơn điệu tăng, dốc **4×**; đối chứng xáo trộn 200 lượt cho biên độ **≤ 11,6** so với **43,7** thật (**0/200** chạm) ⇒ xu hướng ở **dữ liệu**, không ở truy vấn. ⚠ **Không** kết luận được *"bộ sinh đã chữa"*: mục cũ ghi bốn con số mà **không ghi truy vấn** ⇒ không so được. Xem §4 vòng 5. |
 
 ### C3 — CHƯA ĐO (không biết có hỏng không — và đó là cái đáng sợ hơn)
 
@@ -59,7 +59,7 @@ mới lỗi · e2e `twin-dot47-bam-canh` **16/16** · cây sạch.
 |---|---|---|
 | **M1** | **Màn Máy `/twin/may/:id`** | Là bề mặt **duy nhất** trong ba màn Twin **chưa đo** vòng này. Hai màn kia đều lòi khuyết tật khi bị đo. |
 | **M2** | **G134 phần còn lại** — *"30 cái được chọn có đúng là 30 cái đáng đọc nhất không"* | **Cơ chế đã có** (điểm ưu tiên `diemUuTienNhan` + chính sách *chỉ-bất-thường* + chốt tất định theo khoá). Thứ **chưa ai đo** là **chất lượng lựa chọn** ở quy mô **1.108 máy / 3 nhà máy**. |
-| **M3** | Dải cảnh báo tự khai *"Counted across your whole account scope"* trong khi cảnh là **FUYU-F** | Tự khai **đúng**, nhưng chưa đo người vận hành có đọc nó thành **phạm vi của cảnh** hay không. |
+| **M3** | Dải cảnh báo tự khai *"Counted across your whole account scope"* trong khi cảnh là **FUYU-F** | ✅ **ĐO 2026-09-21: dải cảnh báo TRUNG THỰC** — `Alarms (80)` y hệt ở cả ba phạm vi, đúng như nó khai. Nhưng phép đo tìm ra **chỗ khác nói sai**: `hang-tong-quan` khai *"toàn nhà máy"* (số ít) trong khi ở cấp tập đoàn nó gộp **1.700 máy / 6 nhà máy** ⇒ **đã vá** `bc1b8abf3`, ablation 2/2 đỏ. |
 
 ### C4 — Vận hành / hạ tầng đo
 
@@ -333,3 +333,161 @@ Tôi **không tự chọn**: (b) thêm một đường điều hướng mới �
 ## Cổng
 
 Không đổi một dòng mã sản phẩm nào; cây sạch.
+
+---
+
+# VÒNG 5 (PDCA, 2026-09-21) — VÁ PHẦN CÒN LẠI, VÀ CÔNG CỤ VỪA THÊM BẮT LỖI CỦA CHÍNH TÔI
+
+**Đề bài của chủ dự án:** *"Tiếp tục vá các phần còn lại và chạy PDCA để kiểm tra."*
+Phạm vi: **M3 · N3 (PH-42) · N4 (V-21 mục 1) · V1 (ép ghi BUILD-INFO) · V2 (ca chập chờn)**.
+
+## 1. Bước 0 (MSA) — trạng thái hệ đo
+
+| kiểm | kết quả |
+|---|---|
+| thứ đang chạy = thứ vừa sửa? | tệp sản phẩm mới nhất **00:55** < bản dựng **00:58** ⇒ khớp |
+| đường độc lập | grep **qua HTTP** chunk đang phục vụ: có `onChonToa` ⇒ đúng bản, không đọc từ đĩa nguồn |
+| ai đang sửa dở vùng này? | `client server shared e2e scripts docs` **sạch** — ⚠ phép kiểm này **HẸP**, xem §5 |
+| cache giữa đường? | react-query `staleTime 30 s` / `gcTime 5 min`, nhưng **mỗi mẫu một context mới** + `goto` lại ⇒ không bắc cầu |
+| trình kết xuất | **ép GPU** (`--use-gl=angle --use-angle=d3d11`) ở mọi phép đo — luật hệ đo rút ra ở M5 |
+
+## 2. Hiện trạng — và loại của từng chỉ số
+
+| chỉ số | loại |
+|---|---|
+| "3.629 ca lưới xanh" | **THAY THẾ** |
+| "14/14 bấm đúng", "6/6 đạt 24×24" | KẾT CỤC (đã đo vòng 4) |
+| M3 · N3 · N4 · V1 · V2 | **chưa có chỉ số kết cục nào** ⇒ chính là chỉ tiêu vòng này |
+
+## 3. Đường cơ sở + kết cục
+
+| mã | đo được (đường cơ sở) | phán quyết | sau khi vá |
+|---|---|---|---|
+| **M3** | `hang-tong-quan` đếm **371 / 549 / 1.700** = đúng `dem-may`, trong khi khai *"the whole **factory**"* (số ít) | **SAI** ở cấp tập đoàn | *"(counted across the **6** factories currently loaded)"*; một nhà máy giữ nguyên câu cũ |
+| M3 — đối chứng | `dai-canh-bao` khai *"whole account scope"*; `Alarms (80)` **y hệt** ở cả ba phạm vi | **ĐẠT** (trung thực) | không đụng |
+| **V1** | `dist/BUILD-INFO.txt` **không tồn tại**; **0 dòng** trong `npm run build` sinh ra nó | **HỎNG** | `ghi-lai-lich-ban-dung.mjs` chạy **TRONG** `build` |
+| **V2** | trần là hằng có tên `HAN_MS_IO_CSDL = 20_000`; 3 lượt, **0 đỏ**, lâu nhất **2.217 ms** | **ĐẠT** — biên **9,0×** | *(số "biên 1,46×" trong backlog là số CŨ)* |
+| **N3** | bấm máy ⇒ drawer mở (`aside` 1→2); bấm nền ⇒ drawer **đóng** (2→1) | **ĐẠT** phần đo được từ DOM | không đụng — xem §7 |
+| **N4** | tỉ lệ cảnh báo theo hạng sức khoẻ **14,5 → 31,3 → 45,5 → 58,2 %** | **ĐẠT** — đơn điệu tăng, dốc **4×** | *(mục cũ ghi "phẳng và ngược chiều")* |
+
+Thô: `.qa-v2/tho-v5/_m3.json` · `_m3c.json` · `factory-command.png` · `v5-n4b.txt`.
+⚠ Thư mục `.qa-*` nay **ngoài sổ** (§5) ⇒ thô nằm trên đĩa máy đo, **không** trong commit. Mọi
+con số dưới đây vì thế được chép **nguyên văn** vào tài liệu này để còn đếm lại được.
+
+## 4. N4 — đo có ĐỐI CHỨNG, và một mục backlog không kiểm lại được
+
+**Định nghĩa phép đo** (phải viết ra, vì mục cũ **không** viết): với mỗi máy lấy `healthScore`
+**mới nhất** trong `machine_health_history`, chia bốn hạng; tử số là số máy có **≥ 1** hàng
+`predictive_alerts` trong **30 ngày**.
+
+```
+hạng sức khoẻ | máy | có cảnh báo 30d | tỉ lệ %
+  A 85-100  |  420 |   61 | 14.5
+  B 70-84   |  431 |  135 | 31.3
+  C 50-69   |  576 |  262 | 45.5
+  D <50     |  273 |  159 | 58.2
+  tỉ lệ NỀN (mọi máy) = 36,3 %
+```
+
+★★★ **Đối chứng xáo trộn** — trước khi tin xu hướng, phải loại khả năng **chính hình dạng truy
+vấn** sinh ra nó. Giữ nguyên cỡ bốn hạng, gán ngẫu nhiên máy vào hạng, chạy lại đúng phép đếm ấy,
+**200 lượt**:
+
+| | biên độ (max − min) |
+|---|---|
+| **THẬT** | **43,7** điểm % |
+| xáo trộn, lượt lớn nhất trong 200 | **11,6** điểm % |
+| số lượt xáo ≥ thật | **0 / 200** |
+
+⇒ Xu hướng nằm trong **dữ liệu**, không nằm trong phép đếm. (`.qa-v2/v5-n4b.mts`)
+
+★★★ **Nhưng tôi KHÔNG kết luận được "bộ sinh đã được chữa".** Mục V-21(1) ghi bốn con số
+**53,5 / 49,6 / 49,7 / 55,8 %** mà **không ghi truy vấn nào sinh ra chúng** — đã tìm khắp `docs/`
+và các thư mục đo: không có. Nên hai khả năng **không phân biệt được**:
+
+1. bộ sinh dữ liệu đã đổi từ 2026-09-15 tới nay;
+2. hoặc phép đo cũ định nghĩa tử số/mẫu số **khác** phép đo này (ví dụ đếm *số cảnh báo* chứ
+   không phải *số máy có cảnh báo*, hoặc cửa sổ khác 30 ngày).
+
+Cái **nói được**: với định nghĩa đã viết ra ở trên, **hôm nay quan hệ đúng chiều và dốc**, và
+**không có phép đo nào hiện có** chống đỡ cho câu *"lỗi bộ sinh"*. Mục N4 vì thế **đóng**, và đóng
+kèm định nghĩa để lần sau ai đó cãi lại được.
+
+> ⇒ **LUẬT MỚI: một mục backlog phải mang theo TRUY VẤN của nó, không chỉ con số.**
+> Bốn con số không có truy vấn thì không phải bằng chứng — nó là một tin đồn có chữ số thập phân.
+> Đây là lỗi của chính sổ tay này, và nó đã làm mất khả năng so sánh trước/sau của một phát hiện.
+
+## 5. ★★★ CÔNG CỤ VỪA THÊM (V1) BẮT NGAY MỘT LỖI CỦA CHÍNH TÔI
+
+Lần chạy đầu tiên, `ghi-lai-lich-ban-dung.mjs` in `sach=false · so-tep-ban=4764` — một con số
+**không giải thích được** bằng bất cứ thay đổi nào tôi vừa làm. Truy ra:
+
+- Đợt dọn **Q2** xoá 32 thư mục `.qa-*`. Tôi báo cáo chúng là **"untracked"**. **SAI**: **4.731**
+  tệp `.qa-*` nằm **trong HEAD**. Xoá chúng để lại **4.726 lượt xoá treo lơ lửng**, chưa ghi nhận.
+- **Vì sao tôi không thấy**: mọi lần tôi báo *"cây sạch"* đều chạy
+  `git status --porcelain client server shared e2e scripts docs` — một **pathspec HẸP** không bao
+  giờ nhìn tới `.qa-*`.
+  ⇒ ★★★ **Một phép đo chỉ nhìn chỗ mình chọn thì không bao giờ thấy chỗ mình không chọn.** Cùng
+  lớp với "bộ chọn `[data-ma-may]` định nghĩa ra kết cục" (QA lần 11) — chỉ lần này nạn nhân là
+  phép kiểm *"có ai đang sửa dở vùng này không"* của **chính Bước 0**.
+- Và câu *"xoá hết thì mọi trích dẫn thành trích dẫn treo"* trong báo cáo Q2 cũng **SAI**:
+  `git show <commit>:.qa-dot47/e2e/t1a-man-twin-line-1280.json` đọc lại được **nguyên văn** — đã
+  kiểm thật. Lịch sử git giữ trọn; `.do-luutru/` chỉ là bản chép tay cho tiện.
+
+Đã xử (`8a3eb08fa`): `.gitignore` thêm `.qa-*/`, `git rm -r --cached '.qa-*'` ⇒ cây bẩn
+**4.765 → 33**, trong đó **28 tệp `knowledge/` có TRƯỚC phiên này** (vùng của tiến trình khác —
+**ghi lại, không đụng**).
+
+⚠ **Cái giá đã biết của quyết định ấy:** kịch bản đo nay **ngoài sổ**. Dùng được ngay, nhưng
+không đi theo commit. Nếu một phép đo trở thành **bằng chứng thường trực** (như `v5-n4b.mts`),
+chỗ đúng của nó là `scripts/` — **việc của vòng sau**, không tự làm trong vòng này vì nó đổi phạm vi.
+
+## 6. Ablation — bản vá có thật sự là nguyên nhân không
+
+| bản vá | gỡ ra | kết quả |
+|---|---|---|
+| **M3** | bỏ nhánh `soNhaMayNap > 1` | lưới **ĐỎ 1/4** |
+| **M3** (G12) | chép lại biểu thức thay vì dùng chung biến `soNhaMayNap` | lưới **ĐỎ 1/4** |
+| **M3** (đường sống) | đo **trước** bản vá, trên chính bản dựng cũ | *"the whole factory"* ở cấp tập đoàn ⇒ đường cơ sở tái hiện |
+| **N4** | xáo trộn hạng, giữ nguyên cỡ | biên độ **43,7 → ≤ 11,6**, **0/200** lượt chạm ⇒ xu hướng không tự thoả |
+| **V1** | — | công cụ **tự chứng minh**: nó bắt 4.764 tệp bẩn ngay lần chạy đầu (§5) |
+
+## 7. CÒN MỞ — nói thẳng, không để người đọc tự suy là đã xong
+
+- **N3 phần còn lại** — *"viền còn sót trong cảnh WebGL"* **không đo được từ DOM**. Cần một phép
+  đo **pixel** (chụp trước/sau, so ô). Phần đo được (drawer đóng khi bấm nền) **ĐẠT**; phần còn
+  lại **chưa ai đo**.
+- **2/14 biểu tượng 2D** có **tâm** nằm dưới hai huy hiệu nhỏ chưa khai `data-che-nhan`. Mọi nhà
+  máy vẫn tới được (**5/5**), nên đây là khuyết tật *đích bấm*, không phải *đường đi*.
+- **1/14 biểu tượng 3D ở 21,7 px** (< 24) @1280×720. Ép đủ đòi **dựng lại mốc đo sống
+  673,2 × 553,2 m + hai đối chứng dương PH-46/PH-47** của Task 20 ⇒ **chờ chủ dự án**, không phải
+  chỗ tôi tự nới.
+- **Kịch bản đo ngoài sổ** — xem cảnh báo cuối §5.
+- **28 tệp `knowledge/`** bẩn từ trước phiên này — vùng của tiến trình khác, **không đụng**.
+
+## 8. Pareto — và nguyên nhân chi phối là của TÔI, không của mã
+
+| nguyên nhân | số mục |
+|---|---|
+| **mục backlog chưa đo lại** — đã được chữa từ trước, hoặc moot, hoặc không kiểm lại được | **4** — N2 · M2 · V2 · N4 |
+| lời khai có **hạn sử dụng** mà không ai cưỡng chế hạn | 2 — M3 · Task 17c (vòng 4) |
+| quy ước **không có cơ chế ép** | 1 — V1 |
+
+⇒ **Quá nửa backlog của tôi là ý kiến có tuổi.** Khuôn ghi ở vòng 4 (*"một mục backlog chưa đo
+lại là một ý kiến có tuổi"*) nay có **bốn ca**, không phải một — và N4 cho biết dạng nặng nhất
+của nó: một mục **không mang theo truy vấn** thì đến *so sánh trước/sau* cũng không làm được.
+
+## 9. Vòng sau — nguyên nhân tiếp theo, kèm điều kiện mã chính xác
+
+1. **Phép đo pixel cho N3** — chụp `/factory-command` trước/sau `onPointerMissed`, so vùng quanh
+   khối vừa bỏ chọn. Điều kiện: cùng bộ cờ GPU của §1, cùng khung, cùng dữ liệu.
+2. **`data-che-nhan` cho hai huy hiệu nhỏ ở bản 2D** — cơ chế đã có (`layVungCam`), thiếu đúng
+   thuộc tính trên hai nút. Kết cục phải đo: **14/14 tâm biểu tượng không bị che**.
+3. **Đưa kịch bản đo thường trực vào `scripts/`** — đổi phạm vi, cần chốt.
+4. **Hồi tố truy vấn cho các mục backlog còn số mà không có phép đo** (luật §4).
+
+## 10. Cổng
+
+`tsc` **0** · `twin3d` + `pages` **966 tệp / 3.629 ca / 0 đỏ** · `i18n:check` **0** ·
+e2e `twin-dot47` **16/16** (vòng 4; vòng này không đổi mã trên đường ấy).
+Commit vòng 5: `8a3eb08fa` (Q2 đính chính) · `bc1b8abf3` (M3) · `c2f0d1ed6` (V1).
