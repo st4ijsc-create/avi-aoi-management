@@ -143,6 +143,26 @@ describe("★★★ HAI NÚT, MỘT BỘ LUẬT — bản 2D nhận cùng một 
     expect(canh2D).toContain("for (const ph of document.querySelectorAll(`[${THUOC_TINH_CHE_NHAN}]`)) ro.observe(ph);");
   });
 
+  it("★★★ NEO ĐÁY — nội dung 2D thôi rơi vào dải thẻ nổi ở NỬA TRÊN canvas", () => {
+    /*
+     * ★★★ G93 — ĐỘT BIẾN Ở CHỖ GỌI SỐNG SÓT MỌI CA KIỂM CỦA MODULE.
+     *   `khungNhinBan2D` có ca riêng cho luật neo, nhưng luật ấy chỉ có tác dụng nếu chỗ gọi
+     *   THẬT SỰ truyền lề. Xoá đúng đối số thứ tư ở đây thì `khungNhinBan2D.unit.test.ts` vẫn
+     *   xanh 13/13 và màn 2D lặng lẽ quay về 12/14. Nên ca này ghim CHỖ GỌI.
+     *
+     * ★ Đo được sau bản vá (1280×720, `?pv=tapdoan`, bản 2D):
+     *   thông tâm **12/14 → 14/14** · đạt 24×24 **12/14 → 14/14** · cỡ biểu tượng **KHÔNG đổi**
+     *   (53×38 px) · nhãn sạch **15/19 → 17/19** · tỉ lệ nhánh máy **giữ nguyên** 10,0222 px/m.
+     */
+    expect(canh2D).toContain("leDayPx: veSaBan ? LE_VUNG_DUNG_PX : 0");
+  });
+
+  it("★★★ và lề ấy DÙNG CHUNG hằng với bản 3D, không phải một con số chép tay", () => {
+    // Một con số thứ hai sẽ đồng ý với bản gốc tới đúng lần sửa đầu tiên (G12).
+    expect(canh2D).toMatch(/import \{[^}]*LE_VUNG_DUNG_PX[^}]*\} from "\.\/phamViCanh";/);
+    expect(canh2D).not.toMatch(/leDayPx:\s*\d/);
+  });
+
   it("★★★ sa bàn cũng khớp theo NỘI DUNG — loại trừ cũ là một khuyết tật để lại", () => {
     expect(canh2D).not.toMatch(/if \(veSaBan \|\| may\.length === 0\) return null;/);
     expect(canh2D).toContain("if (saBan.length === 0) return null;");

@@ -67,7 +67,7 @@ import {
 } from "./hopNhatCanh";
 import type { MayTrongLo } from "../loi";
 import { khungNhinBan2D, type HopCanvas2D } from "./khungNhinBan2D";
-import { vungDungCanvas } from "./phamViCanh";
+import { LE_VUNG_DUNG_PX, vungDungCanvas } from "./phamViCanh";
 import { layVungCam, THUOC_TINH_CHE_NHAN } from "../loi/LopNhan";
 
 /**
@@ -355,6 +355,24 @@ export function CanhVanHanh2D({
     hopNoiDung ? { ...hopNoiDung } : null,
     khungPx.rong > 0 && khungPx.cao > 0 ? khungPx : null,
     vungDung,
+    /*
+     * ★★★ LỀ ĐÁY CHỈ CHO NHÁNH SA BÀN — và con số đo được nói vì sao.
+     *
+     *   `LE_VUNG_DUNG_PX` = 22 px chữ + 6 px khe, đúng chiều cao nhãn treo DƯỚI biểu tượng.
+     *   Dùng chung hằng của bản 3D, không chép một con số thứ hai (G12).
+     *
+     *   Nhưng chừa lề **ở mọi phạm vi** là một khoản lỗ có thật, đo được ở 1280×720:
+     *
+     *   | phạm vi | không lề | có lề | nhãn treo dưới |
+     *   |---|---|---|---|
+     *   | tập đoàn (sa bàn) | 0,4801 px/m | **0,4801 px/m** (bề RỘNG chặn) | **19** |
+     *   | một nhà máy | 10,0222 px/m | 9,4000 px/m (**−6,2 %**) | **0** |
+     *
+     *   Tức ở nhánh máy, lề mua **0 nhãn** bằng **6,2 % cỡ đích bấm** — đúng lớp "vá thành lùi"
+     *   mà `phamViCanh.ts` đã ghi từ PH-46. `LopSaBan2D` (biểu tượng + nhãn treo) chỉ dựng ở
+     *   bậc sa bàn; nhánh máy vẽ thẳng máy, không có nhãn nào treo dưới mép.
+     */
+    { leDayPx: veSaBan ? LE_VUNG_DUNG_PX : 0 },
   );
   const goc = khungVung
     ? { x: khungVung.x, z: khungVung.z }
