@@ -56,10 +56,19 @@ const chayTest = (DA) => {
  * Nay mỗi bài có DỰ ÁN RIÊNG được commit KÈM SẴN lỗi của nó, và reset đưa về đúng nội dung đã commit.
  */
 const datLai = (DA) => {
-  for (const d of ["src", "test"]) {
-    fs.rmSync(`${DA}/${d}`, { recursive: true, force: true });
-    fs.cpSync(`${DA}/.goc/${d}`, `${DA}/${d}`, { recursive: true });
-  }
+  /**
+   * ★★★ KHÔI PHỤC BẰNG `git checkout`, KHÔNG bằng chép từ `.goc/` — bài học ĐO ĐƯỢC, lần thứ hai
+   * cùng một hàng rào.
+   *
+   * Bản trước chép `.goc/src` → `src`. Nội dung giống hệt TỪNG KÝ TỰ, nhưng `.goc` mang **CRLF**
+   * còn HEAD mang **LF** (`.gitattributes` đặt `eol: lf`) ⇒ tệp "bẩn" ở mức BYTE ⇒ hàng rào
+   * *"tệp đích có thay đổi CHƯA LƯU — không ghi đè"* (hoạt động ĐÚNG) chặn mọi lượt ghi ⇒ A2 tụt
+   * từ 3/3 xuống 0/2, và con số ấy là **hiện vật công cụ**, không phải hồi quy sản phẩm.
+   *
+   * `git checkout --` đưa đĩa về ĐÚNG byte của HEAD, nên "sạch" là một sự thật chứ không phải may mắn.
+   */
+  const rel = DA.replace(`${ROOT}/`, "");
+  execSync(`git checkout -- "${rel}/src" "${rel}/test"`, { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
 };
 
 const bam = (p) => {
@@ -87,6 +96,25 @@ const hoi = async (q) => {
   }
   return { ms: Date.now() - t0, evs, text };
 };
+
+/**
+ * ★★★ CỔNG SỨC KHOẺ — cùng bài học với `run.mjs`, và lần này cho CẢ HAI phía.
+ * Bản đầu chỉ canh llama-server; khi node (:3000) chết, harness NỔ bằng một `ECONNREFUSED` thô
+ * giữa chừng thay vì nói "phép đo này vô giá trị". Một bộ đo phải phân biệt được "hệ trả lời sai"
+ * với "hệ không có ở đó" — nếu không nó sẽ sinh ra số giả đúng lúc ta cần số thật nhất.
+ */
+async function kiemSong(url, ten) {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok && r.status !== 404) throw new Error("HTTP " + r.status);
+  } catch (e) {
+    console.error(`
+⛔ VỨT KẾT QUẢ: ${ten} KHÔNG khoẻ (${e}). Mọi số của lượt này VÔ GIÁ TRỊ.`);
+    process.exit(2);
+  }
+}
+await kiemSong("http://127.0.0.1:8091/health", "llama-server :8091");
+await kiemSong("http://127.0.0.1:3000/", "server :3000");
 
 const rows = [];
 for (const b of BAI) {
