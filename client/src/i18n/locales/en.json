@@ -19993,7 +19993,8 @@
       "daGhiChu": "Note saved",
       "dongNgan": "Close action panel",
       "demTheoNhaMay": "(counted across the whole factory)",
-      "bangSucKhoe": "Machine health"
+      "bangSucKhoe": "Machine health",
+      "demTheoNhieuNhaMay": "(counted across the {{n}} factories currently loaded)"
     },
     "studio": {
       "tieuDe": "3D Factory — Design",

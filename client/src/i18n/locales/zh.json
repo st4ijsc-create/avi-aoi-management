@@ -19999,7 +19999,8 @@
       "daGhiChu": "备注已保存",
       "dongNgan": "关闭处理面板",
       "demTheoNhaMay": "（按整座工厂统计）",
-      "bangSucKhoe": "设备健康"
+      "bangSucKhoe": "设备健康",
+      "demTheoNhieuNhaMay": "(按当前载入的 {{n}} 家工厂统计)"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",

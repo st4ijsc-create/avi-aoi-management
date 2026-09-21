@@ -19971,7 +19971,8 @@
       "daGhiChu": "Đã lưu ghi chú",
       "dongNgan": "Đóng ngăn xử lý",
       "demTheoNhaMay": "(đếm theo toàn nhà máy)",
-      "bangSucKhoe": "Sức khoẻ máy"
+      "bangSucKhoe": "Sức khoẻ máy",
+      "demTheoNhieuNhaMay": "(đếm theo {{n}} nhà máy đang nạp)"
     },
     "studio": {
       "tieuDe": "Nhà máy 3D — Thiết kế",

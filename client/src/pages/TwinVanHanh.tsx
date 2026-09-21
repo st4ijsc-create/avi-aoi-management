@@ -634,14 +634,17 @@ export function ThanTwinVanHanh() {
    *   lời khai sai to hơn cái nó vá. Nó đi ra `banner-nha-may-vuot-tran` với BA
    *   con số thật (cần / trần / thiếu), cùng khuôn `banner-tang-vuot-tran`.
    */
+  /**
+   * Số nhà máy **THẬT SỰ đang nạp**: 1 ở mọi phạm vi dưới, N ở phạm vi gộp khuôn viên.
+   *
+   * ★ Rút thành một biến vì nay có **HAI** người đọc: `phamViThuc` (hạ cấp phạm vi) và nhãn
+   *   `tong-quan-pham-vi` (lời khai "đếm theo cái gì"). Chép biểu thức lần thứ hai là G12 — hai
+   *   bản sẽ đồng ý tới lần sửa đầu tiên, rồi màn khai một đằng và hạ cấp một nẻo.
+   */
+  const soNhaMayNap = napNhaMay.gopKhuonVien ? factories.length : factoryId === null ? 0 : 1;
   const phamViKq = useMemo(
-    () =>
-      phamViThuc(
-        phamViYeuCau,
-        factories.length,
-        napNhaMay.gopKhuonVien ? factories.length : factoryId === null ? 0 : 1,
-      ),
-    [phamViYeuCau, factories.length, napNhaMay.gopKhuonVien, factoryId],
+    () => phamViThuc(phamViYeuCau, factories.length, soNhaMayNap),
+    [phamViYeuCau, factories.length, soNhaMayNap],
   );
   const phamVi = phamViKq.pv;
 
@@ -4065,7 +4068,24 @@ export function ThanTwinVanHanh() {
                 className="whitespace-nowrap text-text-2"
                 data-testid="tong-quan-pham-vi"
               >
-                {t("twin3d.vanHanh.demTheoNhaMay", "(đếm theo toàn nhà máy)")}
+                {/*
+                  ★★★ ĐO ĐƯỢC 2026-09-21 — CÂU NÀY SAI Ở PHẠM VI TẬP ĐOÀN.
+                  `hang-tong-quan` đếm đúng bằng `dem-may`, tức tập ĐÃ NẠP:
+                      một tầng   → 371 · FUYU-F → 549 · **tập đoàn → 1.700 (5 nhà máy)**
+                  Câu cũ khai *"toàn nhà máy"* — số ÍT — nên ở cấp tập đoàn nó nói về một nhà máy
+                  trong khi con số gộp năm. Docblock ngay trên khai đúng ý định gốc (*"nhà máy
+                  đang nạp"*), và ý định ấy đúng **tới khi** Task 20 cho phép nạp nhiều nhà máy:
+                  một lời khai **có hạn sử dụng** mà không ai cưỡng chế hạn.
+                  ⇒ Nói thẳng số nhà máy đang nạp. Một nhà máy ⇒ giữ nguyên câu cũ, không đổi
+                    hành vi ở mọi phạm vi dưới.
+                */}
+                {soNhaMayNap > 1
+                  ? t(
+                      "twin3d.vanHanh.demTheoNhieuNhaMay",
+                      "(đếm theo {{n}} nhà máy đang nạp)",
+                      { n: soNhaMayNap },
+                    )
+                  : t("twin3d.vanHanh.demTheoNhaMay", "(đếm theo toàn nhà máy)")}
               </span>
             </div>
             {/*
