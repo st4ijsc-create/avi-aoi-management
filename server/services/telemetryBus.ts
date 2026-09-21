@@ -31,6 +31,33 @@ import { createBusFanout } from "../_core/busFanout";
 import { filterTelemetrySamples } from "./contracts/ingestValidation";
 
 /** The canonical telemetry protocol set (mirrors telemetryProtocolEnum). */
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ MỘT DÒNG LOG 1,3 MB — VÌ `err.message` CỦA DRIZZLE CHỨA CẢ CÂU SQL
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đo được 2026-09-21, ngay sau khi vá xong một nguồn log khác: `dist/e2e-3000.err.log`
+ * phình **20 MB trong 8 phút** chỉ vì **15** dòng `[TelemetryBus] insert failed`.
+ *
+ * Lý do: đây là INSERT **hàng loạt**, nên `Failed query: insert into "ot_telemetry" … values
+ * (default, $1, …), (default, $N, …), …` lặp hàng nghìn bộ giá trị. Drizzle nhét trọn câu ấy
+ * vào `err.message`, và chỗ ghi log in nguyên `message` ⇒ **~1,3 MB mỗi dòng**.
+ *
+ * ⚠ Nguyên nhân gốc của chính lỗi ấy (lần này là `ECONNREFUSED` thoáng qua quanh lúc restart)
+ *   là chuyện KHÁC và **không bị giấu**: dòng log vẫn còn, vẫn nêu lỗi, chỉ thôi kéo theo cả
+ *   câu SQL. Cắt bớt **chứng cứ thừa**, không cắt **tin**.
+ *
+ * ★ Vì sao cắt ở 300 ký tự: đủ chứa `Failed query: insert into "ot_telemetry" ("id", "ts", …`
+ *   + mã lỗi, tức vẫn đọc ra **bảng nào** và **lỗi gì**. Phần bị cắt là hàng nghìn `(default,
+ *   $N, …)` giống hệt nhau — nhân bản, không phải thông tin.
+ */
+export const GON_LOI_TOI_DA = 300;
+export function gonLoi(err: unknown): string {
+  const raw = (err as Error)?.message ?? String(err);
+  return raw.length <= GON_LOI_TOI_DA
+    ? raw
+    : `${raw.slice(0, GON_LOI_TOI_DA)}… [cắt ${raw.length - GON_LOI_TOI_DA} ký tự — câu SQL hàng loạt, xem docblock gonLoi]`;
+}
+
 export type TelemetryProtocol = NonNullable<OtTelemetry["protocol"]>;
 
 /** The canonical quality flag set (mirrors telemetryQualityEnum). */
@@ -222,7 +249,7 @@ async function broadcastAndTap(rows: BroadcastRow[], remote: boolean): Promise<v
     const { emitTelemetrySamples } = await import("../_core/socket");
     emitTelemetrySamples(rows);
   } catch (err) {
-    console.error("[TelemetryBus] broadcast failed:", (err as Error)?.message || err);
+    console.error("[TelemetryBus] broadcast failed:", gonLoi(err));
   }
   // Fan out to remote instances ONLY for locally-ingested batches (not echoes).
   if (!remote) telemetryFanout.publish(rows);
@@ -586,7 +613,7 @@ export async function flushTelemetryBuffer(): Promise<number> {
   try {
     return await ingestNow(batch);
   } catch (err) {
-    console.error("[TelemetryBus] buffered flush failed:", (err as Error)?.message || err);
+    console.error("[TelemetryBus] buffered flush failed:", gonLoi(err));
     return 0;
   }
 }
@@ -663,7 +690,7 @@ async function ingestNow(samples: CanonicalSample[]): Promise<number> {
     persisted = await persistRows(rows);
   } catch (err) {
     insertThrew = true;
-    console.error("[TelemetryBus] insert failed:", (err as Error)?.message || err);
+    console.error("[TelemetryBus] insert failed:", gonLoi(err));
   }
 
   // 3b: C1 STORE-AND-FORWARD (additive; no-op unless OT_STORE_FORWARD_ENABLED). When
@@ -688,7 +715,7 @@ async function ingestNow(samples: CanonicalSample[]): Promise<number> {
       }
     }
   } catch (err) {
-    console.error("[TelemetryBus] store-and-forward failed:", (err as Error)?.message || err);
+    console.error("[TelemetryBus] store-and-forward failed:", gonLoi(err));
   }
 
   // 4: broadcast on the ONE unified channel (signal-only; no-op without io) AND
@@ -702,7 +729,7 @@ async function ingestNow(samples: CanonicalSample[]): Promise<number> {
       try {
         tap(rows);
       } catch (err) {
-        console.error("[TelemetryBus] tap failed:", (err as Error)?.message || err);
+        console.error("[TelemetryBus] tap failed:", gonLoi(err));
       }
     }
   }
@@ -830,7 +857,7 @@ function energyMirrorTap(rows: InsertOtTelemetry[]): void {
       const { energyReadings } = await import("../../drizzle/schema");
       await db.insert(energyReadings).values(energyRows as any);
     } catch (err) {
-      console.error("[TelemetryBus] energy mirror tap failed:", (err as Error)?.message || err);
+      console.error("[TelemetryBus] energy mirror tap failed:", gonLoi(err));
     }
   })();
 }
