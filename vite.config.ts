@@ -6,8 +6,21 @@ import path from "path";
 import { defineConfig } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
 
+// @ts-expect-error — script .mjs thuần, không có khai báo kiểu; xem docblock của chính nó.
+import { pluginGhiLaiLich } from "./scripts/ghi-lai-lich-ban-dung.mjs";
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime()];
+
+/*
+ * ★★★ `pluginGhiLaiLich` — LAI LỊCH BẢN DỰNG, ÉP TỪ TRONG VITE.
+ *
+ * Bước ghi lai lịch vốn là mắt xích CUỐI của `npm run build`, nên một lượt `vite build` riêng
+ * (việc ai cũng làm khi sửa UI cho nhanh) **lách qua được**. Đo 2026-09-21: `BUILD-INFO.txt`
+ * khai commit `8a3eb08fa`/08:01 trong khi `dist/public/index.html` đang phục vụ có mtime
+ * **08:42** và đã chứa bản vá M3 ⇒ tệp lai lịch nói sai về chính thứ đang chạy.
+ * ⇒ Gắn vào `closeBundle` để đường dựng nào cũng ghi. Chỉ chạy khi `build` (`apply: "build"`),
+ *   nên `vite dev` không đụng tới.
+ */
+const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), pluginGhiLaiLich()];
 
 export default defineConfig({
   plugins,
