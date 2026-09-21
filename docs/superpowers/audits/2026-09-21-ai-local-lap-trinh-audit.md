@@ -461,3 +461,43 @@ Lưới: **461 ca xanh** trên 29 tệp thuộc vùng đã sửa. Mới thêm **
 - `sandbox-projects/python-demo/` — dự án Python mẫu để nghiệm thu.
 - 5 tài khoản đo `ai_audit_*` (chủ dự án yêu cầu GIỮ).
 - `llama-server` + `node` chạy bằng `Start-Process` tách rời (`nohup &` trong tác vụ nền KHÔNG sống sót).
+
+---
+
+# PHỤ LỤC 4 — G6 ĐÃ THỰC THI: VÒNG TÁC NHÂN NHIỀU TỆP
+
+## Kết quả
+| Bài | TRƯỚC | SAU |
+|---|---|---|
+| **A1** — 1 lỗi, 1 tệp | 0/3 | **3/3 XANH THẬT**, ~2,9 s |
+| **A2** — 2 lỗi, **2 tệp** | 0/3 | **3/3 XANH THẬT**, ~11,6 s |
+
+"XANH THẬT" = **bộ đo tự chạy `node --test` sau lượt và đọc mã thoát**. Tác nhân nói "đã xanh" mà
+test còn đỏ ⇒ TRƯỢT. Cả 6 lượt đều **không đụng tệp test** (cột chống-gaming riêng).
+
+Bản vá A2 tác nhân tự sinh (đúng cả hai nguyên nhân gốc):
+`ca.mjs: (h-gioBatDau) % 24` → `(h-gioBatDau+24) % 24` · `kho.mjs: + if (tong <= 0) return 0;`
+
+## ★★★ ĐỀ XUẤT NÂNG TRẦN CỦA BẢN THIẾT KẾ ĐÃ BỊ PHÉP ĐO **BÁC BỎ**
+Bản thiết kế đề xuất *"tác vụ sửa mã: 8 vòng / 180 s"*. Đo thật:
+- vòng dừng ở **lượt 2/3** ⇒ trần 3 vòng **CHƯA BAO GIỜ BÓ**;
+- thời gian 8–12 s ⇒ trần 20 s **CHƯA BAO GIỜ BÓ**.
+⇒ Nâng trần sẽ **không cứu được một ca nào**, chỉ làm mọi lượt hỏng trở nên chậm hơn.
+**Trần giữ NGUYÊN 3 vòng / 20 s.** Đây là lý do bản thiết kế bắt đo trước khi chốt ngưỡng.
+
+## Ba nguyên nhân THẬT (tìm được nhờ 6 dòng lý do vừa thêm)
+1. **Sáu đường `return null` im lặng** trong `taoSinhBanVaTuTri` — người dùng chỉ nhận
+   *"không sinh được bản vá"*, không biết chết ở bước nào. Nay cả sáu nói ra lý do.
+2. **Cây tệp không chứa tệp cần sửa**: `list_files {depth:3}` + `.slice(0,200)` trên repo ~7.616
+   tệp; tệp cần sửa ở **tầng 4** ⇒ vắng mặt. Vá: suy **THƯ MỤC** ứng viên từ đầu ra lỗi
+   (`ai/thuMucTuLoi`, 10 lưới) rồi liệt kê trong đó trước; trần 200 → 400.
+   ⚠ KHÔNG phải `trichTepTuLoi` đã bị gỡ 2026-08-24: cái cũ suy ra **TỆP** và luôn trúng tệp TEST
+   ⇒ model sửa test để gaming. Cái này suy ra **THƯ MỤC**; model vẫn tự chọn tệp, server vẫn xác thực.
+3. **Model chọn lại tệp vừa sửa** ⇒ `kq=khong_doi` ⇒ vòng chết. Vá: `"khong_doi"` là câu trả lời
+   CÓ THÔNG TIN (*"tệp này không phải chỗ sai"*) ⇒ loại khỏi cây, cho chọn lại (tối đa 3 lần).
+
+## ⚠ VÀ MỘT LỖI CỦA CHÍNH BỘ ĐO (lần thứ 10)
+Bản đầu của bài A2 reset `src/` bằng một biến thể KHÁC với thứ đã commit ⇒ mọi tệp lệch git HEAD
+⇒ hàng rào *"tệp có thay đổi CHƯA LƯU — không ghi đè"* (hoạt động ĐÚNG) chặn mọi lượt ghi ⇒ **A2
+không bao giờ có thể đạt**. Con số 0/3 khi ấy là **hiện vật công cụ**, không phải giới hạn model.
+Vá: mỗi bài có **dự án riêng được commit kèm sẵn lỗi của nó** (`sandbox-projects/agentic-demo2`).

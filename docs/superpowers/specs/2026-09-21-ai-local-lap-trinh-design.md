@@ -140,7 +140,11 @@ model thuần đạt 44–56 %. **6/9 bài** trả về **0 khối mã** — câ
 **Cổng ra**: ≥ 8/9 bài bộ KHÓ trả về ≥1 khối mã, và tỷ lệ chạy-được của đường ống **≥** model thuần
 (hiện đang THẤP HƠN 44 điểm %). Ablation: bài *cần repo* vẫn phải đọc tệp (cầu chì không giết ca lành).
 
-### G6 — HARNESS TÁC NHÂN ĐỦ DÀI ĐỂ LÀM VIỆC THẬT  🟠 lớn · công sức: tuần
+### G6 — ✅ **ĐÃ THỰC THI 2026-09-21** · vòng tác nhân nhiều tệp (A1 3/3 · A2 3/3)
+
+⚠ **Đề xuất "8 vòng / 180 s" dưới đây ĐÃ BỊ PHÉP ĐO BÁC BỎ** — vòng dừng ở lượt 2/3 và 8–12 s,
+tức cả hai trần CHƯA BAO GIỜ BÓ. Trần giữ NGUYÊN 3 vòng / 20 s. Nguyên nhân thật là cây tệp thiếu
+tệp cần sửa + model chọn lại tệp vừa sửa. Xem phụ lục 4 của audit.
 Khoảng cách lớn nhất về *hình dạng* so với Claude/Cursor: **≤3 vòng, trần 20 s**.
 
 1. Nâng trần theo **hạng tác vụ**, không nâng đồng loạt: hỏi-đáp giữ 20 s; **tác vụ sửa mã: 8 vòng /
@@ -207,7 +211,7 @@ endpoint server **đã có**; đó là lời khai đã lạc hậu.
 ```
 Đợt 1 (chặn)   : G1 ✅ → G2b ✅ → G2 ✅ → G3 ✅   ⇒ ĐỢT 1 XONG
 Đợt 2 (nền)    : G4 ✅ → G8 ✅ → G7 (CÒN MỞ)   ⇒ G7 cố ý hoãn: cần vòng đo riêng
-Đợt 3 (mở rộng): G5 ✅(Python) → G10 ✅(P10) → G6 (CÒN MỞ, quy mô tuần)
+Đợt 3 (mở rộng): G5 ✅(Python) → G10 ✅(P10) → G6 ✅ (A1 3/3 · A2 3/3)
 Đợt 4 (có điều kiện): G9             ⇒ chỉ khi Đợt 1-3 xong và số đo còn khoảng trống
 ```
 
@@ -223,8 +227,8 @@ Nói ra để không tạo kỳ vọng sai:
   nhiều tệp trong repo thật **chưa được đo** — G6 mới tạo ra phép đo đó.
 - **Số SWE-bench của Devstral (68 %) không so được** với 91 % ở đây: khác bộ bài hoàn toàn. Muốn so
   thì phải tải về, chạy cùng bộ đo.
-- **Ngưỡng 70 % ở G6 và trần 8 MiB ở G3 là giả định**, chưa có cơ sở đo. Cả hai phải được thay bằng
-  số đo từ lượt chạy đường cơ sở trước khi chốt.
+- ~~Ngưỡng 70 % ở G6 và trần 8 MiB ở G3 là giả định~~ ⇒ **CẢ HAI ĐÃ ĐƯỢC THAY BẰNG SỐ ĐO**:
+  G3 chốt 4 MiB (p90 đo được); G6 đạt 6/6 và phép đo **BÁC BỎ** việc nâng trần vòng.
 - **Qwen3.6-27B đạt 100 % qua 22/22 (2 lượt, 0 trượt)** — vững hơn n=1 ban đầu, nhưng vẫn trên bộ bài HÀM THUẦN; chưa nói gì về tác vụ nhiều tệp.
 - **G9 (3) có thể ra kết quả âm tính** — và nếu thế thì đó là kết quả **đúng**, không phải thất bại.
 
