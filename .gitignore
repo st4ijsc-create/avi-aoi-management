@@ -254,3 +254,11 @@ vscode-extension/.vscode-test/
 # không thành trích dẫn treo. Đã loại: ảnh, video, bản sao mã nguồn (`src-nen/`),
 # bản dựng (`dist-*/`), log chạy test.
 .do-luutru/
+
+# ── Thư mục ĐO (`.qa-*`) — thôi theo dõi từ 2026-09-21 ──────────────────────
+# Chúng từng được COMMIT (4.731 tệp trong HEAD), và đó là lý do đợt dọn 9,12 GB để lại
+# **4.726 lượt xoá chưa ghi nhận** — cây bẩn vĩnh viễn, `sach=false` mãi mãi trong
+# `dist/BUILD-INFO.txt`. Mỗi lượt chạy e2e lại sinh tiếp một mớ tệp mới cùng chỗ.
+# ⚠ KHÔNG mất gì: lịch sử git vẫn giữ trọn (`git show <commit>:.qa-.../x.json` đọc lại được),
+#   và bản trích số liệu nằm ở `.do-luutru/`.
+.qa-*/

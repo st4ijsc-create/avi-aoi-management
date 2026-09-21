@@ -1,8 +1,0 @@
-a79123e0c15366e1c24a90429fa4486e *client/src/components/twin3d/thiet-ke/CanhThietKe.tsx
-a8ac06b5b9bb7c82d70037fdd0d9bd6d *client/src/components/twin3d/loi/CanhNhaMay.tsx
-740143d24661342a94ab29e725aa1a18 *client/src/components/twin3d/van-hanh/CanhVanHanh.tsx
-0a2b8d1e07e008e763282ddb250980b7 *client/src/components/twin3d/loi/catCanh.ts
-769271bd9373a929f3be76c530942480 *client/src/components/twin3d/van-hanh/LopSaBan.tsx
-6e05f3f670b94cdf3f83831d3cee9c53 *client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx
-7dca0b86948d5bb1e407536a0cd161c8 *client/src/components/twin3d/van-hanh/datNhanSaBan.ts
-a70ced8df5c49125b1afa4ecae6712fb *client/src/components/twin3d/van-hanh/nhanSaBan2D.ts

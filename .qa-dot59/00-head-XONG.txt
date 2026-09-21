@@ -1,4 +1,0 @@
-HEAD=5e3a62950e806bfb9b76b63cd747ba8921a92f5d
-ky vong 5e3a6295 => KHOP
-branch=feat/twin-3d-trung-tam
-thoi diem=2026-09-13T15:11:07+07:00

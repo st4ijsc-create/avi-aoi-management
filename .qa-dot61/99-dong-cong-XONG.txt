@@ -1,7 +1,0 @@
-ĐỢT 61 — ĐÓNG CỔNG
-3061 ĐÃ TẮT lúc 2026-09-13T23:12:09+07:00 (taskkill PID 32668 — PID CỦA TÔI, đọc từ
-.qa-dot61/server.pid; G78).
-3001 PID 14228 · 3008 PID 29676 của chủ sở hữu: vẫn LISTENING, ĐÚNG PID cũ — KHÔNG bị đụng.
-dist/ gốc: md5 dist/public/index.html = fe363553345bebdcfddad86c57b2dc9f (bằng lúc bắt đầu).
-Junction .qa-dot61/base-tree/node_modules đã gỡ.
-Hàng TẠM trong DB: dọn sạch qua trap EXIT (andon 7→7, users 10→10, userTam 0).

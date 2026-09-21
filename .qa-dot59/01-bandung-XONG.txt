@@ -1,4 +1,0 @@
-BAN DUNG (G141)
-dist-head0 = worktree HEAD 5e3a6295 (0 doi nguon so voi a3032508) -> bundle index-CZsT1Xbd.js; md5 914 dong GIONG HET .qa-dot58/dist-head1
-dist-nen  = git archive 2f835df1 + chuan hoa LF -> bundle index-CVKD-dS2.js; 914 dong; TwinVanHanh/TwinLine/TwinMay/EmptyState/index GIONG TUNG BYTE .qa-dot58/dist-nen3 sau khi trung hoa token bam ten tep
-dau hieu: nen co trang-thai-may, khong vien-tin-cay-may/flex-[7]; head0 nguoc lai

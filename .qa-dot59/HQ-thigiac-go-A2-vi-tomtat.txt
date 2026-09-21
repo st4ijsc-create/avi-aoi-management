@@ -1,6 +1,0 @@
-=== DOT 59 · thi giac lang=vi tren dist MOI (cong 3059) ===
-so trang thai do : 26
-tong nhan do     : 161
-tong badge do    : 70
-VI PHAM          : 1
-  ✗ 1600x900 twin-thu-mo-panel: nhan bi che=2

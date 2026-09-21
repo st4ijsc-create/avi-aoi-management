@@ -1,7 +1,0 @@
-9cb114db4ef95babb93c2a74f3eb7bd7 *client/src/components/twin3d/loi/KhungCanh.tsx
-0a2b8d1e07e008e763282ddb250980b7 *client/src/components/twin3d/loi/catCanh.ts
-4ec00244faf30cb2b56b7bce29b66e14 *client/src/components/twin3d/loi/catCanh.unit.test.ts
-9a4c68d58e9bf1eb6fae0414fb8583fa *client/src/components/twin3d/loi/catCanhDongBo.dom.test.tsx
-4fdfe2daab58bfce829d47bcb239be8c *client/src/components/twin3d/loi/index.ts
-56cf6e90869dfdef99b6d3e48ee4e1ec *client/src/components/twin3d/van-hanh/CanhVanHanh.tsx
-6fcf3f014fe54ca1a1e6ecad03fea2e4 *client/src/pages/TwinVanHanh.tsx

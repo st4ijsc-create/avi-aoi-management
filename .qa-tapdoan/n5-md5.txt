@@ -1,6 +1,0 @@
-7dca0b86948d5bb1e407536a0cd161c8 *client/src/components/twin3d/van-hanh/datNhanSaBan.ts
-77670404a5d30a65635a4e18ce45f915 *client/src/components/twin3d/van-hanh/LopSaBan.tsx
-6e05f3f670b94cdf3f83831d3cee9c53 *client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx
-562fbc291ec4f67298aa537f6f15f277 *client/src/components/twin3d/van-hanh/nhanSaBan2D.ts
-be025fba136deecd923a008f6a1230de *client/src/components/twin3d/loi/LopNhan.tsx
-5dad06855edf73abb7b8f134524e8c0d *client/src/components/twin3d/loi/KhungCanh.tsx

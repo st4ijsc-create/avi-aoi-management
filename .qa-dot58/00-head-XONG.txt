@@ -1,6 +1,0 @@
-HEAD KY VONG a3032508 -> THUC TE a3032508 = KHOP, TIEP TUC
-a3032508d6c490ef389fc5a38cc2f85cb7c6be06
-a3032508 docs(twin3d/dot57): §14q.36.6 do lai doc lap + bo dien tap DDL; G145 dien tap tren ban sao nho cho giay chung nhan gia (30k hang sap trong RAM = khong tai hien benh)
-9aff9749 docs(twin3d/dot57): §14q.36 - bon muc thiet ke 10-13 (QD-29) + runbook QD-30; G142/G143/G144/G145
-f86bb230 docs(runbook/QD-30): §7 - DB test CO THAT, va benh nay phu thuoc KICH CO
-branch=feat/twin-3d-trung-tam

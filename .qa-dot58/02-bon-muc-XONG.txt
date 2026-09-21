@@ -1,5 +1,0 @@
-BON MUC XONG 2026-09-13T15:01:50+07:00
-M10 nen 632 px2 (167@1280 + 149@1600 x2 ngon ngu) -> HEAD 0 px2; bam van thu/mo; ablation 0->281->0
-M11 nen 106 duoi nguong / 1324 do duoc, min 2.15 -> HEAD 0 / 1334, min 4.58
-M12 may14 3->2, may18 4->3 (vung khoi canh+ngan); vien lech 0 px vs /twin 8/8 ca; 0 mat du kien
-M13 @1280 1.51 -> 3.12 hang (3 du); @1600 3.68 -> 5.67; khong tran; danh-sach-may @1600 9->8 hang
