@@ -69,6 +69,41 @@ const validatePayload = (input: NotificationPayload): NotificationPayload => {
 };
 
 /**
+ * Whether the notification service is configured at all.
+ *
+ * Exported so long-running loops can decide **once per cycle** instead of discovering it
+ * per item — see `offlineMonitor.ts`.
+ */
+export function notificationConfigured(): boolean {
+  return Boolean(ENV.forgeApiUrl) && Boolean(ENV.forgeApiKey);
+}
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ "CHƯA CẤU HÌNH" LÀ MỘT SỰ THẬT TĨNH — IN MỘT LẦN, KHÔNG IN MỖI LƯỢT GỌI
+ * ════════════════════════════════════════════════════════════════════════════
+ * Đo được 2026-09-21: `dist/e2e-3000.err.log` phình tới **827 MB**, và trong 2.000 dòng cuối
+ * có **1.000 dòng** đúng một câu *"Notification service URL is not configured"*. Nguồn:
+ * `offlineMonitor` chạy **mỗi 60 giây**, gọi `notifyOwner` cho **từng** máy offline (~1.700
+ * máy vì nhịp tim đã cũ), và mỗi lượt in một dòng.
+ *
+ * Cấu hình thiếu hay đủ **không đổi giữa hai lượt gọi**, nên in lại là nhân bản một sự thật
+ * đã biết. Hậu quả không chỉ là đĩa: một log 100 % nhiễu là một log **không ai đọc** — đúng
+ * bài học dự án đã học hai lần ở `BUILD-INFO` (*"một cảnh báo LUÔN kêu thì không ai nghe"*).
+ *
+ * ⚠ Vẫn in **một lần** chứ không im hẳn: im hẳn là giấu một khoảng trống cấu hình thật.
+ */
+const daCanhBao = new Set<string>();
+function canhBaoChuaCauHinh(thieu: string): void {
+  if (daCanhBao.has(thieu)) return;
+  daCanhBao.add(thieu);
+  console.warn(
+    `[Notification] ${thieu} is not configured; notifyOwner calls are skipped. ` +
+      "(Cảnh báo này chỉ in MỘT LẦN cho mỗi tiến trình — xem docblock.)",
+  );
+}
+
+/**
  * Dispatches a project-owner notification through the Manus Notification Service.
  * Returns `true` if the request was accepted, `false` when the upstream service
  * cannot be reached (callers can fall back to email/slack). Validation errors
@@ -80,12 +115,12 @@ export async function notifyOwner(
   const { title, content } = validatePayload(payload);
 
   if (!ENV.forgeApiUrl) {
-    console.warn("[Notification] Notification service URL is not configured; skipping notifyOwner call.");
+    canhBaoChuaCauHinh("URL");
     return false;
   }
 
   if (!ENV.forgeApiKey) {
-    console.warn("[Notification] Notification service API key is not configured; skipping notifyOwner call.");
+    canhBaoChuaCauHinh("API key");
     return false;
   }
 
