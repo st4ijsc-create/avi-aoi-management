@@ -112,6 +112,32 @@ nép sát mép phải vùng dùng được — không cắt suốt chiều cao n
 tiêu chí là đúng lớp *"vá thành lùi"* mà PH-46 đã ghi. Ghi lại ở đây kèm số để lần sau ai định
 mở lại thì mở bằng một con số khác, không bằng cảm giác.
 
+## V4 — **1.149 máy ĐÃ DUYỆT mà KHÔNG có khoá** (phát hiện khi trả nợ truy vấn)
+
+Hồ sơ đợt `0539a1823` ghi *"1.699/1.700 máy có khoá sống, đối soát **CẦN CẤP 0**"*. Viết truy vấn
+cho con số ấy — đúng việc mà Sổ truy vấn yêu cầu — thì ra:
+
+| | hồ sơ `0539a1823` | đo 2026-09-21 |
+|---|---|---|
+| tổng máy | 1.700 | **1.700** |
+| đã duyệt (`approved`) | — | **1.698** |
+| có khoá sống (`apiKey` khác rỗng, tiền tố `mach_`) | 1.699 | **549** |
+| ★ **CẦN CẤP** (duyệt mà không có khoá) | **0** | **1.149** |
+| ⚠ có khoá mà **chưa** duyệt (hazard `fa1305b3a`) | — | **0** ✅ |
+
+⇒ **KHÔNG kết luận được là "hồi quy" hay "dữ liệu đã seed lại"** — vì hồ sơ cũ **không ghi truy
+vấn**, không có cách nào so cùng một định nghĩa. Đây đúng là cái giá của việc trích một con số mà
+không trích phép đo, và lần này nó tốn của chúng ta khả năng biết chuyện gì đã xảy ra.
+
+★ Cái **nói được**: hôm nay **1.149 máy đã được duyệt nhưng không có khoá để chạy**. Duyệt tức là
+đã hứa cho nó chạy, nên đây là một khoảng trống **VẬN HÀNH** có thật.
+★ Và hazard cũ vẫn sạch: **0** máy có khoá mà chưa duyệt.
+
+⛔ **Tôi không cấp khoá.** Mỗi khoá là một danh tính được phép nói chuyện với hệ thống; cấp 1.149
+khoá là một hành động vận hành có hậu quả thật, phải là **một quyết định**, không phải hệ quả phụ
+của việc chạy một phép đo. Kịch bản `khoa-may-va-doi-soat.mts` **chỉ đọc**, và trả mã thoát **1**
+khi `CẦN CẤP > 0` để cắm được vào cổng kiểm sau này.
+
 ## SỔ TRUY VẤN — mỗi con số còn được viện dẫn phải chỉ được về một phép đo
 
 > **Bốn con số không có truy vấn thì không phải bằng chứng — nó là một tin đồn có chữ số thập phân.**
@@ -130,9 +156,9 @@ mở lại thì mở bằng một con số khác, không bằng cảm giác.
 | PH-42: **7,43 %** canvas đổi · đối chứng âm **0/672.570 px** | `scripts/do-twin/bam-nen-co-xoa-dau-chon.mjs` | ẩn lớp nền mờ của ngăn chi tiết trước khi chụp |
 | V-21(1): **14,5 → 31,3 → 45,5 → 58,2 %** · xáo trộn **0/200** | `scripts/do-twin/canh-bao-theo-hang-suc-khoe.mts` | định nghĩa tử/mẫu viết ngay trong kịch bản |
 | dữ liệu hình học **không có giá trị vô lý** (12 phép kiểm / 4 bảng) | `scripts/do-twin/ra-soat-du-lieu-twin.mts` | mã thoát 0/1 ⇒ cắm CI được |
-| **1.699** máy có khoá sống · **0** cần cấp | *(chưa có kịch bản)* | ⛔ **hết hạn kiểm chứng** — số của đợt `0539a1823`, chưa ai đo lại |
-| lớp phủ ăn **58,2 %** canvas @1280×720 | *(chưa có kịch bản)* | ⛔ **hết hạn kiểm chứng** — số của vòng 3 |
-| **1.108** máy / 3 nhà máy (quy mô tập QATD) | `SELECT count(*) FROM machines` | ⛔ **số cũ.** Đếm thẳng CSDL hôm nay: **1.700** máy, và cảnh vẽ **1.699** (chênh đúng 1 máy — khớp ghi chép cũ *"1.699/1.700 có khoá sống"*). Mọi chỗ còn ghi 1.108 là số của tập QATD lúc chưa nạp đủ nhà máy. |
+| ~~**1.699** máy có khoá sống · **0** cần cấp~~ | `scripts/do-twin/khoa-may-va-doi-soat.mts` | ✅ **ĐÃ TRẢ — và nó lòi ra một việc thật.** Đo hôm nay: **549/1.700** có khoá sống, **CẦN CẤP 1.149** (đã duyệt mà không có khoá). Xem mục **V4** dưới đây. |
+| ~~lớp phủ ăn **58,2 %** canvas @1280×720~~ | `scripts/do-twin/lop-phu-an-bao-nhieu-canvas.mjs` | ✅ **ĐÃ TRẢ.** Đo hôm nay (hợp diện tích các `[data-che-nhan]` ∩ canvas): panel **MỞ 56,7 %** · panel **THU 11,3 %**, giống nhau ở cả hai phạm vi (lớp phủ là khung TRANG, không phụ thuộc cảnh). Số cũ **không tái hiện được** vì định nghĩa cũ không được ghi — nhưng hôm nay *panel mở* đã tốt hơn cả *panel thu* của hồ sơ cũ. |
+| ~~**1.108** máy / 3 nhà máy~~ | `scripts/do-twin/khoa-may-va-doi-soat.mts` | ✅ **ĐÃ TRẢ.** CSDL hôm nay: **1.700** máy (1.699 `isActive`, 1.698 `approved`); cảnh 3D vẽ **1.699**. Mọi chỗ còn ghi 1.108 là số của tập QATD lúc chưa nạp đủ nhà máy. |
 
 ★ Ba dòng cuối là **nợ thật**, ghi ra để đừng ai trích chúng như bằng chứng. Chúng không chặn
 việc gì hôm nay, nhưng ai cần tới chúng thì phải **đo lại trước**, không được chép.

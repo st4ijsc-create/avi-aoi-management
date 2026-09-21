@@ -36,6 +36,9 @@ Mỗi docblock trong `client/src/components/twin3d/` có bảng số đều ph�
 | `2d-dien-tich-con-bam-duoc.mjs` | còn bao nhiêu **% diện tích** và ô vuông trống lớn nhất | bảng 21 %/6×6 px · 34 %/8×8 px trong docblock `khungNhinBan2D` |
 | `bam-nen-co-xoa-dau-chon.mjs` | PH-42 — bấm nền có xoá dấu chọn khỏi cảnh không | **7,43 %** canvas đổi, vùng 624×301; đối chứng âm **0/672.570 px** |
 | `canh-bao-theo-hang-suc-khoe.mts` | V-21(1) — tỉ lệ cảnh báo theo hạng sức khoẻ, kèm **đối chứng xáo trộn** | 14,5 → 31,3 → 45,5 → 58,2 %; biên độ thật 43,7 vs xáo 11,6, **0/200** |
+| `ra-soat-du-lieu-twin.mts` | 12 phép kiểm hợp lý hình học trên 4 bảng | ⚠ **tập rỗng ⇒ chỉ canh TRÔI LƯỢC ĐỒ**, không nói gì về dữ liệu; `--yeu-cau-du-lieu` biến rỗng thành đỏ |
+| `khoa-may-va-doi-soat.mts` | *"1.699 khoá sống · cần cấp 0"* — còn đúng không? | **549/1.700** có khoá · **CẦN CẤP 1.149** · 0 có-khoá-chưa-duyệt. Mã thoát 1 khi cần cấp > 0 |
+| `lop-phu-an-bao-nhieu-canvas.mjs` | *"lớp phủ ăn 58,2 % canvas"* — còn đúng không? | panel **MỞ 56,7 %** · **THU 11,3 %** (hợp diện tích `[data-che-nhan]` ∩ canvas) |
 
 ## Ba luật rút ra từ chính các kịch bản này
 
