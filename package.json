@@ -21,6 +21,7 @@
     "vision:validate": "tsx scripts/run-vision-validation.mjs",
     "i18n:audit": "node scripts/i18n-audit.mjs",
     "i18n:check": "node scripts/i18n-check.mjs",
+    "kiem:du-lieu-twin": "tsx scripts/do-twin/ra-soat-du-lieu-twin.mts",
     "test:e2e": "playwright test",
     "test:e2e:canh-3d": "playwright test --project=chromium-canh-3d",
     "test:e2e:install": "playwright install --with-deps chromium",

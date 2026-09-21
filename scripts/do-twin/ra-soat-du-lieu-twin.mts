@@ -22,7 +22,26 @@
  * · In **số lượng + tối đa 5 ví dụ** để người đọc tự truy, không in cả bảng.
  * · Thoát mã 1 khi có phát hiện ⇒ cắm được vào CI sau này mà không phải đọc chữ.
  *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ TẬP RỖNG KHÔNG PHẢI LÀ "ĐẠT" — G146
+ * ════════════════════════════════════════════════════════════════════════════
+ * Dự án này đã trả giá cho `every()` trên tập rỗng (**xanh giả**). Mười hai phép kiểm dưới đây
+ * đều có dạng *"tìm hàng vi phạm"*, nên trên một CSDL **không có dữ liệu Twin** chúng trả 0 hàng
+ * và in **xanh hết** — trong khi chúng **chưa bác bỏ được gì**.
+ *
+ * ⚠ Và đó chính là trạng thái của CI hôm nay: job `db-sync-build` dựng Postgres mới + `db:push`
+ *   (chỉ lược đồ, **không seed**), còn job E2E **không có CSDL nào**. Cắm kịch bản này vào CI mà
+ *   không nói ra điều ấy là tự tạo một dấu xanh **không đo gì** — đúng thứ skill PDCA gọi là
+ *   *chỉ số THAY THẾ*.
+ *
+ * ⇒ Kịch bản **tự khai** khi tập rỗng, và nói rõ nó còn chứng minh được cái gì:
+ *   · **trên CSDL rỗng** — 12 truy vấn vẫn chạy ⇒ đây là **canh gác TRÔI LƯỢC ĐỒ**: đổi tên một
+ *     cột/bảng là đỏ ngay. Nó KHÔNG nói gì về chất lượng dữ liệu.
+ *   · **có dữ liệu** — mới là phép kiểm dữ liệu thật.
+ *   · `--yeu-cau-du-lieu` ⇒ tập rỗng là **ĐỎ** (dùng ở máy có dữ liệu thật, nơi rỗng = sự cố).
+ *
  * Chạy:  DATABASE_URL=... npx tsx scripts/do-twin/ra-soat-du-lieu-twin.mts
+ *        … --yeu-cau-du-lieu     (bắt buộc phải có dữ liệu, rỗng là lỗi)
  */
 import postgres from "postgres";
 
@@ -32,6 +51,7 @@ if (!url) {
   process.exit(1);
 }
 const sql = postgres(url, { max: 1, connect_timeout: 30, onnotice: () => {} });
+const yeuCauDuLieu = process.argv.includes("--yeu-cau-du-lieu");
 
 let soPhatHien = 0;
 
@@ -48,6 +68,31 @@ function bao(ma: string, cau: string, nguong: string, hang: unknown[]) {
 }
 
 try {
+  /*
+   * ── ĐẾM TRƯỚC, RÀ SAU. Không có số này thì mọi dấu ✅ bên dưới đều mơ hồ. ──
+   */
+  const [{ toa, tang, dat, vat }] = await sql<
+    { toa: number; tang: number; dat: number; vat: number }[]
+  >`SELECT (SELECT count(*) FROM twin_toa_nha WHERE "isActive")::int AS toa,
+           (SELECT count(*) FROM twin_tang WHERE "isActive")::int AS tang,
+           (SELECT count(*) FROM twin_dat_cho WHERE "hienThi")::int AS dat,
+           (SELECT count(*) FROM twin_vat_the WHERE "hienThi")::int AS vat`;
+  const rong = toa === 0 && tang === 0;
+  console.log(`tập đang rà: ${toa} toà · ${tang} tầng · ${dat} đặt chỗ · ${vat} vật thể`);
+  if (rong) {
+    console.log(
+      "⚠⚠ TẬP RỖNG — 12 phép kiểm dưới đây KHÔNG CÓ GÌ ĐỂ BÁC BỎ.\n" +
+        "   Dấu ✅ ở đây chỉ chứng minh **lược đồ còn khớp** (truy vấn chạy được),\n" +
+        "   KHÔNG chứng minh gì về chất lượng dữ liệu. Đừng đọc nó thành 'dữ liệu sạch'.",
+    );
+    if (yeuCauDuLieu) {
+      console.error("\n❌ `--yeu-cau-du-lieu`: tập rỗng là LỖI ở môi trường này.");
+      await sql.end();
+      process.exit(1);
+    }
+  }
+  console.log("");
+
   console.log("══ A. TOÀ NHÀ (twin_toa_nha) ══");
 
   /*
@@ -224,9 +269,11 @@ try {
   );
 
   console.log(
-    soPhatHien === 0
-      ? "\n✅ KHÔNG phát hiện giá trị vô lý nào."
-      : `\n❌ TỔNG ${soPhatHien} hàng đáng ngờ — xem từng mã ở trên.`,
+    soPhatHien > 0
+      ? `\n❌ TỔNG ${soPhatHien} hàng đáng ngờ — xem từng mã ở trên.`
+      : rong
+        ? "\n⚠ KHÔNG CHẠY ĐƯỢC PHÉP KIỂM DỮ LIỆU (tập rỗng) — chỉ xác nhận LƯỢC ĐỒ còn khớp."
+        : "\n✅ KHÔNG phát hiện giá trị vô lý nào.",
   );
   process.exitCode = soPhatHien === 0 ? 0 : 1;
 } catch (e) {

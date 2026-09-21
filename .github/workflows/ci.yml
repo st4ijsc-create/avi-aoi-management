@@ -50,6 +50,16 @@ jobs:
       - name: Database push (generate + migrate)
         run: pnpm db:push
 
+      # ⚠⚠ ĐỌC KỸ TÊN BƯỚC NÀY. CSDL ở đây là Postgres MỚI + `db:push` (chỉ lược đồ, KHÔNG
+      #    seed), nên 12 phép kiểm dữ liệu KHÔNG CÓ GÌ ĐỂ BÁC BỎ. Thứ nó thật sự chứng minh
+      #    là 12 truy vấn còn chạy được ⇒ **canh gác TRÔI LƯỢC ĐỒ**: đổi tên một cột/bảng
+      #    của `twin_*` là đỏ ngay tại đây thay vì đỏ ở một phép đo thủ công nào đó sau này.
+      #    Kịch bản TỰ IN ra cảnh báo "TẬP RỖNG" nên không ai đọc nhầm dấu xanh thành
+      #    "dữ liệu sạch" (bài học G146: `every()` trên tập rỗng là xanh giả).
+      #    Ở môi trường CÓ dữ liệu thật thì chạy kèm `--yeu-cau-du-lieu` để tập rỗng thành ĐỎ.
+      - name: Twin data sweep (EMPTY DB here → this only guards SCHEMA DRIFT, not data)
+        run: pnpm run kiem:du-lieu-twin
+
       - name: Build app
         run: pnpm run build
 
