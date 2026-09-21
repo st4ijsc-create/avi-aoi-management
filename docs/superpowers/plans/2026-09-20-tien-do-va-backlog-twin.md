@@ -654,3 +654,147 @@ TÍNH CHẤT** (nằm trọn trong vùng + lấp >95 % một chiều), **không 
 
 `tsc` **0** · `twin3d`+`pages` **177 tệp / 3.635 ca / 0 đỏ** · `i18n:check` **0**.
 Commit vòng 6: `51fb9600` (V4) · `9562bb9c` (neo đáy 2D).
+
+---
+
+# VÒNG 7 (PDCA, 2026-09-21) — ĐÓNG MỤC CUỐI, BẰNG CÁCH BỎ MỘT CHẨN ĐOÁN SAI HAI VÒNG LIỀN
+
+**Đề bài:** *"Tiếp tục hoàn thiện các phần còn mở."* Mục còn mở đáng kể duy nhất: **1/14 biểu
+tượng 3D ở 21,7 px** — thứ tôi đã hai vòng liền gọi là "chờ chủ dự án" **dựa trên một chẩn đoán
+sai**.
+
+## 1. Bước 0 (MSA)
+
+| kiểm | kết quả |
+|---|---|
+| cây làm việc | `git status` **không pathspec**: 28 tệp, **toàn bộ** là `knowledge/` của tiến trình khác ⇒ ghi lại, không đụng |
+| lai lịch bản dựng | `BUILD-INFO` nay có `duong-dung=` + mtime artefact (V4 vòng 6) ⇒ đối chiếu được |
+| trình kết xuất | ép GPU ở mọi phép đo |
+
+## 2. ★★★ CHẨN ĐOÁN CŨ CỦA TÔI SAI — VÀ NÓ ĐÃ CHẶN VIỆC SUỐT HAI VÒNG
+
+Vòng 4 tôi kết luận:
+
+> *"Biểu tượng nhỏ nhất là biểu tượng **XA NHẤT**: phối cảnh nghiêng ~62° nén trục sâu."*
+
+rồi thử **hai đòn bẩy KHUNG NHÌN** (góc camera, khe cụm), thấy cả hai phá mốc đo sống
+673,2 × 553,2 m + hai đối chứng dương PH-46/47, và tuyên bố *"ép đủ 24 px đòi dựng lại mốc đo và
+hai đối chứng ⇒ chờ chủ dự án"*.
+
+**Đọc `twin_toa_nha` thì ra chuyện khác hẳn:**
+
+| | mặt bằng | **chiều cao** |
+|---|---|---|
+| toà 24 (Nhà máy ảo SIM) | 38,4 × 29,6 m | **8 m** ← chính là cái 21,7 px |
+| toà 90 (FUYU-F) | 3.000 × 2.000 m | 25 m |
+| toà 91…102 (QATD) | 110 × 80 m | 42 m |
+
+`saBanTapDoan` **đã chuẩn hoá mặt bằng** về trung vị nên **mọi** biểu tượng cùng 110 × 80 m.
+Cạnh ngắn của toà 24 ngắn **vì nó thấp 8 m**, không vì nó ở xa — khoảng cách chỉ là yếu tố phụ.
+
+⇒ **Không đòn bẩy khung nhìn nào chữa được, và cũng chẳng cần phá bằng chứng nào cả.** Hai vòng
+"chờ chủ dự án" là hệ quả của việc tôi đi tìm nguyên nhân trong **hình học camera** trong khi nó
+nằm ở **một cột trong CSDL**.
+
+★ Tôi cũng đã kịp đi thêm một bước sai nữa: mô phỏng **FOV** (đòn bẩy thứ ba) và thấy nó nhúc
+nhích (+27 % ở FOV 15). Nếu không đọc dữ liệu trước, tôi đã vá đúng thứ **không phải nguyên nhân**
+và vẫn thấy con số đẹp lên.
+
+## 3. Hằng sàn đã tồn tại — chỉ chưa ai đối chiếu nó với tiêu chí
+
+`BIEU_TUONG_CAO_TOI_THIEU_MM = 6 m`, lý do ghi trong mã: *"đủ để thấy là khối"* — một câu **không
+đối chiếu được** với bất cứ tiêu chí nào. Tiêu chí thì có sẵn từ Task 20: **24×24 px** ở khung nhỏ
+nhất.
+
+Quét trên **dữ liệu thật**, qua **chính `saBanTapDoan`** (`scripts/do-twin/san-chieu-cao-va-24px.mts`):
+
+| sàn | cạnh nhỏ nhất | đạt ≥24 px | số toà bị nâng |
+|---|---|---|---|
+| **6 m (cũ)** | **21,7 px** | 13/14 | 0/14 |
+| 16 m | 23,9 px | 13/14 | 1/14 |
+| 18 m | 24,4 px | **14/14** | 1/14 |
+| **20 m (chọn)** | **25,0 px** | **14/14** | **1/14** |
+| 30 m | 27,7 px | 14/14 | 2/14 |
+
+★ Mô phỏng **tái hiện đúng** đường cơ sở sống (6 m → 21,7 px) ⇒ hai bên so được với nhau.
+★ Chọn 20 m chứ không 18 m: 18 m chỉ hơn ngưỡng **0,4 px** — một bản vá sống bằng làm tròn.
+
+## 4. Quyết định của chủ dự án, và cái giá phải khai
+
+Tôi **không tự chọn**: sa bàn cố ý **giữ số thật cho chiều cao** (*"Chỉ MẶT BẰNG là ước lệ … nói
+quá thành 'kích thước là ước lệ' cũng là một lời khai sai"*). Ba lối đã trình kèm số:
+
+| | kết cục | giá |
+|---|---|---|
+| **(a) nâng sàn 6 → 20 m** ← **ĐÃ CHỌN** | 25,0 px · **14/14** | 1/14 toà vẽ cao hơn thật ⇒ **banner phải khai** |
+| (b) giữ nguyên | 21,7 px · 13/14 | thiếu biên đọc cho đúng 1 biểu tượng |
+| (c) seed lại toà 24 về chuẩn | 31,0 px · 14/14 | **bịa** một con số cao gấp 5,25 lần số đang có |
+
+★ Tôi **khuyên không chọn (c)** dù nó cho số đẹp nhất và không đổi một dòng mã: 8 m có vẻ là số
+**thật** cho một xưởng nhỏ của nhà máy ảo — sửa nó là sửa dữ liệu cho khớp cái nhìn, đúng lớp
+*"sửa đề thi cho khớp bài làm"* mà dự án này đã bác hai lần.
+
+**Banner rộng ra trong cùng lượt** (luật đã ghi từ PH-50): câu cũ kết bằng *"chiều cao của mỗi
+khối là số thật"* — với sàn 20 m nó **thành sai** cho toà 24. Nay:
+
+> *"…; chiều cao là số thật, TRỪ toà thấp hơn sàn **20 m** — chúng vẽ đúng sàn ấy để còn thấy được."*
+
+Ô thay số thứ **chín** (`sanCao`) **đọc từ hằng**, không chép con số (G12).
+⚠ Và cổng `i18n:check` bắt một lỗi thật: chỗ gọi khai **một** ô mà câu chữ dùng **hai** lần ⇒ đã sửa.
+
+## 5. Kết cục đo sống
+
+| | trước | sau |
+|---|---|---|
+| **1280×720** | 13/14 · nhỏ nhất **21,7 px** · tỉ số 2,70 | **14/14** · nhỏ nhất **25,0 px** · tỉ số 2,34 |
+| **1920×1080** | 14/14 · nhỏ nhất 42,6 px · tỉ số 3,20 | **14/14** · nhỏ nhất **49,4 px** · tỉ số 2,76 |
+| 13 biểu tượng còn lại | — | **không đổi một số nào** |
+
+## 6. Lỗi DỮ LIỆU tìm được nhân thể — và nó là một toà nhà 3 km
+
+`twin_toa_nha` id=90 (`FUYU-F-TN1`, *"toà chính"*, `nguon=sinh`) khai **3.000.000 × 2.000.000 mm
+= 3 km × 2 km**. Không toà nhà nào dài 3 km — gần như chắc chắn bộ sinh lấy **phạm vi khuôn viên**
+làm mặt bằng toà. Chính nó tạo ra tỉ số cạnh **78:1** buộc sa bàn phải ước lệ mặt bằng.
+
+⚠ Nó **không** ảnh hưởng tiêu chí 24 px (đo: bỏ ra vẫn đúng 13/14 — mặt bằng vốn đã chuẩn hoá về
+**trung vị**, một ngoại lai không kéo được trung vị). Sửa nó là sửa **nguyên nhân gốc của việc
+phải ước lệ**.
+
+Chủ dự án duyệt sửa luôn. Kịch bản `scripts/sua-toa-nha-mat-bang-vo-ly.mts`: mặc định **chỉ xem**,
+in **nguyên văn giá trị cũ** trước khi ghi (đảo ngược được), và **dừng** nếu mọi toà đều vô lý
+(không còn trung vị lành mạnh để lấy — không đoán). **Chỉ sửa mặt bằng, giữ nguyên chiều cao 25 m.**
+Banner tự đổi theo: *"cạnh thật trải từ 30 m tới **110** m"* (trước: tới 3.000 m).
+
+## 7. Ablation
+
+| bản vá | gỡ ra | kết quả |
+|---|---|---|
+| sàn 20 m | hạ về 6 m, dựng lại, đo sống | **13/14 · 21,7 px** — đúng đường cơ sở |
+| — | hoàn nguyên | **14/14 · 25,0 px** |
+| ca ghim quyết định | — | 1 ca đỏ khi đổi hằng ⇒ **đúng ca đó là ca ghim quyết định**, đã ghi lại quyết định MỚI kèm ba con số đã trình |
+| sửa dữ liệu toà 90 | riêng nó | **không đổi** tiêu chí 24 px (13/14) ⇒ hai bản vá **độc lập**, đúng như dự đoán |
+
+## 8. ★ Kịch bản đo vừa đưa vào sổ đã TỰ BẮT LỖI CỦA CHÍNH NÓ
+
+Sáu phép đo chống lưng cho các bảng số trong mã nay nằm ở **`scripts/do-twin/`** kèm README ghi
+điều kiện chạy (ép GPU · `?do=1` · bản dựng mới nhất).
+
+Ngay lần chạy đầu ở chỗ mới, `san-chieu-cao-va-24px.mts` in ra một bảng **trông-như-số**: mọi hàng
+`sàn < 20 m` đều cho **cùng** 25,0 px, vì nó nâng chiều cao ở đầu vào nhưng `saBanTapDoan` còn kẹp
+lần nữa bằng chính hằng vừa đổi. ⇒ Đã vá để nó **đọc hằng từ mã, in cảnh báo, và đánh dấu từng
+hàng vô nghĩa**; hàng lịch sử chỉ dựng lại được bằng **ablation**.
+
+> Một bảng số không tái hiện được thì không hơn gì bốn con số không có truy vấn.
+
+## 9. CÒN MỞ
+
+- **toà 94** (2D) còn 64 % diện tích, ô trống 32×32 px — **đạt** 24×24, ghi lại để đừng quên.
+- **Hồi tố truy vấn** cho các mục backlog cũ còn số mà không có phép đo.
+- **28 tệp `knowledge/`** bẩn từ trước phiên này — không đụng.
+- ⚠ `MEMORY.md` vượt trần ⇒ **bị cắt khi nạp**; đang rút gọn.
+
+## 10. Cổng
+
+`tsc` **0** · `twin3d`+`pages` **177 tệp / 3.637 ca / 0 đỏ** · `i18n:check` **0**.
+Commit vòng 7: `f9bd6d1c` (dữ liệu toà 3 km) · `142e1e76` (sàn 20 m + banner) ·
+`3b4c2694` (`scripts/do-twin/`).
