@@ -4509,38 +4509,66 @@ function taoSinhBanVaTuTri(y: {
     if (!(await codingModelSanSang())) return chet("model chưa sẵn sàng");
 
     // CÂY TỆP NGUỒN THẬT (chống bịa đường). Không liệt kê được ⇒ dừng an toàn.
-    const cay = await cayTepNguon(execCtx, loi);
+    let cay = await cayTepNguon(execCtx, loi);
     if (cay === "") return chet("cây tệp nguồn RỖNG");
 
-    // BƯỚC 1 — model CHỌN tệp. Server nhận CHỈ đường TRONG CÂY ⇒ tồn tại + không bịa.
-    const duong = await chonTepTuTri(loi, cay, execCtx, y.language);
-    if (duong === null) return chet("bước 1: model không chọn được tệp trong cây", `cây ${cay.length} ký tự`);
-    if (phanQuyetDuongDan(duong) !== null) return chet("bước 1: đường bị hộp cát từ chối", duong);
+    /**
+     * ★★★ G6 (audit 2026-09-21) — **MỘT TỆP TRẢ "KHÔNG ĐỔI" THÌ LOẠI NÓ RỒI CHỌN LẠI.**
+     *
+     * Đo được trên bài agentic HAI LỖI Ở HAI TỆP (`.goc2`): vòng 1 sửa đúng `kho.mjs` (2 test đỏ
+     * → 1), vòng 2 model **CHỌN LẠI `kho.mjs`** — tệp nó vừa sửa xong và nay đã đúng — nên bước 2
+     * trả `kq=khong_doi` và cả vòng CHẾT. Lỗi thật nằm ở `ca.mjs`, tệp mà `kho.mjs` nhập vào.
+     * Kết quả: A1 (1 lỗi) 3/3, **A2 (2 lỗi) 0/3**.
+     *
+     * ⚠ **TRẦN VÒNG KHÔNG PHẢI NGUYÊN NHÂN** — đã đo: vòng dừng ở lượt 2/3, tức trần 3 CHƯA bó, và
+     *   thời gian 8 s < trần 20 s. Nâng trần lên 8 vòng/180 s (đề xuất ban đầu của bản thiết kế)
+     *   sẽ KHÔNG cứu được ca này. Đây là lý do phải đo trước khi chỉnh ngưỡng.
+     *
+     * Bản vá: "không đổi" là một câu trả lời CÓ THÔNG TIN — nó nói *"tệp này không phải chỗ sai"*.
+     * Loại nó khỏi CÂY rồi cho model chọn lại: model không thể chọn lại thứ vừa vô ích, vì nó
+     * không còn trong danh sách. Giữ nguyên mọi hàng rào (model vẫn chọn, server vẫn xác thực).
+     */
+    const daThu = new Set<string>();
+    for (let lan = 0; lan < 3; lan++) {
+      // BƯỚC 1 — model CHỌN tệp. Server nhận CHỈ đường TRONG CÂY ⇒ tồn tại + không bịa.
+      const duong = await chonTepTuTri(loi, cay, execCtx, y.language);
+      if (duong === null) return chet("bước 1: model không chọn được tệp trong cây", `cây ${cay.length} ký tự · đã thử ${daThu.size}`);
+      if (phanQuyetDuongDan(duong) !== null) return chet("bước 1: đường bị hộp cát từ chối", duong);
+      if (daThu.has(duong)) return chet("bước 1: model chọn lại tệp đã thử", duong);
+      daThu.add(duong);
 
-    // BƯỚC 2 — `chuanBiBanSuaMotTep` ĐỌC nội dung THẬT vào prompt ⇒ model sinh SEARCH/REPLACE khớp BYTE.
-    //   Rút cạn generator (không phát token model ra ngoài — tiến độ do điểm gọi tự stream).
-    const cauSua = wt(
-      y.language,
-      `Sửa tệp NGUỒN này để lỗi test/build sau biến mất (sửa đúng nguyên nhân, KHÔNG sửa tệp test):\n${loi}`,
-      `Fix this SOURCE file so the following test/build error disappears (fix the real cause, do NOT edit tests):\n${loi}`,
-      `修复此源文件以消除以下测试/构建错误（修复根因，不要修改测试）：\n${loi}`,
-    );
-    const gen = chuanBiBanSuaMotTep({
-      question: cauSua,
-      duong,
-      language: y.language,
-      context: y.context,
-      execCtx,
-      history: y.history,
-      yDinhTao: false,
-      khoiBaiHoc: y.khoiBaiHoc,
-      phatTheTool: false,
-    });
-    let r = await gen.next();
-    while (!r.done) r = await gen.next();
-    const bs = r.value;
-    if (bs.kq !== "ok") return chet("bước 2: không dựng được bản sửa khớp byte", `${duong} · kq=${bs.kq}`);
-    return { path: bs.relPath, original: bs.original, modified: bs.modified };
+      // BƯỚC 2 — `chuanBiBanSuaMotTep` ĐỌC nội dung THẬT vào prompt ⇒ model sinh SEARCH/REPLACE khớp BYTE.
+      //   Rút cạn generator (không phát token model ra ngoài — tiến độ do điểm gọi tự stream).
+      const cauSua = wt(
+        y.language,
+        `Sửa tệp NGUỒN này để lỗi test/build sau biến mất (sửa đúng nguyên nhân, KHÔNG sửa tệp test):\n${loi}`,
+        `Fix this SOURCE file so the following test/build error disappears (fix the real cause, do NOT edit tests):\n${loi}`,
+        `修复此源文件以消除以下测试/构建错误（修复根因，不要修改测试）：\n${loi}`,
+      );
+      const gen = chuanBiBanSuaMotTep({
+        question: cauSua,
+        duong,
+        language: y.language,
+        context: y.context,
+        execCtx,
+        history: y.history,
+        yDinhTao: false,
+        khoiBaiHoc: y.khoiBaiHoc,
+        phatTheTool: false,
+      });
+      let r = await gen.next();
+      while (!r.done) r = await gen.next();
+      const bs = r.value;
+      if (bs.kq === "ok") return { path: bs.relPath, original: bs.original, modified: bs.modified };
+
+      // CHỈ `khong_doi` mới đáng thử tệp khác. Mọi kết cục khác là hỏng THẬT ⇒ dừng, nói ra.
+      if (bs.kq !== "khong_doi") return chet("bước 2: không dựng được bản sửa khớp byte", `${duong} · kq=${bs.kq}`);
+      console.warn(`[tuTriGhi] "${duong}" KHÔNG cần đổi — loại khỏi cây, chọn lại (lần ${lan + 1}/3).`);
+      const bo = new Set([duong, `${duong}/`]);
+      cay = cay.split("\n").filter((d) => !bo.has(d)).join("\n");
+      if (cay.trim() === "") return chet("bước 1: cây rỗng sau khi loại các tệp không cần đổi");
+    }
+    return chet("bước 2: thử 3 tệp đều KHÔNG cần đổi");
   };
 }
 
