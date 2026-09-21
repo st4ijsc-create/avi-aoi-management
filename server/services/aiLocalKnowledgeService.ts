@@ -59,6 +59,7 @@ import { TRAN_TEP_MOI_LO } from "./aiLocalTools/writeHandlers/applyDiffBatch";
 import { anhXaTemplateDotnet, chayDotnetNewVaoTam, slugDuAn } from "./ai/dotnetNewScaffold";
 import { quyetDinhDuongTat, moiVongDeuTuChoi, TOOL_MANG_NGU_CANH } from "./ai/toolDuongTat";
 import { laCauSinhMa } from "./ai/cauSinhMa";
+import { thuMucTuLoi } from "./ai/thuMucTuLoi";
 import { vanBanChoModel } from "./ai/vanBanChoModel";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
@@ -4397,12 +4398,42 @@ function promptChonTep(lang: KbLanguage, loi: string, cayTep: string): string {
 }
 
 /** Cây tệp NGUỒN THẬT (qua `list_files`) để model CHỌN đường — không bịa. `""` ⇒ không liệt kê được. */
-async function cayTepNguon(execCtx: ToolExecContext): Promise<string> {
+async function cayTepNguon(execCtx: ToolExecContext, loi?: string): Promise<string> {
+  /**
+   * ★★★ G6 (audit 2026-09-21) — CÂY PHẢI **CHỨA** TỆP CẦN SỬA, NẾU KHÔNG BƯỚC 1 KHÔNG THỂ ĐÚNG.
+   *
+   * Lỗi đo được: bộ đo agentic **0/3**, và nhật ký chẩn đoán chỉ đúng chỗ chết —
+   * *"bước 1: model không chọn được tệp trong cây · cây 4.246 ký tự"*. Bản cũ liệt kê
+   * `{depth: 3}` rồi `.slice(0, 200)` trên một repo ~7.616 tệp; tệp cần sửa
+   * (`sandbox-projects/agentic-demo/src/kho.mjs`) nằm ở **TẦNG 4** ⇒ **không hề có mặt trong cây**.
+   * Model không chọn được là ĐÚNG — lỗi ở cái cây, không ở model.
+   *
+   * Bản vá: dùng đầu ra lỗi suy ra **THƯ MỤC** ứng viên (`ai/thuMucTuLoi`) rồi liệt kê TRONG những
+   * thư mục ấy TRƯỚC, phần chung lấp nốt trần.
+   *
+   * ⚠⚠ ĐÂY KHÔNG PHẢI `trichTepTuLoi` đã bị gỡ 2026-08-24. Cái cũ suy ra **TỆP**, và live cho thấy
+   *   nó luôn trúng **tệp TEST** ⇒ model sửa test để gaming. Cái này suy ra **THƯ MỤC**; việc chọn
+   *   TỆP vẫn do **MODEL** làm, vẫn qua `phanQuyetDuongDan`, vẫn bị cờ audit `laTepTest` soi.
+   *   Không suy được thư mục nào ⇒ **lùi về đúng hành vi cũ**, không đổi một byte.
+   */
+  const rieng: Array<{ path: string; kind: string }> = [];
+  for (const tm of thuMucTuLoi(loi)) {
+    const r = await executeDecision({ tool: "list_files", args: { path: tm, depth: 3 } }, execCtx);
+    const e = (r.result?.data as { entries?: Array<{ path: string; kind: string }> } | undefined)?.entries ?? [];
+    rieng.push(...e);
+  }
   const lf = await executeDecision({ tool: "list_files", args: { depth: 3 } }, execCtx);
-  const entries = (lf.result?.data as { entries?: Array<{ path: string; kind: string }> } | undefined)?.entries ?? [];
-  if (entries.length === 0) return "";
-  return entries
-    .slice(0, 200)
+  const chung = (lf.result?.data as { entries?: Array<{ path: string; kind: string }> } | undefined)?.entries ?? [];
+  const thay = new Set<string>();
+  const gop: Array<{ path: string; kind: string }> = [];
+  for (const e of [...rieng, ...chung]) {
+    if (thay.has(e.path)) continue;
+    thay.add(e.path);
+    gop.push(e);
+  }
+  if (gop.length === 0) return "";
+  return gop
+    .slice(0, 400)
     .map((e) => (e.kind === "dir" ? `${e.path}/` : e.path))
     .join("\n");
 }
@@ -4461,19 +4492,30 @@ function taoSinhBanVaTuTri(y: {
   khoiBaiHoc: string;
   projectId?: string;
 }): SinhBanVa {
+  /**
+   * ★★★ G6 (audit 2026-09-21) — **SÁU ĐƯỜNG `return null` NAY ĐỀU NÓI RA LÝ DO.**
+   * Trước lượt này cả sáu im lặng, và người dùng chỉ nhận đúng một câu *"không sinh được bản vá"* —
+   * không biết vòng tự trị chết ở BƯỚC NÀO. Đo được: bộ đo agentic 0/3, và phải đọc mã mới đoán
+   * được vì sao. Repo có bất biến "im lặng là nói dối"; sáu nhánh này đang vi phạm nó.
+   * ⚠ Chỉ THÊM nhật ký — KHÔNG đổi một nhánh quyết định nào.
+   */
+  const chet = (buoc: string, chiTiet = "") => {
+    console.warn(`[tuTriGhi] KHÔNG sinh được bản vá — chết ở bước "${buoc}"${chiTiet ? `: ${chiTiet}` : ""}`);
+    return null;
+  };
   return async (loi, _luot) => {
     const execCtx = y.execCtx;
-    if (!execCtx) return null;
-    if (!(await codingModelSanSang())) return null;
+    if (!execCtx) return chet("execCtx vắng");
+    if (!(await codingModelSanSang())) return chet("model chưa sẵn sàng");
 
     // CÂY TỆP NGUỒN THẬT (chống bịa đường). Không liệt kê được ⇒ dừng an toàn.
-    const cay = await cayTepNguon(execCtx);
-    if (cay === "") return null;
+    const cay = await cayTepNguon(execCtx, loi);
+    if (cay === "") return chet("cây tệp nguồn RỖNG");
 
     // BƯỚC 1 — model CHỌN tệp. Server nhận CHỈ đường TRONG CÂY ⇒ tồn tại + không bịa.
     const duong = await chonTepTuTri(loi, cay, execCtx, y.language);
-    if (duong === null) return null;
-    if (phanQuyetDuongDan(duong) !== null) return null; // phòng vệ chiều sâu (cây vốn đã trong hộp cát)
+    if (duong === null) return chet("bước 1: model không chọn được tệp trong cây", `cây ${cay.length} ký tự`);
+    if (phanQuyetDuongDan(duong) !== null) return chet("bước 1: đường bị hộp cát từ chối", duong);
 
     // BƯỚC 2 — `chuanBiBanSuaMotTep` ĐỌC nội dung THẬT vào prompt ⇒ model sinh SEARCH/REPLACE khớp BYTE.
     //   Rút cạn generator (không phát token model ra ngoài — tiến độ do điểm gọi tự stream).
@@ -4497,7 +4539,7 @@ function taoSinhBanVaTuTri(y: {
     let r = await gen.next();
     while (!r.done) r = await gen.next();
     const bs = r.value;
-    if (bs.kq !== "ok") return null;
+    if (bs.kq !== "ok") return chet("bước 2: không dựng được bản sửa khớp byte", `${duong} · kq=${bs.kq}`);
     return { path: bs.relPath, original: bs.original, modified: bs.modified };
   };
 }
