@@ -139,18 +139,24 @@ export function dungHinhLine(
    *   cao**, còn `y` của cảnh three là chiều cao. Nhầm hai trục này làm trạm
    *   nằm ngửa trên sàn mà KHÔNG lỗi nào nổ — giữ đúng thứ tự của bản gốc.
    *
-   * ⚠⚠⚠ **MÓN NỢ CÒN MỞ (Task 17c) — CHỖ NÀY CHƯA CỘNG GỐC TOÀ NHÀ.**
-   *   `hopNhatCanh.dungMayVe` đã cộng `twin_toa_nha.viTri*Mm` cho MÁY
-   *   (xem `gocToaTheoTang`), nhưng đường tâm chuyền ở đây vẫn dựng tâm trạm
-   *   từ `twin_dat_cho` TRẦN. Hôm nay **không lệch**, và lý do phải nói rõ:
-   *   cả ba màn vận hành chỉ nạp tầng của MỘT toà và neo cảnh vào chính toà
-   *   ấy, nên mọi chỗ dời đều bằng 0.
+   * ════════════════════════════════════════════════════════════════════════
+   * ✅ TASK 17c — MÓN NỢ NÀY **ĐÃ TRẢ**. Khối cảnh báo cũ để ở đây quá hạn.
+   * ════════════════════════════════════════════════════════════════════════
+   * Nguyên văn cảnh báo cũ: *"CHỖ NÀY CHƯA CỘNG GỐC TOÀ NHÀ … đường tâm chuyền
+   * vẫn dựng tâm trạm từ `twin_dat_cho` TRẦN … ai làm Task 18/19 phải truyền
+   * cùng bản đồ `gocToaTheoTang` xuống đây TRƯỚC khi bỏ neo một-toà."*
    *
-   *   ⇒ Ngay khi một cảnh mang HAI toà (gộp nhiều nhà máy — Task 18/19), máy
-   *     sẽ dời mà trạm thì không: đường tâm chuyền **đứt khỏi chính máy của
-   *     nó**, và không lỗi nào nổ. Ai làm Task 18/19 phải truyền cùng bản đồ
-   *     `gocToaTheoTang` xuống đây TRƯỚC khi bỏ neo một-toà. Đây là lời khai
-   *     có hạn sử dụng, không phải một chú thích vĩnh viễn.
+   * Việc ấy **đã làm**: ngay dưới đây `gocToaTheoTang` được tra theo `tangId` và
+   * cộng vào cả ba trục, **kèm hoán trục** (`y ← g.zMm`, `z ← g.yMm`). Ca kiểm
+   * `tamTramCongGocToa.unit.test.ts` giữ 8 ca cho đúng chỗ này.
+   *
+   * ★★★ VÀ ĐÂY LÀ BÀI HỌC ĐÁNG GIÁ HƠN CẢ MÓN NỢ:
+   *   Khối cũ tự nhận mình là *"lời khai có hạn sử dụng, không phải một chú
+   *   thích vĩnh viễn"* — rồi **nằm quá hạn**, mâu thuẫn với chính đoạn mã ba
+   *   dòng bên dưới nó. Một cảnh báo hết hạn nguy hiểm hơn không có cảnh báo:
+   *   người đọc tin nó, và đi vá một thứ đã được vá.
+   *   ⇒ Lời khai có hạn thì **phải gỡ trong cùng lượt trả nợ**, đúng luật đã
+   *     ghi cho banner ở PH-50.
    */
   const datChoTram = new Map<number, { x: number; y: number; z: number }>();
   for (const d of datCho) {

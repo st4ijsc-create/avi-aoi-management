@@ -48,8 +48,8 @@ mới lỗi · e2e `twin-dot47-bam-canh` **16/16** · cây sạch.
 
 | | việc | trạng thái |
 |---|---|---|
-| **N1** | **Task 17c** — tâm trạm lấy **mặt bằng** từ `twin_dat_cho` mà bản ghi ấy **chưa cộng gốc toà nhà** | ⏳ **Bom hẹn giờ.** Hôm nay không lệch vì cả ba màn chỉ nạp **một** toà và neo cảnh vào chính toà ấy. Ngay khi một cảnh mang **hai** toà, máy dời mà trạm không ⇒ đường tâm chuyền **đứt khỏi chính máy của nó**, và **không lỗi nào nổ**. Vòng này đã chữa **cao độ** (lấy từ máy); **mặt bằng** thì chưa. |
-| **N2** | **PH-45** — `useTrangThaiSong` còn **3/4** truy vấn nhận một `factoryId` | ⏳ ~737 máy (số ghi ở kế hoạch 09-15) vẽ đúng chỗ mà **không có lời khai trạng thái**. Đã có banner nói ra, nên là *khoảng trống*, không phải *nói dối*. |
+| **N1** | **Task 17c** — tâm trạm lấy **mặt bằng** từ `twin_dat_cho` mà bản ghi ấy **chưa cộng gốc toà nhà** | ✅ **ĐÓNG.** Đã trả ở vòng 4: `canhLine.ts` tra `gocToaTheoTang` theo `tangId` và cộng vào **cả ba trục**, kèm hoán trục (`y ← g.zMm`, `z ← g.yMm`); 8 ca ở `tamTramCongGocToa.unit.test.ts`. ⚠ **Nhưng khối cảnh báo trong mã nằm quá hạn tới 2026-09-21** — nó vẫn ghi *"CHƯA CỘNG GỐC TOÀ NHÀ"* trong khi mã ba dòng dưới đã cộng. Chính khối ấy tự nhận là *"lời khai có hạn sử dụng"* rồi để quá hạn. **Một cảnh báo hết hạn nguy hiểm hơn không có cảnh báo**: người đọc tin nó và đi vá thứ đã vá. Đã gỡ. |
+| **N2** | **PH-45** — `useTrangThaiSong` còn **3/4** truy vấn nhận một `factoryId` | ✅ **ĐÓNG bằng đo (vòng 4).** `?pv=tapdoan` gọi **đủ ba** truy vấn, KPI phủ **1.699 máy**. Con số *"~737"* là số tôi **chép từ hồ sơ 09-15 mà chưa đo lại** — đúng lớp *ý kiến có tuổi*. |
 | **N3** | **PH-42** — `/factory-command`: bấm nền xoá nhấn sáng nhưng **giữ viền và nhãn** | ✅ **ĐÓNG 2026-09-21 (vòng 6), cả hai tầng.** Sổ `__demChonChiHuy()`: bốn bề mặt đều `null` sau khi bấm nền. Pixel (ẩn lớp nền mờ của ngăn chi tiết, camera đứng yên, đối chứng âm 0/672.570 px): **49.985 px = 7,43 %** đổi, vùng 624×301 bao quanh máy ⇒ **có xoá thật**. ⚠ Câu *"không đo được từ DOM"* của vòng 5 là **SAI** — nhạc cụ đã có sẵn. Xem §3 vòng 6. |
 | **N4** | **V-21(1)** — tỉ lệ cảnh báo dự đoán theo hạng sức khoẻ **53,5 / 49,6 / 49,7 / 55,8 %** | ✅ **ĐÓNG 2026-09-21 bằng đo.** Hôm nay: **14,5 → 31,3 → 45,5 → 58,2 %** — đơn điệu tăng, dốc **4×**; đối chứng xáo trộn 200 lượt cho biên độ **≤ 11,6** so với **43,7** thật (**0/200** chạm) ⇒ xu hướng ở **dữ liệu**, không ở truy vấn. ⚠ **Không** kết luận được *"bộ sinh đã chữa"*: mục cũ ghi bốn con số mà **không ghi truy vấn** ⇒ không so được. Xem §4 vòng 5. |
 
@@ -57,16 +57,16 @@ mới lỗi · e2e `twin-dot47-bam-canh` **16/16** · cây sạch.
 
 | | việc | vì sao đáng đo |
 |---|---|---|
-| **M1** | **Màn Máy `/twin/may/:id`** | Là bề mặt **duy nhất** trong ba màn Twin **chưa đo** vòng này. Hai màn kia đều lòi khuyết tật khi bị đo. |
-| **M2** | **G134 phần còn lại** — *"30 cái được chọn có đúng là 30 cái đáng đọc nhất không"* | **Cơ chế đã có** (điểm ưu tiên `diemUuTienNhan` + chính sách *chỉ-bất-thường* + chốt tất định theo khoá). Thứ **chưa ai đo** là **chất lượng lựa chọn** ở quy mô **1.108 máy / 3 nhà máy**. |
+| **M1** | **Màn Máy `/twin/may/:id`** | ✅ **ĐÃ ĐO (vòng 4).** Và nó lòi khuyết tật đúng như dự đoán: **33 đích bấm** hiện con trỏ `pointer` rồi **không làm gì** — *affordance không có chức năng*. Đã vá bằng chip `chip-dich-qua-nho` nói thẳng số đích quá nhỏ. |
+| **M2** | **G134 phần còn lại** — *"30 cái được chọn có đúng là 30 cái đáng đọc nhất không"* | ✅ **MOOT, đóng bằng đo (vòng 4).** `vuotTran = 0` ở **mọi** phạm vi: bậc cụm cộng chính sách *chỉ-bất-thường* làm tập ứng viên còn **6** hoặc **1/49** ⇒ **không có lựa chọn nào để mà chọn sai**. Câu hỏi chỉ có nghĩa khi tập ứng viên vượt trần, và nó không vượt. |
 | **M3** | Dải cảnh báo tự khai *"Counted across your whole account scope"* trong khi cảnh là **FUYU-F** | ✅ **ĐO 2026-09-21: dải cảnh báo TRUNG THỰC** — `Alarms (80)` y hệt ở cả ba phạm vi, đúng như nó khai. Nhưng phép đo tìm ra **chỗ khác nói sai**: `hang-tong-quan` khai *"toàn nhà máy"* (số ít) trong khi ở cấp tập đoàn nó gộp **1.700 máy / 6 nhà máy** ⇒ **đã vá** `bc1b8abf3`, ablation 2/2 đỏ. |
 
 ### C4 — Vận hành / hạ tầng đo
 
 | | việc | ghi chú |
 |---|---|---|
-| **V1** | `dist/BUILD-INFO.txt` — quy ước ghi lai lịch **không có cơ chế ép** | Đã **mất hai lần**; quy ước không được cưỡng chế thì rụng ngay lần dựng sau. Chữa: ép ghi trong chính bước build. |
-| **V2** | Ca chập chờn **CÓ SẴN** `phamViDocPatch.db.test.ts` (timeout 5.000 ms, biên 1,46×) | ⛔ **Không nâng trần** — nâng là giấu. |
+| **V1** | `dist/BUILD-INFO.txt` — quy ước ghi lai lịch **không có cơ chế ép** | ✅ **ĐÓNG sau HAI lượt.** Vòng 5 ép ghi trong `npm run build` (`c2f0d1ed6`); vòng 6 phát hiện **chính bản vá ấy bị lách** bởi `vite build` chỉ-client ⇒ gắn vào **vite** (`closeBundle`) và thêm hai dòng **mtime artefact** để mọi độ lệch **tự nói ra** (`51fb9600`). Đây là **lần thứ ba** dự án mất lai lịch. |
+| **V2** | Ca chập chờn **CÓ SẴN** `phamViDocPatch.db.test.ts` (~~timeout 5.000 ms, biên 1,46×~~) | ✅ **ĐÓNG bằng đo (vòng 5): không có gì để vá.** Trần thật là hằng có tên `HAN_MS_IO_CSDL = 20.000`; 3 lượt **0 đỏ**, lâu nhất **2.217 ms** ⇒ biên **9,0×**, không phải 1,46×. Hai con số trong ô bên trái là **số cũ chưa đo lại**. |
 | **V3** | `npm run build` **ghi đè `dist/index.js` đang chạy** ⇒ giết server | Đã dính **2 lần**; lượt đo kế tiếp báo `ECONNREFUSED` **trông y hệt hồi quy sản phẩm**. Luật: **build TRƯỚC, restart SAU**, rồi kiểm bản đang phục vụ **qua HTTP**. |
 
 ---
@@ -97,6 +97,32 @@ Xếp theo **rủi ro im lặng × giá phải trả**, không theo thứ tự d
 - **Một câu "lý do duy nhất" phải kèm TƯ THẾ.** Cùng màn Line, ở trạng thái đứng yên thì cái chặn
   nhãn là **trần 30**; sau khi kéo camera thì là **`deKhoiKhac`**. Kết luận không kèm điều kiện đo
   là kết luận sẽ sai ở lần đo sau.
+
+## SỔ TRUY VẤN — mỗi con số còn được viện dẫn phải chỉ được về một phép đo
+
+> **Bốn con số không có truy vấn thì không phải bằng chứng — nó là một tin đồn có chữ số thập phân.**
+>
+> Mục **V-21(1)** ghi *"53,5 / 49,6 / 49,7 / 55,8 %"* mà không ghi truy vấn. Khi đo lại ra
+> **14,5 → 58,2 %**, không còn cách nào phân biệt *"dữ liệu đã đổi"* với *"phép đo cũ định nghĩa
+> khác"* — mất luôn khả năng so trước/sau của cả một phát hiện. Bảng dưới đây để chuyện ấy không
+> lặp lại: **một con số không có dòng trong bảng này thì nó đã hết hạn kiểm chứng.**
+
+| con số đang được viện dẫn | tái hiện bằng | ghi chú |
+|---|---|---|
+| **14/14** biểu tượng 3D đạt 24 px · nhỏ nhất **25,0 px** @1280×720 | `scripts/do-twin/3d-co-bieu-tuong-toa.mjs` | cần bản dựng mới nhất + ép GPU + `?do=1` |
+| bảng **sàn chiều cao** 6/16/18/20/30 m | `scripts/do-twin/san-chieu-cao-va-24px.mts` | ⚠ chỉ tái hiện được các hàng **≥ sàn đang cài**; hàng lịch sử (6 m → 21,7 px) cần **ablation** — đã chạy, ghi ở `142e1e76` |
+| **14/14** thông tâm 2D · **7/7** lớp phủ khai `data-che-nhan` | `scripts/do-twin/2d-tam-bieu-tuong-bi-che.mjs` | |
+| **21 %** / 6×6 px · **34 %** / 8×8 px (diện tích còn bấm được) | `scripts/do-twin/2d-dien-tich-con-bam-duoc.mjs` | số **trước** bản vá neo đáy; sau vá là 100 % / 64 % |
+| PH-42: **7,43 %** canvas đổi · đối chứng âm **0/672.570 px** | `scripts/do-twin/bam-nen-co-xoa-dau-chon.mjs` | ẩn lớp nền mờ của ngăn chi tiết trước khi chụp |
+| V-21(1): **14,5 → 31,3 → 45,5 → 58,2 %** · xáo trộn **0/200** | `scripts/do-twin/canh-bao-theo-hang-suc-khoe.mts` | định nghĩa tử/mẫu viết ngay trong kịch bản |
+| dữ liệu hình học **không có giá trị vô lý** (12 phép kiểm / 4 bảng) | `scripts/do-twin/ra-soat-du-lieu-twin.mts` | mã thoát 0/1 ⇒ cắm CI được |
+| **1.699** máy có khoá sống · **0** cần cấp | *(chưa có kịch bản)* | ⛔ **hết hạn kiểm chứng** — số của đợt `0539a1823`, chưa ai đo lại |
+| lớp phủ ăn **58,2 %** canvas @1280×720 | *(chưa có kịch bản)* | ⛔ **hết hạn kiểm chứng** — số của vòng 3 |
+| **1.108** máy / 3 nhà máy (quy mô tập QATD) | `SELECT count(*) FROM machines` | ⛔ **số cũ.** Đếm thẳng CSDL hôm nay: **1.700** máy, và cảnh vẽ **1.699** (chênh đúng 1 máy — khớp ghi chép cũ *"1.699/1.700 có khoá sống"*). Mọi chỗ còn ghi 1.108 là số của tập QATD lúc chưa nạp đủ nhà máy. |
+
+★ Ba dòng cuối là **nợ thật**, ghi ra để đừng ai trích chúng như bằng chứng. Chúng không chặn
+việc gì hôm nay, nhưng ai cần tới chúng thì phải **đo lại trước**, không được chép.
+
 
 ---
 
