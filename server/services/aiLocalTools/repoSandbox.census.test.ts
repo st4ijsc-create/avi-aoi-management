@@ -48,6 +48,7 @@ import {
   DUOI_CHO_PHEP,
   KHUON_TEP_CAM,
   TEN_TEP_CHO_PHEP,
+  TRAN_BYTE_MOI_PHIEN,
   TRAN_BYTE_MOI_TEP,
   duoiDuocPhep,
   gocHopCat,
@@ -392,15 +393,22 @@ describe("§C — TRẦN: byte mỗi tệp · byte mỗi phiên", () => {
     const to = path.join(HOP, "lap.ts");
     fs.writeFileSync(to, `// ${"y".repeat(TRAN_BYTE_MOI_TEP)}\n`);
     const t = toolHopCat().find((x) => x.name === "read_file")!;
+    /**
+     * ★ Số lượt phải SUY TỪ HẰNG SỐ, không gõ tay. Bản cũ ghim "40 lượt × 64 KiB vs 1 MiB"; khi
+     * `TRAN_BYTE_MOI_PHIEN` được nâng lên 4 MiB (G3, 2026-09-21) thì 40 lượt không còn chạm trần,
+     * và lưới đỏ trong khi HÀNH VI vẫn đúng — một lưới nói sai về thứ nó canh. Công thức dưới đây
+     * luôn vượt trần đúng một lượt, bất kể hai hằng số sau này đổi thế nào.
+     */
+    const soLuotCanDeVuotTran = Math.ceil(TRAN_BYTE_MOI_PHIEN / TRAN_BYTE_MOI_TEP) + 2;
     let chan: { note?: string; textSummary: string } | null = null;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < soLuotCanDeVuotTran; i++) {
       const r = await t.handler!({ path: "lap.ts", __authCtx: AUTH } as never);
       if (r.note === "BUDGET_EXCEEDED") {
         chan = r;
         break;
       }
     }
-    expect(chan, "đọc 40 lượt × 64 KiB mà ngân sách 1 MiB không chặn ⇒ trần là TRANG TRÍ").not.toBeNull();
+    expect(chan, `đọc ${soLuotCanDeVuotTran} lượt × ${TRAN_BYTE_MOI_TEP}B mà ngân sách ${TRAN_BYTE_MOI_PHIEN}B không chặn ⇒ trần là TRANG TRÍ`).not.toBeNull();
     expect(chan!.textSummary).toMatch(/TRẦN|ngân sách/i);
     fs.rmSync(to, { force: true });
   }, 30_000);

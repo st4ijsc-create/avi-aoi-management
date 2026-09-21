@@ -268,6 +268,23 @@ interface RedactPattern {
   type: string;
   re: RegExp;
   placeholder: string;
+  /**
+   * ★★★ G12 (audit 2026-09-22 · dự án thật D3) — **CHE MÀ GIỮ CÚ PHÁP.**
+   *
+   * `true` ⇔ luật có **nhóm bắt 1 = phần NHÃN phải giữ lại** (vd `password: '`), và chỉ phần GIÁ
+   * TRỊ bị thay. Khi ấy kết quả là `password: '[REDACTED_SECRET]'` thay vì `[REDACTED_SECRET]`.
+   *
+   * VÌ SAO: đo được trên một đơn hàng thật — model sinh `password: 'your_password'` trong một file
+   * Express; bộ che nuốt cả nhãn lẫn dấu nháy, để lại `[REDACTED_SECRET],` ⇒ **JavaScript không
+   * parse nổi**. Mã giao cho người dùng bị chính hàng rào an toàn phá hỏng.
+   *
+   * ⚠ Đây KHÔNG phải nới lỏng an toàn: giá trị bí mật vẫn biến mất y như cũ, không sót một ký tự.
+   *   Thứ được giữ lại là `password:` — một chuỗi mà bản thân nó chưa bao giờ là bí mật. Nói cách
+   *   khác, bản vá chỉ đổi *hình dạng* của chỗ trống, không đổi *cái gì bị bỏ đi*.
+   * ⚠ Cũng làm nhật ký DỄ ĐỌC hơn: `[REDACTED_SECRET]` trơ trọi không cho biết trường nào đã bị
+   *   che, nên người đọc log mất luôn manh mối chẩn đoán.
+   */
+  giuNhan?: true;
 }
 
 // Order matters: multi-line/structured patterns first (PEM blocks, connection strings) so a
@@ -291,15 +308,17 @@ const REDACT_PATTERNS: RedactPattern[] = [
   // Labeled key=value / key: value forms (api_key=, access_token:, client_secret=…).
   {
     type: "api_key",
-    re: /\b(?:api[_-]?key|apikey|access[_-]?token|secret[_-]?key|client[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9\-_.]{12,}["']?/gi,
+    re: /\b((?:api[_-]?key|apikey|access[_-]?token|secret[_-]?key|client[_-]?secret)\s*[:=]\s*["']?)[A-Za-z0-9\-_.]{12,}(["']?)/gi,
     placeholder: "[REDACTED_SECRET]",
+    giuNhan: true,
   },
   // password=/pwd:/passwd= forms. Deliberately EXCLUDES bare "pass" (QC "Pass/Fail" status
   // text like "Pass: PASSED" is common manufacturing vocabulary and must not be redacted).
   {
     type: "password",
-    re: /\b(?:password|pwd|passwd)\s*[:=]\s*["']?[^\s"']{4,}["']?/gi,
+    re: /\b((?:password|pwd|passwd)\s*[:=]\s*["']?)[^\s"']{4,}(["']?)/gi,
     placeholder: "[REDACTED_SECRET]",
+    giuNhan: true,
   },
   { type: "email", re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, placeholder: "[REDACTED_EMAIL]" },
   // NOTE: phone numbers are handled separately by `redactPhones()` below, NOT via this
@@ -316,9 +335,10 @@ function applyRedactPatterns(text: string, patterns: RedactPattern[]): Redaction
   let out = text;
   const counts = new Map<string, number>();
   for (const p of patterns) {
-    out = out.replace(p.re, () => {
+    out = out.replace(p.re, (_khop: string, nhan?: string, dongNhay?: string) => {
       counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
-      return p.placeholder;
+      // ★ G12 — giữ nhãn + dấu nháy, chỉ thay GIÁ TRỊ. Xem `RedactPattern.giuNhan`.
+      return p.giuNhan ? `${nhan ?? ""}${p.placeholder}${dongNhay ?? ""}` : p.placeholder;
     });
   }
   const redactions: RedactionCount[] = [...counts.entries()].map(([type, count]) => ({ type, count }));

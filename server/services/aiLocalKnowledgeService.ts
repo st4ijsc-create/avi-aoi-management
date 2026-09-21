@@ -57,7 +57,7 @@ import { TRAN_TEP_MOI_LO } from "./aiLocalTools/writeHandlers/applyDiffBatch";
  * Xem docblock đầu `ai/dotnetNewScaffold.ts`.
  */
 import { anhXaTemplateDotnet, chayDotnetNewVaoTam, slugDuAn } from "./ai/dotnetNewScaffold";
-import { quyetDinhDuongTat, moiVongDeuTuChoi, TOOL_MANG_NGU_CANH } from "./ai/toolDuongTat";
+import { quyetDinhDuongTat, cauChiNenNo, TOOL_MANG_NGU_CANH } from "./ai/toolDuongTat";
 import { laCauSinhMa } from "./ai/cauSinhMa";
 import { thuMucTuLoi } from "./ai/thuMucTuLoi";
 import { vanBanChoModel } from "./ai/vanBanChoModel";
@@ -4043,7 +4043,7 @@ async function* streamCodingAnswer(
      * bịa. Trả thẳng lời từ chối của tool (vốn đã trung thực và đã dịch 3 thứ tiếng).
      * ⚠ CHỈ khi TẤT CẢ bị từ chối; một vòng đọc được ⇒ model vẫn chạy như cũ.
      */
-    if (moiVongDeuTuChoi(cacVong.map((v) => v.result.note))) {
+    if (cauChiNenNo(cacVong.map((v) => v.result.note), laCauSinhMa(question))) {
       console.warn(
         `[aiLocalKnowledge] G2 cầu chì: ${cacVong.length} vòng đọc ĐỀU bị từ chối ` +
           `(${cacVong.map((v) => v.result.note).join(",")}) — KHÔNG gọi model, trả lời từ chối trung thực.`,

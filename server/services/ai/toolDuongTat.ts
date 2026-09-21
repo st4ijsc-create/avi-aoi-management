@@ -120,3 +120,42 @@ export function quyetDinhDuongTat(t: ThamSoDuongTat): QuyetDinhDuongTat {
     ? { dungDuongTat: true, lyDo: "summary_du_dai" }
     : { dungDuongTat: false, lyDo: "summary_qua_ngan" };
 }
+
+/**
+ * ★★★ G11 (audit 2026-09-22 · dự án thật D3) — **CẦU CHÌ G2 KHÔNG ĐƯỢC PHỦ QUYẾT MỘT ĐƠN SINH MÃ.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * LỖI ĐO ĐƯỢC
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * *"Viết phần cốt lõi của một website … Dùng PostgreSQL + Node.js (Express) + React"* ⇒ 43 ms,
+ * 0 lần gọi model, đáp án là **"Không có tệp/thư mục \"Node.js\" trong hộp cát repo."**
+ *
+ * Cầu chì G2 (`moiVongDeuTuChoi`) ra đời để chặn BỊA: khi ngân sách cạn và **mọi** vòng đọc bị từ
+ * chối, gọi model là mời nó dựng ra một Express router không tồn tại (đo được 7/10 lượt). Lý lẽ ấy
+ * vẫn đúng — nhưng nó đúng cho **câu hỏi VỀ repo**. Với một đơn **SINH MÃ MỚI**, repo chưa bao giờ
+ * là nguồn của câu trả lời, nên chẳng có gì để bịa về nó cả: một `NOT_FOUND` chỉ nói *"cái tên bạn
+ * nhắc không có ở đây"*, và với đơn hàng "viết cho tôi một website" thì đó là thông tin **vô can**.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * RANH GIỚI — VÀ VÌ SAO NÓ KHÔNG MỞ LẠI LỖ G2 ĐÃ BỊT
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Chỉ **hai** ghi chú được coi là vô can: `NOT_FOUND` và `NO_MATCH` — cả hai đều có nghĩa *"tôi đã
+ * tìm, và không có"*. Mọi ghi chú khác (`DENIED_SECRET`, hết ngân sách, ngoài hộp cát, lỗi đọc…)
+ * đều có nghĩa *"tôi KHÔNG ĐƯỢC/KHÔNG THỂ đọc"* — đó đúng là cảnh mà G2 đo được hành vi bịa, nên
+ * cầu chì **vẫn nổ nguyên như cũ**, kể cả khi câu là sinh mã.
+ *
+ * ⚠ Đây là **CƠ CHẾ**, không phải một danh sách tên phải nhớ cập nhật: dù `tenCongNghe.ts` có sót
+ *   bao nhiêu tên khung mới ra đời đi nữa, đơn sinh mã vẫn tới được model. Bảng tên làm câu trả lời
+ *   SẠCH hơn; hàng rào này làm nó KHÔNG BIẾN MẤT.
+ */
+const GHI_CHU_VO_CAN_VOI_SINH_MA: ReadonlySet<string> = new Set(["NOT_FOUND", "NO_MATCH"]);
+
+export function cauChiNenNo(
+  notes: ReadonlyArray<string | null | undefined>,
+  laDonSinhMa: boolean,
+): boolean {
+  if (!moiVongDeuTuChoi(notes)) return false;
+  if (!laDonSinhMa) return true;
+  // Sinh mã: chỉ tha khi MỌI ghi chú đều thuộc nhóm "đã tìm, không có".
+  return !notes.every((n) => GHI_CHU_VO_CAN_VOI_SINH_MA.has(String(n ?? "").trim().toUpperCase()));
+}

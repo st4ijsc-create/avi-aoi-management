@@ -18,6 +18,8 @@
  */
 
 import { listTools, getTool, type Tool } from "./toolRegistry";
+import { laCauSinhMa } from "../ai/cauSinhMa";
+import { laTenCongNghe } from "./tenCongNghe";
 // ⚠ CHỈ nhập KIỂU (bị xoá lúc biên dịch) — không tạo cạnh nhập lúc chạy, không kéo theo lượt
 //   tự đăng ký tool của `readToolsProgramming.ts`. Nhờ nó, một `ProgrammingKind` gõ sai trong
 //   bảng gợi ý dưới đây là **lỗi biên dịch**, không phải một lượt `safeParse` hỏng lúc chạy.
@@ -442,7 +444,14 @@ const REPO_PATH_REGEX =
 const REPO_DIR_REGEX = /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+\/){1,}[\w.@~$-]*)(?=$|[\s"'`,;)\]。，、])/;
 
 function extractRepoPath(question: string): string | undefined {
-  return question.match(REPO_PATH_REGEX)?.[1];
+  /**
+   * ★★★ G11 (2026-09-22) — `Node.js` KHÔNG PHẢI MỘT TỆP. Xem `tenCongNghe.ts` cho ca thật đã đo
+   * (một đơn đặt website bị trả lời bằng "không có tệp Node.js", 43 ms, model không được gọi).
+   * Lọc ở ĐÂY chứ không sửa `REPO_PATH_REGEX`: regex vẫn đúng việc của nó là *nhận dạng hình dạng
+   * một đường dẫn*; cái nó không biết là NGỮ NGHĨA, và ngữ nghĩa thuộc về một vị từ có lưới riêng.
+   */
+  const d = question.match(REPO_PATH_REGEX)?.[1];
+  return d !== undefined && laTenCongNghe(d) ? undefined : d;
 }
 
 /**
@@ -466,6 +475,7 @@ export function trichMoiDuongDanRepo(question: string): string[] {
   for (const m of String(question ?? "").matchAll(re)) {
     const d = m[1];
     if (!d || daCo.has(d)) continue;
+    if (laTenCongNghe(d)) continue; // ★ G11 — xem `tenCongNghe.ts`
     daCo.add(d);
     ra.push(d);
   }
@@ -2160,6 +2170,31 @@ export function laCauCanSuyLuan(question: string): boolean {
 export function chanLenhKhiCauHoi(question: string, d: ToolDecision): ToolDecision {
   if (d.tool === "run_command" && laCauCanSuyLuan(question)) {
     return { tool: null, args: {}, reason: "CODING_RUN_BI_CHAN_CAU_HOI" };
+  }
+  /**
+   * ★★★ G13 (audit 2026-09-22 · dự án thật D2) — **MỘT ĐƠN SINH MÃ CŨNG KHÔNG ĐƯỢC ĐẺ RA THẺ
+   * `run_command`.** Cùng một lớp lỗi với vế trên, chỉ khác hình dạng câu: (C2-ii) lo câu HỎI, vế
+   * này lo câu RA LỆNH VIẾT MÃ.
+   *
+   * Đo được, nguyên văn luồng SSE: *"Viết phần cốt lõi của một app bán hàng và quản lý kho … dùng
+   * C# và SQL Server …"* ⇒ 509 ms ⇒ `tool_loop run_command … stop:"cho_phe_duyet"` ⇒ một thẻ duyệt
+   * cho lệnh **`dotnet build`** trơ. Người đặt hàng nhận về **0 ký tự mã**, và bản thân thẻ ấy đã
+   * mang sẵn cảnh báo `[CMD_NOT_ALLOWED]` — tức hệ ĐÃ BIẾT lệnh này sẽ bị từ chối, vẫn đẩy nó ra
+   * làm điểm dừng của cả lượt. 3/3 lượt lặp lại y hệt.
+   *
+   * Lý lẽ: một đơn *"viết cho tôi X"* thì **chưa có gì để chạy** — mã còn chưa tồn tại. Thứ duy
+   * nhất `run_command` làm được ở đây là biến một yêu cầu sinh mã thành một câu hỏi xin phép.
+   *
+   * ⚠ HẸP y như vế trên: chỉ đụng `run_command`. `read_file`/`grep_repo`/`list_files` cho một đơn
+   *   sinh mã vẫn chạy bình thường (chúng gom ngữ cảnh, rồi G2b đưa sang nhánh sinh mã).
+   * ⚠ KHÔNG chạm mệnh lệnh chạy tường minh: đã đo `laCauSinhMa` trên lưới ranh giới —
+   *   *"chạy test cho module abc"* · *"build lại dự án"* · *"dotnet build thử xem"* · *"chạy npm
+   *   test"* đều trả **false**, nên chúng đi qua đây không suy suyển.
+   * ⚠ KHÔNG nới một ly nào của HITL: bản vá chỉ ngăn một lệnh bị ĐỀ XUẤT, không cho phép bất kỳ
+   *   lệnh nào chạy mà thiếu phê duyệt.
+   */
+  if (d.tool === "run_command" && laCauSinhMa(question)) {
+    return { tool: null, args: {}, reason: "CODING_RUN_BI_CHAN_DON_SINH_MA" };
   }
   return d;
 }

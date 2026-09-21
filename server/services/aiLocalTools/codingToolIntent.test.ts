@@ -11,7 +11,7 @@
  *      nhau ở hai bộ chọn ⇒ hai đường độc lập.
  *   3. **CHỈ 5 TOOL** — mọi quyết định của bộ chọn lập trình nằm trong `CODING_TOOL_NAMES`.
  */
-import { describe, it, expect } from "vitest";
+import { chanLenhKhiCauHoi, describe, it, expect } from "vitest";
 import "./index"; // đăng ký toàn bộ tool (side-effect)
 import {
   chanLenhKhiCauHoi,
@@ -277,5 +277,32 @@ describe("§10 (C2-ii) — chanLenhKhiCauHoi: A/B hai chiều", () => {
     for (const q of ["Chạy dotnet test X và cho tôi biết kết quả", "đọc src/a.cs và cho biết có gì", "liệt kê thư mục src"]) {
       expect(laCauCanSuyLuan(q), q).toBe(false);
     }
+  });
+});
+
+describe("chanLenhKhiCauHoi — G13 (audit 2026-09-22 · dự án thật D2)", () => {
+  const RUN = (c: string) => ({ tool: "run_command", args: { command: c }, reason: "X" }) as never;
+
+  it("★★★ CA THẬT ĐÃ ĐO: đơn đặt app bán hàng ⇒ run_command BỊ CHẶN (trước đây ra thẻ duyệt `dotnet build`, 0 ký tự mã)", () => {
+    const q = "Viết phần cốt lõi của một app bán hàng và quản lý kho đơn giản cho tiệm tạp hoá, dùng C# và SQL Server.";
+    expect(chanLenhKhiCauHoi(q, RUN("dotnet build")).tool).toBeNull();
+    expect(chanLenhKhiCauHoi(q, RUN("dotnet build")).reason).toBe("CODING_RUN_BI_CHAN_DON_SINH_MA");
+  });
+
+  it("★★★ MỆNH LỆNH CHẠY TƯỜNG MINH KHÔNG BỊ ĐỤNG — đây là vế giữ bản vá khỏi quá tay", () => {
+    for (const q of ["chạy test cho module abc", "build lại dự án", "dotnet build thử xem", "chạy npm test",
+                     "Chạy dotnet test src/X và cho tôi biết kết quả"]) {
+      expect(chanLenhKhiCauHoi(q, RUN("dotnet test src/X")).tool, q).toBe("run_command");
+    }
+  });
+
+  it("★ vế (C2-ii) cũ giữ nguyên: câu HỎI vẫn bị chặn", () => {
+    expect(chanLenhKhiCauHoi("xanh chưa?", RUN("dotnet test x")).reason).toBe("CODING_RUN_BI_CHAN_CAU_HOI");
+  });
+
+  it("★ HẸP: chỉ đụng run_command — tool ĐỌC cho đơn sinh mã vẫn chạy", () => {
+    const q = "Viết cho tôi một hàm tính thuế";
+    const doc = { tool: "read_file", args: { path: "src/a.cs" }, reason: "CODING_READ_SHORTCUT" } as never;
+    expect(chanLenhKhiCauHoi(q, doc).tool).toBe("read_file");
   });
 });

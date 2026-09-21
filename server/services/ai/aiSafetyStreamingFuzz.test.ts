@@ -76,6 +76,22 @@ interface SecretCase {
   /** Required when `exact === false`: the sensitive substring (credentials) that must never
    *  appear raw in the output, even though non-sensitive tail bytes may. */
   sensitiveFragment?: string;
+  /**
+   * ★★★ G12 (audit 2026-09-22) — **NHÃN ĐƯỢC GIỮ LẠI CÓ CHỦ ĐÍCH** (`password=`, `api_key=`).
+   *
+   * Với hai hình dạng này, "marker" KHÔNG phải một mảnh của bí mật — nó là cái nhãn do chính
+   * người dùng gõ ra. Bộ che nay giữ nhãn và chỉ thay GIÁ TRỊ (`password=[REDACTED_SECRET]`),
+   * vì nuốt cả nhãn sẽ phá cú pháp của mã sinh ra: đo được một file Express bị biến thành
+   * `[REDACTED_SECRET],` ⇒ `node --check` đỏ. Xem `RedactPattern.giuNhan` trong `aiSafety.ts`.
+   *
+   * ⚠ Đây KHÔNG phải hạ chuẩn của lưới này. Ca có `nhanGiuLai` vẫn bị khẳng định **BYTE-KHỚP**
+   *   (`prefix + nhãn + placeholder + suffix`) y như 12 hình dạng `exact` khác — chỉ khác đúng
+   *   phần nhãn. Ngoài ra còn thêm một khẳng định NGHIÊM hơn cả bản cũ: **giá trị bí mật thô
+   *   không bao giờ xuất hiện**, ở từng mảnh phát ra lẫn ở chuỗi nối lại.
+   */
+  nhanGiuLai?: string;
+  /** Giá trị bí mật thô — phải KHÔNG BAO GIỜ lộ. Bắt buộc khi có `nhanGiuLai`. */
+  giaTriBiMat?: string;
 }
 
 const PEM_VARIANTS: Array<[string, string]> = [
@@ -134,7 +150,10 @@ function buildCorpus(): SecretCase[] {
   {
     const rng = makeLcg(2004);
     const value = randomString(rng, ALNUM_ALPHABET, randInt(rng, 20, 40));
-    cases.push({ label: "api_key=<value>", secret: `api_key=${value}`, startMarker: "api_key=", exact: true });
+    cases.push({
+      label: "api_key=<value>", secret: `api_key=${value}`, startMarker: "api_key=",
+      exact: true, nhanGiuLai: "api_key=", giaTriBiMat: value,
+    });
   }
 
   {
@@ -168,7 +187,10 @@ function buildCorpus(): SecretCase[] {
   {
     const rng = makeLcg(2007);
     const value = randomString(rng, ALNUM_ALPHABET, randInt(rng, 10, 20));
-    cases.push({ label: "password=<value>", secret: `password=${value}`, startMarker: "password=", exact: true });
+    cases.push({
+      label: "password=<value>", secret: `password=${value}`, startMarker: "password=",
+      exact: true, nhanGiuLai: "password=", giaTriBiMat: value,
+    });
   }
 
   return cases;
@@ -246,17 +268,22 @@ describe("StreamingSecretRedactor — permanent property/fuzz guard (doc69 W1-2 
             const { emitted, joined } = streamRandomChunks(text, pass.seed, pass.min, pass.max);
 
             // No individual emitted piece may ever carry the raw start marker or the full secret.
+            // ★ G12 — ngoại lệ DUY NHẤT: nhãn được giữ lại có chủ đích (xem `nhanGiuLai`). Khi ấy
+            //   khẳng định về marker được thay bằng một khẳng định MẠNH HƠN: chính GIÁ TRỊ bí mật
+            //   không được lộ, ở từng mảnh lẫn ở chuỗi nối.
             for (const piece of emitted) {
-              expect(piece).not.toContain(secretCase.startMarker);
+              if (!secretCase.nhanGiuLai) expect(piece).not.toContain(secretCase.startMarker);
               expect(piece).not.toContain(secretCase.secret);
+              if (secretCase.giaTriBiMat) expect(piece).not.toContain(secretCase.giaTriBiMat);
             }
             expect(joined).not.toContain(secretCase.secret);
-            expect(joined).not.toContain(secretCase.startMarker);
+            if (!secretCase.nhanGiuLai) expect(joined).not.toContain(secretCase.startMarker);
+            if (secretCase.giaTriBiMat) expect(joined).not.toContain(secretCase.giaTriBiMat);
 
             if (secretCase.exact) {
               // Strong guarantee for 12 of the 13 shapes: exact reconstruction, no leaked and
               // no dropped bytes anywhere in the surrounding text either.
-              expect(joined).toBe(prefix + "[REDACTED_SECRET]" + suffix);
+              expect(joined).toBe(prefix + (secretCase.nhanGiuLai ?? "") + "[REDACTED_SECRET]" + suffix);
             } else {
               // Connection strings only (see file header): credentials must never leak, even
               // though a few non-sensitive bytes (scheme prefix / host tail) may pass through.

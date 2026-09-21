@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { quyetDinhDuongTat, moiVongDeuTuChoi, TOOL_MANG_NGU_CANH, type ThamSoDuongTat } from "./toolDuongTat";
+import { quyetDinhDuongTat, moiVongDeuTuChoi, cauChiNenNo, TOOL_MANG_NGU_CANH, type ThamSoDuongTat } from "./toolDuongTat";
 
 const nen: ThamSoDuongTat = {
   tenTool: "get_today_stats",
@@ -112,5 +112,37 @@ describe("moiVongDeuTuChoi — CẦU CHÌ CỨNG (G2): mệnh lệnh prompt ch�
     for (const n of [1, 2, 3, 7]) {
       expect(moiVongDeuTuChoi(Array(n).fill("BUDGET_EXCEEDED"))).toBe(true);
     }
+  });
+});
+
+describe("cauChiNenNo — G11 (audit 2026-09-22 · dự án thật D3)", () => {
+  it("★★★ CA THẬT: đơn sinh mã + NOT_FOUND ⇒ cầu chì KHÔNG nổ (model phải được gọi)", () => {
+    expect(cauChiNenNo(["NOT_FOUND"], true)).toBe(false);
+    expect(cauChiNenNo(["NOT_FOUND", "NO_MATCH"], true)).toBe(false);
+  });
+
+  it("★★★ HÀNH VI CŨ GIỮ NGUYÊN: câu hỏi VỀ repo + NOT_FOUND ⇒ vẫn nổ", () => {
+    expect(cauChiNenNo(["NOT_FOUND"], false)).toBe(true);
+  });
+
+  it("★★★ LỖ G2 KHÔNG MỞ LẠI: 'không được/không thể đọc' ⇒ nổ kể cả khi sinh mã", () => {
+    for (const n of ["DENIED_SECRET", "BUDGET_EXHAUSTED", "OUTSIDE_SANDBOX", "READ_ERROR"]) {
+      expect(cauChiNenNo([n], true), n).toBe(true);
+    }
+  });
+
+  it("★ MỘT vòng bị cấm lẫn trong các vòng NOT_FOUND ⇒ vẫn nổ (fail-closed)", () => {
+    expect(cauChiNenNo(["NOT_FOUND", "DENIED_SECRET"], true)).toBe(true);
+  });
+
+  it("★ có vòng đọc ĐƯỢC ⇒ không nổ, bất kể loại câu", () => {
+    for (const laSinhMa of [true, false]) {
+      expect(cauChiNenNo(["NOT_FOUND", null], laSinhMa)).toBe(false);
+      expect(cauChiNenNo([], laSinhMa)).toBe(false);
+    }
+  });
+
+  it("★ so sánh KHÔNG phân biệt hoa thường / khoảng trắng thừa", () => {
+    expect(cauChiNenNo([" not_found "], true)).toBe(false);
   });
 });

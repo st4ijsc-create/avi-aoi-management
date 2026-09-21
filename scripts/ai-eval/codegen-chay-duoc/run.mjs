@@ -56,7 +56,7 @@ async function genRaw(t) {
   const t0 = Date.now();
   const res = await fetch(RAW_URL, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: [{ role: "system", content: SYS }, { role: "user", content: t.prompt }],
+    body: JSON.stringify({ ...(arg("--model", null) ? { model: arg("--model", null) } : {}), messages: [{ role: "system", content: SYS }, { role: "user", content: t.prompt }],
       temperature: 0.2, top_p: 0.9, max_tokens: Number(arg("--max-tokens", 1400)), stream: false }),
   });
   if (!res.ok) return { text: "", err: `HTTP ${res.status} ${(await res.text()).slice(0,200)}`, totalMs: Date.now() - t0 };
@@ -129,8 +129,16 @@ const gen = CONFIG === "pipeline" ? genPipeline
 // ★★★ CỔNG SỨC KHOẺ — bài học đắt nhất phiên này: llama-server CHẾT giữa chừng và tôi suýt
 //   báo cáo "đường ống + Coder = 0/9" như phát hiện sản phẩm, trong khi đó là hiện vật công cụ.
 async function kiemLlama(nhan) {
+  /**
+   * ★ Cổng canh ĐÚNG endpoint đang đo, không canh cứng một cổng. Bản đầu ghim `:8091/health`;
+   * khi đo một runtime KHÁC (Ollama :11434 cho Devstral — llama.cpp b9814 không nạp nổi kiến trúc
+   * `mistral3` có thị giác) thì cổng ấy vứt một lượt đo hoàn toàn hợp lệ. Một cổng canh sai chỗ
+   * cũng nguy hiểm như không có cổng.
+   */
+  const base = new URL(RAW_URL);
+  const url = base.port === "11434" ? `${base.origin}/api/tags` : `${base.origin}/health`;
   try {
-    const r = await fetch("http://127.0.0.1:8091/health", { signal: AbortSignal.timeout(4000) });
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (r.status !== 200) throw new Error("health " + r.status);
   } catch (e) {
     console.error(`
