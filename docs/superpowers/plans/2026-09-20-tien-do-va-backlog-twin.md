@@ -98,6 +98,20 @@ Xếp theo **rủi ro im lặng × giá phải trả**, không theo thứ tự d
   nhãn là **trần 30**; sau khi kéo camera thì là **`deKhoiKhac`**. Kết luận không kèm điều kiện đo
   là kết luận sẽ sai ở lần đo sau.
 
+## toà 94 (bản 2D) — ĐÓNG bằng một phép tính, không bằng một bản vá
+
+Toà 94 còn **64 %** diện tích bấm được, ô vuông trống **32×32 px** ⇒ **đạt** 24×24 và bấm vẫn
+điều hướng đúng. Kẻ che là `nut-thu-phai` (`data-testid`, **có** khai `data-che-nhan`), 21×42 px
+nép sát mép phải vùng dùng được — không cắt suốt chiều cao nên `daiNgangDung` không trừ nó.
+
+**Cái giá nếu trừ:** vùng dùng được hẹp lại **21/488 = 4,3 %** bề ngang. Ở cấp tập đoàn bề
+**ngang** mới là chiều chặn (đo ở vòng 6: thêm lề ĐÁY 28 px **không** đổi tỉ lệ, còn bề ngang thì
+đổi) ⇒ **mọi 14 biểu tượng** nhỏ đi 4,3 %: 38,4 → 36,7 px.
+
+⇒ **Không vá.** Bỏ 4,3 % cỡ của **cả 14** biểu tượng để chữa **một** biểu tượng vốn **đã đạt**
+tiêu chí là đúng lớp *"vá thành lùi"* mà PH-46 đã ghi. Ghi lại ở đây kèm số để lần sau ai định
+mở lại thì mở bằng một con số khác, không bằng cảm giác.
+
 ## SỔ TRUY VẤN — mỗi con số còn được viện dẫn phải chỉ được về một phép đo
 
 > **Bốn con số không có truy vấn thì không phải bằng chứng — nó là một tin đồn có chữ số thập phân.**
