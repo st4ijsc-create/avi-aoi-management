@@ -148,7 +148,17 @@ export function quyetDinhDuongTat(t: ThamSoDuongTat): QuyetDinhDuongTat {
  *   bao nhiêu tên khung mới ra đời đi nữa, đơn sinh mã vẫn tới được model. Bảng tên làm câu trả lời
  *   SẠCH hơn; hàng rào này làm nó KHÔNG BIẾN MẤT.
  */
-const GHI_CHU_VO_CAN_VOI_SINH_MA: ReadonlySet<string> = new Set(["NOT_FOUND", "NO_MATCH"]);
+/**
+ * ★ G19 (2026-09-22 · trục H sau B1) — **`GREP_DEADLINE` cũng vô can với đơn SINH MÃ.**
+ * Đo được: H‑cs3 (*"Viết C# trong namespace Sol: public static class Ca …"*) trượt **5/6 lượt qua hai
+ * đợt đo**, mỗi lượt 4–6 s, 0 lần gọi model sinh mã: bộ chọn tool đoán `search_repo` (tên `Sol`/`Ca`
+ * trông như định danh trong repo) → grep quét 208 tệp quá hạn 4.000 ms → ghi chú `GREP_DEADLINE` →
+ * cầu chì nổ → câu trả lời là *"Quá hạn 4000 ms … BẢN CẮT vì hết giờ"* — và bộ đo biên dịch câu ấy.
+ * Với đơn sinh mã, một bản quét CHƯA XONG nói đúng điều `NOT_FOUND` nói: *"repo không phải nguồn của
+ * câu trả lời này"*. Vector bịa mà G2 canh (dựng ra tệp/route repo không có) không mở ra thêm, vì
+ * model vẫn chỉ được yêu cầu VIẾT MỚI. Với câu hỏi VỀ repo, `GREP_DEADLINE` vẫn làm cầu chì nổ y cũ.
+ */
+const GHI_CHU_VO_CAN_VOI_SINH_MA: ReadonlySet<string> = new Set(["NOT_FOUND", "NO_MATCH", "GREP_DEADLINE"]);
 
 export function cauChiNenNo(
   notes: ReadonlyArray<string | null | undefined>,

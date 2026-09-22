@@ -216,6 +216,30 @@ function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | undefined
   body.chat_template_kwargs = { enable_thinking: false };
 }
 
+/**
+ * ★ B2 (2026-09-22) — **GỬI TƯỜNG MINH ba trường sampling mà tài liệu Qwen3.6 khuyến nghị**, thay cho
+ * việc để llama-server điền mặc định của NÓ.
+ *
+ * Đo `/props` trên `:8091` (Qwen3.6-35B-A3B): mặc định server `top_k 20 · min_p 0,05 · presence 0 ·
+ * repeat 1`. Chính hãng cho chế độ nghĩ-coding: `top_k 20 · min_p 0,0 · presence 0,0 · repeat 1,0`; cho
+ * instruct: `presence 1,5`. Trước bản này chỉ MỘT builder (`:1285`) chuyển `top_k`, không builder nào
+ * chuyển `min_p`/`presence_penalty` ⇒ hồ sơ sampling theo (model, chế độ) của B2 không có đường
+ * xuống server. Hàm này là đường đó — MỘT chỗ, gọi ở cả năm builder ngay sau `lapCoTatSuyLuan`.
+ *
+ * ⚠ Chỉ ghi trường KHI người gọi đặt (`!= null`): vắng ⇒ không đụng body ⇒ hành vi cũ y nguyên.
+ *   Không đặt mặc định "theo tài liệu" ở đây — thay đổi mặc định phải đi qua A/B (kế hoạch B2), không
+ *   qua một hàm tiện ích.
+ */
+function lapCoSampling(
+  body: Record<string, unknown>,
+  o: { topK?: number; minP?: number; presencePenalty?: number } | undefined,
+): void {
+  if (!o) return;
+  if (o.topK != null && Number.isFinite(o.topK)) body.top_k = o.topK;
+  if (o.minP != null && Number.isFinite(o.minP)) body.min_p = o.minP;
+  if (o.presencePenalty != null && Number.isFinite(o.presencePenalty)) body.presence_penalty = o.presencePenalty;
+}
+
 // ⚠ `nganSachTuHoiThoai()` (quy một HỘI THOẠI về hình dạng mà `kiemNganSachNguCanh()` cân được)
 // KHÔNG sống ở đây — nó nằm trong `aiGgufEngine.ts`, và có lý do đo được:
 // mọi test `vi.mock("./aiLlamaServerClient", …)` bằng factory LIỆT KÊ TAY (đã có ít nhất một
@@ -619,6 +643,7 @@ export async function serverGenerateText(
   if (options.stopSequences?.length) body.stop = options.stopSequences;
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
 
   const { json, totalTimeMs } = await postChatCompletion(body);
   const nua = docHaiNua(json?.choices?.[0]?.message);
@@ -675,6 +700,7 @@ export async function serverChatCompletion(
   };
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
   lapToolsLenThan(body, options);
 
   const { json, totalTimeMs } = await postChatCompletion(body);
@@ -748,6 +774,7 @@ export async function serverGenerateJSON<T = unknown>(
   // `<think>` không thể xuất hiện. Nhưng với model LAI, llama.cpp hoãn grammar cho tới khi khối
   // suy luận đóng (`grammar_lazy`), nên model vẫn tiêu token vào suy luận TRƯỚC — đúng ca (B).
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
 
   const { json, totalTimeMs } = await postChatCompletion(body);
   const nua = docHaiNua(json?.choices?.[0]?.message);
@@ -1011,6 +1038,9 @@ async function* streamChatCompletion(
     const giaiMa = new TextDecoder("utf-8");
     let fullText = "";
     let fullReasoning = "";
+    // ★ B7 — số sự kiện SSE mang `delta.reasoning_content` ≈ số token suy luận (server phát một sự kiện
+    //   mỗi token). Trả ở chunk `done` (`tokensReasoning`) để sổ đo tách "nghĩ 5k rồi trả 300" khỏi "trả 5k".
+    let soDeltaSuyLuan = 0;
     let ttftMs: number | undefined;
     let tokensPrompt = 0;
     let tokensGenerated = 0;
@@ -1055,7 +1085,11 @@ async function* streamChatCompletion(
         // Gom suy luận TRƯỚC `continue` — nếu để sau, một sự kiện chỉ mang `reasoning_content`
         // (rất phổ biến ở model lai: hàng trăm sự kiện suy luận rồi mới tới chữ) sẽ rơi khỏi phép
         // gom và ta lại mất đúng cái bằng chứng cần cho ca (B).
-        fullReasoning += suyLuanTrongChunk(json);
+        const manhSuyLuan = suyLuanTrongChunk(json);
+        if (manhSuyLuan) {
+          fullReasoning += manhSuyLuan;
+          soDeltaSuyLuan += 1;
+        }
         // ★★★ G2-B — mảnh `delta.tool_calls`. Phải gom TRƯỚC `continue` vì một lượt tool-call
         // thuần KHÔNG có `delta.content` nào cả (đo sống: sự kiện đầu `content:null`, rồi chỉ
         // toàn `tool_calls`) ⇒ để sau `continue` là gom được ĐÚNG 0 mảnh — cùng cái bẫy đã
@@ -1139,6 +1173,7 @@ async function* streamChatCompletion(
       type: "done",
       fullText: toolCalls.length ? gomToolCallTuVanBan(fullText).vanBan : fullText,
       reasoningText: fullReasoning || undefined,
+      tokensReasoning: soDeltaSuyLuan,
       ...(toolCalls.length ? { toolCalls } : {}),
       finishReason: toolCalls.length ? "tool_calls" : finishReason,
       tokensGenerated,
@@ -1191,6 +1226,7 @@ export async function* serverGenerateTextStream(
   if (options.stopSequences?.length) body.stop = options.stopSequences;
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
 
   yield* streamChatCompletion(body, signal, model);
 }
@@ -1218,6 +1254,7 @@ export async function* serverChatCompletionStream(
   };
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
   lapToolsLenThan(body, options);
 
   yield* streamChatCompletion(body, signal, model);

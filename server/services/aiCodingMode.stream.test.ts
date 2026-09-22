@@ -30,6 +30,21 @@ const h = vi.hoisted(() => ({
   manh: [] as string[],
   systemPromptNhan: "" as string,
   promptNhan: "" as string,
+  /** ★ B1 — cờ `disableThinking` THẬT tới engine, theo từng lượt gọi (đo hợp đồng, không đo lời khai). */
+  disableThinkingNhan: [] as Array<boolean | undefined>,
+  // ★ B2 — hồ sơ sampling THẬT tới engine (temperature · topP · topK · minP · presencePenalty · repeatPenalty)
+  samplingNhan: [] as Array<Record<string, unknown>>,
+  /**
+   * ★ B1 cầu chì — NÉM một lần ở lượt NGHĨ đầu tiên (`disableThinking !== true`), giả G5-D của server
+   * (`LoiTokenCanKietVaoSuyLuan`: content rỗng, reasoning đầy). `null` ⇒ không ném. Tự xoá sau khi ném.
+   */
+  nemLuotNghi: null as Error | null,
+  /** Chỉ số (trong `disableThinkingNhan`) của lượt đã ném — để đếm số lượt gọi SAU đó. */
+  chiSoNem: -1 as number,
+  /** Prompt THẬT của từng lượt gọi engine (cùng chỉ số với `disableThinkingNhan`) — để nhận ra "cùng lượt, thử lại". */
+  promptTheoLuot: [] as string[],
+  /** ★ B7 — `tokensReasoning` giả trên chunk `done` của engine; `undefined` ⇒ không gửi trường (đường không đếm được). */
+  tokensReasoningGia: undefined as number | undefined,
   /** Mọi quyết định đi qua `executeDecision` — bản kiểm đếm của §3. */
   quyetDinh: [] as Array<{ tool: string | null; args: Record<string, unknown> }>,
   /** Bộ chọn tool LLM giả: `null` ⇒ nó abstain (mặc định). */
@@ -109,8 +124,29 @@ vi.mock("./aiGgufEngine", () => ({
   generateTextStream: async function* (opt: any) {
     h.systemPromptNhan = String(opt?.systemPrompt ?? "");
     h.promptNhan = String(opt?.prompt ?? "");
+    h.disableThinkingNhan.push(opt?.disableThinking); // ★ B1 — ghi cờ THẬT tới engine
+    h.promptTheoLuot.push(String(opt?.prompt ?? ""));
+    h.samplingNhan.push({
+      temperature: opt?.temperature,
+      topP: opt?.topP,
+      topK: opt?.topK,
+      minP: opt?.minP,
+      presencePenalty: opt?.presencePenalty,
+      repeatPenalty: opt?.repeatPenalty,
+    });
+    if (h.nemLuotNghi && opt?.disableThinking !== true) {
+      const e = h.nemLuotNghi;
+      h.nemLuotNghi = null;
+      h.chiSoNem = h.disableThinkingNhan.length - 1;
+      throw e;
+    }
     for (const m of h.manh) yield { type: "token", token: m };
-    yield { type: "done", tokensPrompt: 10, tokensGenerated: h.manh.length };
+    yield {
+      type: "done",
+      tokensPrompt: 10,
+      tokensGenerated: h.manh.length,
+      ...(h.tokensReasoningGia !== undefined ? { tokensReasoning: h.tokensReasoningGia } : {}),
+    };
   },
 }));
 
@@ -203,6 +239,12 @@ beforeEach(() => {
   h.manh = [];
   h.systemPromptNhan = "";
   h.promptNhan = "";
+  h.disableThinkingNhan = [];
+  h.samplingNhan = [];
+  h.nemLuotNghi = null;
+  h.chiSoNem = -1;
+  h.promptTheoLuot = [];
+  h.tokensReasoningGia = undefined;
   h.quyetDinh = [];
   h.llmDoanTool = null;
   h.docGia = null;
@@ -922,5 +964,283 @@ describe("§8 — VÁ LIVE: cầu tài liệu→mã, và persona phải NÓI RA 
       "★★★ dặn model tin vào một khối mã KHÔNG TỒN TẠI là dạy nó bịa — đúng lớp lỗi đang chữa",
     ).not.toContain("MÃ NGUỒN THẬT ĐÃ ĐƯỢC ĐỌC TỪ ĐĨA");
     expect(h.systemPromptNhan).toContain("KHÔNG** CÓ MÃ NGUỒN CỦA DỰ ÁN ĐANG MỞ");
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ B1 (2026-09-22) — HOP DONG cong tac nghi: co `disableThinking` PHAI toi engine dung nhu nguoi goi dat.
+// Do song tren Qwen3.6-35B-A3B: luot chon tep 512 token voi thinking mac dinh => content "", finish=length.
+// Luoi nay do CHUOI THAT di vao `generateTextStream` (o bat `h.disableThinkingNhan`), khong do loi khai.
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("B1 — cong tac nghi toi engine (hop dong, khong phai loi khai)", () => {
+  const goi = async (them: Record<string, unknown>) => {
+    const { streamCodingModel } = await import("./aiCodingAgent");
+    h.manh = ["ok"];
+    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, ...them } as never)) { /* rut het */ }
+    return h.disableThinkingNhan[h.disableThinkingNhan.length - 1];
+  };
+
+  it("*** lop PHU dat disableThinking:true => engine nhan DUNG true", async () => {
+    expect(await goi({ disableThinking: true })).toBe(true);
+  });
+
+  it("*** lop NGHI (khong dat co) => engine nhan undefined — template quyet, tuc NGHI voi Qwen3.6", async () => {
+    expect(await goi({})).toBe(undefined);
+  });
+
+  it("* dat false tuong minh => engine nhan false (khong bi ep thanh undefined)", async () => {
+    expect(await goi({ disableThinking: false })).toBe(false);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★ B2 (2026-09-22) — HỢP ĐỒNG hồ sơ sampling: bốn trường tới engine ĐÚNG như người gọi đặt, và cần
+// gạt `AI_SAMPLING_PROFILE` đổi được bộ số của lượt SINH MÃ đi qua SERVICE — không chỉ ở lời khai.
+// Đo ở ô bắt `h.samplingNhan` (đối tượng THẬT vào `generateTextStream`).
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+describe("B2 — hồ sơ sampling tới engine (hợp đồng + cần gạt A/B)", () => {
+  // Cùng câu của §1 (block-scoped ở đó) — câu đã được chứng minh vào nhánh SINH MÃ.
+  const CAU = "viết code C# cho chương trình chat LAN sử dụng socket";
+  const cuoi = () => h.samplingNhan[h.samplingNhan.length - 1];
+  const goi = async (them: Record<string, unknown>) => {
+    const { streamCodingModel } = await import("./aiCodingAgent");
+    h.manh = ["ok"];
+    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, ...them } as never)) { /* rút hết */ }
+    return cuoi();
+  };
+
+  it("★★ đặt topP/topK/minP/presencePenalty ⇒ engine nhận ĐÚNG bốn số — kể cả minP 0", async () => {
+    expect(await goi({ topP: 0.8, topK: 20, minP: 0, presencePenalty: 1.5, temperature: 0.7, repeatPenalty: 1.0 })).toEqual({
+      temperature: 0.7,
+      topP: 0.8,
+      topK: 20,
+      minP: 0,
+      presencePenalty: 1.5,
+      repeatPenalty: 1.0,
+    });
+  });
+
+  it("không đặt ⇒ hành vi cũ y nguyên: topP 0,9 · temp 0,2 · repeat 1,05 · ba trường kia KHÔNG gửi", async () => {
+    expect(await goi({})).toEqual({
+      temperature: 0.2,
+      topP: 0.9,
+      topK: undefined,
+      minP: undefined,
+      presencePenalty: undefined,
+      repeatPenalty: 1.05,
+    });
+  });
+
+  /** Chạy `fn` với env đã đặt, rồi TRẢ LẠI nguyên trạng — lưới khác trong cùng tệp không được thấy cần gạt. */
+  async function voiEnv(env: Record<string, string | undefined>, fn: () => Promise<void>) {
+    const cu: Record<string, string | undefined> = {};
+    for (const k of Object.keys(env)) {
+      cu[k] = process.env[k];
+      if (env[k] === undefined) delete process.env[k];
+      else process.env[k] = env[k];
+    }
+    try {
+      await fn();
+    } finally {
+      for (const k of Object.keys(env)) {
+        if (cu[k] === undefined) delete process.env[k];
+        else process.env[k] = cu[k];
+      }
+    }
+  }
+
+  it("★★★ qua SERVICE, cần gạt VẮNG ⇒ lượt sinh mã dùng đúng bộ cũ (0,25 · 0,9 · 1,05), minP KHÔNG gửi", async () => {
+    await voiEnv({ AI_SAMPLING_PROFILE: undefined }, async () => {
+      h.manh = [MA_CSHARP];
+      const r = await chay(CAU, admin());
+      expect(r.chu).toContain("TcpListener");
+      const sinhMa = h.samplingNhan.find((s) => s.temperature === 0.25);
+      expect(sinhMa, "phải có đúng lượt sinh mã với temp 0,25").toBeDefined();
+      expect(sinhMa).toMatchObject({ topP: 0.9, repeatPenalty: 1.05, minP: undefined, presencePenalty: undefined });
+      expect(h.samplingNhan.some((s) => s.temperature === 0.6), "không lượt nào lén dùng hồ sơ chính hãng").toBe(false);
+    });
+  });
+
+  it("★★★ qua SERVICE, `AI_SAMPLING_PROFILE=chinh-hang` + model biết nghĩ ⇒ lượt sinh mã nhận hồ sơ NGHĨ chính hãng", async () => {
+    await voiEnv({ AI_SAMPLING_PROFILE: "chinh-hang", GGUF_DEFAULT_MODEL: "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf" }, async () => {
+      h.manh = [MA_CSHARP];
+      const r = await chay(CAU, admin());
+      expect(r.chu).toContain("TcpListener");
+      const sinhMa = h.samplingNhan.find((s) => s.temperature === 0.6);
+      expect(sinhMa, "lượt sinh mã phải mang hồ sơ NGHĨ chính hãng (temp 0,6)").toBeDefined();
+      expect(sinhMa).toEqual({ temperature: 0.6, topP: 0.95, topK: 20, minP: 0, presencePenalty: 0, repeatPenalty: 1.0 });
+      expect(h.samplingNhan.some((s) => s.temperature === 0.25), "bộ cũ không được còn sót ở lượt sinh mã").toBe(false);
+    });
+  });
+
+  // ── B1 CẦU CHÌ lớp NGHĨ: G5-D ở lượt sửa ⇒ thử lại MỘT lần với nghĩ TẮT ─────────────────────────
+  // Đo sống agentic-b1 (Qwen3.6-35B-A3B): khoi-sua 16.000 token, 36.104 ký tự suy luận, content rỗng
+  // ⇒ A2 lượt 2 ĐỎ. Lưới này dựng đúng ca đó ở mock và đòi: lượt kế tiếp có `disableThinking: true`
+  // và bản sửa VẪN ra (apply_diff được đề xuất).
+  const CAU_SUA = `sửa ${TEP_THI} để Divide ném ArgumentException("Không chia được cho 0") khi mẫu số bằng 0`;
+  const maDaSua = (goc: string) =>
+    goc.replace(
+      "        return a / b;",
+      '        if (b == 0) throw new ArgumentException("Không chia được cho 0");\n        return a / b;',
+    );
+  const loiG5D = () =>
+    Object.assign(
+      new Error(
+        "[llamaServer] TỪ CHỐI TRUNG THỰC (G5-D, stream): model đã tiêu HẾT hạn mức 16000 token vào chuỗi SUY LUẬN (36104 ký tự) mà chưa kịp phát một ký tự nào ra `content`.",
+      ),
+      { name: "LoiTokenCanKietVaoSuyLuan", daPhatChu: false },
+    );
+
+  it("★★★ CẦU CHÌ: G5-D ở lượt sửa (lớp NGHĨ) ⇒ thử lại đúng MỘT lần với nghĩ TẮT, và bản sửa VẪN ra", async () => {
+    const goc = fs.readFileSync(DUONG_THI, "utf8");
+    h.manh = ["```csharp\n", maDaSua(goc), "\n```"];
+    h.nemLuotNghi = loiG5D();
+    const canhBao = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let daGhiG18B1 = false;
+    try {
+      await chay(CAU_SUA, admin());
+      // Đọc TRƯỚC khi restore: `mockRestore()` xoá luôn `mock.calls` — lượt đầu viết lưới này đọc sau và đỏ oan.
+      daGhiG18B1 = canhBao.mock.calls.some((c) => String(c[0]).includes("G18-B1"));
+    } finally {
+      canhBao.mockRestore();
+    }
+    expect(h.chiSoNem, "phải có một lượt NGHĨ đã ném").toBeGreaterThanOrEqual(0);
+    expect(h.disableThinkingNhan[h.chiSoNem], "lượt ném là lượt lớp NGHĨ").not.toBe(true);
+    expect(h.disableThinkingNhan[h.chiSoNem + 1], "lượt kế tiếp PHẢI tắt nghĩ").toBe(true);
+    // "Thử lại" = CÙNG prompt, cờ khác. Lượt sau đó (nếu có) là BƯỚC KẾ của dòng sửa (prompt khác),
+    // không phải lần thử thứ hai — lượt đầu viết lưới này đếm độ dài mảng và đỏ oan vì bước kế ấy.
+    expect(h.promptTheoLuot[h.chiSoNem + 1], "lượt thử lại phải mang ĐÚNG prompt của lượt đã ném").toBe(h.promptTheoLuot[h.chiSoNem]);
+    const thuLaiCungPrompt = h.promptTheoLuot.filter((p, i) => i > h.chiSoNem && p === h.promptTheoLuot[h.chiSoNem]).length;
+    expect(thuLaiCungPrompt, "chỉ thử lại MỘT lần cho cùng lượt, không lặp").toBe(1);
+    const ghi = h.quyetDinh.find((q) => q.tool === "apply_diff");
+    expect(ghi, "bản sửa vẫn phải ra sau cầu chì").toBeTruthy();
+    expect(String(ghi!.args.modified)).toContain("ArgumentException");
+    expect(daGhiG18B1, "phải ghi nhật ký G18-B1").toBe(true);
+  });
+
+  it("★★ ĐỐI CHỨNG: lỗi KHÁC G5-D ở lượt sửa ⇒ KHÔNG thử lại, trả câu lỗi trung thực", async () => {
+    const goc = fs.readFileSync(DUONG_THI, "utf8");
+    h.manh = ["```csharp\n", maDaSua(goc), "\n```"];
+    h.nemLuotNghi = new Error("ECONNRESET");
+    const r = await chay(CAU_SUA, admin());
+    expect(h.chiSoNem).toBeGreaterThanOrEqual(0);
+    expect(h.disableThinkingNhan.length, "không có lượt gọi nào sau lỗi thường").toBe(h.chiSoNem + 1);
+    expect(h.quyetDinh.find((q) => q.tool === "apply_diff")).toBeUndefined();
+    expect(r.chu.length).toBeGreaterThan(0);
+  });
+
+  it("★★ CẦU CHÌ + chinh-hang: lượt ném mang hồ sơ NGHĨ (0,6), lượt thử lại mang hồ sơ KHÔNG nghĩ (presence 1,5)", async () => {
+    await voiEnv({ AI_SAMPLING_PROFILE: "chinh-hang", GGUF_DEFAULT_MODEL: "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf" }, async () => {
+      const goc = fs.readFileSync(DUONG_THI, "utf8");
+      h.manh = ["```csharp\n", maDaSua(goc), "\n```"];
+      h.nemLuotNghi = loiG5D();
+      const canhBao = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await chay(CAU_SUA, admin());
+      } finally {
+        canhBao.mockRestore();
+      }
+      expect(h.samplingNhan[h.chiSoNem]).toMatchObject({ temperature: 0.6, presencePenalty: 0 });
+      expect(h.samplingNhan[h.chiSoNem + 1]).toMatchObject({ temperature: 0.7, presencePenalty: 1.5, minP: 0 });
+    });
+  });
+
+  // ── B7/F2 — số đo lượt: `onUsage` (hợp đồng agent) và sự kiện SSE `usage` (qua SERVICE) ─────────
+  it("★★★ B7 onUsage: tokensReasoning từ engine đi nguyên; thinking = có suy luận đo được; hồ sơ hien-tai", async () => {
+    const { streamCodingModel } = await import("./aiCodingAgent");
+    h.manh = ["a", "b"];
+    h.tokensReasoningGia = 7;
+    let dung: any;
+    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, onUsage: (u) => { dung = u; } } as never)) { /* rút */ }
+    expect(dung).toMatchObject({ tokensIn: 10, tokensOut: 2, tokensReasoning: 7, thinking: true, samplingProfile: "hien-tai" });
+    expect(typeof dung.modelId).toBe("string");
+    expect(dung.latencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("★★ B7 onUsage: engine KHÔNG đếm được ⇒ tokensReasoning undefined và thinking null (không biết ≠ không nghĩ)", async () => {
+    const { streamCodingModel } = await import("./aiCodingAgent");
+    h.manh = ["a"];
+    h.tokensReasoningGia = undefined;
+    let dung: any;
+    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, onUsage: (u) => { dung = u; } } as never)) { /* rút */ }
+    expect(dung.tokensReasoning).toBeUndefined();
+    expect(dung.thinking).toBeNull();
+  });
+
+  it("★★ B7 onUsage: đã TẮT nghĩ tường minh ⇒ thinking false dù engine báo 0 suy luận", async () => {
+    const { streamCodingModel } = await import("./aiCodingAgent");
+    h.manh = ["a"];
+    h.tokensReasoningGia = 0;
+    let dung: any;
+    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, disableThinking: true, onUsage: (u) => { dung = u; } } as never)) { /* rút */ }
+    expect(dung.thinking).toBe(false);
+    expect(dung.tokensReasoning).toBe(0);
+  });
+
+  it("★★★ F2 qua SERVICE: lượt sinh mã phát sự kiện `usage` (luot sinh-ma, tokensReasoning) TRƯỚC `done`", async () => {
+    h.manh = [MA_CSHARP];
+    h.tokensReasoningGia = 1234;
+    const r = await chay(CAU, admin());
+    const iUsage = r.events.findIndex((e) => (e as any).type === "usage" && (e as any).luot === "sinh-ma");
+    const iDone = r.events.findIndex((e) => e.type === "done");
+    expect(iUsage, "phải có sự kiện usage của lượt sinh mã").toBeGreaterThanOrEqual(0);
+    expect(iUsage).toBeLessThan(iDone);
+    const u = r.events[iUsage] as any;
+    expect(u).toMatchObject({ tokensReasoning: 1234, thinking: true, samplingProfile: "hien-tai", tokensIn: 10 });
+    expect(u.tokensOut).toBe(1);
+  });
+
+  // ── F3 — bộ chọn chế độ nghĩ theo lượt (`context.cheDoNghi`) ────────────────────────────────────
+  it("★★★ F3 `cheDoNghi: nhanh` ⇒ lượt SINH MÃ gửi disableThinking true (mặc định thì KHÔNG)", async () => {
+    h.manh = [MA_CSHARP];
+    await chay(CAU, admin(), { cheDoNghi: "nhanh" });
+    const i = h.samplingNhan.findIndex((s) => s.temperature === 0.25);
+    expect(i, "phải có lượt sinh mã").toBeGreaterThanOrEqual(0);
+    expect(h.disableThinkingNhan[i]).toBe(true);
+
+    // Lượt hai trong CÙNG ca: xoá ô bắt — không xoá thì `findIndex` trỏ vào lượt sinh mã của lần chạy TRƯỚC.
+    h.samplingNhan = [];
+    h.disableThinkingNhan = [];
+    h.manh = [MA_CSHARP];
+    await chay(CAU, admin());
+    const j = h.samplingNhan.findIndex((s) => s.temperature === 0.25);
+    expect(j).toBeGreaterThanOrEqual(0);
+    expect(h.disableThinkingNhan[j], "mặc định: để template quyết (không gửi true)").not.toBe(true);
+  });
+
+  it("★★ F3 `nhanh` trên dòng SỬA: MỌI lượt model đều tắt nghĩ (kể cả khoi-sua lớp NGHĨ), bản sửa vẫn ra", async () => {
+    const goc = fs.readFileSync(DUONG_THI, "utf8");
+    h.manh = ["```csharp\n", maDaSua(goc), "\n```"];
+    await chay(CAU_SUA, admin(), { cheDoNghi: "nhanh" });
+    expect(h.disableThinkingNhan.length).toBeGreaterThan(0);
+    expect(h.disableThinkingNhan.every((v) => v === true), JSON.stringify(h.disableThinkingNhan)).toBe(true);
+    expect(h.quyetDinh.find((q) => q.tool === "apply_diff")).toBeTruthy();
+  });
+
+  it("★★ F3 `nhanh` + chinh-hang + model biết nghĩ ⇒ lượt sinh mã dùng hồ sơ KHÔNG nghĩ (presence 1,5), không phải 0,6", async () => {
+    await voiEnv({ AI_SAMPLING_PROFILE: "chinh-hang", GGUF_DEFAULT_MODEL: "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf" }, async () => {
+      h.manh = [MA_CSHARP];
+      await chay(CAU, admin(), { cheDoNghi: "nhanh" });
+      expect(h.samplingNhan.some((s) => s.temperature === 0.6)).toBe(false);
+      expect(h.samplingNhan.some((s) => s.presencePenalty === 1.5)).toBe(true);
+    });
+  });
+
+  it("F3 chế độ lạ / `sau` qua SERVICE ⇒ như mặc định (sau ≡ can-bang hôm nay)", async () => {
+    h.manh = [MA_CSHARP];
+    await chay(CAU, admin(), { cheDoNghi: "sau" });
+    const i = h.samplingNhan.findIndex((s) => s.temperature === 0.25);
+    expect(h.disableThinkingNhan[i]).not.toBe(true);
+  });
+
+  it("★★ qua SERVICE, `chinh-hang` nhưng model KHÔNG biết nghĩ ⇒ hồ sơ KHÔNG-nghĩ (presence 1,5), không phải hồ sơ nghĩ", async () => {
+    await voiEnv({ AI_SAMPLING_PROFILE: "chinh-hang", GGUF_DEFAULT_MODEL: "Qwen3-Coder-30B-A3B-Instruct.gguf" }, async () => {
+      h.manh = [MA_CSHARP];
+      await chay(CAU, admin());
+      const sinhMa = h.samplingNhan.find((s) => s.presencePenalty === 1.5);
+      expect(sinhMa, "model không nghĩ ⇒ hồ sơ instruct").toBeDefined();
+      expect(sinhMa).toMatchObject({ temperature: 0.7, topP: 0.8, minP: 0 });
+      expect(h.samplingNhan.some((s) => s.temperature === 0.6)).toBe(false);
+    });
   });
 });

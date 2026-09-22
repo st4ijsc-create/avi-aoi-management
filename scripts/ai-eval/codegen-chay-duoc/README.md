@@ -104,7 +104,7 @@ node scripts/ai-eval/codegen-chay-duoc/so-sanh.mjs --truc H H-q36-truoc- H-q36-s
 node scripts/ai-eval/codegen-chay-duoc/duan.mjs --label duan-1
 ```
 
-Tham số `run.mjs`: `--tasks` · `--config raw|pipeline|fake-ok|fake-bad` · `--fake` · `--raw-url` · `--model` ·
+Tham số `run.mjs`: `--tasks` · `--config raw|pipeline|fake-ok|fake-bad` · `--fake` · `--raw-url` · `--model` · `--sampling hien-tai|chinh-hang` (B2 2026-09-22, trục M: `hien-tai` = 0,2/0,9 như mọi báo cáo cũ; `chinh-hang` = model card Qwen3.6 — nghĩ 0,6/0,95/20/min_p 0/presence 0, không nghĩ 0,7/0,8/20/0/1,5; cùng bộ số với `server/services/ai/hoSoSampling.ts` cho trục H qua `AI_SAMPLING_PROFILE`) ·
 `--max-tokens` · `--khong-nghi` · `--effort low|medium|high|xhigh` (Qwen3.8: template mặc định **xhigh** — lý do nó nghĩ 7.252 tok/bài) · `--only <id,…|lang>` · `--label` · `--cookie`.
 Báo cáo JSON: `reports/<label>.json`. **Nhãn luôn kết thúc bằng số lượt** (`-1`, `-2`, …) để `so-sanh.mjs` gom được.
 
@@ -130,6 +130,12 @@ Xếp theo **tính đúng đắn** (tiêu chí chủ dự án 2026-09-22: *"đú
 | Trục M · model thuần | Chạy được | Cụt | ms/bài | ghi chú |
 |---|---|---|---|---|
 | **Qwen3.6-35B-A3B** · nghĩ BẬT 16k | **30/36 = 83 %** | 0 | 30.346 | MoE 3B hoạt động; `qwen35moe` nạp được; giải H-ts3 3/3 |
+| Qwen3.6-35B-A3B · nghĩ BẬT 16k · sampling **chính hãng** (`--sampling chinh-hang`, B2 A/B 2026-09-22) | 28/36 = 78 % | 1 | 35.647 | chặn dưới (H-py3 cụt @16k); +10 % tok/bài (6.257 vs 5.665); +H-cs3 +H-py3 nhưng −H-cpp3 −H-cs2 −H-ts3 (3/3 → 1/3) ⇒ **không ≥ cũ, mặc định giữ `hien-tai`** |
+
+Trục H cùng A/B (đường ống thật, `AI_SAMPLING_PROFILE` trong `.env` + restart): `hien-tai` sau B1 **25/36 = 69 %**
+(`H-q36moe-b1-`) · `chinh-hang` **24/36 = 67 %** (`H-q36moe-ch-`, H-ts3 3/3 → 0/3 cùng chiều M) ⇒ hai trục cùng nói
+"không tốt hơn" ⇒ **B2 đóng: giữ `hien-tai`**. Nền trước B1 (`H-moe-`): 27/36 = 75 %; chênh −2 bài sau B1 là nhiễu 3 lượt
+(5 bài đổi chiều, đường sinh mã không đổi yêu cầu) + G19 (H-cs3 bị cầu chì grep nuốt, đã vá).
 | **Qwen3.6-27B** · nghĩ BẬT 16k | **30/36 = 83 %** | 0 | 79.826 | bằng MoE về đúng, chậm 2,6× |
 | **Qwen3.8-27B** · nghĩ BẬT, ghép công bằng (7 id @16k + 5 id cụt @32k) | **29/36 = 81 %** | 0 | 73.135 | 5 id chạy lại @32k: 9/15, max 15.761 tok, 0 cụt; **6/15 không phát khối mã** dù không cụt; H-cs2 0/3 |
 | Qwen3.8-27B · nghĩ BẬT 16k (số gốc) | 27/36 = 75 % | **7** | 109.578 | chặn dưới — đã thay bằng hàng trên |

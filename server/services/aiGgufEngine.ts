@@ -97,6 +97,14 @@ export interface GgufGenerateOptions {
   topK?: number;
   /** Repeat penalty. Default 1.1 */
   repeatPenalty?: number;
+  /**
+   * ★ B2 (2026-09-22) — hai trường sampling mà tài liệu Qwen3.6 KHUYẾN NGHỊ tường minh nhưng client
+   * chưa từng gửi: `min_p` (chính hãng 0,0; llama-server mặc định **0,05**) và `presence_penalty`
+   * (instruct 1,5 để chống lặp — thay cho `repeat_penalty`, vốn nên là 1,0 = tắt). Vắng ⇒ không gửi
+   * ⇒ server dùng mặc định của nó (hành vi cũ y nguyên). Xem `aiLlamaServerClient.lapCoSampling`.
+   */
+  minP?: number;
+  presencePenalty?: number;
   /** Stop sequences */
   stopSequences?: string[];
   /** Force JSON output */
@@ -144,6 +152,9 @@ export interface GgufChatOptions {
   topP?: number;
   topK?: number;
   repeatPenalty?: number;
+  /** ★ B2 — xem `GgufGenerateOptions.minP` / `.presencePenalty`. */
+  minP?: number;
+  presencePenalty?: number;
   jsonMode?: boolean;
   /** G5-D — xem `GgufGenerateOptions.disableThinking`. */
   disableThinking?: boolean;
@@ -261,6 +272,14 @@ export interface GgufStreamChunk {
    * consumer coi `token` là chữ để in ra màn hình.
    */
   reasoningText?: string;
+  /**
+   * ★ B7 (2026-09-22) — số token model đã tiêu vào `<think>` trong lượt stream, đếm theo SỐ SỰ KIỆN SSE
+   * mang `delta.reasoning_content` (llama-server phát một sự kiện mỗi token ⇒ đếm sự kiện ≈ đếm token).
+   * `undefined` = đường không đếm được (in-process, không-stream) — **không biết ≠ 0**; `0` = đã xem
+   * trọn luồng và không có suy luận. `tokensGenerated` của server GỘP cả suy luận, nên
+   * `tokensGenerated − tokensReasoning` mới là số token người dùng thật sự nhận.
+   */
+  tokensReasoning?: number;
 }
 
 // ─── Model Registry & Caching ──────────────────────────────────
@@ -1744,7 +1763,10 @@ export async function warmModel(modelId?: string, contextSize?: number): Promise
     return false;
   }
   try {
-    await generateText({ prompt: "ok", maxTokens: 1, contextSize }, modelId);
+    // ★ B1 (2026-09-22) — lượt làm ấm là lượt PHỤ: `maxTokens: 1` trên model biết nghĩ ⇒ 1 token ấy rơi
+    //   vào `<think>` ⇒ `content` rỗng ⇒ G5-D ⇒ warm trả FALSE + 2 dòng lỗi mỗi lần boot (đo trong
+    //   `node-b1.err.log` với Qwen3.6-35B-A3B). Tắt nghĩ cho riêng lượt này; model không nghĩ bỏ qua cờ.
+    await generateText({ prompt: "ok", maxTokens: 1, contextSize, disableThinking: true }, modelId);
     return true;
   } catch (err) {
     noteWarmFailure(modelId, "generate-threw", err);

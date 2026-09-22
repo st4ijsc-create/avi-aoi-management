@@ -793,3 +793,118 @@ VRAM + census + `trangThaiAiLocal`).
 
 Còn mở: khoảng cách H ↔ M của **bản dày 27B** (67 ↔ 83) — không còn liên quan vì model mặc định đã đổi; Qwen3.8
 `--effort` thấp chưa đo; `vramPha5Gate` 2 ca đỏ có sẵn (twin3d).
+
+---
+
+## Phụ lục 8 — Thực thi kế hoạch nâng cấp, đợt 1 (2026-09-22 chiều–tối): B1 · B2a · B7 · F2 · F3
+
+Kế hoạch: `docs/superpowers/plans/2026-09-22-ai-local-nang-cap-lap-trinh-training.md` (trạng thái từng gói ghi ngay
+dưới mỗi mục). Mọi con số dưới đây đo trên **cùng máy, cùng ngày, cùng bộ 12 bài khó**, model sản xuất
+Qwen3.6‑35B‑A3B trên `:8091` (ctx 32k), node theo luật restart (`restart-sach.ps1`).
+
+### 8.1 B1 — lớp PHỤ hết rỗng; lớp NGHĨ lộ lỗ MỚI (giả định "16k đủ" sai)
+
+| Phép đo | Trước B1 | Sau B1 (dist 16:38) | Sau cầu chì G18‑B1 |
+|---|---|---|---|
+| Chọn tệp 512 tok trên model nghĩ | rỗng ~100 % (T1) | A1 3/3, chọn tệp → khối sửa đi được 6/6 lượt | như trước |
+| Agentic nhiều tệp (6 lượt) | 6/6 *(Coder, 00:03)* | **5/6** — A2 lượt 2 ĐỎ | **4/6** — A2 1/3 |
+| G5‑D trên lượt lớp NGHĨ (`khoi-sua`, trần 16.000) | — | **1/6** lượt (36.104 ký tự suy luận, `content` "") | **3/6** lượt, cả 3 kích cầu chì |
+| Trục H, 12 bài × 3 | 27/36 = 75 % (Phụ lục 7) | 25/36 = 69 % — nhiễu 3 lượt + G19 (xem 8.4b) | — |
+
+Điều lật: **trần lớp nghĩ 16k** (G18, rút từ bài hàm‑thuần: max 12.129 tok) **không đủ cho lượt SỬA có prompt lớn**
+(tệp + test + lỗi). Cầu chì (thử lại MỘT lần với nghĩ TẮT khi G5‑D + chưa phát ký tự) đổi "rỗng" thành "có bản sửa",
+nhưng bản không‑nghĩ **không đủ đúng** cho bài qua nửa đêm (A2). ⇒ Cầu chì là hàng rào cuối, **không phải lời giải**;
+lời giải phải là trần nghĩ rộng hơn (B3: 64k ⇒ 32k) hoặc/và ngân sách nghĩ có kiểm soát (B4 `--reasoning-budget`,
+b9814 có cờ này + `--reasoning-budget-message`). Cổng ra cho B3/B4: **A2 ≥ 3 lần × 3 lượt**, vì nền A2 nhiễu lớn (2/3 → 1/3).
+
+Phát hiện phụ: `warmModel` (`maxTokens: 1`) trên model nghĩ nổ G5‑D + 2 dòng lỗi **mỗi lần boot** — tắt nghĩ cho lượt làm ấm.
+
+### 8.2 B2a — hồ sơ sampling: đường ống xong, A/B trục M nói KHÔNG
+
+`/props` :8091 (b9814): server mặc định `top_k 20 · top_p 0,95 · min_p 0,05 · presence 0 · repeat 1`. Trước B2a
+đường ống không gửi `top_k/min_p/presence` ⇒ "chính hãng" (`min_p 0`) **không thể** tới server dù muốn. Nay
+`lapCoSampling` ở 5 builder; `hoSoSampling.ts` với cần gạt `AI_SAMPLING_PROFILE` (vắng ⇒ y nguyên bộ cũ).
+
+| Sampling (trục M, 16k, 12 × 3) | Chạy được | Cụt | tok/bài | ms/bài |
+|---|---|---|---|---|
+| `hien-tai` 0,2 · 0,9 · (20 · 0,05 · 0) | **30/36 = 83 %** | 0 | 5.665 | 30.346 |
+| `chinh-hang` 0,6 · 0,95 · 20 · 0 · 0 · 1,0 | 28/36 = 78 % (chặn dưới) | 1 (H‑py3) | 6.257 | 35.647 |
+
+Theo bài: chính hãng +H‑cs3 +H‑py3, −H‑cpp3 −H‑cs2 −**H‑ts3 (3/3 → 1/3)**. Nhiệt độ cao hơn ⇒ chuỗi nghĩ dài hơn
++10 %, chạm trần một lần. **Không ≥ cũ ⇒ mặc định giữ `hien-tai`** (đúng cổng ra đã viết trước khi đo).
+
+| Trục H (đường ống thật, 12 × 3, cùng dist trừ G19) | Chạy được | ms/bài |
+|---|---|---|
+| `hien-tai` sau B1 (`H-q36moe-b1-`) | 25/36 = 69 % | 39.861 |
+| `chinh-hang` (`H-q36moe-ch-`, `.env AI_SAMPLING_PROFILE`) | **24/36 = 67 %** | 29.644 |
+
+Cùng chiều với trục M: **H‑ts3 3/3 → 0/3** dưới chính hãng (bài LRU cache — nhiệt 0,6 làm lệch), py2/py3 thắng lại,
+cs2 thua. Hai trục cùng nói *"không tốt hơn"* ⇒ **quyết định B2: giữ `hien-tai`; cần gạt để lại cho A/B sau (ví dụ
+khi đổi model)**. Đã trả `.env` về mặc định. Ghi chú: H‑cs3 lên 1/3 vì G19 đã vào dist ở đợt này (không còn từ chối 4 s).
+
+### 8.3 B7 + F2 — sổ đo và thanh trạng thái tách "nghĩ 5k rồi trả 300" khỏi "trả 5k"
+
+* Migration **0358** (viết tay; `ai_gateway_metrics` + `reasoningTokens · thinking · samplingProfile`, cả ba NULLABLE
+  không default). Nguồn số duy nhất khả dụng: **đếm sự kiện SSE mang `reasoning_content`** — llama-server không trả
+  riêng token nghĩ, `completion_tokens` GỘP. Không đếm được ⇒ `NULL`, không ⇒ 0.
+* Sự kiện SSE mới `usage` (trước `done`) ⇒ hai ô thanh trạng thái: **nghĩ/sinh** (sinh = ra − nghĩ; không đếm được ⇒
+  "(gộp)") và **ctx %** (ngưỡng 85/95 rút từ ca G5‑D 16k). **Chưa tách được tok/s nghĩ vs sinh** (server chỉ có tổng
+  thời gian) — tooltip nói thẳng thay vì bịa hai tốc độ.
+* Nghiệm thu sống (node PID 41716, 17:57): hai lượt sinh mã đầu ghi **`reasoningTokens` 5.494 và 3.667, `thinking = true`,
+  `samplingProfile = chinh-hang`, `model = Qwen3.6-35B-A3B-UD-Q4_K_XL`** — hàng đầu: 4.075 vào → 6.368 ra, trong đó **5.494 là
+  suy luận, chỉ 874 là mã** (43,6 s). Đúng ca "nghĩ 5k rồi trả 300" mà sổ đo cũ gộp thành "trả 6k". 0 lỗi INSERT trong log.
+
+### 8.4 F3 — bộ chọn chế độ nghĩ: hai nút THẬT, cố ý chưa bày nút thứ ba
+
+`can-bang | nhanh` đi theo từng yêu cầu (`context.cheDoNghi`, danh sách TRẮNG ở cửa, một điểm ghi đè
+`luotDuocNghi(loai, ghiDe)`). "Sâu" **không có nút** cho tới B3: hôm nay nó không làm gì khác "cân bằng", và một nút
+vô hiệu là đúng lớp lỗi *"cờ khai mà vô hiệu"* đã cắn nhiều lần trong repo này.
+
+Nghiệm thu sống (headless Chromium, phiên `ai_audit_0921`, 18:00, `tmp/audit-ai/ui-f2f3.mjs` + ảnh `ui-f2f3.png`): dải
+trạng thái hiện đủ 9 ô (máy · model · VRAM 6,7 GiB · lượt cuối · tok/s · ngân sách · **nghĩ/sinh —** · **ctx —** · model T2)
++ hai bộ chọn `model: tự động` / `nghĩ: cân bằng`; đổi sang `nhanh` ⇒ `localStorage.repoWs.cheDoNghi = "nhanh"`, đổi lại ⇒
+`can-bang`; 0 lỗi console/trang. Hai ô mới hiện `—` cho tới lượt model đầu của phiên (đúng luật "chưa đo ≠ 0").
+Phát hiện kèm: nút tầng mã vẫn ghi **"model: Coder"** dù model đã đổi — nhãn nay lấy từ `modelDangDung.modelId`
+(rút hậu tố lượng tử hoá). **Nợ i18n:** locale `en`/`zh` không có `ttAiLocal.*`/`repoWs.nghiPick.*` (chỉ 3 khoá `repoWs`
+trong locale) ⇒ giao diện tiếng Anh hiện nhãn tiếng Việt cho cả dải — gộp vào đợt F4–F6.
+
+### 8.4b Trục H sau B1 = 25/36 (69 %) so 27/36 (75 %) trước — trong nhiễu, và lộ G19
+
+| Bài | H trước B1 (`H-moe-`) | H sau B1 (`H-q36moe-b1-`) | Ghi chú |
+|---|---|---|---|
+| H‑cs3 | 1/3 | **0/3** | **G19** — không phải model: bộ chọn tool đoán `search_repo`, grep 208 tệp quá hạn 4 s, cầu chì G2 trả câu từ chối (4–6 s, 0 lần gọi model) |
+| H‑py2 | 3/3 | 1/3 | model (so sánh semver `1.0.0-alpha < 1.0.0`) — trục M py 6/9, phương sai |
+| H‑py3 | 1/3 | 0/3 | model (CSV `""`) |
+| H‑py1 · H‑ts2 | 2/3 · 2/3 | 3/3 · 3/3 | ngược chiều — cùng cỡ nhiễu |
+| 8 bài còn lại | = | = | |
+
+Đường sinh mã **không đổi một byte yêu cầu** giữa hai đợt (B1 chỉ đụng `motLuotModel`; B2a ở `hien-tai` trả nguyên số);
+độ trễ 26,9 → 39,9 s/bài có phần do máy bận (tsc/vitest chạy song song lượt 1–2). Kết luận: **−2 bài = nhiễu 3 lượt**, không
+phải hồi quy của B1; **G19 là lỗi đường ống có sẵn** (H‑moe‑1 cũng 4.036 ms) — vá cùng đợt: `GREP_DEADLINE` vô can với đơn
+sinh mã (`toolDuongTat.ts`, 3 lưới). Grep 4 s cho 208 tệp là chậm bất thường — ghi nợ đo riêng.
+
+### 8.4c B4 — `--reasoning-budget 12000` ĐÓNG lỗ A2, không chạm bộ khó
+
+llama-server b9814 khởi động lại cùng model/ctx/sampling, thêm `--reasoning-budget 12000` (log: *"activated, budget=12000"*;
+`/props` không lộ). Đo bằng đúng công cụ vừa xây (B7 `reasoningTokens` từng lượt):
+
+| Phép đo | B1 + cầu chì | + ngân sách 12k |
+|---|---|---|
+| G5‑D / G18‑B1 (`khoi-sua`, agentic 6 lượt) | 3/6 | **0/6** |
+| Agentic (2 lần × 6) | 4/6 | **5/6 và 5/6** (A2 2/3 ×2; 0 G5‑D/12 lượt) |
+| Trục H 12 × 3 | 25/36 = 69 % · 39,9 s | **27/36 = 75 % · 26,8 s** |
+| Lượt bị ép hết nghĩ | — | 2/87 tổng, **0/36 lượt H** (max nghĩ H = 8.596; hai lượt cắt là `khoi-sua` A2, vẫn ra bản sửa) |
+
+⇒ Áp dụng làm mặc định khởi động (`doi-model.ps1 -NganSachNghi 12000`). Cầu chì G18‑B1 giữ lại làm hàng rào cuối (không
+còn kích trong đợt này). H‑ts3 0/3 ở đợt này KHÔNG do ngân sách (nghĩ 4–4,5k) — cùng bài tụt ở chính hãng; nghi ngữ cảnh
+repo trong prompt (K2), đo ở B3.
+
+### 8.5 Sáu bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
+
+1. `mockRestore()` xoá `mock.calls` — đọc spy SAU restore ⇒ đỏ oan.
+2. Census "điểm gọi": đếm `hàm\(body,` (dấu phẩy) — `\(body` ăn định nghĩa một dòng, bỏ định nghĩa xuống dòng ⇒ 6 ≠ 5.
+3. "Thử lại một lần" ≠ "độ dài mảng = n+2": bước KẾ của dòng sửa cũng gọi engine — đo bằng **cùng prompt**.
+4. `restart-sach.ps1` gọi từ Bash **nền** treo ở bước start (`Start-Process` giữ ống) dù node đã lên — restart bằng
+   PowerShell tool; Bash nền chỉ để đo.
+5. Vitest in `stdout|stderr` chen vào `grep` tổng ⇒ `--reporter=json` rồi đọc `numFailedTests`.
+6. Hai lượt `chay()` trong MỘT ca mà không xoá ô bắt ⇒ `findIndex` trỏ vào lượt trước.

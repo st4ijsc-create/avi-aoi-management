@@ -57,6 +57,12 @@ Same `llama-server` binary the vision sidecar uses (llama.cpp, built with CUDA/V
 - `-m` — same file `GGUF_DEFAULT_MODEL`/`GGUF_MODELS_DIR` point at (keep them in sync — see §4).
 - `--host`/`--port` — bind to loopback unless the API process runs on a different host.
 - `-ngl 999` — full GPU offload (drop/lower if VRAM-constrained; llama-server logs the actual layers used).
+- `--reasoning-budget 12000` (added 2026-09-22, B4, **measured**) — token budget for `<think>` on thinking models
+  (Qwen3.6). Without it an edit turn with a large prompt could spend the whole 16k generation ceiling on reasoning and
+  return empty content (G5-D, 3/6 agentic turns); with 12000: 0/6, pipeline hard-set 25/36 → 27/36, and **no** code-gen
+  turn of the hard set was cut (max reasoning 8,596 tokens, read from `ai_gateway_metrics.reasoningTokens`). Set via
+  `LLAMA_SERVER_REASONING_BUDGET` in `.env` (`-1` = unlimited, llama-server default — use for A/B only). ⚠ `/props` does
+  not expose this flag; verify in the server log: `reasoning-budget: activated, budget=N`.
 - `--jinja` — apply the model's chat template server-side (the client sends `messages`, not a raw prompt).
 - `--api-key` — optional; only needed if you set `LLAMA_SERVER_API_KEY` to match (see §4).
 

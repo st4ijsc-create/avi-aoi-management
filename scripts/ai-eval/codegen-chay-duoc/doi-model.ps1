@@ -16,7 +16,15 @@
 param(
   [Parameter(Mandatory = $true)][string]$Model,
   [int]$Ctx = 65536,
-  [int]$ChoGiay = 600
+  [int]$ChoGiay = 600,
+  # B5 (2026-09-22): co them cho llama-server, vi du MTP: '--spec-type','draft-mtp','--spec-draft-n-max','2'.
+  # Truyen mang chuoi; de trong = khong them gi.
+  [string[]]$ThemArgs = @(),
+  # B4 (2026-09-22, DO DUOC): ngan sach token cho <think> cua model biet nghi. 12000 tren Qwen3.6-35B-A3B (ctx 32k,
+  # tran sinh 16k): G5-D/G18-B1 3/6 -> 0/6 tren agentic A2, truc H 25/36 -> 27/36, khong luot H nao bi cat (max nghi 8.6k),
+  # 2 luot agentic bi ep ket thuc o 12k van ra ban sua. -1 = khong gioi han (mac dinh cua llama-server) - dung khi A/B.
+  # `/props` KHONG lo co nay; xac nhan bang log: "reasoning-budget: activated, budget=N".
+  [int]$NganSachNghi = 12000
 )
 
 $exe = 'D:\SOURCES\16.AI\llama-cuda\llama-server.exe'
@@ -32,10 +40,12 @@ while ((Get-Date) -lt $het) {
 }
 
 $ten = [System.IO.Path]::GetFileNameWithoutExtension($Model)
-$args = @('-m', $Model, '--host', '127.0.0.1', '--port', '8091', '-c', "$Ctx",
+$thamSo = @('-m', $Model, '--host', '127.0.0.1', '--port', '8091', '-c', "$Ctx",
           '-np', '1', '-fa', 'on', '-ngl', '999', '-ctk', 'f16', '-ctv', 'f16',
           '--slots', '--metrics', '--no-webui')
-Start-Process -FilePath $exe -ArgumentList $args -WindowStyle Hidden `
+if ($NganSachNghi -ge 0) { $thamSo += @('--reasoning-budget', "$NganSachNghi") }
+$thamSo += $ThemArgs
+Start-Process -FilePath $exe -ArgumentList $thamSo -WindowStyle Hidden `
   -RedirectStandardOutput "$log\ls-$ten.log" -RedirectStandardError "$log\ls-$ten.err.log"
 
 # 2. CHO SAN SANG THAT. Nap mot model day mat hang phut; "da goi lenh" khong phai "da san sang".

@@ -52,6 +52,25 @@ async function genPipeline(t) {
   return { text, ttftMs: tFirst, totalMs: Date.now() - t0, evs };
 }
 
+/**
+ * ★ B2 (2026-09-22) — `--sampling hien-tai|chinh-hang`: hồ sơ sampling cho trục M.
+ *
+ *   hien-tai  (mặc định) = đúng bộ số bộ đo đã dùng cho MỌI báo cáo trước đó (temp 0,2 · top_p 0,9;
+ *               top_k/min_p/presence để server điền: 20 · 0,05 · 0) ⇒ số cũ vẫn so được với số mới.
+ *   chinh-hang           = model card Qwen3.6-35B-A3B: NGHĨ  0,6 / 0,95 / 20 / 0 / 0 / 1,0;
+ *                                                     KHÔNG nghĩ (đi kèm --khong-nghi) 0,7 / 0,8 / 20 / 0 / 1,5 / 1,0.
+ * ⚠ `min_p: 0` gửi TƯỜNG MINH — vắng là server điền 0,05, và "chính hãng" thành giả trong im lặng.
+ * Cùng bộ số nằm ở `server/services/ai/hoSoSampling.ts` cho trục H; đổi một bên phải đổi bên kia.
+ */
+function samplingThan() {
+  const ten = arg("--sampling", "hien-tai");
+  if (ten !== "chinh-hang") return { temperature: 0.2, top_p: 0.9 };
+  const nghi = !args.includes("--khong-nghi");
+  return nghi
+    ? { temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0, presence_penalty: 0, repeat_penalty: 1.0 }
+    : { temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0, presence_penalty: 1.5, repeat_penalty: 1.0 };
+}
+
 async function genRaw(t) {
   const t0 = Date.now();
   const res = await fetch(RAW_URL, {
@@ -90,7 +109,7 @@ async function genRaw(t) {
         if (ef) kw.reasoning_effort = ef;
         return Object.keys(kw).length ? { chat_template_kwargs: kw } : {};
       })(),
-      temperature: 0.2, top_p: 0.9, max_tokens: Number(arg("--max-tokens", 1400)), stream: false }),
+      ...samplingThan(), max_tokens: Number(arg("--max-tokens", 1400)), stream: false }),
   });
   if (!res.ok) return { text: "", err: `HTTP ${res.status} ${(await res.text()).slice(0,200)}`, totalMs: Date.now() - t0 };
   const j = await res.json();

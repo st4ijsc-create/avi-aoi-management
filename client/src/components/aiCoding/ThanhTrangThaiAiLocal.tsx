@@ -35,8 +35,9 @@
  */
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Cpu, Gauge, HardDrive, Timer, Zap } from "lucide-react";
+import { AlertTriangle, Brain, Cpu, Gauge, HardDrive, Layers, Timer, Zap } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import type { KbUsageLuot } from "@/hooks/useKbChatStream";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const GiB = 1024 ** 3;
@@ -57,7 +58,7 @@ function gib(b: number | null | undefined): string {
 export type MucCanhBao = "binh-thuong" | "canh-bao" | "nguy";
 
 export function mucCanhBao(o: {
-  readonly loai: "vram" | "ngan-sach" | "toc-do" | "may";
+  readonly loai: "vram" | "ngan-sach" | "toc-do" | "may" | "ctx";
   readonly giaTri: number | null | undefined;
   readonly mayHong?: boolean;
 }): MucCanhBao {
@@ -65,7 +66,37 @@ export function mucCanhBao(o: {
   if (typeof o.giaTri !== "number" || !Number.isFinite(o.giaTri)) return "binh-thuong";
   if (o.loai === "vram") return o.giaTri < 1 * GiB ? "nguy" : o.giaTri < 2 * GiB ? "canh-bao" : "binh-thuong";
   if (o.loai === "ngan-sach") return o.giaTri >= 95 ? "nguy" : o.giaTri >= 80 ? "canh-bao" : "binh-thuong";
+  // ★ F2 — % ngữ cảnh đã dùng (vào + ra, GỘP suy luận) trên trần lượt. Ca thật 2026-09-22: lượt
+  //   khoi-sua nghĩ hết 16.000 token rồi trả RỖNG (G5-D) — người dùng không thấy gì cho tới khi hỏng.
+  //   ≥ 85 % là lúc lượt kế tiếp cùng cỡ sẽ bị kẹp trần; ≥ 95 % là đã ở mép.
+  if (o.loai === "ctx") return o.giaTri >= 95 ? "nguy" : o.giaTri >= 85 ? "canh-bao" : "binh-thuong";
   return o.giaTri < 2 ? "nguy" : o.giaTri < 5 ? "canh-bao" : "binh-thuong";
+}
+
+/**
+ * ★ F2 — tách số đo một lượt thành ba con số hiển thị. THUẦN, có lưới riêng.
+ *   · `nghi`  — token trong `<think>`; `null` khi server không đếm được (không biết ≠ 0).
+ *   · `sinh`  — token người dùng thật sự nhận = `tokensOut − nghi`; khi `nghi` không biết thì
+ *               `sinh` là số GỘP (`gop: true`) — hiển thị phải nói rõ, không được giả là "sinh".
+ *   · `pcCtx` — % ngữ cảnh đã dùng = (vào + ra) / trần; `null` khi không biết trần.
+ *   · `tokMoiGiay` — tốc độ GỘP (ra / thời gian). Server không tách thời gian nghĩ/sinh nên KHÔNG bịa
+ *               hai tốc độ riêng; ô tốc độ "sinh" đúng nghĩa là việc của B7 vòng sau (timings từng pha).
+ */
+export function tachNghiSinh(u: {
+  readonly tokensIn: number;
+  readonly tokensOut: number;
+  readonly tokensReasoning?: number;
+  readonly latencyMs: number;
+  readonly ctxMax?: number;
+}): { nghi: number | null; sinh: number; gop: boolean; pcCtx: number | null; tokMoiGiay: number | null } {
+  const nghi = typeof u.tokensReasoning === "number" && Number.isFinite(u.tokensReasoning) ? Math.max(0, u.tokensReasoning) : null;
+  const sinh = nghi === null ? u.tokensOut : Math.max(0, u.tokensOut - nghi);
+  const pcCtx =
+    typeof u.ctxMax === "number" && Number.isFinite(u.ctxMax) && u.ctxMax > 0
+      ? Math.min(100, Math.round(((u.tokensIn + u.tokensOut) / u.ctxMax) * 100))
+      : null;
+  const tokMoiGiay = u.latencyMs > 0 && u.tokensOut > 0 ? Math.round((u.tokensOut / (u.latencyMs / 1000)) * 10) / 10 : null;
+  return { nghi, sinh, gop: nghi === null, pcCtx, tokMoiGiay };
 }
 
 const MAU: Record<MucCanhBao, string> = {
@@ -108,8 +139,13 @@ function O({
   );
 }
 
-export function ThanhTrangThaiAiLocal() {
+/**
+ * @param dungLuot ★ F2 — số đo lượt model GẦN NHẤT của phiên (sự kiện SSE `usage`, do trang truyền xuống).
+ *   `null` ⇒ hai ô "nghĩ/sinh" và "ctx" hiện `—` (chưa có lượt nào trong phiên này — không phải 0).
+ */
+export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageLuot | null } = {}) {
   const { t } = useTranslation();
+  const nghiSinh = useMemo(() => (dungLuot ? tachNghiSinh(dungLuot) : null), [dungLuot]);
   /**
    * 10 giây: đủ nhanh để bắt được lúc `llama-server` chết giữa một phiên làm việc, đủ chậm để
    * không tự biến mình thành tải. Thủ tục phía server CHỈ ĐỌC và không tiêu ngân sách hộp cát.
@@ -209,6 +245,55 @@ export function ThanhTrangThaiAiLocal() {
           d.nganSach
             ? t("ttAiLocal.tipNganSach", "Đã dùng {{pc}}% ngân sách đọc hộp cát của cửa sổ hiện tại; đặt lại sau ~{{giay}}s. Cạn ngân sách ⇒ tác nhân KHÔNG đọc được tệp và KHÔNG chạy được kiểm chứng.", { pc: d.nganSach.phanTramDaDung, giay: Math.round((d.nganSach.datLaiSauMs ?? 0) / 1000) })
             : t("ttAiLocal.tipNganSachMu", "Không đọc được sổ ngân sách hộp cát.")
+        }
+      />
+      {/* ★ F2 — hai ô từ sự kiện `usage` của lượt gần nhất: nghĩ/sinh và % ngữ cảnh. */}
+      <O
+        icon={Brain}
+        nhan={t("ttAiLocal.nghiSinh", "nghĩ/sinh")}
+        giaTri={
+          !nghiSinh
+            ? KHONG_BIET
+            : nghiSinh.gop
+              ? t("ttAiLocal.raGop", "{{ra}} tok (gộp)", { ra: nghiSinh.sinh })
+              : t("ttAiLocal.nghiSinhGiaTri", "{{nghi}} nghĩ · {{sinh}} sinh", { nghi: nghiSinh.nghi, sinh: nghiSinh.sinh })
+        }
+        giaiThich={
+          dungLuot && nghiSinh
+            ? t(
+                "ttAiLocal.tipNghiSinh",
+                "Lượt \"{{luot}}\" trên {{model}} · hồ sơ sampling {{hoSo}} · nghĩ: {{nghi}}. {{vao}} token vào → {{ra}} token ra ({{tocDo}}) trong {{ms}} ms. Tốc độ là số GỘP nghĩ+sinh — server chưa tách thời gian hai pha.",
+                {
+                  luot: dungLuot.luot,
+                  model: dungLuot.modelId,
+                  hoSo: dungLuot.samplingProfile,
+                  nghi:
+                    dungLuot.thinking === false
+                      ? t("ttAiLocal.nghiTat", "TẮT")
+                      : dungLuot.thinking === true
+                        ? t("ttAiLocal.nghiBat", "có, {{n}} token", { n: nghiSinh.nghi ?? 0 })
+                        : t("ttAiLocal.nghiKhongBiet", "không đo được"),
+                  vao: dungLuot.tokensIn,
+                  ra: dungLuot.tokensOut,
+                  tocDo: nghiSinh.tokMoiGiay != null ? `${nghiSinh.tokMoiGiay} tok/s` : KHONG_BIET,
+                  ms: dungLuot.latencyMs,
+                },
+              )
+            : t("ttAiLocal.tipChuaCoUsage", "Chưa có lượt model nào trong phiên này. Ô này đọc sự kiện `usage` mà server phát sau mỗi lượt sinh/sửa mã.")
+        }
+      />
+      <O
+        icon={Layers}
+        nhan={t("ttAiLocal.ctx", "ctx")}
+        giaTri={nghiSinh?.pcCtx != null ? t("ttAiLocal.ctxPc", "ctx {{pc}}%", { pc: nghiSinh.pcCtx }) : KHONG_BIET}
+        muc={mucCanhBao({ loai: "ctx", giaTri: nghiSinh?.pcCtx })}
+        giaiThich={
+          dungLuot && nghiSinh?.pcCtx != null
+            ? t("ttAiLocal.tipCtx", "Lượt gần nhất dùng {{dung}} / {{tran}} token ngữ cảnh (vào + ra, gộp suy luận). ≥85% là lượt kế cùng cỡ sẽ bị kẹp trần; ≥95% là đã ở mép — ca thật: nghĩ hết trần rồi trả rỗng.", {
+                dung: dungLuot.tokensIn + dungLuot.tokensOut,
+                tran: dungLuot.ctxMax,
+              })
+            : t("ttAiLocal.tipCtxMu", "Chưa biết trần ngữ cảnh của lượt (chưa có lượt, hoặc server không báo trần).")
         }
       />
     </div>

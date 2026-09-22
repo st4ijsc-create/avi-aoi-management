@@ -1859,6 +1859,17 @@ export const aiGatewayMetrics = pgTable("ai_gateway_metrics", {
   outcome: varchar("outcome", { length: 16 }).default("ok").notNull(),
   // Whether a fast (3B/4B) tier model was configured at decision time.
   fastModelConfigured: boolean("fastModelConfigured").default(false).notNull(),
+  /**
+   * ★ B7 (2026-09-22, migration 0358) — ba cột để phân biệt *"nghĩ 5k rồi trả 300"* với *"trả 5k"*
+   * trên model biết nghĩ (Qwen3.6). Cả ba **nullable**: `NULL` = lượt/đường không đo được (in-process,
+   * không-stream, hàng cũ) — **không biết ≠ 0**. `tokensOut` của server GỘP cả suy luận.
+   *   · `reasoningTokens`  — số token trong `<think>` (đếm sự kiện SSE `delta.reasoning_content`).
+   *   · `thinking`         — lượt có được PHÉP nghĩ không (`false` = đã gửi `enable_thinking=false`).
+   *   · `samplingProfile`  — tên hồ sơ sampling đã dùng (`hien-tai` | `chinh-hang`, xem `ai/hoSoSampling.ts`).
+   */
+  reasoningTokens: integer("reasoningTokens"),
+  thinking: boolean("thinking"),
+  samplingProfile: varchar("samplingProfile", { length: 24 }),
   // Who triggered it (best-effort; null for system/cron callers).
   userId: integer("userId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

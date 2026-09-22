@@ -69,6 +69,8 @@ import {
   TRAN_SINH_KHONG_NGHI,
 } from "./ai/tranTokenSinhMa";
 import { kiemNganSachNguCanh } from "./aiLlamaServerClient";
+import { luotDuocNghi, tranTokenTheoLop, type LoaiLuot, type CheDoNghi } from "./ai/loaiLuot";
+import { hoSoSamplingCho } from "./ai/hoSoSampling";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
@@ -112,6 +114,8 @@ import {
   type LuotHoiThoai,
   type MaKhoiHong,
   type MaManifestKhung,
+  // ★ B7/F2 — kiểu số đo một lượt model, gắn vào sự kiện SSE `usage`.
+  type DungLuotModel,
 } from "./aiCodingAgent";
 /**
  * ★★★ doc 79 · TRỤC 1 (D) — MỤC LỤC (chunk) → MÃ THẬT (đọc đĩa qua `read_file`). Xem docblock đầu
@@ -316,6 +320,12 @@ export interface KbQueryContext {
    * Lọc qua danh sách TRẮNG ở `ai/chonTacVuModel.locTacVuNguoiChon` — client KHÔNG đặt được task lạ.
    */
   modelTask?: string;
+  /**
+   * ★ F3 (2026-09-22) — chế độ nghĩ người dùng chọn cho LƯỢT NÀY: `"sau" | "can-bang" | "nhanh"`
+   * (xem `ai/loaiLuot.CheDoNghi`). Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ quy tắc lớp lượt
+   * (hành vi cũ y nguyên). Lọc danh sách TRẮNG ở cửa (`locCheDoNghi`) — client không đặt được chế độ lạ.
+   */
+  cheDoNghi?: CheDoNghi;
   /**
    * ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn (bộ chọn dự án ở đầu cây tệp). **Là một ID, KHÔNG phải
    * đường dẫn** — server tra danh sách TRẮNG (`repoProjects.gocTheoId`) để ra gốc; id lạ / đường dẫn
@@ -1774,6 +1784,8 @@ async function generateWithOllama(
           temperature: 0.15,
           topP: 0.9,
           repeatPenalty: KB_QA_REPEAT_PENALTY,
+          // ★ B1 — lớp `kb-qa` không nghĩ (xem nhánh stream bên dưới cho lý do đo được).
+          disableThinking: !luotDuocNghi("kb-qa"),
         }, plan.decision.modelId);
         // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
         plan.record({
@@ -1934,6 +1946,9 @@ export async function* generateWithOllamaStream(
           temperature: 0.15,
           topP: 0.9,
           repeatPenalty: KB_QA_REPEAT_PENALTY,
+          // ★ B1 — KB-QA là lớp `kb-qa` (ai/loaiLuot.ts): KHÔNG nghĩ. Trần 220/900 token với model
+          //   biết nghĩ mặc định ⇒ chuỗi suy luận nuốt hết trần, câu trả lời rỗng (đo sống 2026-09-22).
+          disableThinking: !luotDuocNghi("kb-qa"),
         }, plan.decision.modelId)) {
           // GGUF engine yields { type: "token" | "done" | "error", token?, ... }
           // We must extract the string token, not yield the whole object
@@ -3366,6 +3381,12 @@ export type StreamEvent =
    */
   | { type: "tool_loop"; round: number; phase: "dang_goi" | "xong" | "dung"; toolName: string | null; elapsedMs: number; stop?: string }
   | { type: "token"; token: string }
+  /**
+   * ★ B7/F2 (2026-09-22) — SỐ ĐO MỘT LƯỢT GỌI MODEL trên đường lập trình, phát NGAY SAU lượt ấy đóng
+   * luồng (trước `done`). Sự kiện RIÊNG, thuần bổ sung: consumer SSE cũ bỏ qua ô/kiểu lạ mà không đổi
+   * hành vi. `tokensOut` GỘP cả suy luận; `tokensReasoning` vắng = không đếm được (không biết ≠ 0).
+   */
+  | ({ type: "usage"; luot: LoaiLuot } & DungLuotModel)
   | {
       type: "done";
       provider: "ollama" | "extractive" | "tool";
@@ -4458,6 +4479,7 @@ async function chonTepTuTri(loi: string, cay: string, execCtx: ToolExecContext, 
     heThong: personaChonTep(language),
     ghepPrompt: () => promptChonTep(language, loi, cay),
     tranToken: TRAN_TOKEN_CHON_TEP,
+    loai: "chon-tep", // ★ B1 — lớp PHỤ: trả JSON đường tệp, KHÔNG nghĩ (512 tok + nghĩ ⇒ rỗng, đo sống)
     language,
     history: [],
     relPath: "(chọn tệp)",
@@ -4887,6 +4909,8 @@ async function* chuanBiBanSuaMotTep(y: {
       khoiBaiHoc,
       khoiNguCanhMa: khoiMaSua,
       tranToken: TRAN_TOKEN_KHOI_SUA,
+      ghiDe: y.context.cheDoNghi, // ★ F3 — chế độ nghĩ người dùng chọn cho lượt
+      loai: "khoi-sua", // ★ B1 — lớp NGHĨ: sửa mã, trần nới theo model biết nghĩ
       language,
       history,
       relPath,
@@ -4956,6 +4980,8 @@ async function* chuanBiBanSuaMotTep(y: {
   const lm = yield* motLuotModel({
     heThong,
     ghepPrompt: ghepPromptTep,
+    ghiDe: y.context.cheDoNghi, // ★ F3
+    loai: "sua-tep", // ★ B1 — lớp NGHĨ: chép lại cả tệp có thay đổi
     khoiBaiHoc,
     khoiNguCanhMa: khoiMaSua,
     tranToken,
@@ -5031,6 +5057,15 @@ async function* motLuotModel(y: {
   /** ★★★ 2026-08-23 — khối MÃ THAM CHIẾU của repo; `""` ⇒ không có. Xem `promptSinhMa`. */
   khoiNguCanhMa?: string;
   tranToken: number;
+  /**
+   * ★★★ B1 (2026-09-22) — LỚP của lượt (`ai/loaiLuot.ts`). BẮT BUỘC, không có mặc định: người thêm
+   * một đường gọi mới phải xếp nó vào lớp NGHĨ (sinh/sửa/tạo khung) hay lớp PHỤ (chọn tệp, JSON…).
+   * Lớp quyết hai thứ cùng lúc — có tắt `<think>` không, và trần token có được nới theo model không.
+   * Đo sống: lượt chọn tệp 512 token với model nghĩ mặc định ⇒ `content ""`, `finish=length`.
+   */
+  loai: LoaiLuot;
+  /** ★ F3 — chế độ nghĩ người dùng chọn (từ `context.cheDoNghi`); vắng ⇒ quy tắc lớp. */
+  ghiDe?: CheDoNghi;
   language: KbLanguage;
   history: readonly LuotHoiThoai[];
   relPath: string;
@@ -5111,22 +5146,66 @@ async function* motLuotModel(y: {
     return { kq: "dung", traLoi: m, provider: "tool" };
   }
 
-  const it = rutChuCoCanh(
-    streamCodingModel({
-      systemPrompt: y.heThong,
-      prompt: y.ghepPrompt(lich.khoi, bai, ma),
-      maxTokens: y.tranToken,
-      temperature: 0.15,
-      // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN (thụt đầu dòng, `}` liên tiếp…) — và một đoạn
-      // NEO cũng là một bản chép nguyên văn, nên đường khối cần đúng con số này.
-      repeatPenalty: 1.0,
-      userId: y.userId,
-      // Chữ này SẼ được ghi ra đĩa ⇒ prompt phải tới model nguyên văn (xem `YeuCauSinhChu`).
-      nguyenVanPrompt: true,
-      // ★★★ 2026-08-23 — huỷ lan xuống model. Xem `YeuCauSinhChu.signal`.
-      ...(y.signal ? { signal: y.signal } : {}),
-    }),
-  );
+  /**
+   * ★★★ B1 — LỚP lượt quyết cả trần lẫn công tắc nghĩ, ở MỘT chỗ (`ai/loaiLuot.ts`):
+   *   • lớp PHỤ (chọn tệp…) ⇒ trần gốc y nguyên + `disableThinking: true` — hết cảnh 512 token bị
+   *     chuỗi suy luận nuốt trọn (đo sống: `content ""`, `finish=length`);
+   *   • lớp NGHĨ (sửa tệp · khối sửa · tạo khung) ⇒ nghĩ BẬT và trần nới theo model biết nghĩ
+   *     (`tranTokenSinhMa`: kẹp ctx/slot − prompt), lấy MAX với trần gốc để tạo khung 8.000 không co lại.
+   * Cùng công thức với `streamCodingGenerate` (G18) — không dựng thước thứ hai.
+   */
+  const nghi = luotDuocNghi(y.loai, y.ghiDe);
+  const promptLuot = y.ghepPrompt(lich.khoi, bai, ma);
+  const tranNghi = nghi
+    ? (() => {
+        const ns = kiemNganSachNguCanh({ systemPrompt: y.heThong, prompt: promptLuot, maxTokens: 0 });
+        return tranTokenSinhMa({
+          ctxSlotTokens: ns.tranMoiSlot,
+          tokenPrompt: ns.tokenVao,
+          modelDaTungNghi: modelNenCoiLaBietNghi(process.env.GGUF_DEFAULT_MODEL || "default"),
+        });
+      })()
+    : null;
+  const tranLuot = tranTokenTheoLop(y.loai, y.tranToken, tranNghi, y.ghiDe);
+
+  const dinhDanhModelLuot = process.env.GGUF_DEFAULT_MODEL || "default";
+  /**
+   * ★ B1 (2026-09-22) — mở luồng cho lượt này. `tatNghi` là CẦU CHÌ của lớp NGHĨ: lượt đầu đi theo lớp
+   * (`!nghi`); nếu model tiêu HẾT trần lớp nghĩ vào `<think>` mà chưa phát ký tự nào (G5-D — đo sống
+   * agentic-b1: khoi-sua 16.000 token, 36.104 ký tự suy luận, `content` rỗng ⇒ A2 lượt 2 ĐỎ), thì thử
+   * lại ĐÚNG MỘT LẦN với nghĩ TẮT. Khác G18 ở sinh-ma (nới trần 3k→16k): ở đây trần ĐÃ là trần lớp nghĩ,
+   * đòn bẩy còn lại duy nhất là tắt nghĩ — thà một bản sửa không-suy-luận còn hơn không có bản sửa.
+   */
+  let dungLuot: DungLuotModel | undefined;
+  const moLuong = (tatNghi: boolean) =>
+    rutChuCoCanh(
+      streamCodingModel({
+        systemPrompt: y.heThong,
+        prompt: promptLuot,
+        maxTokens: tranLuot,
+        // ★ B7/F2 — số đo lượt, phát thành sự kiện `usage` sau khi luồng đóng (xem cuối hàm).
+        onUsage: (u) => {
+          dungLuot = u;
+        },
+        disableThinking: !nghi || tatNghi,
+        // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN (thụt đầu dòng, `}` liên tiếp…) — và một đoạn
+        // NEO cũng là một bản chép nguyên văn, nên đường khối cần đúng con số này (repeat 1,0).
+        // ★ B2 — hồ sơ sampling qua cần gạt A/B (`AI_SAMPLING_PROFILE`); vắng ⇒ đúng ba số cũ, y nguyên.
+        //   "Nghĩ thật" = lớp lượt được nghĩ VÀ model biết nghĩ VÀ cầu chì chưa nổ.
+        ...hoSoSamplingCho(
+          { temperature: 0.15, topP: 0.9, repeatPenalty: 1.0 },
+          nghi && !tatNghi && modelNenCoiLaBietNghi(dinhDanhModelLuot),
+        ),
+        userId: y.userId,
+        // Chữ này SẼ được ghi ra đĩa ⇒ prompt phải tới model nguyên văn (xem `YeuCauSinhChu`).
+        nguyenVanPrompt: true,
+        // ★★★ 2026-08-23 — huỷ lan xuống model. Xem `YeuCauSinhChu.signal`.
+        ...(y.signal ? { signal: y.signal } : {}),
+      }),
+    );
+  let daTatNghi = false;
+  let it = moLuong(false);
+  // (`dungLuot` được `onUsage` của lượt cuối cùng ghi — lượt thử lại ghi đè lượt đã ném, đúng ý.)
 
   let kq: KetQuaChu;
   let daPhat = "";
@@ -5157,6 +5236,19 @@ async function* motLuotModel(y: {
       try {
         n = await it.next();
       } catch (e) {
+        // ★ B1 — cầu chì lớp NGHĨ (xem `moLuong`). Chỉ khi: lượt thuộc lớp nghĩ · chưa phát ký tự nào
+        //   (người dùng chưa thấy gì để bị nối hai nửa — luật G1) · lỗi đúng là G5-D · chưa từng tắt.
+        if (nghi && daPhat === "" && !daTatNghi && nenThuLaiVoiTranRong(e, false)) {
+          ghiModelDaNghi(dinhDanhModelLuot);
+          await it.return(undefined as unknown as KetQuaChu).catch(() => {});
+          daTatNghi = true;
+          console.warn(
+            `[aiLocalKnowledge] G18-B1: lượt "${y.loai}" trên model "${dinhDanhModelLuot}" tiêu hết trần ${tranLuot} ` +
+              `vào SUY LUẬN mà chưa phát ký tự nào — thử lại MỘT lần với nghĩ TẮT.`,
+          );
+          it = moLuong(true);
+          continue;
+        }
         const m = codingModelErrorMessage(y.language, e);
         yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
         return { kq: "dung", traLoi: daPhat ? `${daPhat}\n\n${m}` : m, provider: "tool" };
@@ -5171,6 +5263,9 @@ async function* motLuotModel(y: {
   } finally {
     await it.return(undefined as unknown as KetQuaChu).catch(() => {});
   }
+
+  // ★ B7/F2 — phát số đo của lượt (kể cả khi lượt thoái hoá — số vẫn là số).
+  if (dungLuot) yield { type: "usage", luot: y.loai, ...dungLuot };
 
   if (kq.degraded || !kq.text.trim()) {
     const m = codingThoaiHoaMessage(y.language, kq.reason);
@@ -5582,6 +5677,8 @@ async function* streamCodingTaoKhung(
         promptTaoKhung(codingKhungCauTuSua(language, question, ketQuaKiem.ok ? "" : ketQuaKiem.cau), language, khoiLichSu, khoiBai),
       khoiBaiHoc,
       tranToken: TRAN_TOKEN_TAO_KHUNG,
+      ghiDe: context.cheDoNghi, // ★ F3
+      loai: "tao-khung", // ★ B1 — lớp NGHĨ: dựng khung dự án, trần 8.000 giữ (max với trần nghĩ)
       language,
       history,
       relPath: "(khung dự án — tự sửa)",
@@ -5817,6 +5914,10 @@ async function* streamCodingGenerate(
   }
 
   const promptCuoi = promptSinhMa(question, language, lich.khoi, khoiMa, khoiBai);
+  let dungSinhMa: DungLuotModel | undefined;
+  // ★ F3 — chế độ nghĩ người dùng chọn; "nhanh" tắt nghĩ cả lượt sinh mã (ý người dùng thắng quy tắc lớp).
+  const cheDoNghi = context.cheDoNghi;
+  const sinhMaDuocNghi = luotDuocNghi("sinh-ma", cheDoNghi);
   const moLuong = (tran: number) =>
     rutChuCoCanh(
       streamCodingModel({
@@ -5825,7 +5926,17 @@ async function* streamCodingGenerate(
         systemPrompt: heThong,
         prompt: promptCuoi,
         maxTokens: tran,
-        temperature: 0.25,
+        // ★ B7/F2 — số đo lượt sinh mã (lượt G18 thử lại ghi đè lượt đã ném — đúng ý).
+        onUsage: (u) => {
+          dungSinhMa = u;
+        },
+        // ★ B2 — hồ sơ sampling qua cần gạt A/B; vắng ⇒ đúng bộ cũ (0,25 · 0,9 · repeat 1,05), y nguyên.
+        // ★ F3 — "nhanh" ⇒ gửi `enable_thinking=false`; còn lại để template quyết (undefined ⇒ hành vi cũ).
+        ...(sinhMaDuocNghi ? {} : { disableThinking: true }),
+        ...hoSoSamplingCho(
+          { temperature: 0.25, topP: 0.9, repeatPenalty: 1.05 },
+          sinhMaDuocNghi && modelNenCoiLaBietNghi(dinhDanhModel),
+        ),
         userId: execCtx?.user?.id,
         // ★★★ 2026-08-23 — huỷ lan xuống model. Xem `motLuotModel` cho lý lẽ đầy đủ.
         ...(execCtx?.signal ? { signal: execCtx.signal } : {}),
@@ -5885,6 +5996,9 @@ async function* streamCodingGenerate(
   } finally {
     await it.return(undefined as unknown as KetQuaChu).catch(() => {});
   }
+
+  // ★ B7/F2 — số đo lượt sinh mã, phát trước `done`.
+  if (dungSinhMa) yield { type: "usage", luot: "sinh-ma", ...dungSinhMa };
 
   if (kq.degraded || !kq.text.trim()) {
     const m = codingThoaiHoaMessage(language, kq.reason);

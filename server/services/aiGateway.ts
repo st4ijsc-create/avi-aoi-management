@@ -88,6 +88,16 @@ export type Outcome = "ok" | "error" | "rate_limited" | "blocked" | "quota_excee
 
 /** Token accounting + outcome a caller reports back after running the inference. */
 export interface InferenceOutcome {
+  /**
+   * ★ B7 (2026-09-22) — ba số đo tách "nghĩ" khỏi "trả" (cột `ai_gateway_metrics`, migration 0358).
+   * Vắng / `null` = KHÔNG ĐO ĐƯỢC (đường in-process, không-stream) — ghi `NULL`, không ghi 0.
+   * `tokensOut` của server GỘP cả suy luận; `reasoningTokens` là phần nằm trong `<think>`.
+   */
+  reasoningTokens?: number | null;
+  /** `false` = đã gửi `enable_thinking=false`; `true` = có suy luận đo được; `null` = không biết. */
+  thinking?: boolean | null;
+  /** Tên hồ sơ sampling đã dùng (`hien-tai` | `chinh-hang`, xem `ai/hoSoSampling.ts`). */
+  samplingProfile?: string | null;
   tokensIn?: number;
   tokensOut?: number;
   latencyMs?: number;
@@ -556,6 +566,10 @@ interface MetricRow {
   fastModelConfigured: boolean;
   userId: number | null;
   createdAt: Date;
+  /** ★ B7 — xem `InferenceOutcome`. `null` = không đo được. */
+  reasoningTokens: number | null;
+  thinking: boolean | null;
+  samplingProfile: string | null;
 }
 
 const buffer: MetricRow[] = [];
@@ -621,6 +635,10 @@ export async function flush(): Promise<void> {
         fastModelConfigured: r.fastModelConfigured,
         userId: r.userId,
         createdAt: r.createdAt,
+        // ★ B7 — ba cột nullable (migration 0358).
+        reasoningTokens: r.reasoningTokens,
+        thinking: r.thinking,
+        samplingProfile: r.samplingProfile,
       })),
     );
   } catch (err) {
@@ -962,6 +980,13 @@ function toRow(
     fastModelConfigured: getInMemoryRouterStats().fastModelConfigured,
     userId: req.userId ?? null,
     createdAt: new Date(),
+    // ★ B7 — giữ NULL khi vắng; số âm/không hữu hạn là rác ⇒ cũng NULL (không bịa 0).
+    reasoningTokens:
+      typeof o.reasoningTokens === "number" && Number.isFinite(o.reasoningTokens) && o.reasoningTokens >= 0
+        ? Math.trunc(o.reasoningTokens)
+        : null,
+    thinking: typeof o.thinking === "boolean" ? o.thinking : null,
+    samplingProfile: typeof o.samplingProfile === "string" && o.samplingProfile ? o.samplingProfile.slice(0, 24) : null,
   };
 }
 

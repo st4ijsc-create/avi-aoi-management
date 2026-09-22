@@ -75,6 +75,7 @@ import {
   useKbChatStream,
   type KbPendingAction,
   type KbToolLoopProgress,
+  type KbUsageLuot,
 } from "@/hooks/useKbChatStream";
 import { AIToolResultCard, type ToolResultPayload } from "@/components/AIToolResultCard";
 import {
@@ -918,6 +919,8 @@ export default function AICodingWorkspace() {
   const {
     streamingText, isStreaming, error: streamError, abortedRef, startKbStream, stopKbStream,
   } = useKbChatStream();
+  /** ★ F2 — số đo lượt model GẦN NHẤT (sự kiện SSE `usage`) cho thanh trạng thái: nghĩ/sinh · ctx đã dùng. */
+  const [dungLuotCuoi, setDungLuotCuoi] = useState<KbUsageLuot | null>(null);
 
   const confirmM = trpc.aiCopilot.confirmAction.useMutation();
   const cancelM = trpc.aiCopilot.cancelAction.useMutation();
@@ -1291,6 +1294,16 @@ export default function AICodingWorkspace() {
    */
   const modelQ = trpc.repoWorkspace.modelDangDung.useQuery(undefined, { staleTime: 5 * 60_000 });
   /**
+   * ★ 2026-09-22 — nhãn nút "tầng mã" lấy từ MODEL THẬT server đang định tuyến (`modelDangDung.modelId`), không
+   * viết cứng "Coder": model mặc định đã đổi sang Qwen3.6-35B-A3B mà nút vẫn ghi "model: Coder" — một nhãn cũ nói
+   * sai điều đang chạy. Rút gọn hậu tố lượng tử hoá (`-UD-Q4_K_XL`, `.gguf`) cho vừa 22 px; tên đầy đủ ở thanh trạng thái.
+   */
+  const tenTangMa = useMemo(() => {
+    const id = modelQ.data?.modelId;
+    if (!id) return null;
+    return String(id).replace(/\.gguf$/i, "").replace(/-(UD-)?Q\d[^-]*(_[A-Z]+)*$/i, "").replace(/-UD$/i, "");
+  }, [modelQ.data?.modelId]);
+  /**
    * ★ G17 (2026-09-22) — danh sách trắng lệnh, để pane "Lệnh & Nhật ký" NÓI THẲNG cái gì gõ được.
    * Hằng của mã nguồn ⇒ cache dài; server vẫn là hàng rào, đây chỉ là bảng chỉ dẫn.
    */
@@ -1313,9 +1326,24 @@ export default function AICodingWorkspace() {
       return v === "code" ? v : "auto";
     } catch { return "auto"; }
   });
+  /**
+   * ★ F3 (2026-09-22) — CHẾ ĐỘ NGHĨ theo lượt: `can-bang` (quy tắc lớp lượt: sinh/sửa mã NGHĨ, lượt phụ
+   * không) hay `nhanh` (tắt nghĩ mọi lượt — đo được nhanh 5–15×, đúng ít hơn ~10–15 điểm). Đi theo TỪNG
+   * yêu cầu qua `context.cheDoNghi`; server lọc danh sách TRẮNG. **Chưa có "sâu"**: trần nghĩ 16k đã là
+   * trần cứng ở ctx 32k — một nút không làm gì là lớp lỗi "cờ khai mà vô hiệu"; thêm khi B3 mở 64k.
+   */
+  const [cheDoNghi, datCheDoNghi] = useState<"can-bang" | "nhanh">(() => {
+    try {
+      const v = localStorage.getItem("repoWs.cheDoNghi");
+      return v === "nhanh" ? v : "can-bang";
+    } catch { return "can-bang"; }
+  });
   useEffect(() => {
     try { localStorage.setItem("repoWs.tangModel", tangModel); } catch { /* chế độ riêng tư */ }
   }, [tangModel]);
+  useEffect(() => {
+    try { localStorage.setItem("repoWs.cheDoNghi", cheDoNghi); } catch { /* chế độ riêng tư */ }
+  }, [cheDoNghi]);
 
   const nganSachQ = trpc.repoWorkspace.nganSachHopCat.useQuery(undefined, {
     refetchInterval: 20_000,
@@ -1409,6 +1437,8 @@ export default function AICodingWorkspace() {
           route: "/ai-coding-workspace", uiLanguage: i18n.language, codingMode: true, projectId,
           // ★ G4 — tầng model người dùng chọn cho LƯỢT NÀY. Server lọc qua danh sách TRẮNG.
           modelTask: tangModel,
+          // ★ F3 — chế độ nghĩ cho LƯỢT NÀY (can-bang | nhanh). Server lọc qua danh sách TRẮNG (`locCheDoNghi`).
+          cheDoNghi,
           ...(tuVong ? { codingEditPath: tuVong.tep } : {}),
           // ★★★ 2026-08-23 — ĐẦU RA MÁY đi Ô RIÊNG, KHÔNG nối vào `question`. Xem `TuVongSend`.
           ...(tuVong?.dauRaMay ? { dauRaKhongTinCay: tuVong.dauRaMay } : {}),
@@ -1452,6 +1482,8 @@ export default function AICodingWorkspace() {
           }
         },
         onClientAction: () => { /* không auto-điều hướng trong không gian làm việc */ },
+        // ★ F2 — lượt cuối thắng (một yêu cầu có thể gồm nhiều lượt model: chọn tệp → sửa).
+        onUsage: (u) => setDungLuotCuoi(u),
       },
     );
 
@@ -2165,7 +2197,7 @@ export default function AICodingWorkspace() {
                 ngân sách. Vì sao gộp chứ không thêm: hai huy hiệu cũ đã nằm trong sáu ô này, để cả
                 hai bản là nhân đôi cùng một sự thật ngay cạnh nhau — đúng thứ làm màn hình rối mà
                 chủ dự án nêu. Lý lẽ đầy đủ (ba sự cố im lặng đã đo) ở đầu `ThanhTrangThaiAiLocal`. */}
-            <ThanhTrangThaiAiLocal />
+            <ThanhTrangThaiAiLocal dungLuot={dungLuotCuoi} />
             {/* ★★★ G4 (audit 2026-09-21 · P4) — BỘ CHỌN TẦNG MODEL.
                 Claude có `/model`, Cursor có dropdown; AI Local trước lượt này KHÔNG CÓ GÌ — đổi
                 model đòi sửa `.env` + khởi động lại server. Lựa chọn đi theo TỪNG yêu cầu qua
@@ -2180,13 +2212,39 @@ export default function AICodingWorkspace() {
                   className="h-[22px] cursor-pointer rounded-md border bg-background px-1.5 text-[10px]"
                 >
                   <option value="auto">{t("repoWs.modelPick.auto", "model: tự động")}</option>
-                  <option value="code">{t("repoWs.modelPick.code", "model: Coder")}</option>
+                  <option value="code">
+                    {tenTangMa
+                      ? t("repoWs.modelPick.codeTen", "model: {{ten}}", { ten: tenTangMa })
+                      : t("repoWs.modelPick.code", "model: tầng mã")}
+                  </option>
                 </select>
               </TooltipTrigger>
               <TooltipContent className="max-w-[320px] text-xs">
                 {t(
                   "repoWs.modelPick.tip",
                   "Tự động = theo mặc định của hệ + độ khó câu hỏi. Coder = ép tầng chuyên sinh mã (đo được: chính xác hơn trên tác vụ lập trình). Đổi có hiệu lực NGAY ở lượt sau — KHÔNG cần khởi động lại. Huy hiệu bên cạnh cho biết model THẬT SỰ được chọn. Cố ý KHÔNG có lựa chọn \"Nhanh\": bộ định tuyến leo tầng theo ĐỘ KHÓ, mà prompt lập trình luôn là câu khó, nên một lựa chọn như thế sẽ bị bỏ qua trong im lặng.",
+                )}
+              </TooltipContent>
+            </Tooltip>
+            {/* ★ F3 (2026-09-22) — BỘ CHỌN CHẾ ĐỘ NGHĨ theo lượt. Hai nút THẬT: cân bằng (quy tắc lớp
+                lượt) / nhanh (tắt nghĩ). "Sâu" chỉ xuất hiện khi B3 mở ctx 64k — không bày nút vô hiệu. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <select
+                  data-chon-che-do-nghi
+                  aria-label={t("repoWs.nghiPick.label", "Chọn chế độ nghĩ")}
+                  value={cheDoNghi}
+                  onChange={(e) => datCheDoNghi(e.target.value === "nhanh" ? "nhanh" : "can-bang")}
+                  className="h-[22px] cursor-pointer rounded-md border bg-background px-1.5 text-[10px]"
+                >
+                  <option value="can-bang">{t("repoWs.nghiPick.canBang", "nghĩ: cân bằng")}</option>
+                  <option value="nhanh">{t("repoWs.nghiPick.nhanh", "nghĩ: tắt (nhanh)")}</option>
+                </select>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[340px] text-xs">
+                {t(
+                  "repoWs.nghiPick.tip",
+                  "Cân bằng = lượt sinh/sửa mã được NGHĨ (đúng hơn, chậm hơn: ~30–120 s/lượt trên Qwen3.6), lượt phụ (chọn tệp, KB) không nghĩ. Tắt = không nghĩ ở mọi lượt (đo được: nhanh 5–15×, đúng ít hơn ~10–15 điểm). Áp cho từng yêu cầu, không cần khởi động lại.",
                 )}
               </TooltipContent>
             </Tooltip>

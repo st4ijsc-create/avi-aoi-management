@@ -1,5 +1,6 @@
 import type express from "express";
 import { locTacVuNguoiChon } from "../services/ai/chonTacVuModel";
+import { locCheDoNghi } from "../services/ai/loaiLuot";
 import fs from "node:fs";
 import path from "node:path";
 import { thuXacThucRest, thanTuChoiRest } from "./_xacThucRest";
@@ -137,6 +138,15 @@ export function parseContext(raw: unknown): KbQueryContext | undefined {
   {
     const t = locTacVuNguoiChon(r.modelTask);
     if (t !== "auto") ctx.modelTask = t;
+  }
+  /**
+   * ★ F3 (2026-09-22) — CHẾ ĐỘ NGHĨ người dùng chọn cho lượt (`can-bang` | `nhanh` | `sau`). Cùng lập
+   * trường với `modelTask`: trường client-khai ⇒ danh sách TRẮNG ngay tại cửa (`locCheDoNghi`); vắng/lạ
+   * ⇒ không đặt ⇒ quy tắc lớp lượt (`ai/loaiLuot`) ⇒ hành vi cũ y nguyên. Không nới quyền gì.
+   */
+  {
+    const c = locCheDoNghi(r.cheDoNghi);
+    if (c) ctx.cheDoNghi = c;
   }
   // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN. Chỉ nhận chuỗi HÌNH DẠNG id (`[A-Za-z0-9_-]`, 1..64). Một client
   // gửi ĐƯỜNG DẪN (`../../etc`, `C:\…`, `/a/b`) trượt regex ⇒ bị BỎ ở đây (lớp 1); và kể cả lọt thì

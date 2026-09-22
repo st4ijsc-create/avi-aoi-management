@@ -58,6 +58,7 @@ import { kiemNganSachNguCanh } from "./aiLlamaServerClient";
 import { StreamingThinkingStripper, thinkingStartsOpen } from "./ai/thinkingStrip";
 import { guardGeneratedText, isDegenerateStream } from "./ai/generationGuard";
 import { planInference } from "./aiGateway";
+import { docTenHoSo } from "./ai/hoSoSampling";
 
 export type NgonNguMa = "vi" | "en" | "zh";
 
@@ -199,6 +200,22 @@ export async function codingModelSanSang(): Promise<boolean> {
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // CỬA GỌI MODEL — **MỘT** điểm gọi `generateTextStream` cho cả sinh mã lẫn sửa tệp
 // ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★ B7 — số đo MỘT lượt gọi model (đường lập trình). `tokensOut` của server GỘP cả suy luận;
+ * `tokensReasoning` `undefined` = không đếm được (không biết ≠ 0); `thinking` `null` = không biết.
+ */
+export interface DungLuotModel {
+  modelId: string;
+  tokensIn: number;
+  tokensOut: number;
+  tokensReasoning: number | undefined;
+  thinking: boolean | null;
+  samplingProfile: string;
+  latencyMs: number;
+  /** Trần ngữ cảnh (token) mà lượt này được cấp — để UI hiện "đã dùng / trần". */
+  ctxMax: number | undefined;
+}
+
 export interface YeuCauSinhChu {
   /**
    * ★ G4 — tầng model người dùng chọn cho LƯỢT NÀY (`"auto"|"fast"|"code"`). Vắng ⇒ mặc định của hệ.
@@ -208,9 +225,35 @@ export interface YeuCauSinhChu {
   systemPrompt: string;
   prompt: string;
   maxTokens: number;
+  /**
+   * ★ B2 (2026-09-22) — bốn trường sampling còn lại của một HỒ SƠ (`ai/hoSoSampling.ts`). Vắng ⇒
+   * hành vi cũ y nguyên: `topP` 0,9 viết cứng bên dưới, ba trường kia KHÔNG gửi ⇒ server điền mặc định
+   * của nó (`top_k 20 · min_p 0,05 · presence 0`). Đặt ⇒ đi nguyên xuống `lapCoSampling` — kể cả số 0.
+   */
+  topP?: number;
+  topK?: number;
+  minP?: number;
+  presencePenalty?: number;
+  /**
+   * ★ B7 (2026-09-22) — nhận SỐ ĐO của lượt khi luồng đóng (một lần, sau chunk `done`). Đây là đường
+   * duy nhất đưa "nghĩ bao nhiêu / trả bao nhiêu / hồ sơ nào / model nào" lên sự kiện `done` của SSE
+   * (F2) mà không đổi kiểu trả của generator (chuỗi). Lỗi giữa luồng ⇒ KHÔNG gọi (không có số để báo).
+   */
+  onUsage?: (u: DungLuotModel) => void;
   temperature?: number;
   /** Mặc định 1.05. Đường SỬA TỆP truyền 1.0: phạt lặp làm hỏng việc chép lại nguyên văn một tệp. */
   repeatPenalty?: number;
+  /**
+   * ★★★ B1 (2026-09-22) — TẮT KHỐI SUY LUẬN cho lượt này. Đi xuống `ggufStream` →
+   * `chat_template_kwargs.enable_thinking = false` (đường chính thống của llama-server; template
+   * Qwen3.6/3.8 đọc cờ này). Trước bản này kiểu `YeuCauSinhChu` KHÔNG có ô nào cho cờ ấy, nên mọi
+   * lượt phụ (chọn tệp 512 tok, khối sửa, tạo khung, KB-QA) chạy với model BIẾT NGHĨ mặc định ⇒ đo
+   * sống: 512 tok + nghĩ = `content ""`, `finish=length`. Ai quyết lượt nào tắt: `ai/loaiLuot.ts`,
+   * không phải từng call site tự quyết.
+   * ⚠ Là phép TỐI ƯU, không phải lưới an toàn: template không đọc cờ ⇒ cờ bị bỏ qua im lặng; trần
+   *   token (`tranTokenTheoLop`) mới là thứ giữ lượt gọi sống. Xem `GgufGenerateOptions.disableThinking`.
+   */
+  disableThinking?: boolean;
   userId?: number;
   /**
    * ★★★ Đường SỬA TỆP đặt `true`. Chữ model sinh ra ở đường ấy **sẽ được ghi ra đĩa**, nên prompt
@@ -264,6 +307,7 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
   const batDau = Date.now();
   let tokensIn = 0;
   let tokensOut = 0;
+  let tokensReasoning: number | undefined;
   try {
     const { generateTextStream: ggufStream } = await import("./aiGgufEngine");
     for await (const chunk of ggufStream(
@@ -272,9 +316,17 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
         prompt: plan.safeText,
         maxTokens: y.maxTokens,
         temperature: y.temperature ?? 0.2,
-        topP: 0.9,
+        topP: y.topP ?? 0.9,
         repeatPenalty: y.repeatPenalty ?? 1.05,
+        // ★ B2 — ba trường chỉ đi khi người gọi đặt (xem `YeuCauSinhChu.topK`). `!== undefined`, không
+        //   `??`: số 0 (`minP: 0` chính hãng) PHẢI đi — vắng là 0,05 của server, không phải 0.
+        ...(y.topK !== undefined ? { topK: y.topK } : {}),
+        ...(y.minP !== undefined ? { minP: y.minP } : {}),
+        ...(y.presencePenalty !== undefined ? { presencePenalty: y.presencePenalty } : {}),
         contextSize: plan.decision.contextSize,
+        // ★ B1 — cờ tắt nghĩ đi tới `ggufStream` → `lapCoTatSuyLuan` → `chat_template_kwargs`.
+        //   Vắng ⇒ `undefined` ⇒ hành vi cũ (template quyết, tức NGHĨ với Qwen3.6). Xem `YeuCauSinhChu`.
+        ...(y.disableThinking !== undefined ? { disableThinking: y.disableThinking } : {}),
       },
       plan.decision.modelId,
       // ★★★ ĐỐI SỐ THỨ BA — xem `YeuCauSinhChu.signal`. Thiếu nó, mỗi lượt Dừng giữ một khe
@@ -290,6 +342,8 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
       } else if (chunk.type === "done") {
         tokensIn = chunk.tokensPrompt ?? 0;
         tokensOut = chunk.tokensGenerated ?? 0;
+        // ★ B7 — `undefined` giữ nguyên là "không đếm được" (đường in-process) — không ép về 0.
+        tokensReasoning = typeof chunk.tokensReasoning === "number" ? chunk.tokensReasoning : undefined;
       } else if (chunk.type === "error") {
         throw new Error(chunk.error || "GGUF stream error");
       }
@@ -299,7 +353,32 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
     const con = catSuyLuan.flush();
     const duoi = (con ? cheBiMat.push(con) : "") + cheBiMat.flush();
     if (duoi) yield duoi;
-    plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - batDau, outcome: "ok" });
+    const latencyMs = Date.now() - batDau;
+    // ★ B7 — `thinking`: đã TẮT tường minh ⇒ false; còn lại chỉ dám nói "có nghĩ" khi ĐẾM được suy luận,
+    //   không đếm được ⇒ null (không biết ≠ không nghĩ).
+    const thinking: boolean | null =
+      y.disableThinking === true ? false : tokensReasoning === undefined ? null : tokensReasoning > 0;
+    const samplingProfile = docTenHoSo();
+    plan.record({
+      tokensIn,
+      tokensOut,
+      latencyMs,
+      outcome: "ok",
+      reasoningTokens: tokensReasoning ?? null,
+      thinking,
+      samplingProfile,
+    });
+    y.onUsage?.({
+      // Cùng luật với sổ đo (`aiGateway.toRow`): không có id ⇒ "default", không để undefined lọt lên UI.
+      modelId: plan.decision.modelId ?? "default",
+      tokensIn,
+      tokensOut,
+      tokensReasoning,
+      thinking,
+      samplingProfile,
+      latencyMs,
+      ctxMax: plan.decision.contextSize,
+    });
   } catch (e) {
     plan.record({ latencyMs: Date.now() - batDau, outcome: "error" });
     throw e;

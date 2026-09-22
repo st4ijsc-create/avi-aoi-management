@@ -362,3 +362,146 @@ describe("G5-D §5 — vị từ trên MÃ NGUỒN: không có bản sao thứ h
 // ⚠ §6 (ngân sách ngữ cảnh của một HỘI THOẠI) nằm ở `aiGgufEngine.chatServer.test.ts`, cùng chỗ
 // với hàm nó canh (`nganSachTuHoiThoai` sống trong engine — xem ghi chú ở cuối module client về
 // lý do nó KHÔNG sống ở đây).
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// §7 — ★ B2 (2026-09-22): `lapCoSampling()` — top_k / min_p / presence_penalty TƯỜNG MINH
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// Đo `/props` :8091 (b9814, Qwen3.6-35B-A3B) 2026-09-22: mặc định server `top_k 20 · top_p 0,95 ·
+// min_p 0,05 · presence 0 · repeat 1`. Chính hãng khuyến nghị `min_p 0` — tức HỒ SƠ CHÍNH HÃNG chỉ
+// tới được server khi client GỬI số 0 tường minh; "không gửi" = 0,05, không phải 0. Lưới §7 canh
+// đúng chỗ đó: đặt ⇒ đi (kể cả 0); không đặt ⇒ không đi (hành vi cũ của mọi bên gọi y nguyên).
+
+describe("B2 §7 — lapCoSampling(): ba trường sampling đi đúng tên, KHÔNG đi khi không đặt", () => {
+  async function batThan(goi: (c: any) => Promise<unknown>, noiDung = '{"tool":"none"}'): Promise<any> {
+    const c = await freshClient();
+    let than: any;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_u: string, init: any) => {
+        than = JSON.parse(init.body);
+        return resChat({ content: noiDung });
+      }),
+    );
+    await goi(c);
+    return than;
+  }
+
+  it("★★ đặt topK/minP/presencePenalty ⇒ body.top_k/min_p/presence_penalty đúng giá trị — KỂ CẢ 0", async () => {
+    const than = await batThan((c) => c.serverGenerateText({ prompt: "x", topK: 20, minP: 0, presencePenalty: 1.5 }));
+    expect(than.top_k).toBe(20);
+    expect(than.min_p, "0 phải ĐI — vắng là 0,05 của server, không phải 0").toBe(0);
+    expect(than.presence_penalty).toBe(1.5);
+  });
+
+  it("không đặt ⇒ KHÔNG gửi trường nào (server giữ mặc định của nó — hành vi cũ)", async () => {
+    const than = await batThan((c) => c.serverGenerateText({ prompt: "x" }));
+    expect(than.top_k).toBeUndefined();
+    expect(than.min_p).toBeUndefined();
+    expect(than.presence_penalty).toBeUndefined();
+  });
+
+  it("giá trị không hữu hạn (NaN) bị BỎ, không gửi rác xuống server", async () => {
+    const than = await batThan((c) => c.serverGenerateText({ prompt: "x", minP: Number.NaN, topK: Number.POSITIVE_INFINITY }));
+    expect(than.min_p).toBeUndefined();
+    expect(than.top_k).toBeUndefined();
+  });
+
+  it("★ áp dụng cho CẢ BỐN đường chat (text · JSON · chat · stream)", async () => {
+    const t1 = await batThan((c) => c.serverGenerateJSON({ type: "object" }, { prompt: "x", minP: 0, presencePenalty: 0 }));
+    expect(t1.min_p).toBe(0);
+    expect(t1.presence_penalty).toBe(0);
+
+    const t2 = await batThan((c) =>
+      c.serverChatCompletion({ messages: [{ role: "user", content: "x" }], minP: 0, topK: 20 }),
+    );
+    expect(t2.min_p).toBe(0);
+    expect(t2.top_k).toBe(20);
+
+    const c = await freshClient();
+    let than: any;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_u: string, init: any) => {
+        than = JSON.parse(init.body);
+        return resStream(`data: ${JSON.stringify({ choices: [{ delta: { content: "a" } }] })}\n\ndata: [DONE]\n\n`);
+      }),
+    );
+    for await (const _ of c.serverGenerateTextStream({ prompt: "x", minP: 0, presencePenalty: 1.5, topK: 20 })) {
+      /* tiêu thụ */
+    }
+    expect(than.min_p).toBe(0);
+    expect(than.presence_penalty).toBe(1.5);
+    expect(than.top_k).toBe(20);
+  });
+
+  it("★★ vị từ trên MÃ NGUỒN: `min_p`/`presence_penalty` ghi ở ĐÚNG MỘT điểm; `top_k` ở HAI (chat dùng chung + /infill)", () => {
+    const nguon = readFileSync(resolve(process.cwd(), "server/services/aiLlamaServerClient.ts"), "utf8");
+    const boc = nguon.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    expect((boc.match(/body\.min_p\s*=/g) || []).length, "điểm ghi min_p thứ hai = bản sao để trôi (N+1)").toBe(1);
+    expect((boc.match(/body\.presence_penalty\s*=/g) || []).length).toBe(1);
+    // `/infill` không có chat template ⇒ không đi qua builder chat; nó tự ghi top_k — và CHỈ top_k.
+    expect((boc.match(/body\.top_k\s*=/g) || []).length).toBe(2);
+    // định nghĩa + 5 điểm gọi (text · JSON · chat · stream ×2). Thiếu một ⇒ một đường mất hồ sơ trong im lặng.
+    expect((boc.match(/lapCoSampling\(/g) || []).length).toBeGreaterThanOrEqual(6);
+    // Mỗi điểm lắp cờ tắt nghĩ phải đi kèm điểm lắp sampling — hai cờ cùng một lớp "đường thứ N quên".
+    // Đếm ĐIỂM GỌI (`…(body,`), không đếm định nghĩa (`…(body:`): lượt đầu viết lưới này đếm lẫn định nghĩa
+    // của `lapCoTatSuyLuan` (một dòng) mà không đếm của `lapCoSampling` (xuống dòng) ⇒ 6 ≠ 5, đỏ oan.
+    const diemGoiSampling = (boc.match(/lapCoSampling\(body,/g) || []).length;
+    const diemGoiTatNghi = (boc.match(/lapCoTatSuyLuan\(body,/g) || []).length;
+    expect(diemGoiSampling).toBe(diemGoiTatNghi);
+    expect(diemGoiSampling).toBe(5);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// §8 — ★ B7 (2026-09-22): `tokensReasoning` = số sự kiện SSE mang `delta.reasoning_content`
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// `usage.completion_tokens` / `timings.predicted_n` của llama-server GỘP cả token trong `<think>`;
+// server không trả riêng số token suy luận. Đường stream lại nhận MỘT sự kiện mỗi token ⇒ đếm sự kiện
+// mang `reasoning_content` là phép đo rẻ nhất và không bịa. Lưới canh: đếm đúng · không đụng
+// `tokensGenerated` · và 0 là SỐ ĐO (đã xem trọn luồng), không phải "không biết".
+
+describe("B7 §8 — tokensReasoning trên chunk `done` của đường stream", () => {
+  const sk = (d: Record<string, unknown>) => `data: ${JSON.stringify({ choices: [{ index: 0, delta: d }] })}\n\n`;
+
+  it("★★ 3 sự kiện suy luận + 2 sự kiện chữ ⇒ tokensReasoning 3; chữ tới người dùng KHÔNG lẫn suy luận", async () => {
+    const c = await freshClient();
+    const day =
+      sk({ role: "assistant", content: null }) +
+      sk({ reasoning_content: "nghĩ-1" }) +
+      sk({ reasoning_content: "nghĩ-2" }) +
+      sk({ reasoning_content: "nghĩ-3" }) +
+      sk({ content: "ĐÁP" }) +
+      sk({ content: "-ÁN" }) +
+      "data: [DONE]\n\n";
+    vi.stubGlobal("fetch", vi.fn(async () => resStream(day)));
+    const manh: GgufStreamChunk[] = [];
+    for await (const m of c.serverGenerateTextStream({ prompt: "x" })) manh.push(m);
+    const xong = manh.find((m) => m.type === "done")!;
+    expect(xong.tokensReasoning).toBe(3);
+    expect(xong.fullText).toBe("ĐÁP-ÁN");
+    expect(xong.reasoningText).toBe("nghĩ-1nghĩ-2nghĩ-3");
+  });
+
+  it("sự kiện `reasoning_content` RỖNG không được đếm (không phải một token)", async () => {
+    const c = await freshClient();
+    const day = sk({ reasoning_content: "" }) + sk({ reasoning_content: "a" }) + sk({ content: "x" }) + "data: [DONE]\n\n";
+    vi.stubGlobal("fetch", vi.fn(async () => resStream(day)));
+    const manh: GgufStreamChunk[] = [];
+    for await (const m of c.serverGenerateTextStream({ prompt: "x" })) manh.push(m);
+    expect(manh.find((m) => m.type === "done")!.tokensReasoning).toBe(1);
+  });
+
+  it("★ không có suy luận ⇒ 0 — là SỐ ĐO (đã xem trọn luồng), không phải undefined", async () => {
+    const c = await freshClient();
+    const day = sk({ content: "chỉ chữ" }) + "data: [DONE]\n\n";
+    vi.stubGlobal("fetch", vi.fn(async () => resStream(day)));
+    const manh: GgufStreamChunk[] = [];
+    for await (const m of c.serverGenerateTextStream({ prompt: "x" })) manh.push(m);
+    const xong = manh.find((m) => m.type === "done")!;
+    expect(xong.tokensReasoning).toBe(0);
+    expect(xong.reasoningText).toBeUndefined();
+  });
+});

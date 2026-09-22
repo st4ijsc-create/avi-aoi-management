@@ -135,6 +135,15 @@ $srvArgs = @(
 $apiKey = $cfg['LLAMA_SERVER_API_KEY']
 if (-not [string]::IsNullOrWhiteSpace($apiKey)) { $srvArgs += @('--api-key', $apiKey) }
 
+# ── B4 (2026-09-22, ĐO ĐƯỢC) — NGÂN SÁCH TOKEN cho `<think>` của model biết nghĩ ─────────────────
+# Qwen3.6-35B-A3B nghĩ mặc định; lượt SỬA có prompt lớn từng tiêu HẾT trần sinh 16k vào suy luận rồi trả RỖNG (G5-D,
+# 3/6 lượt agentic). Với 12.000: 0/6 G5-D, trục H 25/36 → 27/36, KHÔNG lượt sinh mã nào của bộ khó bị cắt (max nghĩ
+# 8.596 — đọc từ cột ai_gateway_metrics.reasoningTokens), chỉ 2 lượt sửa chạy trốn bị ép kết thúc mà vẫn ra bản sửa.
+# Đổi bằng LLAMA_SERVER_REASONING_BUDGET trong .env; '-1' = không giới hạn (mặc định của llama-server, dùng khi A/B).
+# ⚠ `/props` KHÔNG lộ cờ này — xác nhận bằng log llama-server: "reasoning-budget: activated, budget=N".
+$nganSachNghi = if ($cfg['LLAMA_SERVER_REASONING_BUDGET']) { "$($cfg['LLAMA_SERVER_REASONING_BUDGET'])".Trim() } else { '12000' }
+if ($nganSachNghi -ne '-1') { $srvArgs += @('--reasoning-budget', $nganSachNghi) }
+
 # ── IDEMPOTENT: đã sống thì THOÁT, không spawn cái thứ hai ──────────────────────────────────────
 function Test-ServerAlive {
     try {

@@ -247,6 +247,54 @@ export interface KbStreamCallbacks {
    * `toolLoop.ts` — cùng lập trường: đây là kênh hiển thị, không phải kênh quyết định).
    */
   onToolLoop?: (p: KbToolLoopProgress) => void;
+  /**
+   * ★ F2 (2026-09-22) — số đo MỘT lượt gọi model trên đường lập trình (sự kiện SSE `usage`, phát ngay
+   * sau lượt đóng luồng, trước `done`). Thuần HIỂN THỊ (thanh trạng thái): consumer ném ở đây không
+   * được làm hỏng lượt stream. `tokensReasoning` vắng = server không đếm được — **không biết ≠ 0**.
+   */
+  onUsage?: (u: KbUsageLuot) => void;
+}
+
+/** ★ F2 — gương của `DungLuotModel` (server) + `luot` (lớp lượt). Chỉ các ô client cần. */
+export interface KbUsageLuot {
+  luot: string;
+  modelId: string;
+  tokensIn: number;
+  /** GỘP cả suy luận (số của llama-server). */
+  tokensOut: number;
+  /** Token trong `<think>`; vắng = không đếm được. */
+  tokensReasoning?: number;
+  /** `false` = đã tắt nghĩ; `true` = có suy luận đo được; `null` = không biết. */
+  thinking: boolean | null;
+  samplingProfile: string;
+  latencyMs: number;
+  /** Trần ngữ cảnh (token) lượt này được cấp; vắng = không biết. */
+  ctxMax?: number;
+}
+
+/**
+ * Bóc sự kiện `usage` thô thành `KbUsageLuot`, hoặc `null` khi thiếu số cốt lõi (không dựng một ô
+ * "0 token" từ một gói hỏng). Thuần, có lưới riêng.
+ */
+export function bocUsage(p: Record<string, unknown>): KbUsageLuot | null {
+  const so = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined);
+  const tokensIn = so(p.tokensIn);
+  const tokensOut = so(p.tokensOut);
+  const latencyMs = so(p.latencyMs);
+  if (tokensIn === undefined || tokensOut === undefined || latencyMs === undefined) return null;
+  const tokensReasoning = so(p.tokensReasoning);
+  const ctxMax = so(p.ctxMax);
+  return {
+    luot: typeof p.luot === "string" ? p.luot : "?",
+    modelId: typeof p.modelId === "string" && p.modelId ? p.modelId : "default",
+    tokensIn,
+    tokensOut,
+    ...(tokensReasoning !== undefined ? { tokensReasoning } : {}),
+    thinking: typeof p.thinking === "boolean" ? p.thinking : null,
+    samplingProfile: typeof p.samplingProfile === "string" ? p.samplingProfile : "?",
+    latencyMs,
+    ...(ctxMax !== undefined && ctxMax > 0 ? { ctxMax } : {}),
+  };
 }
 
 /** ★★★ doc 81 · VIỆC 2 — một nhịp tiến độ của vòng lặp tool (hình dạng khớp `ToolLoopProgress`). */
@@ -377,6 +425,16 @@ export function useKbChatStream() {
                 pendingAction?: KbPendingAction;
                 clientAction?: KbClientAction;
                 error?: string;
+                // ★ F2 — các ô của sự kiện `usage` (xem `KbUsageLuot`); bóc bằng `bocUsage()`.
+                luot?: string;
+                modelId?: string;
+                tokensIn?: number;
+                tokensOut?: number;
+                tokensReasoning?: number;
+                thinking?: boolean | null;
+                samplingProfile?: string;
+                latencyMs?: number;
+                ctxMax?: number;
                 structured?: KbStructured;
                 followUpSuggestions?: string[];
                 provider?: string;
@@ -434,6 +492,10 @@ export function useKbChatStream() {
                 // FE-only directive: navigate / prefill_form. No DB mutation.
                 clientAction = payload.clientAction;
                 callbacks?.onClientAction?.(payload.clientAction);
+              } else if (payload.type === "usage") {
+                // ★ F2 — số đo lượt model; gói hỏng ⇒ bỏ qua, không dựng ô 0.
+                const u = bocUsage(payload as Record<string, unknown>);
+                if (u) callbacks?.onUsage?.(u);
               } else if (payload.type === "token" && payload.token) {
                 accumulated += payload.token;
                 const snapshot = accumulated;
