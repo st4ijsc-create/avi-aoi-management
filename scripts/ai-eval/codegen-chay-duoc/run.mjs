@@ -77,7 +77,19 @@ async function genRaw(t) {
        *   rỗng. KHÔNG chèn chuỗi `/no_think` vào prompt: template này không có nhánh ấy, và một mẹo
        *   thất truyền sẽ HỎNG TRONG IM LẶNG (prompt bẩn, thinking vẫn bật, số vẫn ra — chỉ là sai).
        */
-      ...(args.includes("--khong-nghi") ? { chat_template_kwargs: { enable_thinking: false } } : {}),
+      /**
+       * `--effort low|medium|high|xhigh` (2026-09-22) — template Qwen3.8 doc `reasoning_effort|default('xhigh')`:
+       * llama-server ap muc CAO NHAT theo mac dinh, va do la ly do Qwen3.8 nghi 7.252 tok/bai (vs 5.220 cua
+       * Qwen3.6) roi cut 7/36 o 16k. Muon so cong bang "cung effort" hay do truc "effort thap" thi phai co
+       * nut nay. Cung duong chat_template_kwargs; gop voi --khong-nghi thanh MOT doi tuong.
+       */
+      ...(() => {
+        const kw = {};
+        if (args.includes("--khong-nghi")) kw.enable_thinking = false;
+        const ef = arg("--effort", null);
+        if (ef) kw.reasoning_effort = ef;
+        return Object.keys(kw).length ? { chat_template_kwargs: kw } : {};
+      })(),
       temperature: 0.2, top_p: 0.9, max_tokens: Number(arg("--max-tokens", 1400)), stream: false }),
   });
   if (!res.ok) return { text: "", err: `HTTP ${res.status} ${(await res.text()).slice(0,200)}`, totalMs: Date.now() - t0 };

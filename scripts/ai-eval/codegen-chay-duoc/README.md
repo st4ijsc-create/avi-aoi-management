@@ -105,7 +105,7 @@ node scripts/ai-eval/codegen-chay-duoc/duan.mjs --label duan-1
 ```
 
 Tham số `run.mjs`: `--tasks` · `--config raw|pipeline|fake-ok|fake-bad` · `--fake` · `--raw-url` · `--model` ·
-`--max-tokens` · `--khong-nghi` · `--only <id,…|lang>` · `--label` · `--cookie`.
+`--max-tokens` · `--khong-nghi` · `--effort low|medium|high|xhigh` (Qwen3.8: template mặc định **xhigh** — lý do nó nghĩ 7.252 tok/bài) · `--only <id,…|lang>` · `--label` · `--cookie`.
 Báo cáo JSON: `reports/<label>.json`. **Nhãn luôn kết thúc bằng số lượt** (`-1`, `-2`, …) để `so-sanh.mjs` gom được.
 
 ## Bộ bài
