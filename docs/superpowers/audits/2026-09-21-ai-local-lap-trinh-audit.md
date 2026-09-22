@@ -653,13 +653,13 @@ trình thuần — thêm ca "chu trình LẪN thành phần sắp được".
 |---|---|---|---|
 | **Qwen3.6‑35B‑A3B** · nghĩ BẬT 16k | **30/36 = 83 %** | 0 | 30.346 |
 | **Qwen3.6‑27B** · nghĩ BẬT 16k | **30/36 = 83 %** | 0 | 79.826 |
-| Qwen3.8‑27B · nghĩ BẬT 16k | 27/36 = 75 % | **7** | 109.578 |
+| Qwen3.8‑27B · nghĩ BẬT 16k *(số gốc, chặn dưới)* | 27/36 = 75 % | **7** | 109.578 |
 | Qwen3.6‑27B · nghĩ TẮT | 26/36 = 72 % | 0 | 12.844 |
 | Qwen3.8‑27B · nghĩ TẮT | 26/36 = 72 % | 0 | 8.580 |
 | Qwen3.6‑35B‑A3B · nghĩ TẮT | 25/36 = 69 % | 1 | 5.342 |
 | Qwen3‑Coder‑30B *(đang dùng)* | 11/36 = 31 % | 0 | 1.702 |
-| Qwen3.8‑27B · nghĩ BẬT **32k** (5 bài cụt) | *đang đo* | | |
-| Devstral Small 2 (Ollama), bộ 12 | *đang đo* — bộ 9: 14/27 = 52 % | 0 | 5.097 |
+| **Qwen3.8‑27B** · nghĩ BẬT, ghép công bằng (7 id @16k + 5 id cụt @32k) | **29/36 = 81 %** | 0 | 73.135 |
+| Devstral Small 2 (Ollama), bộ 12 | 17/36 = 47 % | 0 | 5.035 |
 
 **Bật chế độ nghĩ mua +14 điểm % trên cùng MoE** (69 → 83). **Hai model Qwen3.6 bằng nhau về đúng**,
 MoE nhanh 2,6× ⇒ tiêu chí "đúng trước nhanh" ở đây **không** bắt trả giá tốc độ. Con số 92 % lượt đơn
@@ -689,10 +689,10 @@ rộng kẹp `ctx/slot − prompt`; lượt sau khởi động thẳng rộng. C
 model đang nạp (log ghi Coder‑30B khi :8091 chạy Qwen3.6). Chiều nguy hiểm vẫn được lượt thử lại bắt.
 **Khoảng cách H 67 % ↔ M 83 % là chi phí đường ống (ngữ cảnh repo + persona) — chưa vá, đã ghi.**
 
-## 6. Khuyến nghị theo tiêu chí "đúng trước nhanh" — chờ hai hàng đang đo
+## 6. Khuyến nghị theo tiêu chí "đúng trước nhanh" — đủ dữ liệu, 3 lượt mỗi hàng, cụt = 0
 
 Với dữ liệu đến giờ: **Qwen3.6‑35B‑A3B nghĩ BẬT** — bằng bản dày về đúng (83 %), nhanh 2,6×, nạp được
-trên llama.cpp b9814, và **H‑ts3 3/3**. Qwen3.8 chỉ đánh giá được sau hàng 32k. Devstral chờ bộ 12.
+trên llama.cpp b9814, và **H‑ts3 3/3**. Qwen3.8 @32k: 5 bài cụt chạy lại **9/15, 0 cụt** (max 15.761 tok — lần này không chạm trần 16k; lượt đầu cụt là phương sai lấy mẫu, không phải nhu cầu token cố định). Ghép công bằng ⇒ **81 %**, vẫn **dưới** hai model Qwen3.6 (83 %) và chậm gấp 2,4× MoE. Điểm trừ riêng: **6/15 lượt không phát khối mã dù không cụt** — Qwen3.8 nghĩ xong mà không đóng khung mã; template mặc định `xhigh` là nghi phạm, chưa đo với `--effort` thấp hơn. Devstral bộ 12: **17/36 = 47 %**, 0 cụt, 5,0 s/bài — trên Coder (31 %) nhưng dưới mọi cấu hình Qwen3.6/3.8, và không có chế độ nghĩ để mua thêm. Loại khỏi danh sách ứng viên chính; giữ làm mốc đối chiếu.
 Bản vá G18 là **điều kiện cần** cho mọi lựa chọn có nghĩ: không có nó, model thắng cũng chỉ tới tay
 người dùng ở 8 %.
 

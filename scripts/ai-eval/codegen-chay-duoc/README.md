@@ -32,7 +32,7 @@ Trần hẹp ⇒ bài **cụt** ⇒ trượt ⇒ **con số THẤP GIẢ**. Đã
 |---|---|---|
 | Qwen3.8-27B | 4k ⇒ 22 % (7/9 cụt) | 12k ⇒ 67 % |
 | Qwen3.6-27B | 4k ⇒ 2/12 (10/12 cụt) | 16k ⇒ 83 % (0 cụt) |
-| Qwen3.8-27B | 16k ⇒ 75 % (7/36 cụt) | **32k** (trần phần cứng) ⇒ xem `M-q38-32k-*` |
+| Qwen3.8-27B | 16k ⇒ 75 % (7/36 cụt) | **32k** ⇒ 81 % (0 cụt; 5 bài chạy lại kết thúc ≤15.761 tok — lần này không chạm trần) |
 
 Runner in `genTok`; `so-sanh.mjs` in `tok/bài`. **Mọi báo cáo phải ghi `cụt N/M`; N ≠ 0 ⇒ chặn dưới.**
 Dưới tiêu chí *"đúng trước nhanh"* của chủ dự án, đây là kiểu sai nguy hiểm nhất: loại oan model tốt nhất.
@@ -131,11 +131,12 @@ Xếp theo **tính đúng đắn** (tiêu chí chủ dự án 2026-09-22: *"đú
 |---|---|---|---|---|
 | **Qwen3.6-35B-A3B** · nghĩ BẬT 16k | **30/36 = 83 %** | 0 | 30.346 | MoE 3B hoạt động; `qwen35moe` nạp được; giải H-ts3 3/3 |
 | **Qwen3.6-27B** · nghĩ BẬT 16k | **30/36 = 83 %** | 0 | 79.826 | bằng MoE về đúng, chậm 2,6× |
-| Qwen3.8-27B · nghĩ BẬT 16k | 27/36 = 75 % | **7** | 109.578 | **chặn dưới** — xem `M-q38-32k-*` |
+| **Qwen3.8-27B** · nghĩ BẬT, ghép công bằng (7 id @16k + 5 id cụt @32k) | **29/36 = 81 %** | 0 | 73.135 | 5 id chạy lại @32k: 9/15, max 15.761 tok, 0 cụt; **6/15 không phát khối mã** dù không cụt; H-cs2 0/3 |
+| Qwen3.8-27B · nghĩ BẬT 16k (số gốc) | 27/36 = 75 % | **7** | 109.578 | chặn dưới — đã thay bằng hàng trên |
 | Qwen3.6-27B · nghĩ TẮT 2.5k | 26/36 = 72 % | 0 | 12.844 | |
 | Qwen3.8-27B · nghĩ TẮT 2.5k | 26/36 = 72 % | 0 | 8.580 | |
 | Qwen3.6-35B-A3B · nghĩ TẮT 2.5k | 25/36 = 69 % | 1 | 5.342 | |
-| Devstral Small 2 (Ollama) | 14/27 = 52 % *(bộ 9)* | 0 | 5.097 | chỉ chạy trên Ollama; đo lại bộ 12 |
+| Devstral Small 2 (Ollama) · bộ 12 | 17/36 = 47 % | 0 | 5.035 | chỉ chạy trên Ollama (`mistral3` có thị giác, b9814 không nạp); không có chế độ nghĩ; C++ 3/9, TS 3/9 |
 | Qwen3-Coder-30B-A3B *(đang dùng)* | 11/36 = 31 % | 0 | 1.702 | không nghĩ |
 
 | Trục H · đường ống, Qwen3.6-27B nghĩ BẬT | Chạy được | Lượt chết vì đường ống (G5-D) |
