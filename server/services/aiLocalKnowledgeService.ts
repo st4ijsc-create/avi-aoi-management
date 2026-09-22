@@ -65,7 +65,7 @@ import {
   tranTokenSinhMa,
   nenThuLaiVoiTranRong,
   ghiModelDaNghi,
-  modelDaTungNghi,
+  modelNenCoiLaBietNghi,
   TRAN_SINH_KHONG_NGHI,
 } from "./ai/tranTokenSinhMa";
 import { kiemNganSachNguCanh } from "./aiLlamaServerClient";
@@ -5665,16 +5665,19 @@ async function* streamCodingGenerate(
    *   với cổng ngân sách ngữ cảnh của llama-server; không dựng thước thứ hai ở đây.
    */
   const dinhDanhModel = process.env.GGUF_DEFAULT_MODEL || "default";
+  // ★ `modelNenCoiLaBietNghi` = ô nhớ lúc chạy HOẶC gợi ý theo tên đã đo (Qwen3.6/3.8) — bỏ thuế
+  //   một lượt thử lại sau mỗi lần khởi động cho model mặc định mới (Qwen3.6-35B-A3B, 2026-09-22).
+  //   Gợi ý sai chiều nào cũng rẻ; cơ chế thử-lại vẫn là sàn. Xem docblock trong `tranTokenSinhMa.ts`.
   const tinhTran = (systemPrompt: string, prompt: string, epRong: boolean): number => {
     const ns = kiemNganSachNguCanh({ systemPrompt, prompt, maxTokens: 0 });
     return tranTokenSinhMa({
       ctxSlotTokens: ns.tranMoiSlot,
       tokenPrompt: ns.tokenVao,
-      modelDaTungNghi: epRong || modelDaTungNghi(dinhDanhModel),
+      modelDaTungNghi: epRong || modelNenCoiLaBietNghi(dinhDanhModel),
     });
   };
   // Trần dùng để CÂN lịch sử/ngữ cảnh mã (chưa có prompt cuối ⇒ lấy theo lớp model, không kẹp ctx).
-  const MAX_TOKENS_SINH = modelDaTungNghi(dinhDanhModel) ? tinhTran("", "", true) : TRAN_SINH_KHONG_NGHI;
+  const MAX_TOKENS_SINH = modelNenCoiLaBietNghi(dinhDanhModel) ? tinhTran("", "", true) : TRAN_SINH_KHONG_NGHI;
 
   /**
    * ★★★ doc 79 · TRỤC 1 (D) — NGỮ CẢNH MÃ THẬT. Đây là nơi *"AI mù kiến trúc khi sinh mã"* được vá.

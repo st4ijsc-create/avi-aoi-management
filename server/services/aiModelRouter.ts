@@ -392,6 +392,43 @@ export const ROUTER_MODEL_PROFILES: readonly RouterModelProfile[] = [
       "AI_ROUTER_LATENCY_PIN_MS / AI_ROUTER_EASY_MAX_CHARS / AI_ROUTER_HARD_MIN_CHARS, hoặc thêm " +
       "số đo vào chính hồ sơ này.",
   },
+  {
+    /**
+     * ★★★ 2026-09-22 — MODEL MẶC ĐỊNH MỚI theo quyết định của chủ dự án ("đúng trước nhanh").
+     * Chọn vì đo được trên bộ 12 bài khó × 3 lượt (trục thuần, nghĩ BẬT, 0 bài cụt): 30/36 = 83 % —
+     * bằng Qwen3.6-27B dày về độ chính xác, nhanh 2,6×; giải H-ts3 3/3 (bài không cấu hình nào khác
+     * giải được). Kiến trúc `qwen35moe` nạp được trên llama.cpp b9814 (khác Devstral `mistral3`).
+     *
+     * Mọi số dưới đây ĐO TẠI CHỖ từ log llama-server của chính lượt đo (`tmp/audit-ai/ls-Qwen3.6-35B-
+     * A3B-UD-Q4_K_XL.err.log`), không chép từ nhà phát hành:
+     *   • cold-load 68,1 s (dòng đầu → "server is listening"), ctx 32768, -ngl 999, KV f16;
+     *   • decode 187,9 t/s trung bình trên 372 lượt (min 69,2 · max 218,8);
+     *   • prompt processing ~1.000 t/s.
+     * ⚠ Ngữ cảnh: 32768/slot là TRẦN PHẦN CỨNG trên RTX 5090 32 GB cùng CUDA context của server
+     *   node (đo: 29,0 GB dùng ở 32k). 65536 KHÔNG nạp nổi. `GGUF_MAX_CTX=32768` khớp.
+     * ⚠ Ngưỡng định tuyến easy/hard/pin = MOE_THRESHOLDS, và đây là kết luận ĐO ĐƯỢC chứ không phải
+     *   thừa kế mù: các ngưỡng ấy được chọn cho lớp "3B hoạt động, decode ~190 t/s" — model này đo
+     *   tại chỗ 187,9 t/s so với 192,5 t/s của 30B-A3B (lệch 2,4 %), cùng fast tier Qwen3-4B, và
+     *   pin 700 ms ≤ cold-load 68,1 s với biên rộng. Cùng lớp đo được ⇒ cùng ngưỡng. Với
+     *   `AI_CODING_MODEL_TASK=code` tầng code đi thẳng, ngưỡng này chỉ chạm /ai-chat.
+     */
+    label: "Qwen3.6-35B-A3B (MoE qwen35moe, 3B active, biết nghĩ) + Qwen3-4B",
+    matches: /35b[-_. ]?a3b/i,
+    sampleBasename: "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+    measuredOn: "2026-09-22 · audit AI Local · RTX 5090 · llama.cpp b9814 · đo TẠI CHỖ (log llama-server)",
+    provenance: "measured-here",
+    deepColdLoadMs: 68100,
+    deepDecodeTokPerSec: 187.9,
+    fastColdLoadMs: 1220, // Qwen3-4B, giữ nguyên số đo 2026-08-02 (fast tier không đổi)
+    fastDecodeTokPerSec: 234.9,
+    ...MOE_THRESHOLDS,
+    thresholdsInheritedFrom: null,
+    note:
+      "Cold-load 68 s (dày hơn 30B-A3B 6 s: 20,8 GB vs 16,5 GB) ⇒ KHÔNG bao giờ được unload/reload " +
+      "theo lượt; llama-server giữ thường trực. Model BIẾT NGHĨ: trần token sinh mã do G18 " +
+      "(`tranTokenSinhMa`) tự nới. Ngưỡng easy/hard/pin = lớp MoE 3B-active, xác nhận bằng decode " +
+      "đo tại chỗ 187,9 t/s (30B-A3B: 192,5) — cùng lớp đo được, cùng ngưỡng.",
+  },
 ];
 
 /** Hồ sơ cho model KHÔNG khớp mục nào — mặc định phải là "chưa đo", không phải "coi như MoE". */

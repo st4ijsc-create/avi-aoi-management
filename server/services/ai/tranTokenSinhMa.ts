@@ -148,3 +148,29 @@ export function modelDaTungNghi(dinhDanhModel: string): boolean {
 export function __resetONhoForTests(): void {
   oNho.clear();
 }
+
+/**
+ * ★ GỢI Ý "model này biết nghĩ" theo TÊN — để lượt đầu sau mỗi lần khởi động không phải trả thuế
+ * một lượt thử lại (đo được: ~30–80 s đốt vào một lượt G5-D rồi mới thử lại).
+ *
+ * ⚠ Đây là GỢI Ý, không phải hàng rào. Hai chiều sai của nó đều rẻ:
+ *   • gợi ý SAI DƯƠNG (tên khớp nhưng model không nghĩ) ⇒ trần rộng hơn cần ⇒ chỉ tốn ngữ cảnh;
+ *   • gợi ý SAI ÂM (model nghĩ mà tên không khớp) ⇒ `nenThuLaiVoiTranRong` vẫn bắt ở lượt đầu.
+ * Cơ chế thử-lại vẫn là sàn; bảng tên chỉ bỏ cái thuế lượt đầu cho các model ĐÃ ĐO là biết nghĩ.
+ * Danh sách rút từ phép đo 2026-09-22 (template có `enable_thinking`, thinking = 1 mặc định):
+ * Qwen3.6-27B · Qwen3.6-35B-A3B · Qwen3.8-27B. Không thêm tên chưa đo.
+ */
+const TEN_MODEL_DA_DO_BIET_NGHI: readonly RegExp[] = [/qwen3\.6/i, /qwen3\.8/i];
+
+export function goiYModelBietNghi(dinhDanhModel: string | null | undefined): boolean {
+  const s = String(dinhDanhModel ?? "");
+  return TEN_MODEL_DA_DO_BIET_NGHI.some((re) => re.test(s));
+}
+
+/**
+ * Ô nhớ HIỆU DỤNG = đã ghi nhận lúc chạy **HOẶC** gợi ý theo tên. Người gọi dùng hàm này thay cho
+ * `modelDaTungNghi` trần để lượt đầu đã khởi động ở trần rộng với model đã đo.
+ */
+export function modelNenCoiLaBietNghi(dinhDanhModel: string): boolean {
+  return modelDaTungNghi(dinhDanhModel) || goiYModelBietNghi(dinhDanhModel);
+}

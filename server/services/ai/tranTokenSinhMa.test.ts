@@ -4,6 +4,8 @@ import {
   nenThuLaiVoiTranRong,
   ghiModelDaNghi,
   modelDaTungNghi,
+  goiYModelBietNghi,
+  modelNenCoiLaBietNghi,
   __resetONhoForTests,
   TRAN_SINH_KHONG_NGHI,
   TRAN_SINH_BIET_NGHI,
@@ -104,5 +106,34 @@ describe("ô nhớ model-đã-nghĩ", () => {
     ghiModelDaNghi(null as unknown as string);
     expect(modelDaTungNghi(null as unknown as string)).toBe(true);
     expect(modelDaTungNghi("")).toBe(true);
+  });
+});
+
+describe("goiYModelBietNghi / modelNenCoiLaBietNghi — bỏ thuế lượt đầu cho model ĐÃ ĐO", () => {
+  beforeEach(() => __resetONhoForTests());
+
+  it("★★★ ba model đã đo 2026-09-22 (template thinking=1) ⇒ gợi ý ĐÚNG, kể cả tên tệp GGUF đầy đủ", () => {
+    for (const t of ["Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", "Qwen3.6-27B-Q4_K_M.gguf", "Qwen3.8-27B-Q4_K_M.gguf", "qwen3.6-35b-a3b"]) {
+      expect(goiYModelBietNghi(t), t).toBe(true);
+    }
+  });
+
+  it("★★★ model KHÔNG nghĩ ⇒ gợi ý false ⇒ trần cũ 3.000 giữ nguyên (hành vi cũ không đổi)", () => {
+    for (const t of ["Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf", "Qwen3-30B-A3B-Instruct-2507", "Qwen3-4B-Instruct-2507", "devstral-small-2", "default", "", null]) {
+      expect(goiYModelBietNghi(t as string), String(t)).toBe(false);
+      expect(modelNenCoiLaBietNghi(String(t ?? "")), String(t)).toBe(false);
+    }
+  });
+
+  it("★ 'Qwen3' trần (không .6/.8) KHÔNG khớp — gợi ý chỉ cho tên đã đo, không đoán họ", () => {
+    expect(goiYModelBietNghi("Qwen3-30B-A3B")).toBe(false);
+    expect(goiYModelBietNghi("Qwen3.5-27B")).toBe(false); // chưa đo ⇒ không gợi ý; thử-lại vẫn bắt
+  });
+
+  it("★★★ HỢP NHẤT: ô nhớ lúc chạy HOẶC gợi ý — chiều nào bật cũng coi là biết nghĩ", () => {
+    expect(modelNenCoiLaBietNghi("Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf")).toBe(true); // chỉ gợi ý
+    expect(modelNenCoiLaBietNghi("ModelLa-7B")).toBe(false);
+    ghiModelDaNghi("ModelLa-7B"); // lượt chạy phát hiện ra
+    expect(modelNenCoiLaBietNghi("ModelLa-7B")).toBe(true); // chỉ ô nhớ
   });
 });
