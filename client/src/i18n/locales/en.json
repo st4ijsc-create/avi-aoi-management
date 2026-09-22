@@ -19433,6 +19433,12 @@
       }
     },
     "terminal": {
+      "loc": {
+        "label": "Filter command history",
+        "tatCa": "all",
+        "do": "failed {{n}}",
+        "xanh": "passed {{n}}"
+      },
       "title": "Command output",
       "empty": "No command has run yet. Approve a verification command to see its output here.",
       "count": "{{n}} command(s)",

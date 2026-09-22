@@ -330,7 +330,9 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
    khỏi `StreamEvent` (0 nơi phát, 0 người đọc); census SSE giữ cơ chế miễn với danh sách RỖNG. **F6 — XONG 22:08:** ô "phiên" trên
    dải trạng thái cộng dồn từ `usage` + `done.degraded` + luồng lỗi (`thongKePhien.ts`, 5 lưới; "nghĩ không đo ≠ 0"); ngưỡng từ chối
    1 → cảnh báo, 3 → nguy; reset khi đổi phiên; khoá i18n ×3 — **kiểm sống 22:42 ĐẠT**: "session: —" → "session: 1 turns", tooltip
-   "692 tokens in · 1956 out (thinking 1746) · 11 s · 0 refusals". **F5** (lọc lịch sử lệnh) và **B6** để phiên sau.
+   "692 tokens in · 1956 out (thinking 1746) · 11 s · 0 refusals". **F5 — XONG 23:02:** lọc lịch sử lệnh theo kết cục
+   (tất cả / đỏ N / xanh N; `bangTerminalLogic.ts`, 6 lưới — exit 0 mà test đỏ vẫn là đỏ; exit null không thuộc bên nào); lịch sử +
+   exit code + thời lượng + chạy lại + xoá đã có từ G17. **B6** để phiên sau.
    **Ablation "persona giữ, khối rỗng" — ĐO XONG 22:38: 24/36 = 67 %**, tệ hơn cả không ngữ cảnh (75 %) — **Python 0/9** (py1/py2/py3
    đều 3→0), ts/cs không đổi. Persona nói "bạn có mã thật, dựa vào nó" mà không có khối ⇒ model bám vào thứ không tồn tại (đúng lớp
    lỗi §8.5 canh) — hại nhất ở ngôn ngữ không phải của repo. ⇒ **11 điểm của 4k là của BYTE MÃ THẬT + persona khớp thực tế**; không

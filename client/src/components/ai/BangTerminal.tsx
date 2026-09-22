@@ -48,6 +48,7 @@ import type { GoiYDuAn } from "@/lib/goiYDuAn";
 import type { DiaDiemLoi } from "@shared/aiCodingLoiViTri";
 // ★★★ 2026-08-29 · ĐUÔI SỐNG — gập `\r`/ANSI (ngữ nghĩa terminal) + nhãn giây, THUẦN (lưới riêng).
 import { gopVachVe, nhanGiayTroi, type LuotSong } from "@/lib/dauRaSong";
+import { demKetCuc, locLuotLenh, type CheDoLocLenh } from "./bangTerminalLogic";
 
 /**
  * ★★★ HỢP ĐỒNG — chốt cứng, Wave nối-dây phụ thuộc. Đừng đổi tên / hình dạng trường.
@@ -145,7 +146,10 @@ export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSo
   const dauRaSongGon = luotSong ? gopVachVe(luotSong.dauRa) : "";
 
   // MỚI-NHẤT-TRƯỚC: đảo BẢN SAO (`luotLenh` là readonly — `.reverse()` tại chỗ sẽ đột biến prop).
-  const daoNguoc = [...luotLenh].reverse();
+  // ★ F5 (2026-09-22) — lọc lịch sử theo kết cục (tất cả / đỏ / xanh); logic thuần ở `bangTerminalLogic.ts`.
+  const [cheDoLoc, setCheDoLoc] = React.useState<CheDoLocLenh>("tat-ca");
+  const demLoc = demKetCuc(luotLenh);
+  const daoNguoc = locLuotLenh(luotLenh, cheDoLoc).reverse();
 
   // Danh sách trắng: CHỈ mục `canChayLenh === true`. Lọc ở đây là phép canh sống (xem docblock ⚠).
   const lenhChayNhanh = goiYNhanh.filter((g) => g.canChayLenh === true);
@@ -165,6 +169,33 @@ export function BangTerminal({ luotLenh, goiYNhanh, dangGui, onChayNhanh, luotSo
           >
             {t("repoWs.terminal.count", "{{n}} lệnh", { n: luotLenh.length })}
           </span>
+        )}
+        {/* ★ F5 — bộ lọc kết cục. Nhãn mang SỐ ĐẾM để người dùng thấy ngay có mấy lượt đỏ mà không cần bấm. */}
+        {luotLenh.length > 1 && (
+          <div data-loc-lenh role="group" aria-label={t("repoWs.terminal.loc.label", "Lọc lịch sử lệnh")} className="flex shrink-0 items-center gap-0.5 text-[10px]">
+            {(
+              [
+                ["tat-ca", t("repoWs.terminal.loc.tatCa", "tất cả")],
+                ["do", t("repoWs.terminal.loc.do", "đỏ {{n}}", { n: demLoc.do })],
+                ["xanh", t("repoWs.terminal.loc.xanh", "xanh {{n}}", { n: demLoc.xanh })],
+              ] as const
+            ).map(([cd, nhan]) => (
+              <button
+                key={cd}
+                type="button"
+                data-loc-lenh-che-do={cd}
+                aria-pressed={cheDoLoc === cd}
+                onClick={() => setCheDoLoc(cd)}
+                className={cn(
+                  "rounded border px-1.5 py-0.5 tabular-nums",
+                  cheDoLoc === cd ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-muted",
+                  cd === "do" && demLoc.do > 0 && "text-red-600 dark:text-red-400",
+                )}
+              >
+                {nhan}
+              </button>
+            ))}
+          </div>
         )}
         {onXoaLichSu && luotLenh.length > 0 && (
           <Button
