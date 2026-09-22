@@ -23,7 +23,15 @@ if (!tienTo.length) {
 const NGON_NGU = ["ts", "py", "cs", "cpp"];
 
 function gom(tt) {
-  const tep = fs.readdirSync(RP).filter((f) => f.startsWith(tt) && f.endsWith(".json"));
+  /**
+   * ⚠ KHỚP `<nhãn><số lượt>.json`, KHÔNG khớp tiền tố lỏng. Bản đầu dùng `startsWith(tt)` và
+   * `M-q36moe-` nuốt luôn `M-q36moe-nt-*.json` ⇒ hàng "nghĩ BẬT" của MoE gom cả 36 bài nghĩ TẮT
+   * vào — hai trục bị trộn thành một con số vô nghĩa, và bảng vẫn in ra đẹp đẽ. Một bộ chọn lỏng
+   * là một phát hiện giả đang chờ được in.
+   */
+  // Nhãn chỉ gồm chữ/số/`-`/`_` ⇒ so chuỗi thẳng, KHÔNG dựng regex từ nhãn (một lần thoát ký tự
+  // sai là một bộ chọn hỏng trong im lặng — vừa đo được ngay ở bản đầu của dòng này).
+  const tep = fs.readdirSync(RP).filter((f) => f.startsWith(tt) && /^\d+\.json$/.test(f.slice(tt.length)));
   const luot = [];
   for (const f of tep) {
     try { luot.push(JSON.parse(fs.readFileSync(`${RP}/${f}`, "utf8"))); } catch { /* bỏ tệp hỏng */ }
