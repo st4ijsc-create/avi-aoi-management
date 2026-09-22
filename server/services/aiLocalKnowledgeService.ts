@@ -61,6 +61,14 @@ import { quyetDinhDuongTat, cauChiNenNo, TOOL_MANG_NGU_CANH } from "./ai/toolDuo
 import { laCauSinhMa } from "./ai/cauSinhMa";
 import { thuMucTuLoi } from "./ai/thuMucTuLoi";
 import { vanBanChoModel } from "./ai/vanBanChoModel";
+import {
+  tranTokenSinhMa,
+  nenThuLaiVoiTranRong,
+  ghiModelDaNghi,
+  modelDaTungNghi,
+  TRAN_SINH_KHONG_NGHI,
+} from "./ai/tranTokenSinhMa";
+import { kiemNganSachNguCanh } from "./aiLlamaServerClient";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
@@ -5637,7 +5645,36 @@ async function* streamCodingGenerate(
   if (!(await codingModelSanSang())) return "model_offline";
 
   const nguCanh = await nguCanhDuAnChoPrompt(context, execCtx);
-  const MAX_TOKENS_SINH = 3_000;
+  /**
+   * ★★★ G18 (audit 2026-09-22) — TRẦN TOKEN SINH MÃ THEO LỚP MODEL, không còn là hằng `3_000`.
+   *
+   * Đo được: model BIẾT NGHĨ (Qwen3.6-27B / 35B-A3B, nghĩ BẬT) tiêu **5.220 token/bài trung bình,
+   * tối đa 8.015** trên bộ bài khó — trần 3.000 cắt cụt hoặc từ chối đúng những model chính xác
+   * nhất (83 % chạy được ở trần đủ rộng). Dưới tiêu chí *"đúng trước nhanh"* của chủ dự án, đó là
+   * kiểu sai nguy hiểm nhất: loại oan model tốt nhất trong im lặng.
+   *
+   * Cơ chế (lý lẽ đầy đủ ở `ai/tranTokenSinhMa.ts`, không lặp ở đây):
+   *   • model chưa từng nghĩ ⇒ trần CŨ (3.000) — hành vi cũ không đổi một byte cho model không nghĩ;
+   *   • model đã từng nghĩ (ô nhớ trong tiến trình) ⇒ trần rộng, kẹp theo ctx/slot − prompt;
+   *   • lượt đầu với model lạ mà nổ `LoiTokenCanKietVaoSuyLuan` ⇒ ghi ô nhớ + THỬ LẠI MỘT LẦN
+   *     (xem nhánh `nenThuLaiVoiTranRong` trong `catch` bên dưới).
+   *
+   * ⚠ Định danh model = `GGUF_DEFAULT_MODEL` (thứ người vận hành khai là model đang phục vụ). Ô nhớ
+   *   khoá theo nó để một lượt đổi model không kế thừa kết luận của model trước.
+   * ⚠ `tokenVao`/`tranMoiSlot` lấy từ `kiemNganSachNguCanh` — MỘT thước ước lượng token, dùng chung
+   *   với cổng ngân sách ngữ cảnh của llama-server; không dựng thước thứ hai ở đây.
+   */
+  const dinhDanhModel = process.env.GGUF_DEFAULT_MODEL || "default";
+  const tinhTran = (systemPrompt: string, prompt: string, epRong: boolean): number => {
+    const ns = kiemNganSachNguCanh({ systemPrompt, prompt, maxTokens: 0 });
+    return tranTokenSinhMa({
+      ctxSlotTokens: ns.tranMoiSlot,
+      tokenPrompt: ns.tokenVao,
+      modelDaTungNghi: epRong || modelDaTungNghi(dinhDanhModel),
+    });
+  };
+  // Trần dùng để CÂN lịch sử/ngữ cảnh mã (chưa có prompt cuối ⇒ lấy theo lớp model, không kẹp ctx).
+  const MAX_TOKENS_SINH = modelDaTungNghi(dinhDanhModel) ? tinhTran("", "", true) : TRAN_SINH_KHONG_NGHI;
 
   /**
    * ★★★ doc 79 · TRỤC 1 (D) — NGỮ CẢNH MÃ THẬT. Đây là nơi *"AI mù kiến trúc khi sinh mã"* được vá.
@@ -5776,19 +5813,25 @@ async function* streamCodingGenerate(
     };
   }
 
-  const it = rutChuCoCanh(
-    streamCodingModel({
-      // ★ G4 — tầng model người dùng chọn cho lượt này (bộ chọn ở màn lập trình). Vắng ⇒ mặc định hệ.
-      tacVu: (context as { modelTask?: unknown })?.modelTask,
-      systemPrompt: heThong,
-      prompt: promptSinhMa(question, language, lich.khoi, khoiMa, khoiBai),
-      maxTokens: MAX_TOKENS_SINH,
-      temperature: 0.25,
-      userId: execCtx?.user?.id,
-      // ★★★ 2026-08-23 — huỷ lan xuống model. Xem `motLuotModel` cho lý lẽ đầy đủ.
-      ...(execCtx?.signal ? { signal: execCtx.signal } : {}),
-    }),
-  );
+  const promptCuoi = promptSinhMa(question, language, lich.khoi, khoiMa, khoiBai);
+  const moLuong = (tran: number) =>
+    rutChuCoCanh(
+      streamCodingModel({
+        // ★ G4 — tầng model người dùng chọn cho lượt này (bộ chọn ở màn lập trình). Vắng ⇒ mặc định hệ.
+        tacVu: (context as { modelTask?: unknown })?.modelTask,
+        systemPrompt: heThong,
+        prompt: promptCuoi,
+        maxTokens: tran,
+        temperature: 0.25,
+        userId: execCtx?.user?.id,
+        // ★★★ 2026-08-23 — huỷ lan xuống model. Xem `motLuotModel` cho lý lẽ đầy đủ.
+        ...(execCtx?.signal ? { signal: execCtx.signal } : {}),
+      }),
+    );
+  // ★ G18 — trần THẬT cho lượt này: kẹp theo ctx/slot − prompt cuối (xem `tinhTran`).
+  let epRong = false;
+  let tran = tinhTran(heThong, promptCuoi, epRong);
+  let it = moLuong(tran);
 
   let kq: KetQuaChu;
   let daPhat = "";
@@ -5801,6 +5844,29 @@ async function* streamCodingGenerate(
       try {
         n = await it.next();
       } catch (e) {
+        /**
+         * ★★★ G18 — THỬ LẠI ĐÚNG MỘT LẦN khi model tiêu hết trần vào chuỗi suy luận mà chưa phát ký
+         * tự mã nào. Đây là cách duy nhất để tín hiệu "model này biết nghĩ" được ĐO lúc chạy thay vì
+         * được KHAI trong `.env` (một cờ bị quên hỏng trong im lặng: trần tụt về 3.000, chất lượng
+         * rơi, không lỗi nào nổ).
+         *
+         * An toàn để thử lại vì lớp lỗi này, theo định nghĩa (`phanDinhCauTraLoiRong`), là *"chưa
+         * phát ký tự nào ra content"* ⇒ `daPhat === ""` ⇒ người dùng chưa thấy gì để bị nối hai nửa.
+         * Có chữ rồi thì KHÔNG thử lại — đúng luật G1 của `quyetDinhSauLoiServer`. `epRong` chặn
+         * lặp: lượt đã rộng mà vẫn nổ thì đi thẳng xuống thông báo lỗi trung thực bên dưới.
+         */
+        if (daPhat === "" && nenThuLaiVoiTranRong(e, epRong)) {
+          ghiModelDaNghi(dinhDanhModel);
+          await it.return(undefined as unknown as KetQuaChu).catch(() => {});
+          epRong = true;
+          tran = tinhTran(heThong, promptCuoi, epRong);
+          console.warn(
+            `[aiLocalKnowledge] G18: model "${dinhDanhModel}" tiêu hết hạn mức vào SUY LUẬN — ` +
+              `ghi nhận model biết nghĩ, thử lại MỘT lần ở trần ${tran}.`,
+          );
+          it = moLuong(tran);
+          continue;
+        }
         const m = codingModelErrorMessage(language, e);
         yield { type: "token", token: (daPhat ? "\n\n" : "") + m };
         yield doneSinhMa(daPhat ? `${daPhat}\n\n${m}` : m, "tool");

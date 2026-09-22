@@ -629,7 +629,7 @@ describe("§7 — doc 79 (D): ngữ cảnh MÃ THẬT tới được prompt sinh
     expect(h.promptNhan).not.toContain("MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ");
     expect(h.soLuotMucLuc, "tắt cờ mà vẫn đi embed = đốt GPU cho hư không").toBe(0);
     expect(r.events.some((e) => e.type === "tool" && e.toolName === "read_file"), "không có ngữ cảnh ⇒ không có thẻ").toBe(false);
-    expect(r.chu, "không có nguồn ⇒ KHÔNG được khoe chân nguồn").not.toContain("ĐỌC TỪ ĐĨA");
+    expect(r.chu, "không có nguồn ⇒ KHÔNG được khoe chân nguồn").not.toContain("nạp làm NGỮ CẢNH");
     // Hành vi cũ còn NGUYÊN: vẫn sinh mã bình thường.
     expect(r.chu).toContain("TcpListener");
   });
@@ -672,7 +672,10 @@ describe("§7 — doc 79 (D): ngữ cảnh MÃ THẬT tới được prompt sinh
     // Chân nguồn phải nằm trong CHUỖI `answer` — phiên đã lưu chỉ giữ {role, content}, thẻ thì mất.
     const done = r.done;
     expect(done && done.type === "done" && done.answer).toContain(TEP_NGU_CANH);
-    expect(done && done.type === "done" && done.answer).toContain("ĐỌC TỪ ĐĨA");
+    // ★ G10/P9 (0b6f5f7f7) đổi câu chân nguồn: "ĐỌC TỪ ĐĨA" (khai MẠNH HƠN sự thật) → "Các tệp được nạp
+    //   làm NGỮ CẢNH … (điểm liên quan — KHÔNG khẳng định câu trả lời có dùng tới)". Lưới này bám câu MỚI;
+    //   hai khẳng định `not.toContain` ở §7.2/§7.5 cũng đổi theo — để chúng không thành phép canh RỖNG.
+    expect(done && done.type === "done" && done.answer).toContain("nạp làm NGỮ CẢNH");
     expect(r.chu).toContain(TEP_NGU_CANH);
   });
 
@@ -764,7 +767,7 @@ describe("§7 — doc 79 (D): ngữ cảnh MÃ THẬT tới được prompt sinh
     expect(r.chu).toContain("TcpListener");
     // Và KHÔNG khoe một nguồn mà model không hề nhìn thấy.
     expect(r.events.some((e) => e.type === "tool" && e.toolName === "read_file")).toBe(false);
-    expect(r.chu).not.toContain("ĐỌC TỪ ĐĨA");
+    expect(r.chu).not.toContain("nạp làm NGỮ CẢNH");
   });
 
   it("★★★ 7.7 THỨ TỰ NHƯỜNG CHỖ — LỊCH SỬ nhường TRƯỚC ngữ cảnh mã", async () => {
