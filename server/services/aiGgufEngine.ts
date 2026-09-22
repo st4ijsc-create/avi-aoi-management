@@ -244,7 +244,12 @@ export interface GgufStreamChunk {
    * luồng. ⚠ Nó **KHÔNG BAO GIỜ** được biến thành `{type:"token"}`: mọi consumer coi `token` là
    * chữ để IN RA MÀN HÌNH — cùng lớp lỗi với `reasoning_content` (xem `suyLuanTrongChunk`).
    */
-  type: "token" | "done" | "error" | "tool_call_delta";
+  /**
+   * ★ F1 (2026-09-22) — `"reasoning"`: một mảnh `delta.reasoning_content` phát SỐNG trong lúc model nghĩ (trước mọi
+   * `token`). Consumer không quan tâm bỏ qua kiểu lạ; đường lập trình đưa nó lên SSE `reasoning` cho bảng "model đang
+   * nghĩ". Chỉ đường llama-server có; in-process không phát.
+   */
+  type: "token" | "done" | "error" | "tool_call_delta" | "reasoning";
   token?: string;
   /** G2-B — chỉ trên chunk `"tool_call_delta"`: mảnh `delta.tool_calls` nguyên văn. */
   toolCallDelta?: NativeToolCallDelta[];

@@ -1089,6 +1089,9 @@ async function* streamChatCompletion(
         if (manhSuyLuan) {
           fullReasoning += manhSuyLuan;
           soDeltaSuyLuan += 1;
+          // ★ F1 — phát SỐNG mảnh suy luận (kiểu riêng, KHÔNG lẫn vào `token`): bảng "model đang nghĩ" cần nó
+          //   ngay lúc này, không phải ở chunk `done` 30–90 s sau. `fullText`/`daPhatChu` không đụng.
+          yield { type: "reasoning", token: manhSuyLuan };
         }
         // ★★★ G2-B — mảnh `delta.tool_calls`. Phải gom TRƯỚC `continue` vì một lượt tool-call
         // thuần KHÔNG có `delta.content` nào cả (đo sống: sự kiện đầu `content:null`, rồi chỉ

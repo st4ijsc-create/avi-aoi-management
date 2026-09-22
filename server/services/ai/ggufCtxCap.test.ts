@@ -23,9 +23,9 @@ afterEach(() => {
 });
 
 describe("ggufMaxCtx — đọc tại thời điểm gọi, một nguồn duy nhất", () => {
-  it("không gán ⇒ mặc định 32768", () => {
+  it("không gán ⇒ mặc định 65536 (B3 2026-09-22: đo H 27/36 → 31/36 trên MoE, VRAM còn 6,1 GiB)", () => {
     expect(ggufMaxCtx()).toBe(GGUF_MAX_CTX_DEFAULT);
-    expect(GGUF_MAX_CTX_DEFAULT).toBe(32768);
+    expect(GGUF_MAX_CTX_DEFAULT).toBe(65536);
   });
 
   it("★ đổi giá trị nguồn ⇒ trần hiệu dụng đổi theo — KỂ CẢ VƯỢT 32768 (ca bị hằng cứng nuốt)", () => {

@@ -661,6 +661,29 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
           case "token":
             send({ type: "token", token: evt.token });
             break;
+          /**
+           * ★ F1/F2 (2026-09-22) — hai kiểu sự kiện MỚI của đường lập trình. Bài học đắt: `switch` này là DANH SÁCH
+           * TRẮNG — service phát `usage`/`reasoning` đúng (lưới xanh ở tầng service) mà dây HTTP vẫn câm, chỉ thăm dò
+           * sống mới thấy (probe 19:14: 2.805 token nghĩ trong sổ đo, 0 sự kiện `reasoning` tới client). Lưới
+           * `aiLocalKnowledgeApi.sseCensus.test.ts` nay canh: mọi kiểu trong `StreamEvent` phải có `case` ở đây.
+           */
+          case "reasoning":
+            send({ type: "reasoning", token: evt.token });
+            break;
+          case "usage":
+            send({
+              type: "usage",
+              luot: evt.luot,
+              modelId: evt.modelId,
+              tokensIn: evt.tokensIn,
+              tokensOut: evt.tokensOut,
+              ...(evt.tokensReasoning !== undefined ? { tokensReasoning: evt.tokensReasoning } : {}),
+              thinking: evt.thinking,
+              samplingProfile: evt.samplingProfile,
+              latencyMs: evt.latencyMs,
+              ...(evt.ctxMax !== undefined ? { ctxMax: evt.ctxMax } : {}),
+            });
+            break;
           case "done":
             followUpSuggestions = evt.followUpSuggestions;
             finalAnswer = evt.answer;

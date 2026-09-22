@@ -899,7 +899,40 @@ llama-server b9814 khởi động lại cùng model/ctx/sampling, thêm `--reaso
 còn kích trong đợt này). H‑ts3 0/3 ở đợt này KHÔNG do ngân sách (nghĩ 4–4,5k) — cùng bài tụt ở chính hãng; nghi ngữ cảnh
 repo trong prompt (K2), đo ở B3.
 
-### 8.5 Sáu bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
+### 8.4d B3 — ctx 64k: trục H **31/36 = 86 %**, lần đầu đường ống vượt model thuần
+
+Một biến (`-c 65536` llama-server + `GGUF_MAX_CTX=65536`; B4 12k giữ; sampling `hien-tai`):
+
+| | ctx 32k | **ctx 64k** |
+|---|---|---|
+| Trục H 12 × 3 | 27/36 = 75 % · 26,8 s/bài | **31/36 = 86 % · 28,3 s/bài** |
+| Theo bài | | cpp3 2→3 · py1 2→3 · **ts3 0→2** · cpp 8→9/9 · không bài nào tụt |
+| Agentic · G5‑D | 5/6 · 0 | 5/6 · 0 |
+| VRAM dùng (card 32,6 GiB) | 25,8 GiB | 26,5 GiB (còn 6,1) |
+
+Đường ống nay **trả nhiều hơn model thuần** (86 % vs M 83 %): ngữ cảnh repo (mục lục + khối mã) không còn bị `ggufMaxCtx()` bó
+ở 32k — khoảng cách K2 của bản rà soát đóng lại từ phía đúng. ⇒ **64k thành mặc định** (`GGUF_MAX_CTX_DEFAULT`), đúng điều
+kiện chủ dự án đã duyệt (H tốt hơn + VRAM ≥ 3 GB). Còn mở: launcher sản xuất `-np 2` (2 × 32k) — 64k/slot × 2 cần +5 GiB KV;
+việc chọn 1 × 64k hay 2 × 32k là của chủ dự án.
+
+### 8.4e F1 — bảng "model đang nghĩ" sống, và dây HTTP câm mà lưới không thấy
+
+Đường đi: chunk `reasoning` sống ở `aiLlamaServerClient` → đối tượng `{suyLuan}` (qua bộ che bí mật riêng) ở
+`streamCodingModel` → SSE `reasoning` ở service → `useKbChatStream.streamingReasoning` → `<BangDangNghi>` (đuôi 1.200 ký tự,
+mở khi chưa có mã, tự gấp khi mã chảy). Lưới xanh ở ba tầng (client chunk · service · logic UI).
+
+**Thăm dò sống lần 1 (19:14): 0 sự kiện `reasoning`, 0 `usage`** dù sổ đo B7 ghi 2.805 token nghĩ cho chính lượt ấy — route
+`/api/ai/local-kb/stream` có `switch (evt.type)` danh sách trắng, hai kiểu mới rơi im lặng; **F2 cũng chưa từng hiện số thật**
+vì cùng lý do, mà thanh `—` trông y hệt "chưa có lượt". Vá case + **census** `aiLocalKnowledgeApi.sseCensus.test.ts` (mọi kiểu
+`StreamEvent` phải có `case`; census lộ thêm `agent_plan`/`agent_step` khai mà 0 nơi phát, 0 người đọc — miễn có điều kiện,
+ứng viên xoá B8).
+
+**Thăm dò sống lần 2 (19:22):** `meta → tool_loop → tool → reasoning (5,5 s) → token (26,9 s) → usage → done`; 3.774 sự kiện
+`reasoning` = 13.285 ký tự trong lúc nghĩ; `usage` {sinh‑ma · 788 vào · 4.290 ra · **4.055 nghĩ** · ctxMax 65.536}. **UI headless
+(19:23):** bảng "Model đang nghĩ… 1131 ký tự" hiện sau **3,9 s**, xong 16,8 s; dải trạng thái **"nghĩ/sinh: 2061 nghĩ · 309
+sinh" · "ctx 10 %"**; 0 lỗi trang. Bảng biến mất khi lượt xong (hiện vật của lượt) — pill "đã nghĩ N token · xem" để F4.
+
+### 8.5 Bảy bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
 
 1. `mockRestore()` xoá `mock.calls` — đọc spy SAU restore ⇒ đỏ oan.
 2. Census "điểm gọi": đếm `hàm\(body,` (dấu phẩy) — `\(body` ăn định nghĩa một dòng, bỏ định nghĩa xuống dòng ⇒ 6 ≠ 5.
@@ -908,3 +941,9 @@ repo trong prompt (K2), đo ở B3.
    PowerShell tool; Bash nền chỉ để đo.
 5. Vitest in `stdout|stderr` chen vào `grep` tổng ⇒ `--reporter=json` rồi đọc `numFailedTests`.
 6. Hai lượt `chay()` trong MỘT ca mà không xoá ô bắt ⇒ `findIndex` trỏ vào lượt trước.
+7. **★★★ Lưới tầng service xanh mà dây HTTP câm** (19:14): `usage`/`reasoning` phát đúng ở `streamAnswer` (lưới `chay()` đo
+   service), nhưng `switch (evt.type)` của route `/api/ai/local-kb/stream` là DANH SÁCH TRẮNG ⇒ hai kiểu mới rơi im lặng.
+   Chỉ thăm dò SỐNG (`tmp/audit-ai/f1-live.mjs`: 2.805 token nghĩ trong sổ đo, 0 sự kiện `reasoning` tới client) mới thấy —
+   thanh trạng thái `—` trông y hệt "chưa có lượt". Cùng họ *"đường thứ N quên"* với `chat_template_kwargs` lắp tay. Vá:
+   thêm case + **census `aiLocalKnowledgeApi.sseCensus.test.ts`** (mọi kiểu trong `StreamEvent` phải có `case`). Bài học: một
+   sự kiện mới đi qua ≥ 3 lớp (service → route → hook → UI) — đo ở lớp NGOÀI CÙNG trước khi khai "xong".

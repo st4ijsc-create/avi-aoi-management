@@ -294,9 +294,21 @@ export interface YeuCauSinhChu {
  * ⚠ Trạng thái của CẢ HAI bộ lọc là của RIÊNG một lượt gọi (thẻ đang mở, mảnh bí mật ở đuôi) —
  * không bao giờ được nâng lên phạm vi module.
  */
-export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<string> {
+/**
+ * ★ F1 (2026-09-22) — MỘT MẢNH SUY LUẬN của model, phát sống trong lúc nghĩ. Là ĐỐI TƯỢNG (không phải chuỗi) để
+ * người tiêu thụ không thể nhầm nó với mã: `rutChuCoCanh` chỉ gom CHUỖI, `daPhat` chỉ đếm CHUỖI, luật G1 "chưa phát
+ * ký tự" vẫn đúng khi model đã nghĩ 10k token. Đã qua bộ che bí mật RIÊNG (suy luận có thể chép lại nội dung tệp).
+ */
+export interface ManhSuyLuan {
+  suyLuan: string;
+}
+
+export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<string | ManhSuyLuan> {
   const catSuyLuan = new StreamingThinkingStripper({ startInsideThinking: thinkingStartsOpen() });
   const cheBiMat = new StreamingSecretRedactor();
+  // ★ F1 — bộ che RIÊNG cho suy luận: hai luồng, hai trạng thái xuyên chunk; dùng chung là nối nửa bí mật của luồng
+  //   này với nửa của luồng kia.
+  const cheBiMatNghi = new StreamingSecretRedactor();
 
   const plan = await planInference({ task: tacVuModel(y.tacVu) as never, text: y.prompt, userId: y.userId });
   if (y.nguyenVanPrompt === true && plan.safeText !== y.prompt) {
@@ -339,6 +351,10 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
         // tách rời; bộ canh nội dung phải đứng CUỐI).
         const an = cheBiMat.push(catSuyLuan.push(chunk.token));
         if (an) yield an;
+      } else if (chunk.type === "reasoning" && typeof chunk.token === "string" && chunk.token.length > 0) {
+        // ★ F1 — suy luận sống, đã che bí mật, đi kiểu ĐỐI TƯỢNG (xem `ManhSuyLuan`).
+        const an = cheBiMatNghi.push(chunk.token);
+        if (an) yield { suyLuan: an };
       } else if (chunk.type === "done") {
         tokensIn = chunk.tokensPrompt ?? 0;
         tokensOut = chunk.tokensGenerated ?? 0;
@@ -350,6 +366,9 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
     }
     // Xả ĐÚNG THỨ TỰ: bộ cắt trước, phần ấy đi QUA bộ che, rồi mới xả bộ che — ngược lại thì đuôi
     // câu ra SAU phần đã che, đảo thứ tự chữ người đọc nhận được.
+    // ★ F1 — xả đuôi bộ che suy luận TRƯỚC đuôi mã (suy luận luôn đi trước mã trong luồng).
+    const duoiNghi = cheBiMatNghi.flush();
+    if (duoiNghi) yield { suyLuan: duoiNghi };
     const con = catSuyLuan.flush();
     const duoi = (con ? cheBiMat.push(con) : "") + cheBiMat.flush();
     if (duoi) yield duoi;
@@ -410,11 +429,18 @@ export interface KetQuaChu {
  *
  * Generator yield từng mảnh (để người dùng thấy tác nhân đang chạy) và TRẢ VỀ phán quyết cuối.
  */
-export async function* rutChuCoCanh(nguon: AsyncGenerator<string>): AsyncGenerator<string, KetQuaChu> {
+export async function* rutChuCoCanh(
+  nguon: AsyncGenerator<string | ManhSuyLuan>,
+): AsyncGenerator<string | ManhSuyLuan, KetQuaChu> {
   let gom = "";
   let mocSau = CANH_TU_KY_TU;
   for await (const manh of nguon) {
     if (!manh) continue;
+    // ★ F1 — mảnh suy luận đi THẲNG qua: không gom (không phải mã), không canh thoái hoá (chuỗi nghĩ lặp là bình thường).
+    if (typeof manh !== "string") {
+      yield manh;
+      continue;
+    }
     gom += manh;
     yield manh;
     if (gom.length >= mocSau) {

@@ -253,6 +253,11 @@ export interface KbStreamCallbacks {
    * được làm hỏng lượt stream. `tokensReasoning` vắng = server không đếm được — **không biết ≠ 0**.
    */
   onUsage?: (u: KbUsageLuot) => void;
+  /**
+   * ★ F1 (2026-09-22) — suy luận SỐNG của model (sự kiện SSE `reasoning`), gọi với văn bản TÍCH LUỸ của lượt hiện tại.
+   * Thuần hiển thị (bảng "model đang nghĩ"); KHÔNG nối vào câu trả lời, KHÔNG lưu phiên.
+   */
+  onReasoning?: (text: string) => void;
 }
 
 /** ★ F2 — gương của `DungLuotModel` (server) + `luot` (lớp lượt). Chỉ các ô client cần. */
@@ -310,6 +315,8 @@ export interface KbToolLoopProgress {
 
 export function useKbChatStream() {
   const [streamingText, setStreamingText] = useState("");
+  /** ★ F1 — suy luận tích luỹ của lượt đang stream (rỗng khi model không nghĩ / đường không phát). */
+  const [streamingReasoning, setStreamingReasoning] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -325,6 +332,7 @@ export function useKbChatStream() {
     ): Promise<KbStreamResult | null> => {
       setIsStreaming(true);
       setStreamingText("");
+      setStreamingReasoning("");
       setError(null);
       abortedRef.current = false;
 
@@ -372,6 +380,8 @@ export function useKbChatStream() {
       let vision: KbVisionNote | null = null;
       let clientAction: KbClientAction | null = null;
       let accumulated = "";
+      // ★ F1 — suy luận tích luỹ của lượt (tách hẳn khỏi `accumulated` = câu trả lời).
+      let suyLuanTichLuy = "";
 
       try {
         const res = await fetch("/api/ai/local-kb/stream", {
@@ -492,6 +502,12 @@ export function useKbChatStream() {
                 // FE-only directive: navigate / prefill_form. No DB mutation.
                 clientAction = payload.clientAction;
                 callbacks?.onClientAction?.(payload.clientAction);
+              } else if (payload.type === "reasoning" && typeof payload.token === "string" && payload.token) {
+                // ★ F1 — suy luận sống: tích luỹ riêng, KHÔNG chạm `accumulated` (câu trả lời).
+                suyLuanTichLuy += payload.token;
+                const snapshotNghi = suyLuanTichLuy;
+                setStreamingReasoning(snapshotNghi);
+                callbacks?.onReasoning?.(snapshotNghi);
               } else if (payload.type === "usage") {
                 // ★ F2 — số đo lượt model; gói hỏng ⇒ bỏ qua, không dựng ô 0.
                 const u = bocUsage(payload as Record<string, unknown>);
@@ -569,5 +585,5 @@ export function useKbChatStream() {
     setIsStreaming(false);
   }, []);
 
-  return { streamingText, isStreaming, error, abortedRef, startKbStream, stopKbStream };
+  return { streamingText, streamingReasoning, isStreaming, error, abortedRef, startKbStream, stopKbStream };
 }

@@ -123,11 +123,14 @@ describe("code/fim routing — flag ON", () => {
     }
   });
 
-  it("mặc định (GGUF_MAX_CTX không gán) vẫn là 32768 — bản vá KHÔNG tự nâng trần", async () => {
+  it("mặc định (GGUF_MAX_CTX không gán) = GGUF_MAX_CTX_DEFAULT — MỘT nguồn sự thật (B3 2026-09-22 nâng 32768 → 65536 theo phép đo)", async () => {
     process.env.AI_CODE_ROUTER_ENABLED = "true";
     delete process.env.GGUF_MAX_CTX;
     const { route } = await freshRouter();
-    expect(route({ task: "code" }).contextSize).toBe(32768);
+    const { GGUF_MAX_CTX_DEFAULT } = await import("./ai/ggufCtxCap");
+    // Không ghim con số ở đây: router KHÔNG được có hằng riêng (đúng bài học G5-B); con số sống ở ggufCtxCap.
+    expect(route({ task: "code" }).contextSize).toBe(GGUF_MAX_CTX_DEFAULT);
+    expect(GGUF_MAX_CTX_DEFAULT).toBe(65536);
   });
 });
 

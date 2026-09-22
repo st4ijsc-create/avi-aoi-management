@@ -45,6 +45,8 @@ const h = vi.hoisted(() => ({
   promptTheoLuot: [] as string[],
   /** ★ B7 — `tokensReasoning` giả trên chunk `done` của engine; `undefined` ⇒ không gửi trường (đường không đếm được). */
   tokensReasoningGia: undefined as number | undefined,
+  /** ★ F1 — mảnh suy luận giả engine phát TRƯỚC mọi token (kiểu chunk `reasoning`). */
+  suyLuanGia: [] as string[],
   /** Mọi quyết định đi qua `executeDecision` — bản kiểm đếm của §3. */
   quyetDinh: [] as Array<{ tool: string | null; args: Record<string, unknown> }>,
   /** Bộ chọn tool LLM giả: `null` ⇒ nó abstain (mặc định). */
@@ -134,6 +136,8 @@ vi.mock("./aiGgufEngine", () => ({
       presencePenalty: opt?.presencePenalty,
       repeatPenalty: opt?.repeatPenalty,
     });
+    // ★ F1 — suy luận đi TRƯỚC (đúng thứ tự thật của server); G5-D (nếu giả) nổ SAU suy luận, TRƯỚC chữ.
+    for (const s of h.suyLuanGia) yield { type: "reasoning", token: s };
     if (h.nemLuotNghi && opt?.disableThinking !== true) {
       const e = h.nemLuotNghi;
       h.nemLuotNghi = null;
@@ -245,6 +249,7 @@ beforeEach(() => {
   h.chiSoNem = -1;
   h.promptTheoLuot = [];
   h.tokensReasoningGia = undefined;
+  h.suyLuanGia = [];
   h.quyetDinh = [];
   h.llmDoanTool = null;
   h.docGia = null;
@@ -1231,6 +1236,58 @@ describe("B2 — hồ sơ sampling tới engine (hợp đồng + cần gạt A/B
     await chay(CAU, admin(), { cheDoNghi: "sau" });
     const i = h.samplingNhan.findIndex((s) => s.temperature === 0.25);
     expect(h.disableThinkingNhan[i]).not.toBe(true);
+  });
+
+  // ── F1 — suy luận SỐNG lên SSE kiểu `reasoning`, tách hẳn khỏi câu trả lời, đã che bí mật ──────────────
+  it("★★★ F1 qua SERVICE: sự kiện `reasoning` đi TRƯỚC token đầu, không lẫn vào chữ, bí mật trong suy luận bị che", async () => {
+    h.manh = [MA_CSHARP];
+    h.suyLuanGia = ["Để xem nào, người dùng muốn chat LAN. ", "Cấu hình cũ có api_key=sk_live_9f8e7d6c5b4a3210 nên tránh."];
+    const r = await chay(CAU, admin());
+    const iNghi = r.events.findIndex((e) => (e as any).type === "reasoning");
+    const iToken = r.events.findIndex((e) => e.type === "token");
+    expect(iNghi, "phải có sự kiện reasoning").toBeGreaterThanOrEqual(0);
+    expect(iNghi).toBeLessThan(iToken);
+    const nghi = r.events.filter((e) => (e as any).type === "reasoning").map((e) => (e as any).token).join("");
+    expect(nghi).toContain("Để xem nào");
+    expect(nghi, "bí mật trong suy luận phải bị che").not.toContain("sk_live_9f8e7d6c5b4a3210");
+    expect(r.chu, "suy luận KHÔNG được lẫn vào câu trả lời").not.toContain("Để xem nào");
+    expect(r.chu).toContain("TcpListener");
+  });
+
+  it("★★ F1 hợp đồng agent: streamCodingModel yield ĐỐI TƯỢNG {suyLuan} trước CHUỖI; rutChuCoCanh không gom suy luận", async () => {
+    const { streamCodingModel, rutChuCoCanh } = await import("./aiCodingAgent");
+    h.manh = ["const a = 1;"];
+    h.suyLuanGia = ["nghĩ-1", "nghĩ-2"];
+    const it = rutChuCoCanh(streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64 } as never));
+    const manh: unknown[] = [];
+    let kq: any;
+    for (;;) {
+      const n = await it.next();
+      if (n.done) { kq = n.value; break; }
+      manh.push(n.value);
+    }
+    // Bộ che bí mật GIỮ đệm xuyên mảnh (để bắt bí mật bị chẻ đôi) ⇒ số đối tượng KHÔNG bằng số mảnh; canh NỘI DUNG
+    // và THỨ TỰ (mọi đối tượng trước mọi chuỗi), không canh số lượng.
+    const doiTuong = manh.filter((m) => typeof m !== "string") as Array<{ suyLuan: string }>;
+    const chuoi = manh.filter((m) => typeof m === "string") as string[];
+    expect(doiTuong.length).toBeGreaterThan(0);
+    expect(doiTuong.map((m) => m.suyLuan).join("")).toBe("nghĩ-1nghĩ-2");
+    const viTriChuoiDau = manh.findIndex((m) => typeof m === "string");
+    expect(manh.slice(0, viTriChuoiDau).every((m) => typeof m !== "string"), "suy luận phải đi TRƯỚC mọi chuỗi").toBe(true);
+    expect(chuoi.join("")).toBe("const a = 1;");
+    expect(kq.text).toBe("const a = 1;");
+    expect(kq.text).not.toContain("nghĩ");
+  });
+
+  it("★★ F1 + cầu chì: model đã nghĩ (có reasoning) rồi G5-D ⇒ VẪN thử lại (suy luận không phải 'đã phát ký tự')", async () => {
+    const goc = fs.readFileSync(DUONG_THI, "utf8");
+    h.manh = ["```csharp\n", maDaSua(goc), "\n```"];
+    h.suyLuanGia = ["nghĩ rất lâu…"];
+    h.nemLuotNghi = loiG5D();
+    await chay(CAU_SUA, admin());
+    expect(h.chiSoNem).toBeGreaterThanOrEqual(0);
+    expect(h.disableThinkingNhan[h.chiSoNem + 1], "phải thử lại với nghĩ tắt dù đã có suy luận").toBe(true);
+    expect(h.quyetDinh.find((q) => q.tool === "apply_diff")).toBeTruthy();
   });
 
   it("★★ qua SERVICE, `chinh-hang` nhưng model KHÔNG biết nghĩ ⇒ hồ sơ KHÔNG-nghĩ (presence 1,5), không phải hồ sơ nghĩ", async () => {

@@ -92,6 +92,27 @@ cả M lẫn H; chỉ đổi mặc định khi ≥ cũ; ghi cả hai số vào R
 >   model sau. Cổng ra B2 ĐÓNG (đúng luật "chỉ đổi khi ≥ cũ, cả hai trục").
 
 ### B3 — Ngữ cảnh 64k cho MoE (T3) + tái dùng KV
+
+> **Trạng thái 2026-09-22 18:50: ĐANG ĐO (một biến: ctx 32k → 64k, giữ B4 12k).** `.env GGUF_MAX_CTX=65536`,
+> llama-server `-c 65536` (VRAM 25,85 → 26,41 GiB sau nạp; còn 6,2 GiB ≥ cổng 3 GB), node restart `node-b3`. Cổng ra: trục
+> H ×3 so `H-q36moe-b4-12k-` (27/36) + agentic; H không tụt và VRAM giữ ⇒ 64k thành mặc định; sau đó mới nới
+> `TRAN_TOKEN_NGU_CANH_MA`/`TRAN_TOKEN_MUC_LUC` (K2) và trần nghĩ 32k (nút "sâu" F3) — từng biến một.
+>
+> **Kết quả 19:08 — ĐẠT, cổng ra VƯỢT: 64k thành mặc định.**
+>
+> | Phép đo | ctx 32k (B4) | **ctx 64k** (B4 giữ) |
+> |---|---|---|
+> | Trục H 12 × 3 | 27/36 = 75 % · 26,8 s | **31/36 = 86 % · 28,3 s** (10 · 10 · 11) — **lần đầu H > M (83 %)** |
+> | Theo bài | — | +cpp3 (2→3) · +py1 (2→3) · **+ts3 (0→2)** · +cpp 8→9/9; không bài nào tụt |
+> | Agentic | 5/6 | 5/6 (A2 2/3) |
+> | G5‑D / G18‑B1 | 0 | 0 |
+> | VRAM (llama-server + node) | 25,6–25,8 GiB | **26,5 GiB** ⇒ còn 6,1 GiB ≥ cổng 3 GB |
+>
+> Chỉ MỘT biến đổi (`-c 65536` + `GGUF_MAX_CTX=65536`); trần nghĩ vẫn 16k, sampling `hien-tai`. Lý do H tăng: `ggufMaxCtx()`
+> bó ngân sách ngữ cảnh repo (K2 trong rà soát) — ở 64k mục lục/khối mã vào prompt đầy hơn, và H‑ts3 (bài từng 0/3) sống lại.
+> ⇒ `GGUF_MAX_CTX_DEFAULT` 32768 → **65536** (chủ dự án đã duyệt điều kiện "H tốt hơn + VRAM ≥ 3 GB"). Launcher sản xuất
+> (`start-llama-server.ps1`, mặc định `-np 2 -c 65536` = 32k/slot) **chưa đổi** — 64k/slot × 2 slot cần thêm 5 GiB KV; đưa
+> vào mục 8 để chủ dự án chọn 1 slot × 64k hay 2 × 32k.
 `-c 65536` (KV f16 +2,5 GiB, đo lại VRAM), `GGUF_MAX_CTX` suy từ `/props` lúc khởi động (không ghim); bật
 `--cache-reuse`; nâng `TRAN_TOKEN_NGU_CANH_MA`/`TRAN_TOKEN_MUC_LUC` theo ctx thật. **Cổng ra:** H ≥ 78 % (thu hẹp
 K2), TTFT lượt 2+ trong vòng tác nhân giảm đo được.
@@ -153,6 +174,24 @@ Tách: luồng sinh mã · luồng sửa/khối · vòng tool · KB‑QA · tạ
 ## 3. Gói việc FRONTEND (lập trình — `/ai-coding-workspace`)
 
 ### F1 — Bảng "model đang nghĩ" (dùng `reasoning_content`)
+
+> **Trạng thái 2026-09-22 18:55: ĐÃ LÀM, lưới xanh, chờ nghiệm thu sống sau chuỗi đo B3.**
+> · Đường đi: `aiLlamaServerClient` phát chunk **`reasoning`** ngay khi có `delta.reasoning_content` (không đợi `done`) →
+>   `streamCodingModel` che bí mật bằng bộ che RIÊNG rồi yield **đối tượng `{ suyLuan }`** (không phải chuỗi — `rutChuCoCanh`
+>   chỉ gom chuỗi, `daPhat` chỉ đếm chuỗi ⇒ luật G1/cầu chì G18‑B1 vẫn đúng khi model đã nghĩ 10k) → `motLuotModel` và
+>   lượt sinh mã yield SSE **`reasoning`** (kiểu mới, thuần bổ sung) → `useKbChatStream.streamingReasoning`/`onReasoning`
+>   → `<BangDangNghi>`: hiện ĐUÔI 1.200 ký tự + tổng, mở khi chưa có mã, tự gấp khi mã chảy, người bấm thắng.
+> · Lưới: client §9 (2: thứ tự `reasoning`→`token`, chỉ‑suy‑luận vẫn ném G5‑D với `daPhatChu=false`), stream test +3 (qua
+>   SERVICE: `reasoning` trước `token`, bí mật `sk_live_…` trong suy luận bị che, không lẫn vào câu trả lời; hợp đồng agent;
+>   cầu chì vẫn thử lại sau khi đã có suy luận), `bangDangNghiLogic.unit` 6.
+> · Ghi nhận: bộ che bí mật GIỮ ĐỆM xuyên mảnh ⇒ suy luận lên màn trễ vài mảnh so với server (đổi lấy việc bắt bí mật bị chẻ) —
+>   đo độ trễ ấy ở nghiệm thu sống. Không lưu suy luận vào phiên (hiện vật của LƯỢT).
+> · **Nghiệm thu sống 19:22 (`tmp/audit-ai/f1-live.mjs`, đường ống thật):** thứ tự `meta → tool_loop → tool → reasoning (5,5 s)
+>   → token (26,9 s) → usage → done`; **3.774 sự kiện `reasoning` = 13.285 ký tự** tới client TRONG lúc nghĩ; `usage`
+>   {sinh‑ma · vào 788 · ra 4.290 · **nghĩ 4.055** · thinking true · hien‑tai · 23,2 s · ctxMax 65.536}. **Lần thăm dò đầu
+>   (19:14) là 0 sự kiện** — route `/api/ai/local-kb/stream` có `switch` danh sách trắng nuốt `usage`/`reasoning` (và F2 chưa
+>   từng hiện số thật vì thế). Vá + census `aiLocalKnowledgeApi.sseCensus.test.ts` (mọi kiểu `StreamEvent` phải có `case`;
+>   lộ thêm 2 kiểu `agent_plan`/`agent_step` khai mà không ai phát/đọc — ứng viên xoá ở B8).
 Khung gập hiện chuỗi suy luận đang stream (read‑only, không lưu vào phiên), tách khỏi câu trả lời; nút "dừng nghĩ,
 trả lời luôn" (gửi `reasoning-budget` ngắn cho lượt sau). Người lập trình thấy *vì sao* model chọn hướng đó — giá
 trị lớn nhất của model biết nghĩ mà UI hiện đang vứt.

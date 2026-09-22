@@ -3387,6 +3387,11 @@ export type StreamEvent =
    * hành vi. `tokensOut` GỘP cả suy luận; `tokensReasoning` vắng = không đếm được (không biết ≠ 0).
    */
   | ({ type: "usage"; luot: LoaiLuot } & DungLuotModel)
+  /**
+   * ★ F1 (2026-09-22) — MỘT MẢNH SUY LUẬN của model, phát SỐNG trong lúc nghĩ (trước mọi `token` của lượt). Đã che bí
+   * mật. Client hiện ở bảng "model đang nghĩ", KHÔNG nối vào câu trả lời, KHÔNG lưu phiên. Consumer cũ bỏ qua kiểu lạ.
+   */
+  | { type: "reasoning"; token: string }
   | {
       type: "done";
       provider: "ollama" | "extractive" | "tool";
@@ -5257,6 +5262,11 @@ async function* motLuotModel(y: {
         kq = n.value;
         break;
       }
+      // ★ F1 — mảnh suy luận: lên SSE kiểu riêng; KHÔNG vào `daPhat` (luật G1 "chưa phát ký tự" chỉ đếm mã).
+      if (typeof n.value !== "string") {
+        yield { type: "reasoning", token: n.value.suyLuan };
+        continue;
+      }
       daPhat += n.value;
       yield { type: "token", token: n.value };
     }
@@ -5989,6 +5999,11 @@ async function* streamCodingGenerate(
       if (n.done) {
         kq = n.value;
         break;
+      }
+      // ★ F1 — mảnh suy luận: lên SSE kiểu riêng; KHÔNG vào `daPhat` (luật G1 "chưa phát ký tự" chỉ đếm mã).
+      if (typeof n.value !== "string") {
+        yield { type: "reasoning", token: n.value.suyLuan };
+        continue;
       }
       daPhat += n.value;
       yield { type: "token", token: n.value };

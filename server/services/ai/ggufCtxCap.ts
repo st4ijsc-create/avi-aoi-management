@@ -19,17 +19,24 @@
  * Nó cố tình nhỏ và không phụ thuộc gì để `aiModelRouter.route()` (thuần, đồng bộ) và
  * `aiGgufEngine` (nặng) đều import được mà không kéo theo nhau.
  *
- * ⚠ KHÔNG tự nâng mặc định. `GGUF_MAX_CTX_DEFAULT = 32768` giữ nguyên con số đang chạy; ngân sách
- * VRAM cho phép bao nhiêu là chuyện của phép đo, không phải của file này. Việc của module là làm
- * cho con số **nâng được từ MỘT chỗ**.
+ * ⚠ Mặc định chỉ đổi khi CÓ PHÉP ĐO, không theo cảm giác; ngân sách VRAM cho phép bao nhiêu là chuyện
+ * của phép đo, không phải của file này. Việc của module là làm cho con số **nâng được từ MỘT chỗ**.
  */
 
 /**
  * Mặc định khi `GGUF_MAX_CTX` không được gán / không phân tích được.
- * Giá trị 32768 là con số đang chạy trong `.env` (doc 34 §5.1 — mở 128K chỉ khi đọc repo/manual
- * lớn). Đổi mặc định ở ĐÂY, không ở nơi nào khác.
+ *
+ * ★ B3 (2026-09-22, ĐO ĐƯỢC) — 32768 → **65536**, chủ dự án duyệt điều kiện *"H tốt hơn + VRAM ≥ 3 GB"*:
+ *   · Qwen3.6-35B-A3B (MoE, KV f16 = 80 KiB/token ⇒ 64k chỉ +2,5 GiB; card 32,6 GiB còn 6,1 GiB sau nạp);
+ *   · trục H 12 bài × 3: **27/36 → 31/36 (75 % → 86 %)**, không bài nào tụt, lần đầu đường ống vượt model thuần
+ *     (83 %) — vì ngân sách ngữ cảnh repo (mục lục + khối mã) hết bị bó ở 32k; agentic 5/6, 0 G5-D.
+ *   · Chỉ MỘT biến đổi trong phép đo (llama-server `-c 65536` + biến này); trần nghĩ 16k, sampling giữ nguyên.
+ * ⚠ Con số này phải KHỚP `n_ctx`/slot của llama-server (`start-llama-server.ps1`: `-c` chia cho `-np`):
+ *   ctx/slot < trần này ⇒ request bị từ chối ⇒ mã lùi in-process ⇒ nạp bản thứ hai model. Bản dày 27B KHÔNG
+ *   nạp nổi 64k trong 32 GB — mặc định này là cho MoE đang chạy; đổi model dày thì hạ qua `.env`.
+ * Đổi mặc định ở ĐÂY, không ở nơi nào khác.
  */
-export const GGUF_MAX_CTX_DEFAULT = 32768;
+export const GGUF_MAX_CTX_DEFAULT = 65536;
 
 /** Trần dưới tuyệt đối cho mọi `contextSize` được yêu cầu (dùng chung với `resolveContextSize`). */
 export const GGUF_MIN_CTX = 256;

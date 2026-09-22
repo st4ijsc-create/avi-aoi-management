@@ -505,3 +505,45 @@ describe("B7 §8 — tokensReasoning trên chunk `done` của đường stream",
     expect(xong.reasoningText).toBeUndefined();
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// §9 — ★ F1 (2026-09-22): mảnh suy luận phát SỐNG (chunk `reasoning`) — trước mọi `token`, không lẫn
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe("F1 §9 — chunk `reasoning` sống trên đường stream", () => {
+  const sk = (d: Record<string, unknown>) => `data: ${JSON.stringify({ choices: [{ index: 0, delta: d }] })}\n\n`;
+
+  it("★★★ mỗi sự kiện reasoning_content ⇒ MỘT chunk `reasoning` ngay lúc đó, đi trước chunk `token` đầu", async () => {
+    const c = await freshClient();
+    const day =
+      sk({ reasoning_content: "nghĩ-1" }) + sk({ reasoning_content: "nghĩ-2" }) + sk({ content: "ĐÁP" }) + "data: [DONE]\n\n";
+    vi.stubGlobal("fetch", vi.fn(async () => resStream(day)));
+    const manh: GgufStreamChunk[] = [];
+    for await (const m of c.serverGenerateTextStream({ prompt: "x" })) manh.push(m);
+    const kieu = manh.map((m) => m.type);
+    expect(kieu).toEqual(["reasoning", "reasoning", "token", "done"]);
+    expect(manh[0].token).toBe("nghĩ-1");
+    expect(manh[1].token).toBe("nghĩ-2");
+    expect(manh[2].token).toBe("ĐÁP");
+    // Ba ô của `done` vẫn đúng như trước F1.
+    const xong = manh[3];
+    expect(xong.fullText).toBe("ĐÁP");
+    expect(xong.reasoningText).toBe("nghĩ-1nghĩ-2");
+    expect(xong.tokensReasoning).toBe(2);
+  });
+
+  it("★★ CHỈ suy luận, không chữ ⇒ vẫn phát chunk `reasoning` rồi NÉM G5-D (daPhatChu=false — suy luận không phải chữ)", async () => {
+    const c = await freshClient();
+    const day = sk({ reasoning_content: "nghĩ mãi" }) + "data: [DONE]\n\n";
+    vi.stubGlobal("fetch", vi.fn(async () => resStream(day)));
+    const manh: GgufStreamChunk[] = [];
+    let loi: any;
+    try {
+      for await (const m of c.serverGenerateTextStream({ prompt: "x", maxTokens: 120 })) manh.push(m);
+    } catch (e) {
+      loi = e;
+    }
+    expect(manh.map((m) => m.type)).toEqual(["reasoning"]);
+    expect(loi?.daPhatChu).toBe(false);
+  });
+});

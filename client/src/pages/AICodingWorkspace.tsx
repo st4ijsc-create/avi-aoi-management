@@ -63,6 +63,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThanhTrangThaiAiLocal } from "@/components/aiCoding/ThanhTrangThaiAiLocal";
+import { BangDangNghi } from "@/components/aiCoding/BangDangNghi";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageContainer } from "@/components/patterns";
@@ -917,7 +918,7 @@ export default function AICodingWorkspace() {
   const viTriNeo = useMemo(() => viTriCauTraLoiCungLuot(transcript), [transcript]);
 
   const {
-    streamingText, isStreaming, error: streamError, abortedRef, startKbStream, stopKbStream,
+    streamingText, streamingReasoning, isStreaming, error: streamError, abortedRef, startKbStream, stopKbStream,
   } = useKbChatStream();
   /** ★ F2 — số đo lượt model GẦN NHẤT (sự kiện SSE `usage`) cho thanh trạng thái: nghĩ/sinh · ctx đã dùng. */
   const [dungLuotCuoi, setDungLuotCuoi] = useState<KbUsageLuot | null>(null);
@@ -3146,7 +3147,7 @@ export default function AICodingWorkspace() {
                     để lúc nhàn (rỗng) nó không chiếm chỗ trong luồng `space-y-3`. */}
                 <div aria-live="polite" className="space-y-3 empty:hidden">
                 {/* Đang stream */}
-                {isStreaming && (streamingText || streamTool) && (
+                {isStreaming && (streamingText || streamTool || streamingReasoning) && (
                   <div className="flex min-w-0 gap-2">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10"><Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /></div>
                     <div className="min-w-0 max-w-[85%] space-y-2 break-words rounded-lg bg-muted px-3 py-2 text-[13px]">
@@ -3164,6 +3165,9 @@ export default function AICodingWorkspace() {
                           mã đang stream vẫn hiện đúng thay vì nhảy layout ở mỗi token. */}
                       {/* ★ UX (D1) — cùng phép lọc mốc với bản tĩnh; dòng mốc đang gõ dở chưa khớp
                           hình dạng thì giữ nguyên, dòng đã trọn được bọc ở nhịp render sau. */}
+                      {/* ★ F1 (2026-09-22) — BẢNG "MODEL ĐANG NGHĨ": suy luận sống từ sự kiện SSE `reasoning`,
+                          mở khi chưa có chữ, tự gấp khi mã bắt đầu; không nối vào câu trả lời, không lưu phiên. */}
+                      <BangDangNghi vanBan={streamingReasoning} dangStream={isStreaming} daCoChu={Boolean(streamingText)} />
                       {/* ★ LÔ 3 — văn bản đang stream LUÔN cùng lượt với thẻ đang giữ ⇒ bộ CÓ neo. */}
                       {streamingText && <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="streaming" components={boKhoiCoNeo}>{lamSachMocChoHienThi(streamingText)}</Streamdown></div>}
                     </div>
@@ -3184,7 +3188,7 @@ export default function AICodingWorkspace() {
                     </span>
                   </div>
                 )}
-                {isStreaming && !streamingText && !streamTool && (
+                {isStreaming && !streamingText && !streamTool && !streamingReasoning && (
                   <div className="px-1">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.chat.thinking", "Đang suy nghĩ…")}{giayCho > 0 && <span className="tabular-nums font-medium text-muted-foreground/90">{t("repoWs.chat.elapsed", "{{giay}} giây", { giay: giayCho })}</span>}</div>
                     {/* ★ UX (B2) — kỳ vọng thời gian THEO SỐ ĐO THẬT (buổi trải nghiệm 2026-08-23:
