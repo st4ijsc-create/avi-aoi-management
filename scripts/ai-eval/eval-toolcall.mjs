@@ -104,6 +104,8 @@ const DO_NATIVE = has("--native");
  * (B6): cùng bộ ca, cùng thước — đổi bộ chọn mà không đổi thước.
  */
 const DO_CODING = has("--coding");
+/** 5 tool lập trình (khớp `CODING_TOOL_NAMES` của intentClassifier) — nhánh native chỉ gửi đúng 5 tool này khi `--coding`. */
+const CODING_5 = new Set(["read_file", "list_files", "grep_repo", "run_command", "apply_diff"]);
 const GROUP = val("--group", null);
 const ONLY = val("--only", null);
 const LIMIT = Number(val("--limit", "0")) || 0;
@@ -258,6 +260,15 @@ const NATIVE_URL = (process.env.LLAMA_SERVER_URL || "http://127.0.0.1:8091").rep
 const NATIVE_SYSTEM =
   "Bạn là trợ lý vận hành nhà máy AOI/AVI. Nếu câu hỏi cần dữ liệu hệ thống, hãy gọi đúng MỘT tool phù hợp. " +
   "Nếu câu hỏi không cần dữ liệu hệ thống, trả lời ngắn gọn bằng lời, KHÔNG gọi tool.";
+/**
+ * ★ B6 — persona cho nhánh native ở CHẾ ĐỘ LẬP TRÌNH. Cố ý nói rõ ranh giới mà bộ ca đối kháng đo: nhắc tên lệnh/tệp/thư mục
+ * trong một câu HỎI hay yêu cầu VIẾT MỚI không phải là lệnh gọi tool. Không nhắc tên tool cụ thể — model đọc schema.
+ */
+const NATIVE_SYSTEM_CODING =
+  "Bạn là tác nhân lập trình làm việc trong một repo mã nguồn. Bạn có công cụ để ĐỌC tệp, LIỆT KÊ thư mục, TÌM chuỗi trong repo, " +
+  "CHẠY lệnh kiểm chứng trong danh sách trắng, và ĐỀ XUẤT sửa tệp. Chỉ gọi đúng MỘT công cụ khi người dùng thật sự yêu cầu làm việc " +
+  "với repo (đọc/xem/tìm/liệt kê/chạy/sửa một tệp, thư mục hay lệnh cụ thể). Nếu người dùng yêu cầu VIẾT MÃ MỚI độc lập, giải thích " +
+  "khái niệm, hay chỉ NHẮC tên một lệnh/tệp trong câu hỏi mà không yêu cầu chạy/đọc nó, KHÔNG gọi công cụ — trả lời ngắn bằng lời.";
 
 /**
  * Dựng mảng `tools` khuôn OpenAI từ registry THẬT.
@@ -333,7 +344,7 @@ async function hoiNative(question, wire) {
       body: JSON.stringify({
         model: "x",
         messages: [
-          { role: "system", content: NATIVE_SYSTEM },
+          { role: "system", content: DO_CODING ? NATIVE_SYSTEM_CODING : NATIVE_SYSTEM },
           { role: "user", content: question },
         ],
         tools: wire,
@@ -609,7 +620,8 @@ async function main() {
     if (nativeInfo.available) {
       let wire = null;
       try {
-        const dung = await dungToolsTuRegistry(tools);
+        // ★ B6 — `--coding`: chỉ 5 tool lập trình lên dây (đúng tập mà đường ống codingMode cho phép).
+        const dung = await dungToolsTuRegistry(DO_CODING ? tools.filter((t) => CODING_5.has(t.name)) : tools);
         wire = dung.wire;
         nativeToolBytes = dung.bytes;
       } catch (e) {

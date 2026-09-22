@@ -993,11 +993,29 @@ khi có khối)? Knob đo `AI_CODING_ABLATION_NGU_CANH=persona-khong-khoi` (gi�
 | Khối 4k + persona khớp (thật) | **31/36 = 86 %** | |
 | Không khối + persona "không có mã" (K2 ablation) | 27/36 = 75 % | |
 | **Không khối + persona "CÓ mã"** | **24/36 = 67 %** | **py1·py2·py3 = 0/9**; ts 8/9 · cs 8/9 · cpp 8/9 |
+| **Khối 4k + persona "KHÔNG có mã"** (nhánh 2, 23:34) | **31/36 = 86 %** (11·10·10) · 24,2 s | = bản thật, nhanh hơn 4 s/bài |
 
-Persona bảo model dựa vào mã thật mà prompt không có mã ⇒ model bám vào thứ không tồn tại — đúng lớp lỗi §8.5 đã canh ("dặn tin
-vào khối đã biến mất"), và hại nhất ở **Python** (ngôn ngữ không có trong repo TS/C# ⇒ không có gì để bám). Kết luận: giá trị
-của ngữ cảnh là **byte mã thật + persona khớp thực tế**, không tách rời được để tiết kiệm token. Agentic 6/6 dưới ablation (n=1)
-là dòng sửa khác persona — chưa kết luận. Nhánh `khoi-khong-persona` để sau.
+Ma trận 2×2 đóng: **byte mã thật mang TOÀN BỘ giá trị** (có khối ⇒ 86 % bất kể persona); persona "có mã" không thêm gì đo được, và
+khi KHÔNG khớp thực tế (nói có mà không có) nó **phá** — Python 0/9, đúng lớp lỗi §8.5 ("dặn tin vào khối đã biến mất"). Kết luận
+vận hành: giữ persona đổi theo khối như hiện nay (đúng thực tế là điều kiện đủ), không có đường tiết kiệm token bằng cách bỏ khối.
+Agentic dưới hai nhánh (6/6 và 3/6, n=1) là dòng sửa dùng persona khác — không kết luận.
+
+### 8.4j B6 — chọn tool chế độ lập trình: heuristic vs native, cùng 38 ca, không bên nào trội
+
+Thước dựng trước (`toolcall-coding-cases.json`: 23 chọn · 7 từ chối · 4 cặp đối kháng; `eval-toolcall.mjs --coding [--native]`), rồi đo:
+
+| | Heuristic tất định (3 ms) | Native `tools` (1,2 s/ca) |
+|---|---|---|
+| chọn tool strict / lenient | **0,889 / 0,963** | 0,852 / 0,926 |
+| trích args | **0,958** | 0,875 |
+| từ chối đúng · dương tính giả | 0,857 · 0,143 | **1,000 · 0,000** |
+| cặp đối kháng đạt | 1/4 | **3/4** |
+
+Heuristic trượt đúng lớp G11/G13 (nhắc nguyên văn lệnh/tệp/thư mục trong câu HỎI ⇒ vẫn gọi tool; `IEnumerable` thành mẫu grep);
+native trượt ở chỗ ngược lại (không chịu chạy lệnh khi câu "chạy … và cho tôi biết lỗi", args rỗng cho đường dẫn dài). Cổng ra B6
+"≥ nền ở cả bốn số" **không đạt** ⇒ **không thay bộ chọn**; đề xuất đo tiếp là **hybrid phủ quyết** (heuristic đề xuất, native chỉ được
+hỏi khi tín hiệu yếu, và chỉ để NÓI KHÔNG). Bài học: hai bộ chọn "đúng 89 %" và "đúng 85 %" có tập lỗi **rời nhau** — con số tổng che
+mất chính điều đáng dùng.
 
 ### 8.5 Bảy bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
 

@@ -177,6 +177,24 @@ Tải `Qwen3.6-35B-A3B-MTP` UD‑Q4_K_XL (21,3 GB), `--spec-type draft-mtp --spe
 > · Thiết kế đo tiếp (KHÔNG thay bộ chọn khi chưa có số): chạy CÙNG 38 ca qua đường native (`--native`: gửi `tools` = 5 tool lập trình
 >   dạng `WireTool`, `tool_choice:"auto"`, đọc `tool_calls`), so strict/lenient/refuse/cặp đối kháng; native chỉ được lên đường ống khi
 >   ≥ nền ở CẢ BỐN số và **0 tool ngoài 5 tên** (fail-closed như G2‑B). HITL/danh sách trắng không đổi trong mọi kịch bản.
+> · Nhánh `--native` của harness đã sửa cho chế độ lập trình (23:21): chỉ gửi 5 tool (`CODING_5`), persona native riêng nói rõ ranh giới
+>   "nhắc tên lệnh/tệp trong câu hỏi ≠ yêu cầu gọi tool". Chạy khi `:8091` rảnh: `npx tsx scripts/ai-eval/eval-toolcall.mjs --coding --native
+>   --cases scripts/ai-eval/toolcall-coding-cases.json --label coding-native-1`.
+>
+> **Native shadow ĐO XONG 23:36** (38 lượt model, 0 lỗi vận chuyển, 47 s = 1,2 s/ca, 3,4 KB schema/lượt) — **không bên nào trội**:
+>
+> | Thước | Heuristic (nền) | Native (`tools`, `tool_choice:auto`) |
+> |---|---|---|
+> | chọn tool strict / lenient | **0,889 / 0,963** | 0,852 / 0,926 |
+> | trích args | **0,958** | 0,875 (R04: chọn đúng `read_file` nhưng args RỖNG với đường dẫn dài) |
+> | từ chối đúng / dương tính giả | 0,857 / 0,143 | **1,000 / 0,000** |
+> | cặp đối kháng | 1/4 | **3/4** (D01b: vẫn đọc `package.json` cho "giải thích npm run check") |
+> | trượt riêng | C05 (`tests/` nuốt lệnh) · N01 (`IEnumerable` → grep) · D03b · D04b | C05/C06 (KHÔNG chạy lệnh khi câu nói "chạy … và cho biết lỗi") |
+>
+> ⇒ Cổng ra "≥ nền ở cả bốn số" **KHÔNG đạt** ⇒ không thay bộ chọn. Native mạnh đúng chỗ heuristic yếu (từ chối/đối kháng — lớp G11/G13)
+> và yếu chỗ heuristic mạnh (lệnh, args). **Thiết kế đo tiếp (phiên sau): HYBRID "phủ quyết"** — heuristic đề xuất; khi đề xuất đến từ tín
+> hiệu YẾU (câu dạng hỏi/viết mới mà chỉ NHẮC lệnh/tệp/thư mục), hỏi native làm ý kiến thứ hai; native nói "không tool" ⇒ không gọi.
+> Đo trên cùng 38 ca bằng `--hybrid`; chỉ nối dây khi ≥ nền ở cả bốn số. Chi phí dự kiến: +1,2 s chỉ ở ca mơ hồ.
 Cho model **đề xuất** chuỗi tool bằng định dạng nó được huấn luyện; HITL + 11 khuôn lệnh **không đổi** (thẻ duyệt là
 đích của mọi lời gọi). Lợi: bớt bộ phân loại tự dựng, ít định tuyến sai kiểu G11/G13. **Cổng ra:** agentic 6/6 giữ;
 tỷ lệ tool đúng trên 12 lệnh khác nhau ≥ hiện tại; 0 lệnh ngoài danh sách trắng chạy được.
@@ -349,7 +367,9 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
    đều 3→0), ts/cs không đổi. Persona nói "bạn có mã thật, dựa vào nó" mà không có khối ⇒ model bám vào thứ không tồn tại (đúng lớp
    lỗi §8.5 canh) — hại nhất ở ngôn ngữ không phải của repo. ⇒ **11 điểm của 4k là của BYTE MÃ THẬT + persona khớp thực tế**; không
    có đường tiết kiệm token bằng cách bỏ khối giữ persona. Knob `AI_CODING_ABLATION_NGU_CANH` giữ làm dụng cụ đo (mặc định tắt, 4 lưới
-   canh mặc định), `.env` đã gỡ, node restart về hành vi thật. Nhánh `khoi-khong-persona` chưa đo (khối mà không persona) — để sau.
+   canh mặc định), `.env` đã gỡ, node restart về hành vi thật. **Nhánh `khoi-khong-persona` ĐO XONG 23:34: 31/36 = 86 %** (= bản thật,
+   24,2 s/bài) ⇒ ma trận 2×2 đóng: **byte mã thật mang toàn bộ giá trị**, persona "có mã" không thêm gì đo được và phá khi không khớp.
+   Giữ nguyên cơ chế hiện tại (persona đổi theo khối = đúng thực tế).
 6b. **Trần nghĩ 32k + nút "sâu" — HOÃN, lý do ĐÃ XÁC NHẬN 21:30:** b9814 **KHÔNG** nhận `reasoning_budget` theo request (gửi
    `reasoning_budget: 64` ⇒ suy luận vẫn 1.018 ký tự như mặc định, log vẫn "budget=12000") — ngân sách là server‑wide. "Sâu" chỉ
    làm được bằng cách đổi cờ khởi động (restart) hoặc chờ bản llama.cpp có ngân sách theo request; không bày nút vô hiệu.
