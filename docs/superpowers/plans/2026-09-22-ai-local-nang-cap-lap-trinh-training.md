@@ -328,8 +328,9 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
    từ nhãn đã dịch sang id ổn định (kịch bản đo trả rỗng khi UI sang tiếng Anh).
    "Lý do model cạnh diff" để sau (cần gắn suy luận với từng `apply_diff`). **B8 một phần — XONG:** xoá `agent_plan`/`agent_step`
    khỏi `StreamEvent` (0 nơi phát, 0 người đọc); census SSE giữ cơ chế miễn với danh sách RỖNG. **F5/F6**, **B6** để phiên sau.
-6b. **Trần nghĩ 32k + nút "sâu" — HOÃN có lý do:** B4 đặt ngân sách nghĩ 12k ở llama-server cho MỌI yêu cầu; "sâu" chỉ có nghĩa
-   khi ngân sách theo TỪNG yêu cầu (chưa xác nhận b9814 nhận `reasoning_budget` trong body — cần thử sống ngoài giờ đo).
+6b. **Trần nghĩ 32k + nút "sâu" — HOÃN, lý do ĐÃ XÁC NHẬN 21:30:** b9814 **KHÔNG** nhận `reasoning_budget` theo request (gửi
+   `reasoning_budget: 64` ⇒ suy luận vẫn 1.018 ký tự như mặc định, log vẫn "budget=12000") — ngân sách là server‑wide. "Sâu" chỉ
+   làm được bằng cách đổi cờ khởi động (restart) hoặc chờ bản llama.cpp có ngân sách theo request; không bày nút vô hiệu.
 6. **Training (R1–R5)** ở phiên riêng như chủ dự án đã định: corpus vàng csharp‑dotnet + ST4I, EvalTab thật.
 7. Quyết định launcher sản xuất 1 × 64k hay 2 × 32k (mục 8).
 
