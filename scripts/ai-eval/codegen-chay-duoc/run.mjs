@@ -57,6 +57,27 @@ async function genRaw(t) {
   const res = await fetch(RAW_URL, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...(arg("--model", null) ? { model: arg("--model", null) } : {}), messages: [{ role: "system", content: SYS }, { role: "user", content: t.prompt }],
+      /**
+       * ★★★ `--khong-nghi` (2026-09-22) — TẮT KHỐI `<think>` cho model biết nghĩ.
+       *
+       * Đo được trên Qwen3.6-27B: llama-server bật `thinking = 1` theo mặc định của template, và
+       * ở trần 4.000 token thì **10/12 bài bị cắt cụt** — `2/12` khi ấy là con số của NGƯỜI ĐO,
+       * không phải của model. Cùng hình dạng đã cắn một lần ở Qwen3.8 (trần 4k ⇒ 22 % là SỐ GIẢ;
+       * trần 12k mới ra 67 %).
+       *
+       * Nhưng "cho đủ token" chỉ trả lời MỘT nửa câu hỏi. Nửa kia là: *một công cụ lập trình có
+       * dùng nổi nó không?* — và ở đó 200 giây một lượt là câu trả lời KHÔNG, bất kể điểm số.
+       * ⇒ Hai trục, đo tách bạch:
+       *   • nghĩ BẬT  + trần rộng  = TRẦN CHẤT LƯỢNG của model;
+       *   • nghĩ TẮT  + trần hẹp   = thứ thật sự dùng được trong một vòng lặp lập trình.
+       * Một con số đơn lẻ luôn giấu mất một trong hai.
+       *
+       * ⚠ `chat_template_kwargs` là đường CHÍNH THỐNG của llama-server để truyền biến vào template
+       *   Jinja; template Qwen3.6 kiểm đúng `enable_thinking is false` rồi phát `<think>\n\n</think>`
+       *   rỗng. KHÔNG chèn chuỗi `/no_think` vào prompt: template này không có nhánh ấy, và một mẹo
+       *   thất truyền sẽ HỎNG TRONG IM LẶNG (prompt bẩn, thinking vẫn bật, số vẫn ra — chỉ là sai).
+       */
+      ...(args.includes("--khong-nghi") ? { chat_template_kwargs: { enable_thinking: false } } : {}),
       temperature: 0.2, top_p: 0.9, max_tokens: Number(arg("--max-tokens", 1400)), stream: false }),
   });
   if (!res.ok) return { text: "", err: `HTTP ${res.status} ${(await res.text()).slice(0,200)}`, totalMs: Date.now() - t0 };
