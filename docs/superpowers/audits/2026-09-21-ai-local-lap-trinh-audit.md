@@ -698,3 +698,98 @@ người dùng ở 8 %.
 
 Commit: `494c10813` (G11–G13 + `duan.mjs`) · `6728376f` (UI G14–G17) · `4ee865da` (G18) · bench C++,
 `--khong-nghi`, `so-sanh`, README.
+
+
+# PHỤ LỤC 7 — 2026-09-22 (chiều): ĐỔI MODEL MẶC ĐỊNH → Qwen3.6‑35B‑A3B — và ba bẫy chỉ lộ khi đổi thật
+
+Chủ dự án duyệt: *"Đồng ý đổi sang Qwen3.6‑35B‑A3B, bắt đầu thực hiện kế hoạch, bạn vẫn chủ dự án và toàn
+quyền quyết định kỹ thuật."* Kỷ luật thực thi: **đọc chỗ cấu hình được tiêu thụ → đổi → nạp → xác minh bằng
+số trên trục H và ba dự án thật → commit.** Mỗi bước dưới đây đều có một con số đo được đứng sau.
+
+## 1. Cái gì đổi, và vì sao KHÔNG phải một dòng `.env`
+
+Đổi model mặc định hoá ra là **ba khoá**, và tôi tìm ra từng khoá bằng đo chứ không bằng đọc đoán:
+
+| Khoá | Ai đọc | Nếu để nguyên "Coder" |
+|---|---|---|
+| `GGUF_DEFAULT_MODEL` | `modelSau`, `dinhDanhModel` của G18, hồ sơ router | model mặc định không đổi |
+| `GGUF_CODE_MODEL` | tầng code (`codeModelId()`, `AI_CODE_ROUTER_ENABLED=true`) | `modelDangDung.modelId` **vẫn báo "Coder"** sau khi đổi DEFAULT ⇒ mọi hàng `ai_gateway_metrics`/audit/thanh trạng thái **gán nhãn sai model** |
+| `LLAMA_SERVER_MODEL` | `laModelServerDangGiu()` so basename WANTED với khoá này | `shouldUseServerForText(MoE)` = **false** ⇒ **lùi in‑process**: nạp 20,8 GB vào CUDA context của node trên card còn 6,6 GB ⇒ OOM / bản thứ hai. Suýt đo H trên đúng cấu hình ấy. |
+
+Sau đổi: quét `.env` bằng grep tên model — không còn khoá nào nêu Coder. Bản sao lưu `tmp/audit-ai/.env.bak-truoc-moe-*`.
+
+## 2. Hồ sơ router `35b‑a3b` — số đo tại chỗ, không chép nhà phát hành
+
+Từ log llama‑server của chính lượt đo: **cold‑load 68,1 s** (dòng đầu → *server is listening*), **decode 187,9 t/s**
+trung bình trên 372 lượt (min 69,2 · max 218,8), prompt ~1.000 t/s. `provenance: "measured-here"`,
+`thresholdsInheritedFrom: null` — ngưỡng easy/hard/pin = lớp MoE 3B‑active, **xác nhận bằng decode đo tại chỗ**
+187,9 vs 192,5 t/s của 30B‑A3B (lệch 2,4 %): cùng lớp đo được ⇒ cùng ngưỡng. Lưới `profile.test` bắt tôi ở bản
+đầu (ghi cả "measured‑here" *và* thừa kế) — sửa cho đúng nghĩa, không sửa lưới. Ctx **32768/slot là trần phần
+cứng** (29,0 GB dùng ở 32k cùng CUDA context của node; 65536 không nạp nổi). Router **không** còn cảnh báo
+"chưa có hồ sơ" sau restart.
+
+## 3. G18 hết thuế lượt đầu — `goiYModelBietNghi`
+
+Cơ chế thử‑lại‑một‑lần của G18 là đúng nhưng có thuế: lượt đầu sau mỗi lần khởi động đốt ~30–80 s vào một lượt
+G5‑D rồi mới thử lại. Với model mặc định **đã đo là biết nghĩ**, thuế ấy vô ích ⇒ gợi ý theo tên, **chỉ** cho
+tên đã đo (Qwen3.6/3.8). Hai chiều sai đều rẻ (sai dương ⇒ tốn ngữ cảnh; sai âm ⇒ thử‑lại vẫn bắt). Kết quả
+sống: **0 lần G18 nổ** trên toàn bộ lượt H đầu. 4 lưới mới.
+
+## 4. Bẫy thứ ba — đồng hồ VRAM nói dối 19 GB, và trần G7 cũng bị nuôi bằng số ấy
+
+Cổng nghiệm thu [A] của tôi **tự chặn** lượt đo H vì thanh trạng thái báo *còn 26.115 MiB* khi `nvidia-smi` nói
+*còn 6.652*. Truy ra: `getEngineHealth().vram` = `llamaInstance.getVramState()` — cái nhìn **trong tiến trình**;
+và sâu hơn, **đầu dò thiết bị của chính hệ VRAM** (`vramProbe.probeOnce`) cũng ưu tiên native vì "~0 ms":
+
+```
+native getVramState().used :  6.489 MiB
+nvidia-smi memory.used     : 25.601 MiB
+hiệu                       : 19.112 MiB ≈ dấu chân MoE trong llama-server — tiến trình KHÁC
+```
+
+Dưới WDDM, số native là **của riêng tiến trình node**. Hậu quả không chỉ ở một cái đồng hồ: `vramBroker` đưa
+chính số này vào `deviceFact.usedBytes` cho **trần sự‑thật‑thiết‑bị G7** ⇒ G7 tưởng card còn ~25 GB khi còn 6,6 —
+đúng ca *"broker hứa 22 GiB trên card còn 3 GiB"* mà G7 sinh ra để chặn, **tái hiện bởi chính nguồn đo của nó**.
+G7 từng đo đúng 25,61 GiB chỉ vì lúc đó binding chưa sẵn ⇒ rơi về smi — may mắn, không phải thiết kế.
+
+Vá: `probeOnce()` **nvidia‑smi trước, native là lối lùi**; `trangThaiAiLocal` đọc `readDecisionTick().deviceUsedBytes`
++ `deviceTotalBytes()` và nói ra `nguonVram`; tooltip client đổi theo nguồn. Lưới `vramProbe` có ca **phân biệt**
+(cả hai sẵn, hai số khác ⇒ lấy smi, không lấy 6.489); ca *"ruler = native"* nay phải mock smi hỏng — bản cũ không
+mock nên trên máy có GPU nó đo cả nvidia‑smi thật (lưới lệ thuộc máy chạy). Census `vramAllocationSites` +3 hàng
+(bộ đo `duan.mjs`/`agentic.mjs`), 185 → 188.
+
+**Đo lại sau restart (UI vs nvidia‑smi, 3 mẫu):** ngay sau boot (tick 60 s chưa tới): UI còn 9.531 vs smi 6.592 MiB — lệch 2,9 GB = phần node tự cấp phát sau nhịp; **sau nhịp kế (≥60 s): UI còn 6.980 vs smi 6.560 — lệch 420 MiB**, nguồn `thiet-bi`. Đồng hồ nay đúng, và tuổi số được hiện (`vramTuoiMs`; ⚠ khi >120 s = `TICK_STALE_AFTER_MS`).
+
+## 5. Bẫy thứ tư — restart đẻ bản mồ côi giữ VRAM và MQTT (phát hiện khi anh bảo "kiểm tra tiến trình")
+
+Mỗi restart kiểu *"dừng PID nghe :3000 → start"* để lại bản cũ **tự rơi sang :3001–:3003 và sống tiếp**, mỗi bản
+~2 GB RAM + một CUDA context. Tìm thấy **3 bản mồ côi** (09‑21 17:57 · 09‑21 19:18 · 09‑22 00:00), một bản đang
+**giữ MQTT 1883/8883** khiến server sống log *"[MQTT] Broker closed"*. Log nạp Coder ghi *21.819 MiB trống trước
+khi nạp* — ~10,8 GB đã bị chiếm sẵn. Tôi là "tiến trình ngoài" của G7. Đã dừng cả ba **sau khi xác minh chủ**
+(log riêng của từng bản ghi *"Port 3000 is busy, using port 300x"*; hai PID trùng mẫu `dist/index.js` hoá ra là
+**MCP plugin của phiên Claude** — để yên). Luật restart mới (`tmp/audit-ai/restart-sach.ps1`): census `dist/index.js`
+loại plugin → dừng **mọi** bản → start → xác nhận **một PID** giữ 3000+1883+8883 + `TCP broker started`.
+
+## 6. Nghiệm thu trên model mặc định mới — trục H và ba dự án thật
+
+| Trục H · Qwen3.6‑35B‑A3B · nghĩ BẬT · G18 | Chạy được | G5‑D | ms/bài |
+|---|---|---|---|
+| lượt 1 | 10/12 = 83 % | 0 | 27.910 |
+| **3 lượt** | **27/36 = 75 %** | **0** | 26.925 |
+
+*Theo ngôn ngữ: ts 6/9 · py 6/9 · cs 7/9 · cpp 8/9. Theo bài: H‑ts1 2 · H‑ts2 2 · H‑ts3 2 · H‑py1 2 · H‑py2 3 · H‑py3 1 · H‑cs1 3 · H‑cs2 3 · H‑cs3 1 · H‑cpp1 3 · H‑cpp2 3 · H‑cpp3 2 (trên 3 lượt).*
+
+So với đường ống cũ (Coder‑30B, trục H 13/27 = 48 % sau G2b) và với trục thuần của chính MoE (83 %): **+27 điểm** so với đường ống cũ (Coder‑30B, 48 %); còn **8 điểm** dưới trục thuần của chính MoE (83 %) — đó là chi phí đường ống (ngữ cảnh repo + persona), chưa vá, đã ghi. 26,9 s/bài là cái giá đã được chủ dự án chấp nhận ("đúng trước nhanh"). **0/36** lượt chết vì đường ống — G18 làm việc, và không lần nào phải thử lại nhờ gợi ý tên.
+
+Ba dự án thật (×3): D1 SQL 3/3 · **C# 2/3** (bài `GetInt32("…")` từng 0/3 với Coder, MoE giải 2/3) · D2 SQL 3/3 · C# 3/3 · D3 SQL 3/3 · JS/TSX 6/6 — **20/21 hiện vật** (đường ống Coder cũ: 18/21), **0/14** thực thể nghiệp vụ thiếu; ~23–34 s/dự án (Coder: ~6 s).
+
+## 7. Trạng thái máy cuối phiên
+
+`:8091` phục vụ `Qwen3.6-35B-A3B-UD-Q4_K_XL` (ctx 32768/slot) · `:3000+1883+8883` một PID · router không cảnh báo
+· Ollama đã nhả Devstral · không bản server nào trên 3001–3003. VRAM ≈ 23,5 GB dùng (MoE + CUDA context node).
+
+Commit: `24867f8`… (bench) · `c87087149`/`c55f3646e` (docs) · slice A (hồ sơ router + gợi ý nghĩ) · slice B (đầu dò
+VRAM + census + `trangThaiAiLocal`).
+
+Còn mở: khoảng cách H ↔ M của **bản dày 27B** (67 ↔ 83) — không còn liên quan vì model mặc định đã đổi; Qwen3.8
+`--effort` thấp chưa đo; `vramPha5Gate` 2 ca đỏ có sẵn (twin3d).
