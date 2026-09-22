@@ -147,7 +147,7 @@ export const WIRED_ALLOCATION_SITE_COUNT = 15;
  * `ghi-lai-lich-ban-dung` (chạy `git`), và 5 script `do-twin` mở Playwright **có cờ GPU thật**
  * (`--use-gl=angle --use-angle=d3d11 --enable-gpu`), tức hộ tiêu thụ VRAM mà không sổ nào thấy.
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 185;
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 188; // 2026-09-22: +3 (agentic.mjs execSync thứ hai · duan.mjs execSync + child_process)
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -316,6 +316,10 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "scripts/ai-eval/codegen-chay-duoc/run.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE. Script CHỈ chạy khi người vận hành gọi tay để đo; không nằm trong đường sản phẩm." },
   { file: "scripts/ai-eval/codegen-chay-duoc/agentic.mjs", symbol: "execSync(", wired: false, note: "Bộ đo AGENTIC: chạy `node --test` để KIỂM ĐỘC LẬP xem tác nhân đã sửa xanh thật chưa (không tin lời khai). CPU, KHÔNG chạm GPU." },
   { file: "scripts/ai-eval/codegen-chay-duoc/agentic.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
+  // ── 2026-09-22 · bộ đo mở rộng: agentic.mjs có điểm execSync( THỨ HAI; duan.mjs (ba dự án thật) MỚI ──
+  { file: "scripts/ai-eval/codegen-chay-duoc/agentic.mjs", symbol: "execSync(", wired: false, note: ":71 `git checkout -- <src> <test>` — ĐẶT LẠI fixture giữa hai lượt đo để lượt sau không kế thừa bản sửa của lượt trước (LF/CRLF từng biến 3/3 thành 0/2). Điểm THỰC THI thứ hai của bộ đo agentic; census đếm SỐ LẦN nên phải khai riêng." },
+  { file: "scripts/ai-eval/codegen-chay-duoc/duan.mjs", symbol: "execSync(", wired: false, note: ":106 `sh()` — chạy `dotnet build` / `dotnet tsqlcheck.dll` / `node --check` / esbuild để MÁY chấm hiện vật của ba dự án thật (T-SQL, C#, JS/TSX). Không cấp phát VRAM; bộ đo, không phải đường sản phẩm." },
+  { file: "scripts/ai-eval/codegen-chay-duoc/duan.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên (:33 import), bắt qua mẫu MODULE." },
   { file: "server/services/ai/dotnetNewScaffold.ts", symbol: "execFile(", wired: false, note: "★ TRÔI CÓ SẴN (commit 954914503, trước audit 2026-09-21) — khai muộn tại đây. Chạy `dotnet new <template>` vào thư mục TẠM để dựng khung dự án. SDK .NET sinh tệp trên đĩa, KHÔNG chạm GPU." },
   { file: "server/services/ai/dotnetNewScaffold.ts", symbol: "child_process", wired: false, note: "★ TRÔI CÓ SẴN — cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
   // ── 7 điểm TRÔI CÓ SẴN khác (commit 580557832, phiên khác) — khai muộn, ĐÃ KIỂM từng cái ──

@@ -169,7 +169,19 @@ export function ThanhTrangThaiAiLocal() {
         nhan={t("ttAiLocal.vram", "VRAM còn")}
         giaTri={gib(d.mayMoc?.vramConByte)}
         muc={mucCanhBao({ loai: "vram", giaTri: d.mayMoc?.vramConByte })}
-        giaiThich={t("ttAiLocal.tipVram", "Byte card THỰC SỰ còn trống (tổng {{tong}}, đã dùng {{pc}}%). Đã đo: một tiến trình NGOÀI chiếm 23,5 GB khiến bộ cấp phát hứa 22 GiB trên một card còn 3 GiB — nên con số cần nhìn là con số này, không phải sổ nội bộ.", { tong: gib(d.mayMoc?.vramTongByte), pc: d.mayMoc?.vramPhanTramDung ?? "?" })}
+        giaiThich={
+          (d.mayMoc?.nguonVram === "thiet-bi"
+            ? t("ttAiLocal.tipVram", "Byte card THỰC SỰ còn trống theo ĐẦU DÒ THIẾT BỊ (tổng {{tong}}, đã dùng {{pc}}%) — cập nhật {{giay}} s trước theo nhịp đối chiếu 60 s{{cu}}. Đã đo: một tiến trình NGOÀI chiếm 23,5 GB khiến bộ cấp phát hứa 22 GiB trên một card còn 3 GiB — nên con số cần nhìn là con số này, không phải sổ nội bộ.", {
+                tong: gib(d.mayMoc?.vramTongByte),
+                pc: d.mayMoc?.vramPhanTramDung ?? "?",
+                giay: Math.round((d.mayMoc?.vramTuoiMs ?? 0) / 1000),
+                // > 120 s = TICK_STALE_AFTER_MS của hệ VRAM: nhịp đối chiếu đã bỏ lỡ ít nhất một lượt.
+                // Một con số đúng-nhưng-cũ mà không ghi tuổi thì không phân biệt được với một con số sai.
+                cu: (d.mayMoc?.vramTuoiMs ?? 0) > 120_000 ? t("ttAiLocal.tipVramCu", " — ⚠ ĐÃ CŨ, nhịp đối chiếu đang lỡ") : "",
+              })
+            : t("ttAiLocal.tipVramTrongTienTrinh", "⚠ Số VRAM này là cái nhìn TRONG TIẾN TRÌNH node (chưa có nhịp đối chiếu thiết bị) — nó KHÔNG thấy VRAM của llama-server hay tiến trình ngoài, nên có thể cao hơn thực tế rất nhiều (đã đo: báo còn 26 GiB khi card còn 6,6). Chờ nhịp đối chiếu hoặc kiểm bằng nvidia-smi.")
+          )
+        }
       />
       <O
         icon={Timer}

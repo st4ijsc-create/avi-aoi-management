@@ -551,6 +551,14 @@ export const repoWorkspaceRouter = router({
     let mayMoc: {
       /** Đường ĐANG phục vụ suy luận — quyết định ô nào được dùng để kết luận sức khoẻ. */
       duongPhucVu: "llama-server" | "trong-tien-trinh";
+      /**
+       * Số VRAM lấy từ đâu: `thiet-bi` (đầu dò thiết bị qua nhịp đối chiếu G7 — sự thật của card,
+       * có thể cũ vài giây) hay `trong-tien-trinh` (binding node — KHÔNG thấy tiến trình ngoài như
+       * llama-server; chỉ dùng khi chưa có nhịp nào). Client phải nói ra nguồn để không ai tin nhầm.
+       */
+      nguonVram: "thiet-bi" | "trong-tien-trinh";
+      /** Tuổi của số VRAM (ms) khi nguồn là thiết bị; `null` khi chưa có nhịp. Xem ghi chú tại nơi gán. */
+      vramTuoiMs: number | null;
       engineOk: boolean;
       llamaServerBat: boolean;
       llamaServerKhoe: boolean | null;
@@ -563,8 +571,10 @@ export const repoWorkspaceRouter = router({
     try {
       const { getEngineHealth } = await import("../services/aiGgufEngine");
       const h = await getEngineHealth();
-      const tong = h.vram?.total ?? null;
-      const con = h.vram?.free ?? null;
+      // Hai nguồn SỰ THẬT THIẾT BỊ mà G7 đã nối — xem docblock VRAM bên dưới cho lý do phải dùng chúng
+      // thay cho `h.vram` (cái nhìn trong tiến trình).
+      const { readDecisionTick } = await import("../services/vram/vramTickCell");
+      const { deviceTotalBytes } = await import("../services/vram/vramBroker");
       /**
        * ★★★ SỨC KHOẺ PHẢI HỎI ĐÚNG ĐƯỜNG ĐANG PHỤC VỤ — bản đầu của chính thủ tục này đã sai.
        *
@@ -580,8 +590,39 @@ export const repoWorkspaceRouter = router({
        */
       const dungLlamaServer = !!h.llamaServer?.enabled;
       const khoe = dungLlamaServer ? h.llamaServer?.healthy === true : !!h.operational;
+      /**
+       * ★★★ VRAM PHẢI LÀ SỰ THẬT THIẾT BỊ, KHÔNG PHẢI CÁI NHÌN TRONG TIẾN TRÌNH — lỗi thứ hai của
+       * chính thủ tục này, đo được ngay lúc đổi model mặc định (2026-09-22):
+       *
+       *   nvidia-smi        : dùng 25.539 MiB · CÒN 6.652 MiB
+       *   h.vram (binding)  : "còn 26.115 MiB · đã dùng 20 %"
+       *
+       * `h.vram` = `llamaInstance.getVramState()` — cái nhìn của binding node-llama-cpp TRONG tiến
+       * trình node. Nó không thấy 20,8 GB mà `llama-server` (tiến trình NGOÀI) đang giữ. Đây đúng là
+       * lớp G7 ("broker hứa 22 GiB trên card còn 3 GiB") tái hiện trên chính cái đồng hồ được dựng
+       * để chống nó. Một đồng hồ VRAM nói còn 26 GB khi card còn 6,6 là tệ hơn không có đồng hồ.
+       *
+       * ⇒ Ưu tiên nguồn sự thật thiết bị mà G7 đã nối: `readDecisionTick().deviceUsedBytes` (đầu dò
+       *   thiết bị, cập nhật theo nhịp đối chiếu — có thể cũ vài giây, và điều đó được nói ra qua
+       *   `nguonVram`) + `deviceTotalBytes()`. Chỉ khi CHƯA có nhịp nào (`null`) mới rơi về binding,
+       *   và khi ấy `nguonVram` nói rõ đó là cái nhìn trong tiến trình để không ai tin nhầm.
+       */
+      const tick = readDecisionTick();
+      const tongThietBi = deviceTotalBytes();
+      const dungThietBi = tick?.deviceUsedBytes ?? null;
+      const coThietBi = dungThietBi !== null && Number.isFinite(tongThietBi) && tongThietBi > 0;
+      const tong = coThietBi ? tongThietBi : (h.vram?.total ?? null);
+      const con = coThietBi ? tongThietBi - dungThietBi : (h.vram?.free ?? null);
       mayMoc = {
         duongPhucVu: dungLlamaServer ? ("llama-server" as const) : ("trong-tien-trinh" as const),
+        nguonVram: coThietBi ? ("thiet-bi" as const) : ("trong-tien-trinh" as const),
+        /**
+         * Tuổi của số VRAM (ms). Nhịp đối chiếu mặc định 60 s (`VRAM_RECONCILE_INTERVAL_MS`) ⇒ ngay
+         * sau khởi động, số thiết bị có thể CŨ tới 60 s và lệch đúng bằng phần node tự cấp phát sau
+         * nhịp (đo: 2,9 GB ngay sau boot; 420 MiB sau nhịp kế). Client phải hiện tuổi này — một con
+         * số đúng-nhưng-cũ mà không ghi tuổi thì người đọc không phân biệt được với một con số sai.
+         */
+        vramTuoiMs: coThietBi && tick ? Math.max(0, Date.now() - tick.atMs) : null,
         engineOk: khoe,
         llamaServerBat: !!h.llamaServer?.enabled,
         llamaServerKhoe: h.llamaServer?.healthy ?? null,

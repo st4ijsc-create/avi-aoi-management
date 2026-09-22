@@ -75,19 +75,31 @@ async function noteTotal(totalBytes: number): Promise<void> {
   }
 }
 
-/** Một lượt đọc thiết bị, không dính gì tới đệm. NEVER throws. */
+/**
+ * Một lượt đọc thiết bị, không dính gì tới đệm. NEVER throws.
+ *
+ * ★★★ 2026-09-22 — **ĐẢO THỨ TỰ NGUỒN: `nvidia-smi` TRƯỚC, native SAU.** Bản cũ ưu tiên
+ * `llama.getVramState()` vì nó ~0 ms còn `nvidia-smi` mất 72–80 ms — lý lẽ về CHI PHÍ, và nó đứng
+ * trên một giả định chưa đo: rằng số native là số **toàn thiết bị**. Đo hôm đổi model mặc định,
+ * cùng một giây, cùng một card:
+ *
+ *   native `getVramState().used`  :  6.489 MiB
+ *   `nvidia-smi memory.used`      : 25.601 MiB
+ *   hiệu                          : 19.112 MiB  ≈  dấu chân GPU của Qwen3.6-35B-A3B (tệp 20,8 GB)
+ *                                   đang nằm trong `llama-server` — tiến trình KHÁC.
+ *
+ * Tức dưới WDDM, số native là **của riêng tiến trình node** (embedder + reranker + KV của nó), không
+ * phải của card. Hậu quả không nằm ở một cái đồng hồ: `vramBroker` đưa chính số này vào
+ * `deviceFact.usedBytes` cho trần sự-thật-thiết-bị G7 ⇒ trần ấy tưởng card còn ~25 GB khi card còn
+ * 6,6 GB — đúng ca "broker hứa 22 GiB trên card còn 3 GiB" mà G7 sinh ra để chặn, tái hiện bởi chính
+ * nguồn đo của nó. G7 từng ĐO đúng (25,61 GiB) chỉ vì lúc đó binding chưa sẵn ⇒ rơi về `nvidia-smi`.
+ *
+ * ⇒ Nguồn toàn-thiết-bị (`nvidia-smi`) là nguồn CHÍNH; native chỉ là lối lùi khi máy không có
+ *   `nvidia-smi`. 75 ms mỗi nhịp đối chiếu (đã có đệm `CACHE_MS` 5 s) là cái giá rẻ; một trần
+ *   thiết bị sai 19 GB thì không. Hai lưới `adoption`/`reconciler.baselinePids` tiêm
+ *   `source:"smi"` — không lưới nào khẳng định native được ưu tiên.
+ */
 async function probeOnce(): Promise<{ usedBytes: number; totalBytes: number; source: VramSource } | null> {
-  const llama = getLlamaInstanceIfReady();
-  if (llama && typeof llama.getVramState === "function") {
-    try {
-      const v = await llama.getVramState();
-      if (v && v.total > 0) {
-        await noteTotal(v.total);
-        return { usedBytes: v.used, totalBytes: v.total, source: "native" };
-      }
-    } catch { /* lùi về nvidia-smi */ }
-  }
-
   try {
     const { execFile } = await import("child_process");
     const { promisify } = await import("util");
@@ -102,7 +114,18 @@ async function probeOnce(): Promise<{ usedBytes: number; totalBytes: number; sou
       await noteTotal(total * 1024 * 1024);
       return { usedBytes: used * 1024 * 1024, totalBytes: total * 1024 * 1024, source: "smi" };
     }
-  } catch { /* máy không có GPU — telemetry vắng, KHÔNG phải lỗi */ }
+  } catch { /* không có nvidia-smi ⇒ lùi về native (số CỦA RIÊNG TIẾN TRÌNH — xem docblock) */ }
+
+  const llama = getLlamaInstanceIfReady();
+  if (llama && typeof llama.getVramState === "function") {
+    try {
+      const v = await llama.getVramState();
+      if (v && v.total > 0) {
+        await noteTotal(v.total);
+        return { usedBytes: v.used, totalBytes: v.total, source: "native" };
+      }
+    } catch { /* máy không có GPU — telemetry vắng, KHÔNG phải lỗi */ }
+  }
 
   return null;
 }
