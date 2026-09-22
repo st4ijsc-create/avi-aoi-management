@@ -158,6 +158,17 @@ export function nguCanhMaEnabled(): boolean {
  * đầy đủ + ngữ cảnh dự án 24 mục = **385 token vào**, `MAX_TOKENS_SINH` = 3.000 ra ⇒ còn **29.383
  * token** dư địa. 4.000 dùng ~13,6% chỗ trống ấy và vẫn để lại lối cho lịch sử hội thoại.
  * ⚠ Đây là một cái TRẦN, không phải một cái ĐÍCH: `thuThapNguCanhMa` dừng sớm khi hết tệp liên quan.
+ *
+ * ★ 2026-09-22 — **4.000 là điểm ngọt đã ĐO, không phải con số tuỳ ý.** Ba mức cùng ngày, cùng model (Qwen3.6‑35B‑A3B),
+ *   cùng ctx 64k, ngân sách nghĩ 12k, bộ 12 bài khó × 3 lượt trên đường ống thật:
+ *
+ *       ngữ cảnh 0 (tắt)  ⇒ 27/36 = 75 %   (py2 3→1 · py3 2→0 · ts3 2→0)
+ *       ngữ cảnh ≤ 4.000  ⇒ 31/36 = 86 %   ← mặc định
+ *       ngữ cảnh ≤ 8.000  ⇒ 27/36 = 75 %   (cpp1 3→1 · py2 3→1 · py3 2→1; prompt vào 4,4k → 6,9k token trung bình)
+ *
+ *   Tức KHÔNG đơn điệu: một khối mã thật vừa phải giúp đúng (mồi phong cách + persona "mã thật đứng trên trí nhớ"), nhồi
+ *   gấp đôi thì mã lạ lấn át đề bài. Cả hai giả thuyết "bỏ ngữ cảnh lạc đề" (K2) và "đầy hơn ⇒ đúng hơn" đều bị bác trong
+ *   một buổi tối — con số này chỉ được đổi khi có phép đo mới cùng khuôn. `SO_TEP_TOI_DA`/`TRAN_BYTE_MOI_TEP` không đổi.
  */
 export const TRAN_TOKEN_NGU_CANH_MA = 4_000;
 

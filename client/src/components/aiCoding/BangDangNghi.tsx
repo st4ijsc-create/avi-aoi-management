@@ -15,12 +15,15 @@ export function BangDangNghi({
   vanBan,
   dangStream,
   daCoChu,
+  tokensNghi,
 }: {
   /** Suy luận tích luỹ của lượt đang stream. Rỗng ⇒ không vẽ gì. */
   vanBan: string;
   dangStream: boolean;
   /** Đã có ký tự mã/câu trả lời chảy ra chưa (⇒ gấp bảng theo mặc định). */
   daCoChu: boolean;
+  /** ★ F4 — số token nghĩ từ sự kiện `usage` (B7), hiện sau lượt; vắng ⇒ chỉ hiện ký tự (không bịa token). */
+  tokensNghi?: number;
 }) {
   const { t } = useTranslation();
   const [nguoiChon, datNguoiChon] = useState<boolean | null>(null);
@@ -41,6 +44,9 @@ export function BangDangNghi({
           {dangStream && !daCoChu ? t("repoWs.nghi.dang", "Model đang nghĩ…") : t("repoWs.nghi.daNghi", "Model đã nghĩ")}
         </span>
         <span className="tabular-nums text-muted-foreground">{t("repoWs.nghi.soKyTu", "{{n}} ký tự", { n: tt.soKyTu })}</span>
+        {typeof tokensNghi === "number" && Number.isFinite(tokensNghi) && (
+          <span className="tabular-nums text-muted-foreground">· {t("repoWs.nghi.token", "{{n}} token", { n: tokensNghi })}</span>
+        )}
         <Icon className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
       </button>
       {mo && (

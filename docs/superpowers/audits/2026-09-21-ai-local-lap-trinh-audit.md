@@ -968,6 +968,21 @@ bỏ** nó. Giả thuyết còn lại (chưa đo): khối mã thật làm mồi 
 chỉ bật khi có ngữ cảnh. ⇒ **KHÔNG nối cổng, xoá vị từ**; ghi số ở docblock điểm gọi `thuThapNguCanhMa`. Đây cũng là bằng chứng
 cùng chiều cho B3: 64k ⇒ khối ngữ cảnh đầy hơn ⇒ đúng hơn. Việc kế: ablation "persona giữ, khối rỗng" trước khi bàn tiết kiệm token.
 
+### 8.4h Trần ngữ cảnh repo — đường cong KHÔNG đơn điệu, 4.000 là điểm ngọt có số
+
+Sau K2 (0 ngữ cảnh ⇒ 75 %) trực giác đảo chiều: "đầy hơn ⇒ đúng hơn" (B3 cùng chiều). Đo một biến `TRAN_TOKEN_NGU_CANH_MA`
+4.000 → 8.000 (ctx 64k, budget 12k, 12 × 3):
+
+| Ngữ cảnh repo trong prompt | Trục H | Prompt vào (tb) | Bài đổi |
+|---|---|---|---|
+| 0 (tắt) | 27/36 = 75 % | ~3,8k | py2 3→1 · py3 2→0 · ts3 2→0 |
+| **≤ 4.000 (mặc định)** | **31/36 = 86 %** | 4,4k | — |
+| ≤ 8.000 | 27/36 = 75 % (9·9·9) | 6,9k | cpp1 3→1 · py2 3→1 · py3 2→1 |
+
+Một khối mã thật vừa phải giúp đúng; gấp đôi thì mã lạ lấn át đề bài (cpp1 — bài dễ nhất — rơi 3→1). Hai giả thuyết ngược nhau
+bị bác trong một buổi tối; 4.000 giữ nguyên nhưng nay là **con số có đường cong**, ghi ở docblock hằng. Việc kế nếu muốn hơn 86 %:
+không phải "nhiều hơn/ít hơn" mà là **đúng tệp hơn** — cần thước đo liên quan khác điểm truy hồi (đã chứng minh không tách được).
+
 ### 8.5 Bảy bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
 
 1. `mockRestore()` xoá `mock.calls` — đọc spy SAU restore ⇒ đỏ oan.

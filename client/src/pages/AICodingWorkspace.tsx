@@ -3188,6 +3188,13 @@ export default function AICodingWorkspace() {
                     </span>
                   </div>
                 )}
+                {/* ★ F4 (2026-09-22) — sau lượt: suy luận của lượt VỪA RỒI còn đó dưới dạng pill gấp ("Model đã nghĩ · N ký tự ·
+                    N token"), để người dùng xem lại lý do model chọn hướng ấy. Reset khi lượt mới bắt đầu (`startKbStream`). */}
+                {!isStreaming && streamingReasoning && (
+                  <div className="px-1">
+                    <BangDangNghi vanBan={streamingReasoning} dangStream={false} daCoChu tokensNghi={dungLuotCuoi?.tokensReasoning} />
+                  </div>
+                )}
                 {isStreaming && !streamingText && !streamTool && !streamingReasoning && (
                   <div className="px-1">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t("repoWs.chat.thinking", "Đang suy nghĩ…")}{giayCho > 0 && <span className="tabular-nums font-medium text-muted-foreground/90">{t("repoWs.chat.elapsed", "{{giay}} giây", { giay: giayCho })}</span>}</div>

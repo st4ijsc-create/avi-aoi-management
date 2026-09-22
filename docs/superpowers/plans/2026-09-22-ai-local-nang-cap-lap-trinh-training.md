@@ -314,12 +314,22 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
    `thuThapNguCanhMa`. Việc kế đúng: ablation "persona giữ, khối mã rỗng" để tách hai hiệu ứng; và giải thích cho B3 (64k)
    nay có thêm nghi vấn: 64k ⇒ khối ngữ cảnh đầy hơn ⇒ đúng hơn — cùng chiều với ablation này.
 2. **Trần nghĩ 32k + nút "sâu" (F3)** ở ctx 64k — cổng ra: A2 ×3, H không tụt, ms/bài báo thật.
-3. **`TRAN_TOKEN_NGU_CANH_MA` 4.000 / `TRAN_TOKEN_MUC_LUC` 6.000** ở 64k — từng biến một.
+3. ~~**`TRAN_TOKEN_NGU_CANH_MA` 4.000 → 8.000**~~ — **ĐÃ ĐO 21:18 và BỊ BÁC (trả về 4.000).** Một biến, ctx 64k: **27/36 = 75 %**
+   (9·9·9, cpp1 3→1 · py2 3→1 · py3 2→1; prompt vào 4,4k → 6,9k token) so 31/36 với 4k. Cùng với ablation K2 (0 ⇒ 75 %) ra một
+   đường cong **không đơn điệu**: 0 → 75 % · 4k → 86 % · 8k → 75 %. Khối mã thật vừa phải giúp (mồi phong cách + persona), gấp
+   đôi thì mã lạ lấn át đề. Cả hai trực giác ngược chiều đều sai — 4.000 nay là **điểm ngọt có số**, ghi trong docblock hằng.
 4. ~~**i18n en/zh** cho `ttAiLocal.*`, `repoWs.nghiPick.*`, `repoWs.nghi.*`~~ — **XONG 20:30**: +47 khoá × 3 locale (chèn văn bản
    giữ CRLF, `tmp/audit-ai/i18n-chen.mjs`, JSON parse lại OK, 6 lưới i18n xanh); `repoWs.modelPick.code` nay "model: tầng mã" /
-   "code tier" / "代码层" thay "Coder".
-5. **F4** pill "đã nghĩ N token · xem" sau lượt + lý do model cạnh diff; **F5/F6**; **B6** native tools dưới HITL; **B8** rút gọn
-   service (xoá `agent_plan`/`agent_step` chết).
+   "code tier" / "代码层" thay "Coder". Kiểm sống 20:48 (headless, `i18nextLng=en`): dải hiện *engine ok · VRAM free 6.1 GiB ·
+   last turn · tok/s · read budget · think/emit · ctx*, bộ chọn *thinking: balanced/off (fast)*, *model: auto / Qwen3.6‑35B‑A3B*.
+5. **F4** pill "Model đã nghĩ · N ký tự · N token" sau lượt — **XONG 21:00** (`<BangDangNghi dangStream={false}>` giữ suy luận
+   lượt vừa rồi tới khi lượt mới bắt đầu; token từ `usage`; khoá `repoWs.nghi.token` ×3 locale) — **kiểm sống 21:21 ĐẠT**: trong lượt
+   "Model is thinking… 1304 chars", sau lượt pill "Model thought 6622 chars · 1930 tokens" gấp. Kèm sửa `data-testid` dải trạng thái
+   từ nhãn đã dịch sang id ổn định (kịch bản đo trả rỗng khi UI sang tiếng Anh).
+   "Lý do model cạnh diff" để sau (cần gắn suy luận với từng `apply_diff`). **B8 một phần — XONG:** xoá `agent_plan`/`agent_step`
+   khỏi `StreamEvent` (0 nơi phát, 0 người đọc); census SSE giữ cơ chế miễn với danh sách RỖNG. **F5/F6**, **B6** để phiên sau.
+6b. **Trần nghĩ 32k + nút "sâu" — HOÃN có lý do:** B4 đặt ngân sách nghĩ 12k ở llama-server cho MỌI yêu cầu; "sâu" chỉ có nghĩa
+   khi ngân sách theo TỪNG yêu cầu (chưa xác nhận b9814 nhận `reasoning_budget` trong body — cần thử sống ngoài giờ đo).
 6. **Training (R1–R5)** ở phiên riêng như chủ dự án đã định: corpus vàng csharp‑dotnet + ST4I, EvalTab thật.
 7. Quyết định launcher sản xuất 1 × 64k hay 2 × 32k (mục 8).
 

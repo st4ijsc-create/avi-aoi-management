@@ -106,12 +106,19 @@ const MAU: Record<MucCanhBao, string> = {
 };
 
 function O({
+  id,
   icon: Icon,
   nhan,
   giaTri,
   muc = "binh-thuong",
   giaiThich,
 }: {
+  /**
+   * Định danh ỔN ĐỊNH cho `data-testid` (không phụ thuộc ngôn ngữ). Bản đầu dùng `nhan` (đã dịch) ⇒ kịch bản nghiệm thu
+   * sống tìm `tt-ai-local-nghĩ/sinh` trả rỗng ngay khi giao diện đổi sang tiếng Anh (đo 21:21) — testid theo nhãn là
+   * một phép đo tự hỏng khi đổi locale.
+   */
+  id: string;
   icon: typeof Cpu;
   nhan: string;
   giaTri: string;
@@ -124,7 +131,7 @@ function O({
         <TooltipTrigger asChild>
           <span
             className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] tabular-nums ${MAU[muc]}`}
-            data-testid={`tt-ai-local-${nhan}`}
+            data-testid={`tt-ai-local-${id}`}
           >
             <Icon className="h-3 w-3 shrink-0" aria-hidden />
             <span className="sr-only">{nhan}: </span>
@@ -179,6 +186,7 @@ export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageL
     <div className="flex flex-wrap items-center gap-0.5" data-testid="thanh-trang-thai-ai-local">
       <O
         icon={mayHong ? AlertTriangle : Cpu}
+        id="may"
         nhan={t("ttAiLocal.may", "máy")}
         giaTri={mayHong ? t("ttAiLocal.engineHong", "ENGINE HỎNG") : t("ttAiLocal.engineOk", "engine ok")}
         muc={mucCanhBao({ loai: "may", giaTri: null, mayHong })}
@@ -196,12 +204,14 @@ export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageL
       />
       <O
         icon={Zap}
+        id="model"
         nhan={t("ttAiLocal.model", "model")}
         giaTri={tenNgan}
         giaiThich={t("ttAiLocal.tipModel", "Model đang phục vụ tác vụ mã. Tầng định tuyến: T{{tier}} · tác vụ \"{{task}}\". Đây là tên tệp GGUF thật đang được nạp, không phải nhãn cấu hình.", { tier: d.model?.tier ?? "?", task: d.model?.task ?? "?" })}
       />
       <O
         icon={HardDrive}
+        id="vram"
         nhan={t("ttAiLocal.vram", "VRAM còn")}
         giaTri={gib(d.mayMoc?.vramConByte)}
         muc={mucCanhBao({ loai: "vram", giaTri: d.mayMoc?.vramConByte })}
@@ -221,6 +231,7 @@ export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageL
       />
       <O
         icon={Timer}
+        id="luotCuoi"
         nhan={t("ttAiLocal.luotCuoi", "lượt cuối")}
         giaTri={d.luotCuoi ? `${(d.luotCuoi.latencyMs / 1000).toFixed(1)}s` : KHONG_BIET}
         giaiThich={
@@ -231,6 +242,7 @@ export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageL
       />
       <O
         icon={Gauge}
+        id="tocDo"
         nhan={t("ttAiLocal.tocDo", "tok/s")}
         giaTri={d.luotCuoi?.tokMoiGiay != null ? `${d.luotCuoi.tokMoiGiay} tok/s` : KHONG_BIET}
         muc={mucCanhBao({ loai: "toc-do", giaTri: d.luotCuoi?.tokMoiGiay })}
@@ -238,6 +250,7 @@ export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageL
       />
       <O
         icon={AlertTriangle}
+        id="nganSach"
         nhan={t("ttAiLocal.nganSach", "ngân sách đọc")}
         giaTri={d.nganSach ? t("ttAiLocal.docPc", "đọc {{pc}}%", { pc: d.nganSach.phanTramDaDung }) : KHONG_BIET}
         muc={mucCanhBao({ loai: "ngan-sach", giaTri: d.nganSach?.phanTramDaDung })}
@@ -250,6 +263,7 @@ export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageL
       {/* ★ F2 — hai ô từ sự kiện `usage` của lượt gần nhất: nghĩ/sinh và % ngữ cảnh. */}
       <O
         icon={Brain}
+        id="nghiSinh"
         nhan={t("ttAiLocal.nghiSinh", "nghĩ/sinh")}
         giaTri={
           !nghiSinh
@@ -284,6 +298,7 @@ export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageL
       />
       <O
         icon={Layers}
+        id="ctx"
         nhan={t("ttAiLocal.ctx", "ctx")}
         giaTri={nghiSinh?.pcCtx != null ? t("ttAiLocal.ctxPc", "ctx {{pc}}%", { pc: nghiSinh.pcCtx }) : KHONG_BIET}
         muc={mucCanhBao({ loai: "ctx", giaTri: nghiSinh?.pcCtx })}

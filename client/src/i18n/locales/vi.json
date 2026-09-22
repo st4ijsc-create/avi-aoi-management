@@ -19102,7 +19102,8 @@
     "nghi": {
       "dang": "Model đang nghĩ…",
       "daNghi": "Model đã nghĩ",
-      "soKyTu": "{{n}} ký tự"
+      "soKyTu": "{{n}} ký tự",
+      "token": "{{n}} token"
     },
     "nghiPick": {
       "label": "Chọn chế độ nghĩ",

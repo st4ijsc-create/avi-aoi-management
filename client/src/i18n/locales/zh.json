@@ -19130,7 +19130,8 @@
     "nghi": {
       "dang": "模型正在思考…",
       "daNghi": "模型已思考",
-      "soKyTu": "{{n}} 字符"
+      "soKyTu": "{{n}} 字符",
+      "token": "{{n}} token"
     },
     "nghiPick": {
       "label": "选择思考模式",

@@ -3372,8 +3372,6 @@ export type StreamEvent =
   | { type: "client_action"; toolName: string | null; clientAction: ClientActionDirective }
   // GĐ3b — multi-step agentic orchestrator events (forward-compat; the primary
   // wiring is via the tRPC aiAgent router response, not this stream).
-  | { type: "agent_plan"; sessionId: string; plan: { steps: Array<{ kind: string; tool?: string | null; rationale?: string }> } }
-  | { type: "agent_step"; sessionId: string; index: number; kind: string; status: string; actionId?: string | null }
   /**
    * G2-C — TRẠNG THÁI TRUNG GIAN của vòng lặp tool. Người dùng phải thấy nó đang làm gì thay vì
    * ngồi nhìn màn hình đứng im tới 20 s. THÊM MỚI và không thay thế gì: một consumer SSE cũ

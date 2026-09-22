@@ -19122,7 +19122,8 @@
     "nghi": {
       "dang": "Model is thinking…",
       "daNghi": "Model thought",
-      "soKyTu": "{{n}} chars"
+      "soKyTu": "{{n}} chars",
+      "token": "{{n}} tokens"
     },
     "nghiPick": {
       "label": "Choose thinking mode",

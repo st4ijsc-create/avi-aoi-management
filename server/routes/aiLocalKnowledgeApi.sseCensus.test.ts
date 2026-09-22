@@ -38,12 +38,12 @@ function kieuRouteXuLy(): string[] {
 }
 
 /**
- * Kiểu KHAI trong union nhưng chưa có NƠI PHÁT nào (đo 2026-09-22: 0 điểm `type: "agent_plan"` ngoài union, 0 consumer
- * ở client/extension/scripts) — di sản của một thiết kế "kế hoạch tác nhân" chưa nối. Cho phép vắng `case` CHỈ khi vẫn
- * không ai phát; lưới thứ hai canh điều đó: hễ có nơi phát ⇒ phải nối dây (bỏ khỏi danh sách này) ⇒ đỏ đúng chỗ.
- * Ứng viên xoá ở B8 (rút gọn service).
+ * Kiểu KHAI trong union nhưng chưa có NƠI PHÁT nào — được miễn `case` CHỈ khi vẫn không ai phát; lưới thứ hai canh điều
+ * đó: hễ có nơi phát ⇒ phải nối dây (bỏ khỏi danh sách này) ⇒ đỏ đúng chỗ.
+ * Lịch sử: 2026-09-22 census lộ `agent_plan`/`agent_step` (0 điểm phát, 0 consumer — di sản "kế hoạch tác nhân" chưa nối);
+ * đã XOÁ khỏi union cùng ngày (B8) ⇒ danh sách rỗng. Giữ cơ chế cho lần sau.
  */
-const KIEU_KHAI_MA_KHONG_PHAT: ReadonlySet<string> = new Set(["agent_plan", "agent_step"]);
+const KIEU_KHAI_MA_KHONG_PHAT: ReadonlySet<string> = new Set<string>([]);
 
 /** Số điểm PHÁT (`type: "x"`) của một kiểu trong service, KHÔNG tính khối khai báo union. */
 function soDiemPhat(kieu: string): number {
@@ -71,6 +71,9 @@ describe("SSE census — StreamEvent (service) ⊆ case (route)", () => {
     for (const k of KIEU_KHAI_MA_KHONG_PHAT) {
       expect(soDiemPhat(k), `"${k}" nay có nơi phát trong service ⇒ thêm case ở route và bỏ khỏi KIEU_KHAI_MA_KHONG_PHAT`).toBe(0);
     }
+    // B8: hai kiểu chết đã xoá — không được quay lại union mà không có nơi phát + case.
+    expect(kieuServicePhat()).not.toEqual(expect.arrayContaining(["agent_plan"]));
+    expect(kieuServicePhat()).not.toEqual(expect.arrayContaining(["agent_step"]));
     // Đối chứng: một kiểu đang phát thật phải đếm được ≥ 1 (chỉ báo âm tính biết KÊU trên ca dương).
     expect(soDiemPhat("usage")).toBeGreaterThanOrEqual(2);
     expect(soDiemPhat("reasoning")).toBeGreaterThanOrEqual(2);
