@@ -84,7 +84,7 @@ function extract(text, lang) {
       const trung = fences.filter(f => f.includes(globalThis.__dinhDanh));
       if (trung.length) return trung.sort((a, b) => b.length - a.length)[0].trim();
     }
-    const key = lang === "cs" ? /class|namespace/ : lang === "py" ? /def\s/ : /function|=>|const|export/;
+    const key = lang === "cs" ? /class|namespace/ : lang === "cpp" ? /#include|template|struct|class/ : lang === "py" ? /def\s/ : /function|=>|const|export/;
     const good = fences.filter(f => key.test(f));
     return (good.length ? good : fences).sort((a, b) => b.length - a.length)[0].trim();
   }
@@ -92,6 +92,11 @@ function extract(text, lang) {
 }
 
 // ─────────────────────────────────────────────────────────── CHẠY
+/** CMake không nằm trên PATH của shell này — ghim đường tuyệt đối đã ĐO được, không đoán. */
+const CMAKE = fs.existsSync("C:/Program Files/CMake/bin/cmake.exe")
+  ? "C:/Program Files/CMake/bin/cmake.exe"
+  : "cmake";
+
 function sh(cmd, cwd, timeout = 180000) {
   try { return { ok: true, out: execSync(cmd, { cwd, timeout, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" }) }; }
   catch (e) { return { ok: false, out: `${e.stdout || ""}\n${e.stderr || ""}`.slice(-1500) }; }
@@ -118,7 +123,37 @@ function runCs(t, code, dir) {
   fs.writeFileSync(`${dir}/Program.cs`, t.test);
   return sh(`dotnet run --project p.csproj -v q --nologo`, dir, 240000);
 }
-const RUNNERS = { ts: runTs, py: runPy, cs: runCs };
+/**
+ * ★★★ C++ (2026-09-22) — chủ dự án đã cài CMake + msys2; đo được trên máy này: msys2 ở `C:\msys64`
+ * **chưa cài gói toolchain** (0 tệp `g++.exe`), còn **MSVC 14.51.36231 thì có đủ**
+ * (VS Professional 2026 + Build Tools 2026), chỉ không nằm trên PATH vì MSVC cần `vcvars64`.
+ *
+ * ⇒ Đi qua **CMake**, vì CMake tự dò MSVC qua registry: một bước ít hơn là một chỗ ít hỏng hơn,
+ *   và bộ đo không phải mang theo một bản sao logic dựng môi trường của Visual Studio.
+ *
+ * ⚠ Thư mục dựng KHÔNG được nằm dưới thư mục tạm của hệ: MSBuild cảnh báo MSB8029 và build tăng
+ *   dần có thể sai. Nên `dir` do người gọi truyền (nằm trong `tmp/` của repo) là đúng chỗ.
+ * ⚠ `--config Release` BẮT BUỘC ở generator đa-cấu-hình của Visual Studio; thiếu nó thì
+ *   `CMAKE_BUILD_TYPE` bị bỏ qua trong im lặng và tệp .exe rơi vào `Debug/`.
+ */
+function runCpp(t, code, dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(`${BENCH}/cpp-template/CMakeLists.txt`, `${dir}/CMakeLists.txt`);
+  // Bài kiểm nối THẲNG vào sau lời giải: C++ một-tệp, không cần hệ thống test ngoài.
+  fs.writeFileSync(`${dir}/sol.cpp`, `${code}
+
+${t.test}
+`);
+  const cm = sh(`"${CMAKE}" -S . -B b`, dir, 180000);
+  if (!cm.ok) return cm;
+  const bd = sh(`"${CMAKE}" --build b --config Release`, dir, 300000);
+  if (!bd.ok) return bd;
+  // ⚠ Dựng bằng `path.join` chứ KHÔNG gõ tay dấu `\` trong template string: bản đầu viết
+  //   "b\Release\solbench.exe", JS nuốt hai dấu thoát và lệnh thành "bReleasesolbench.exe"
+  //   — biên dịch ĐÃ đạt mà cả ba bài vẫn 0/3, tức một hiện vật công cụ đội lốt khuyết tật model.
+  return sh(`"${path.join(dir, "b", "Release", "solbench.exe")}"`, dir, 60000);
+}
+const RUNNERS = { ts: runTs, py: runPy, cs: runCs, cpp: runCpp };
 
 // ─────────────────────────────────────────────────────────── VÒNG
 const gen = CONFIG === "pipeline" ? genPipeline
