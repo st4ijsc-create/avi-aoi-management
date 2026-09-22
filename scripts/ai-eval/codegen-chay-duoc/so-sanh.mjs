@@ -62,7 +62,11 @@ if (!hang.length) { console.error("Không tìm thấy báo cáo nào."); process
 const o = (s, n) => String(s).padEnd(n);
 const p = (s, n) => String(s).padStart(n);
 
-console.log("\n══════ SO SÁNH MODEL — cùng bộ bài KHÓ, trục thuần ══════");
+// `--truc H` khi gom báo cáo đường ống: tiêu đề phải nói ĐÚNG trục đang in — một bảng H mang tiêu
+// đề "trục thuần" là một lời khai sai được in đậm.
+const truc = process.argv.includes("--truc") ? process.argv[process.argv.indexOf("--truc") + 1] : "M";
+const nhanTruc = truc === "H" ? "trục ĐƯỜNG ỐNG (thứ người dùng thật sự nhận)" : "trục thuần (model tự đứng)";
+console.log(`\n══════ SO SÁNH MODEL — cùng bộ bài KHÓ, ${nhanTruc} ══════`);
 console.log(o("model", 18), p("chạy được", 12), p("tok/bài", 9), p("ms/bài", 9), p("lượt", 6),
   "  " + NGON_NGU.map((l) => o(l, 7)).join(""));
 console.log("─".repeat(100));
