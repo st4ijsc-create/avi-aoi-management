@@ -19096,7 +19096,11 @@
     "ctx": "ctx",
     "ctxPc": "ctx {{pc}}%",
     "tipCtx": "Lượt gần nhất dùng {{dung}} / {{tran}} token ngữ cảnh (vào + ra, gộp suy luận). ≥85% là lượt kế cùng cỡ sẽ bị kẹp trần; ≥95% là đã ở mép — ca thật: nghĩ hết trần rồi trả rỗng.",
-    "tipCtxMu": "Chưa biết trần ngữ cảnh của lượt (chưa có lượt, hoặc server không báo trần)."
+    "tipCtxMu": "Chưa biết trần ngữ cảnh của lượt (chưa có lượt, hoặc server không báo trần).",
+    "phien": "phiên",
+    "phienGiaTri": "{{n}} lượt",
+    "tipPhien": "Phiên này: {{luot}} lượt model · {{vao}} token vào · {{ra}} token ra (nghĩ {{nghi}}) · {{giay}} s thời gian model · {{tuChoi}} lần từ chối/thoái hoá.",
+    "tipPhienRong": "Chưa có lượt model nào trong phiên này."
   },
   "repoWs": {
     "nghi": {

@@ -64,6 +64,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThanhTrangThaiAiLocal } from "@/components/aiCoding/ThanhTrangThaiAiLocal";
 import { BangDangNghi } from "@/components/aiCoding/BangDangNghi";
+import { congTuChoi, congUsage, thongKeRong, type ThongKePhien } from "@/components/aiCoding/thongKePhien";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageContainer } from "@/components/patterns";
@@ -922,6 +923,8 @@ export default function AICodingWorkspace() {
   } = useKbChatStream();
   /** ★ F2 — số đo lượt model GẦN NHẤT (sự kiện SSE `usage`) cho thanh trạng thái: nghĩ/sinh · ctx đã dùng. */
   const [dungLuotCuoi, setDungLuotCuoi] = useState<KbUsageLuot | null>(null);
+  /** ★ F6 — chỉ số PHIÊN cộng dồn (lượt · token vào/ra/nghĩ · thời gian model · từ chối); reset khi đổi/mở phiên. */
+  const [thongKe, setThongKe] = useState<ThongKePhien>(() => thongKeRong());
 
   const confirmM = trpc.aiCopilot.confirmAction.useMutation();
   const cancelM = trpc.aiCopilot.cancelAction.useMutation();
@@ -1484,7 +1487,14 @@ export default function AICodingWorkspace() {
         },
         onClientAction: () => { /* không auto-điều hướng trong không gian làm việc */ },
         // ★ F2 — lượt cuối thắng (một yêu cầu có thể gồm nhiều lượt model: chọn tệp → sửa).
-        onUsage: (u) => setDungLuotCuoi(u),
+        onUsage: (u) => {
+          setDungLuotCuoi(u);
+          setThongKe((tk) => congUsage(tk, u)); // ★ F6
+        },
+        // ★ F6 — server từ chối/thoái hoá lượt ⇒ đếm.
+        onDone: ({ degraded }) => {
+          if (degraded) setThongKe((tk) => congTuChoi(tk));
+        },
       },
     );
 
@@ -1493,6 +1503,7 @@ export default function AICodingWorkspace() {
       setTranscript((prev) => [...prev, { role: "assistant", content: answer }]);
     } else if (!abortedRef.current) {
       setTranscript((prev) => [...prev, { role: "assistant", content: t("repoWs.chat.streamFailed", "Luồng bị lỗi — thử lại.") }]);
+      setThongKe((tk) => congTuChoi(tk)); // ★ F6 — luồng lỗi cũng là một lượt không trả được
     }
   }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong]);
   handleSendRef.current = handleSend;
@@ -1730,6 +1741,7 @@ export default function AICodingWorkspace() {
     setPending(null);
     setDiffPreview("");
     setTranscript([]);
+    setThongKe(thongKeRong()); // ★ F6 — phiên mới, chỉ số mới
     // Vòng bám một dự án cụ thể (lệnh kiểm chứng + tệp đang sửa đều thuộc gốc cũ) ⇒ đổi dự án là
     // kết thúc vòng, không phải mang nó sang.
     vongRef.current = { ...VONG_RONG };
@@ -1833,6 +1845,7 @@ export default function AICodingWorkspace() {
     dangKhoiPhucRef.current = true;
     bamDaLuuRef.current = "";
     setTranscript([]);
+    setThongKe(thongKeRong()); // ★ F6
   }, [isStreaming, datSessionId]);
 
   const xoaPhienNay = useCallback(async (id: string) => {
@@ -2198,7 +2211,7 @@ export default function AICodingWorkspace() {
                 ngân sách. Vì sao gộp chứ không thêm: hai huy hiệu cũ đã nằm trong sáu ô này, để cả
                 hai bản là nhân đôi cùng một sự thật ngay cạnh nhau — đúng thứ làm màn hình rối mà
                 chủ dự án nêu. Lý lẽ đầy đủ (ba sự cố im lặng đã đo) ở đầu `ThanhTrangThaiAiLocal`. */}
-            <ThanhTrangThaiAiLocal dungLuot={dungLuotCuoi} />
+            <ThanhTrangThaiAiLocal dungLuot={dungLuotCuoi} thongKe={thongKe} />
             {/* ★★★ G4 (audit 2026-09-21 · P4) — BỘ CHỌN TẦNG MODEL.
                 Claude có `/model`, Cursor có dropdown; AI Local trước lượt này KHÔNG CÓ GÌ — đổi
                 model đòi sửa `.env` + khởi động lại server. Lựa chọn đi theo TỪNG yêu cầu qua

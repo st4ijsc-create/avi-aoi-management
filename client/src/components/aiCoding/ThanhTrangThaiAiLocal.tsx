@@ -35,9 +35,10 @@
  */
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Brain, Cpu, Gauge, HardDrive, Layers, Timer, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Brain, Cpu, Gauge, HardDrive, Layers, Timer, Zap } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import type { KbUsageLuot } from "@/hooks/useKbChatStream";
+import type { ThongKePhien } from "./thongKePhien";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const GiB = 1024 ** 3;
@@ -58,7 +59,7 @@ function gib(b: number | null | undefined): string {
 export type MucCanhBao = "binh-thuong" | "canh-bao" | "nguy";
 
 export function mucCanhBao(o: {
-  readonly loai: "vram" | "ngan-sach" | "toc-do" | "may" | "ctx";
+  readonly loai: "vram" | "ngan-sach" | "toc-do" | "may" | "ctx" | "tu-choi";
   readonly giaTri: number | null | undefined;
   readonly mayHong?: boolean;
 }): MucCanhBao {
@@ -70,6 +71,8 @@ export function mucCanhBao(o: {
   //   khoi-sua nghĩ hết 16.000 token rồi trả RỖNG (G5-D) — người dùng không thấy gì cho tới khi hỏng.
   //   ≥ 85 % là lúc lượt kế tiếp cùng cỡ sẽ bị kẹp trần; ≥ 95 % là đã ở mép.
   if (o.loai === "ctx") return o.giaTri >= 95 ? "nguy" : o.giaTri >= 85 ? "canh-bao" : "binh-thuong";
+  // ★ F6 — số lần đường ống TỪ CHỐI/THOÁI HOÁ trong phiên: 1 lần là đáng nhìn, 3 lần là hệ đang không dùng được.
+  if (o.loai === "tu-choi") return o.giaTri >= 3 ? "nguy" : o.giaTri >= 1 ? "canh-bao" : "binh-thuong";
   return o.giaTri < 2 ? "nguy" : o.giaTri < 5 ? "canh-bao" : "binh-thuong";
 }
 
@@ -150,7 +153,14 @@ function O({
  * @param dungLuot ★ F2 — số đo lượt model GẦN NHẤT của phiên (sự kiện SSE `usage`, do trang truyền xuống).
  *   `null` ⇒ hai ô "nghĩ/sinh" và "ctx" hiện `—` (chưa có lượt nào trong phiên này — không phải 0).
  */
-export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageLuot | null } = {}) {
+export function ThanhTrangThaiAiLocal({
+  dungLuot = null,
+  thongKe = null,
+}: {
+  dungLuot?: KbUsageLuot | null;
+  /** ★ F6 — chỉ số phiên cộng dồn từ trang (lượt · token · thời gian · từ chối). `null` ⇒ ô hiện `—`. */
+  thongKe?: ThongKePhien | null;
+} = {}) {
   const { t } = useTranslation();
   const nghiSinh = useMemo(() => (dungLuot ? tachNghiSinh(dungLuot) : null), [dungLuot]);
   /**
@@ -309,6 +319,35 @@ export function ThanhTrangThaiAiLocal({ dungLuot = null }: { dungLuot?: KbUsageL
                 tran: dungLuot.ctxMax,
               })
             : t("ttAiLocal.tipCtxMu", "Chưa biết trần ngữ cảnh của lượt (chưa có lượt, hoặc server không báo trần).")
+        }
+      />
+      {/* ★ F6 — chỉ số PHIÊN: lượt · token vào/ra/nghĩ · thời gian model · từ chối. */}
+      <O
+        id="phien"
+        icon={Activity}
+        nhan={t("ttAiLocal.phien", "phiên")}
+        giaTri={thongKe && thongKe.soLuot > 0 ? t("ttAiLocal.phienGiaTri", "{{n}} lượt", { n: thongKe.soLuot }) : KHONG_BIET}
+        muc={mucCanhBao({ loai: "tu-choi", giaTri: thongKe?.soTuChoi })}
+        giaiThich={
+          thongKe && thongKe.soLuot > 0
+            ? t(
+                "ttAiLocal.tipPhien",
+                "Phiên này: {{luot}} lượt model · {{vao}} token vào · {{ra}} token ra (nghĩ {{nghi}}) · {{giay}} s thời gian model · {{tuChoi}} lần từ chối/thoái hoá.",
+                {
+                  luot: thongKe.soLuot,
+                  vao: thongKe.tokensVao,
+                  ra: thongKe.tokensRa,
+                  nghi:
+                    thongKe.tokensNghi === null
+                      ? KHONG_BIET
+                      : thongKe.nghiKhongDo > 0
+                        ? `${thongKe.tokensNghi} + ${thongKe.nghiKhongDo} lượt không đo`
+                        : String(thongKe.tokensNghi),
+                  giay: Math.round(thongKe.msTong / 1000),
+                  tuChoi: thongKe.soTuChoi,
+                },
+              )
+            : t("ttAiLocal.tipPhienRong", "Chưa có lượt model nào trong phiên này.")
         }
       />
     </div>

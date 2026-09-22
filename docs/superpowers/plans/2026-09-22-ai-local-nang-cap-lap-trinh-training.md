@@ -327,7 +327,15 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
    "Model is thinking… 1304 chars", sau lượt pill "Model thought 6622 chars · 1930 tokens" gấp. Kèm sửa `data-testid` dải trạng thái
    từ nhãn đã dịch sang id ổn định (kịch bản đo trả rỗng khi UI sang tiếng Anh).
    "Lý do model cạnh diff" để sau (cần gắn suy luận với từng `apply_diff`). **B8 một phần — XONG:** xoá `agent_plan`/`agent_step`
-   khỏi `StreamEvent` (0 nơi phát, 0 người đọc); census SSE giữ cơ chế miễn với danh sách RỖNG. **F5/F6**, **B6** để phiên sau.
+   khỏi `StreamEvent` (0 nơi phát, 0 người đọc); census SSE giữ cơ chế miễn với danh sách RỖNG. **F6 — XONG 22:08:** ô "phiên" trên
+   dải trạng thái cộng dồn từ `usage` + `done.degraded` + luồng lỗi (`thongKePhien.ts`, 5 lưới; "nghĩ không đo ≠ 0"); ngưỡng từ chối
+   1 → cảnh báo, 3 → nguy; reset khi đổi phiên; khoá i18n ×3 — **kiểm sống 22:42 ĐẠT**: "session: —" → "session: 1 turns", tooltip
+   "692 tokens in · 1956 out (thinking 1746) · 11 s · 0 refusals". **F5** (lọc lịch sử lệnh) và **B6** để phiên sau.
+   **Ablation "persona giữ, khối rỗng" — ĐO XONG 22:38: 24/36 = 67 %**, tệ hơn cả không ngữ cảnh (75 %) — **Python 0/9** (py1/py2/py3
+   đều 3→0), ts/cs không đổi. Persona nói "bạn có mã thật, dựa vào nó" mà không có khối ⇒ model bám vào thứ không tồn tại (đúng lớp
+   lỗi §8.5 canh) — hại nhất ở ngôn ngữ không phải của repo. ⇒ **11 điểm của 4k là của BYTE MÃ THẬT + persona khớp thực tế**; không
+   có đường tiết kiệm token bằng cách bỏ khối giữ persona. Knob `AI_CODING_ABLATION_NGU_CANH` giữ làm dụng cụ đo (mặc định tắt, 4 lưới
+   canh mặc định), `.env` đã gỡ, node restart về hành vi thật. Nhánh `khoi-khong-persona` chưa đo (khối mà không persona) — để sau.
 6b. **Trần nghĩ 32k + nút "sâu" — HOÃN, lý do ĐÃ XÁC NHẬN 21:30:** b9814 **KHÔNG** nhận `reasoning_budget` theo request (gửi
    `reasoning_budget: 64` ⇒ suy luận vẫn 1.018 ký tự như mặc định, log vẫn "budget=12000") — ngân sách là server‑wide. "Sâu" chỉ
    làm được bằng cách đổi cờ khởi động (restart) hoặc chờ bản llama.cpp có ngân sách theo request; không bày nút vô hiệu.

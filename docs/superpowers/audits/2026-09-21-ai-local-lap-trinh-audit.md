@@ -983,6 +983,22 @@ Một khối mã thật vừa phải giúp đúng; gấp đôi thì mã lạ l�
 bị bác trong một buổi tối; 4.000 giữ nguyên nhưng nay là **con số có đường cong**, ghi ở docblock hằng. Việc kế nếu muốn hơn 86 %:
 không phải "nhiều hơn/ít hơn" mà là **đúng tệp hơn** — cần thước đo liên quan khác điểm truy hồi (đã chứng minh không tách được).
 
+### 8.4i Ablation "persona giữ, khối rỗng" — persona không khớp thực tế giết Python 0/9
+
+Câu hỏi sau 8.4g/8.4h: 11 điểm của ngữ cảnh 4k đến từ **byte mã thật** hay từ **persona** "mã thật đứng trên trí nhớ" (chỉ bật
+khi có khối)? Knob đo `AI_CODING_ABLATION_NGU_CANH=persona-khong-khoi` (giữ persona "có ngữ cảnh", bỏ khối; mặc định tắt, 4 lưới):
+
+| Cấu hình (ctx 64k, budget 12k, 12 × 3) | Trục H | Ghi chú |
+|---|---|---|
+| Khối 4k + persona khớp (thật) | **31/36 = 86 %** | |
+| Không khối + persona "không có mã" (K2 ablation) | 27/36 = 75 % | |
+| **Không khối + persona "CÓ mã"** | **24/36 = 67 %** | **py1·py2·py3 = 0/9**; ts 8/9 · cs 8/9 · cpp 8/9 |
+
+Persona bảo model dựa vào mã thật mà prompt không có mã ⇒ model bám vào thứ không tồn tại — đúng lớp lỗi §8.5 đã canh ("dặn tin
+vào khối đã biến mất"), và hại nhất ở **Python** (ngôn ngữ không có trong repo TS/C# ⇒ không có gì để bám). Kết luận: giá trị
+của ngữ cảnh là **byte mã thật + persona khớp thực tế**, không tách rời được để tiết kiệm token. Agentic 6/6 dưới ablation (n=1)
+là dòng sửa khác persona — chưa kết luận. Nhánh `khoi-khong-persona` để sau.
+
 ### 8.5 Bảy bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
 
 1. `mockRestore()` xoá `mock.calls` — đọc spy SAU restore ⇒ đỏ oan.

@@ -19124,7 +19124,11 @@
     "ctx": "ctx",
     "ctxPc": "ctx {{pc}}%",
     "tipCtx": "上一轮使用了 {{dung}} / {{tran}} 上下文 token（输入+输出，含推理）。≥85% 表示同等规模的下一轮会被上限截断；≥95% 已在边缘——真实案例：思考到上限后返回空。",
-    "tipCtxMu": "尚不知道本轮的上下文上限（尚无轮次，或服务器未报告上限）。"
+    "tipCtxMu": "尚不知道本轮的上下文上限（尚无轮次，或服务器未报告上限）。",
+    "phien": "会话",
+    "phienGiaTri": "{{n}} 轮",
+    "tipPhien": "本会话：{{luot}} 轮模型调用 · 输入 {{vao}} token · 输出 {{ra}} token（思考 {{nghi}}）· 模型耗时 {{giay}} 秒 · 拒绝/降级 {{tuChoi}} 次。",
+    "tipPhienRong": "本会话尚无模型轮次。"
   },
   "repoWs": {
     "nghi": {

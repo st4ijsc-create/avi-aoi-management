@@ -19116,7 +19116,11 @@
     "ctx": "ctx",
     "ctxPc": "ctx {{pc}}%",
     "tipCtx": "Last turn used {{dung}} / {{tran}} context tokens (in + out, reasoning included). ≥85% means the next turn of the same size will be clamped; ≥95% is at the edge — real case: thought up to the ceiling, then returned empty.",
-    "tipCtxMu": "Context ceiling of the turn unknown (no turn yet, or the server did not report it)."
+    "tipCtxMu": "Context ceiling of the turn unknown (no turn yet, or the server did not report it).",
+    "phien": "session",
+    "phienGiaTri": "{{n}} turns",
+    "tipPhien": "This session: {{luot}} model turns · {{vao}} tokens in · {{ra}} tokens out (thinking {{nghi}}) · {{giay}} s of model time · {{tuChoi}} refusals/degraded turns.",
+    "tipPhienRong": "No model turn in this session yet."
   },
   "repoWs": {
     "nghi": {

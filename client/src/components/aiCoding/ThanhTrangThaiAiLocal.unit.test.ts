@@ -15,6 +15,15 @@ describe("mucCanhBao — % ngữ cảnh đã dùng (F2)", () => {
   });
 });
 
+describe("mucCanhBao — số lần từ chối trong phiên (F6)", () => {
+  it("0 ⇒ bình thường · 1–2 ⇒ cảnh báo · ≥3 ⇒ nguy; không biết ⇒ bình thường", () => {
+    expect(mucCanhBao({ loai: "tu-choi", giaTri: 0 })).toBe("binh-thuong");
+    expect(mucCanhBao({ loai: "tu-choi", giaTri: 1 })).toBe("canh-bao");
+    expect(mucCanhBao({ loai: "tu-choi", giaTri: 3 })).toBe("nguy");
+    expect(mucCanhBao({ loai: "tu-choi", giaTri: undefined })).toBe("binh-thuong");
+  });
+});
+
 describe("tachNghiSinh — nghĩ / sinh / % ctx / tok/s (F2)", () => {
   it("★★★ 'nghĩ 5.000 rồi trả 300' KHÁC 'trả 5.300': sinh = ra − nghĩ, không gộp", () => {
     const r = tachNghiSinh({ tokensIn: 700, tokensOut: 5300, tokensReasoning: 5000, latencyMs: 10_000, ctxMax: 32_768 });

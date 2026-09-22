@@ -1290,6 +1290,53 @@ describe("B2 — hồ sơ sampling tới engine (hợp đồng + cần gạt A/B
     expect(h.quyetDinh.find((q) => q.tool === "apply_diff")).toBeTruthy();
   });
 
+  // ── Ablation ngữ cảnh mã (DỤNG CỤ ĐO) — mặc định TẮT; hai nhánh tách persona khỏi khối mã ───────────────
+  const CAU_NGU_CANH = "hệ thống này xác thực người dùng như thế nào?";
+  const KHOI = "MÃ NGUỒN THẬT TỪ DỰ ÁN ĐANG MỞ";
+  const PERSONA_CO = "MÃ NGUỒN THẬT ĐÃ ĐƯỢC ĐỌC TỪ ĐĨA";
+  const PERSONA_KHONG = "KHÔNG** CÓ MÃ NGUỒN CỦA DỰ ÁN ĐANG MỞ";
+
+  it("★★★ ablation VẮNG (mặc định) ⇒ khối mã VÀ persona 'có ngữ cảnh' cùng đi — hành vi thật không đổi", async () => {
+    await voiEnv({ AI_CODING_ABLATION_NGU_CANH: undefined }, async () => {
+      h.mucLucGia = [[TEP_THI, 0.9]];
+      h.manh = [MA_CSHARP];
+      await chay(CAU_NGU_CANH, admin());
+      expect(h.promptNhan).toContain(KHOI);
+      expect(h.systemPromptNhan).toContain(PERSONA_CO);
+    });
+  });
+
+  it("★★ `persona-khong-khoi` ⇒ persona 'có ngữ cảnh' GIỮ, khối mã KHÔNG vào prompt", async () => {
+    await voiEnv({ AI_CODING_ABLATION_NGU_CANH: "persona-khong-khoi" }, async () => {
+      h.mucLucGia = [[TEP_THI, 0.9]];
+      h.manh = [MA_CSHARP];
+      await chay(CAU_NGU_CANH, admin());
+      expect(h.promptNhan).not.toContain(KHOI);
+      expect(h.systemPromptNhan).toContain(PERSONA_CO);
+    });
+  });
+
+  it("★★ `khoi-khong-persona` ⇒ khối mã VÀO prompt, persona như KHÔNG có ngữ cảnh", async () => {
+    await voiEnv({ AI_CODING_ABLATION_NGU_CANH: "khoi-khong-persona" }, async () => {
+      h.mucLucGia = [[TEP_THI, 0.9]];
+      h.manh = [MA_CSHARP];
+      await chay(CAU_NGU_CANH, admin());
+      expect(h.promptNhan).toContain(KHOI);
+      expect(h.systemPromptNhan).toContain(PERSONA_KHONG);
+      expect(h.systemPromptNhan).not.toContain(PERSONA_CO);
+    });
+  });
+
+  it("giá trị lạ ⇒ như mặc định (dụng cụ đo sai chính tả không được đổi hành vi thật)", async () => {
+    await voiEnv({ AI_CODING_ABLATION_NGU_CANH: "persona_only" }, async () => {
+      h.mucLucGia = [[TEP_THI, 0.9]];
+      h.manh = [MA_CSHARP];
+      await chay(CAU_NGU_CANH, admin());
+      expect(h.promptNhan).toContain(KHOI);
+      expect(h.systemPromptNhan).toContain(PERSONA_CO);
+    });
+  });
+
   it("★★ qua SERVICE, `chinh-hang` nhưng model KHÔNG biết nghĩ ⇒ hồ sơ KHÔNG-nghĩ (presence 1,5), không phải hồ sơ nghĩ", async () => {
     await voiEnv({ AI_SAMPLING_PROFILE: "chinh-hang", GGUF_DEFAULT_MODEL: "Qwen3-Coder-30B-A3B-Instruct.gguf" }, async () => {
       h.manh = [MA_CSHARP];

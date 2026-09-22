@@ -258,6 +258,8 @@ export interface KbStreamCallbacks {
    * Thuần hiển thị (bảng "model đang nghĩ"); KHÔNG nối vào câu trả lời, KHÔNG lưu phiên.
    */
   onReasoning?: (text: string) => void;
+  /** ★ F6 — gọi đúng một lần khi có `done`: `degraded` = server đã TỪ CHỐI/THOÁI HOÁ và thay câu trả lời. */
+  onDone?: (info: { degraded: boolean }) => void;
 }
 
 /** ★ F2 — gương của `DungLuotModel` (server) + `luot` (lớp lượt). Chỉ các ô client cần. */
@@ -523,6 +525,7 @@ export function useKbChatStream() {
                 provider = payload.provider;
                 cached = payload.cached;
                 const doneAnswer = (payload as any).answer;
+                callbacks?.onDone?.({ degraded: (payload as any).degraded === true }); // ★ F6
                 // FE-W0.3 (doc 46 §2.3) — the backend flagged the streamed LLM
                 // output as a degenerate loop ("cell cell cell…") and sent a clean
                 // fallback in `answer`. REPLACE the accumulated garbage tokens so the

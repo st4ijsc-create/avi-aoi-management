@@ -5851,7 +5851,26 @@ async function* streamCodingGenerate(
    * được đọc, hãy dựa vào nó"* trong một lượt mà khối mã vừa bị bỏ vì hết ngân sách, ta vừa dạy
    * model tin vào một khối KHÔNG TỒN TẠI — đúng lớp lỗi mà cả mục này sinh ra để chống.
    */
-  let heThong = personaSinhMa(language, nguCanh, khoiMa !== "");
+  /**
+   * ★ ABLATION (2026-09-22, DỤNG CỤ ĐO — mặc định TẮT, không phải tính năng): tách hai hiệu ứng của "có ngữ cảnh mã".
+   * Đường cong đo được: 0 ⇒ 75 % · 4k ⇒ 86 % · 8k ⇒ 75 %. Câu hỏi còn lại: 11 điểm của 4k đến từ BYTE MÃ THẬT hay từ PERSONA
+   * "mã thật đứng trên trí nhớ" (chỉ bật khi có khối)? `AI_CODING_ABLATION_NGU_CANH`:
+   *   · `persona-khong-khoi` — giữ persona "có ngữ cảnh", KHÔNG đưa khối mã vào prompt;
+   *   · `khoi-khong-persona` — đưa khối mã, persona như "không có ngữ cảnh";
+   *   · mọi giá trị khác / vắng ⇒ hành vi thật. Đọc env TẠI THỜI ĐIỂM GỌI, in log khi bật để không chạy nhầm cấu hình.
+   * ⚠ Không bao giờ bật trong sản xuất.
+   */
+  const ablation = (process.env.AI_CODING_ABLATION_NGU_CANH ?? "").trim();
+  let personaCoNguCanh = khoiMa !== "";
+  if (ablation === "persona-khong-khoi" && khoiMa !== "") {
+    console.warn(`[aiLocalKnowledge] ABLATION persona-khong-khoi: giữ persona có ngữ cảnh, BỎ khối mã (${nguCanhMa.tokens} token).`);
+    khoiMa = "";
+    personaCoNguCanh = true;
+  } else if (ablation === "khoi-khong-persona" && khoiMa !== "") {
+    console.warn(`[aiLocalKnowledge] ABLATION khoi-khong-persona: giữ khối mã (${nguCanhMa.tokens} token), persona như KHÔNG có ngữ cảnh.`);
+    personaCoNguCanh = false;
+  }
+  let heThong = personaSinhMa(language, nguCanh, personaCoNguCanh);
   let lich = dungKhoiLichSu({
     lichSu: history,
     systemPrompt: heThong,
