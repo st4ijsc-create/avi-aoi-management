@@ -132,6 +132,9 @@ Xếp theo **tính đúng đắn** (tiêu chí chủ dự án 2026-09-22: *"đú
 | **Qwen3.6-35B-A3B** · nghĩ BẬT 16k | **30/36 = 83 %** | 0 | 30.346 | MoE 3B hoạt động; `qwen35moe` nạp được; giải H-ts3 3/3 |
 | Qwen3.6-35B-A3B · nghĩ BẬT 16k · sampling **chính hãng** (`--sampling chinh-hang`, B2 A/B 2026-09-22) | 28/36 = 78 % | 1 | 35.647 | chặn dưới (H-py3 cụt @16k); +10 % tok/bài (6.257 vs 5.665); +H-cs3 +H-py3 nhưng −H-cpp3 −H-cs2 −H-ts3 (3/3 → 1/3) ⇒ **không ≥ cũ, mặc định giữ `hien-tai`** |
 
+Chuỗi cấu hình đường ống cùng ngày (H, 12 × 3, cùng model): B1 25/36 → **B4 `--reasoning-budget 12000` 27/36** (0 G5‑D) → **B3 ctx 64k
+31/36 = 86 %** (`H-q36moe-64k-`, mặc định mới) → B5 MTP `draft-mtp n_max=2` 27/36 (−4 bài, nhanh 9 %) ⇒ **không dùng MTP**.
+
 Trục H cùng A/B (đường ống thật, `AI_SAMPLING_PROFILE` trong `.env` + restart): `hien-tai` sau B1 **25/36 = 69 %**
 (`H-q36moe-b1-`) · `chinh-hang` **24/36 = 67 %** (`H-q36moe-ch-`, H-ts3 3/3 → 0/3 cùng chiều M) ⇒ hai trục cùng nói
 "không tốt hơn" ⇒ **B2 đóng: giữ `hien-tai`**. Nền trước B1 (`H-moe-`): 27/36 = 75 %; chênh −2 bài sau B1 là nhiễu 3 lượt

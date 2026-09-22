@@ -932,6 +932,21 @@ vì cùng lý do, mà thanh `—` trông y hệt "chưa có lượt". Vá case +
 (19:23):** bảng "Model đang nghĩ… 1131 ký tự" hiện sau **3,9 s**, xong 16,8 s; dải trạng thái **"nghĩ/sinh: 2061 nghĩ · 309
 sinh" · "ctx 10 %"**; 0 lỗi trang. Bảng biến mất khi lượt xong (hiện vật của lượt) — pill "đã nghĩ N token · xem" để F4.
 
+### 8.4f B5 — MTP speculative decoding: nhanh 9 %, đúng tụt 4 bài ⇒ KHÔNG áp dụng
+
+GGUF MTP chính hãng (`unsloth/Qwen3.6-35B-A3B-MTP-GGUF` UD‑Q4_K_XL, `nextn_predict_layers`) trên b9814 `--spec-type draft-mtp
+--spec-draft-n-max 2`, ctx 64k, ngân sách 12k — chỉ đổi model + cờ. Ba khoá `.env` trỏ tên MTP (tránh bẫy lùi in‑process).
+
+| | 64k không MTP | MTP |
+|---|---|---|
+| Trục H 12 × 3 | **31/36 = 86 %** · 28,3 s | **27/36 = 75 %** · 25,6 s |
+| Agentic | 5/6 | 4/6 (A2 1/3) |
+| VRAM | 26,5 GiB | 27,2 GiB |
+
+**cpp3 3/3 → 0/3**, py1 3→1: −4 bài, vượt nhiễu. Lợi 9 % thời gian không mua được điều đó ⇒ bỏ, trả server và `.env` về bản
+không‑MTP. Cấu hình cuối của ngày: **Qwen3.6‑35B‑A3B UD‑Q4_K_XL · ctx 65536 · `--reasoning-budget 12000` · sampling `hien-tai`
+· trần nghĩ 16k** = trục H **86 %**.
+
 ### 8.5 Bảy bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
 
 1. `mockRestore()` xoá `mock.calls` — đọc spy SAU restore ⇒ đỏ oan.

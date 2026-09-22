@@ -142,6 +142,24 @@ Thay "nới toàn bộ max_tokens" bằng trần riêng cho `<think>` (server h�
 0 G5‑D, token/lượt giảm không kèm giảm % (đo 3 lượt).
 
 ### B5 — MTP speculative decoding (T4)
+
+> **Trạng thái 2026-09-22 19:30: ĐANG ĐO.** GGUF MTP chính hãng (`unsloth/Qwen3.6-35B-A3B-MTP-GGUF` UD‑Q4_K_XL, 21,28 GB, có
+> `nextn_predict_layers`) nạp lên `:8091` với `--spec-type draft-mtp --spec-draft-n-max 2`, ctx 64k, ngân sách nghĩ 12k — chỉ đổi
+> model+cờ, mọi thứ khác giữ. Ba khoá `.env` trỏ tên tệp MTP (bẫy `LLAMA_SERVER_MODEL` lệch ⇒ lùi in‑process ⇒ OOM). Cổng ra:
+> H ×3 so `H-q36moe-64k-` (31/36) — **đúng ≥ −1 bài (nhiễu) và ms/bài giảm rõ** ⇒ giữ; đúng tụt ⇒ bỏ (tốc độ không mua được đúng).
+>
+> **Kết quả 19:50 — KHÔNG ÁP DỤNG.** MTP `draft-mtp n_max=2` (log: *"speculative decoding context initialized"*, +0,7 GiB VRAM):
+>
+> | | ctx 64k không MTP | **MTP** |
+> |---|---|---|
+> | Trục H 12 × 3 | **31/36 = 86 %** · 28,3 s/bài | **27/36 = 75 %** · 25,6 s/bài (−9 %) |
+> | Theo bài | | **cpp3 3/3 → 0/3**, py1 3→1, py2 3→2; ts1 2→3, cs3 2→3 |
+> | Agentic | 5/6 | **4/6** (A2 1/3) |
+>
+> Nhanh hơn 9 % nhưng **tụt 4 bài** (vượt xa nhiễu ±2) — tốc độ không mua được đúng. Nghi vấn: giải mã suy đoán với sampling
+> ngẫu nhiên (temp 0,25) không bảo toàn phân phối hoàn hảo ở n_max=2, hoặc bản GGUF MTP khác biệt lượng tử hoá; chưa tách nguyên nhân
+> — không đáng công khi lợi chỉ 9 %. Đã trả `.env` và `:8091` về bản không‑MTP ctx 64k. Cờ `-ThemArgs` giữ để đo lại khi
+> b98xx nâng MTP hoặc cần tốc độ cho chế độ "nhanh" (không nghĩ).
 Tải `Qwen3.6-35B-A3B-MTP` UD‑Q4_K_XL (21,3 GB), `--spec-type draft-mtp --spec-draft-n-max 2`. **Cổng ra:** H **bằng**
 (±nhiễu) và tok/s tăng; nếu H giảm ⇒ không dùng, ghi số.
 
@@ -268,6 +286,36 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
 - UI: mỗi ô mới có lưới `renderToStaticMarkup` + một phép đo sống (Playwright) so với nguồn thật (nvidia‑smi, /props).
 - Không gói nào được commit khi lưới census (`vramAllocationSites`, i18n `viStringCoverage` phần mình) tăng nợ.
 
+## 5b. Tổng kết đợt 1 (2026-09-22 chiều–tối) — số cuối và những gì để lại
+
+| Gói | Kết cục | Số đo cuối (12 bài khó × 3, đường ống thật) |
+|---|---|---|
+| B1 công tắc nghĩ theo lớp | XONG + cầu chì G18‑B1 | lớp PHỤ hết rỗng; lộ `khoi-sua` nghĩ hết 16k ⇒ B4 |
+| B2 sampling chính hãng | **KHÔNG áp dụng** (đo cả M lẫn H) | M 78 % vs 83 % · H 67 % vs 69 % ⇒ giữ `hien-tai`; cần gạt giữ lại |
+| B4 `--reasoning-budget 12000` | **ÁP DỤNG** | G5‑D 3/6 → 0/12 · agentic 5/6 ×2 · H 75 % · 0/36 lượt H bị cắt |
+| B3 ctx 64k | **ÁP DỤNG** (`GGUF_MAX_CTX_DEFAULT` 65536) | **H 86 %** (31/36), không bài nào tụt, VRAM còn 6,1 GiB |
+| B7 sổ đo nghĩ/trả | XONG + sống | mig 0358; hàng thật "5.494 nghĩ / 874 mã" |
+| F2 thanh trạng thái | XONG + sống | "2061 nghĩ · 309 sinh · ctx 10 %" |
+| F3 bộ chọn chế độ nghĩ | XONG (2 nút) + sống | "sâu" chờ trần nghĩ 32k |
+| F1 bảng đang nghĩ | XONG + sống | reasoning tới client sau 5,5 s; bảng hiện sau 3,9 s |
+| G19 grep quá hạn nuốt đơn sinh mã | VÁ | H‑cs3 0/3 → 2/3 |
+| B5 MTP | **KHÔNG áp dụng** | H 75 % vs 86 % (cpp3 3→0), agentic 4/6, chỉ nhanh hơn 9 % |
+
+Đường ống đi từ **75 % (sáng) → 86 % (tối)** trên cùng bộ bài, cùng model, không đổi trần nghĩ hay sampling — bằng ba việc
+đo được: tắt nghĩ lớp phụ, ngân sách nghĩ, và ngữ cảnh 64k. Hai commit: `b3906cee1`, `be8046a5c`.
+
+**Để lại cho phiên sau (theo thứ tự đề nghị):**
+1. **K2 — cổng liên quan cho ngữ cảnh repo**: đo sống 19:23 cho câu "kiểm tra số nguyên tố" mà đường ống đọc `kiemTraCayDay.ts`
+   + `kiemTraAsset.ts` (khớp chữ "kiểm tra") làm ngữ cảnh — vô hại lần này, là mẫu đằng sau các bài tụt (H‑ts3). Cần vị từ
+   "ngữ cảnh có liên quan không" trước khi nhồi vào prompt, đo bằng H ×3.
+2. **Trần nghĩ 32k + nút "sâu" (F3)** ở ctx 64k — cổng ra: A2 ×3, H không tụt, ms/bài báo thật.
+3. **`TRAN_TOKEN_NGU_CANH_MA` 4.000 / `TRAN_TOKEN_MUC_LUC` 6.000** ở 64k — từng biến một.
+4. **i18n en/zh** cho `ttAiLocal.*`, `repoWs.nghiPick.*`, `repoWs.nghi.*` (giao diện tiếng Anh đang hiện nhãn Việt).
+5. **F4** pill "đã nghĩ N token · xem" sau lượt + lý do model cạnh diff; **F5/F6**; **B6** native tools dưới HITL; **B8** rút gọn
+   service (xoá `agent_plan`/`agent_step` chết).
+6. **Training (R1–R5)** ở phiên riêng như chủ dự án đã định: corpus vàng csharp‑dotnet + ST4I, EvalTab thật.
+7. Quyết định launcher sản xuất 1 × 64k hay 2 × 32k (mục 8).
+
 ## 6. Thứ tự & lý do
 
 1. **B1** (đúng đắn — chặn trả rỗng) → 2. **B7 + F2** (đo được mới quyết được) → 3. **B2** (A/B sampling) →
@@ -285,6 +333,12 @@ có đo) → 7. **R1, R2** (training có vòng đo thật) → 8. **B6** (native
 - Không đụng `/ai-chat`, Brain, Agent Command trong đợt này — session mới.
 
 ## 8. Việc cần chủ dự án quyết
+
+> **Bổ sung 2026-09-22 tối (sau B3):** launcher sản xuất `scripts/ai/start-llama-server.ps1` mặc định `-np 2 -c 65536` = **2 slot × 32k**.
+> Phép đo B3 (H 75 % → 86 %) chạy trên **1 slot × 64k**. Muốn 64k/slot mà giữ 2 slot cần `-c 131072` = thêm ~5 GiB KV (còn ~1 GiB
+> trên card 32,6 GiB — quá mép). Chọn: **(a) 1 × 64k** (đúng cấu hình đã đo; một người dùng tại một thời điểm — hai yêu cầu song song
+> sẽ xếp hàng) hay **(b) 2 × 32k** (song song, nhưng mất +11 điểm H). Đề nghị (a) cho máy trạm một người; đặt qua `.env`
+> `LLAMA_SERVER_SLOTS=1` + `LLAMA_SERVER_CTX_TOTAL=65536`, không đổi mặc định launcher cho tới khi chủ dự án chốt.
 
 1. Tải GGUF‑MTP 21,3 GB (B5) — đồng ý tải để đo?
 2. Chấp nhận ctx 64k làm mặc định nếu H tăng và VRAM còn ≥ 3 GB (B3)?
