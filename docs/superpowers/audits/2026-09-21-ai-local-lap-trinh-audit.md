@@ -567,3 +567,134 @@ Cả ba là **lỗi suy luận thuật toán**, không phải thiếu kiến th�
 và API của repo* — nó **không** dạy model xử lý đúng một khoảng rỗng hay viết đúng bộ phân tích đệ quy.
 ⇒ **Cổng điều kiện KHÔNG đạt.** Cần gạt đúng cho ba bài này là **model mạnh hơn** (Qwen3.8 đã giải
 được 1 trong 3), không phải fine-tune.
+
+
+# PHỤ LỤC 6 — 2026-09-22: BA DỰ ÁN THẬT · C++ · SO MODEL THEO "ĐÚNG TRƯỚC NHANH" · G11–G18
+
+## 0. Tiêu chí quyết định mới của chủ dự án — và nó lật bảng xếp hạng
+
+> *"Do chuyên ngành kỹ thuật cần độ chính xác rất cao, không thể trả lời bừa được. Một câu trả lời sai
+> có thể dẫn đến suy nghĩ hoặc định hướng kỹ thuật sai, do đó tốc độ không phải là ưu tiên chính.
+> Tính đúng đắn mới được ưu tiên hơn."*
+
+Đây là **tiêu chí QUYẾT ĐỊNH**, không phải lời động viên. Cùng một bộ số, xếp theo "điểm vận hành"
+chọn MoE 69 %; xếp theo tiêu chí này chọn model nghĩ BẬT 83 % và **82 giây một lượt không phải lý do
+để loại**. Ba hệ quả cho cách đo: (1) không model nào bị tự loại vì chậm — chỉ loại khi **không nạp
+nổi** (Qwen3-Coder-Next 48,5 GB trên card 32 GB); (2) mọi ứng viên **≥3 lượt**; (3) **trục H phải đo**
+trên model thắng, vì thứ chủ dự án dùng là đường ống.
+
+## 1. Ba dự án thật — 0/3 chạy được → 18/21 hiện vật
+
+Ba đơn hàng kiểu người dùng đặt: **D1** quản lý học sinh cấp 2 (C# + SQL Server) · **D2** bán hàng +
+kho tiệm tạp hoá (C# + SQL Server) · **D3** website Công ty TNHH ST4I (PostgreSQL + React/Node).
+Mọi cổng do MÁY chạy: T‑SQL qua ScriptDom (offline) · PostgreSQL cục bộ, lược đồ tạm · `dotnet build`
+· `node --check`/esbuild. Bộ đo: `scripts/ai-eval/codegen-chay-duoc/duan.mjs`.
+
+**Ba lỗi sản phẩm, cùng một hình dạng: một yêu cầu SINH MÃ bị một cơ chế khác nuốt mất.**
+
+| | Triệu chứng đo được | Gốc rễ | Vá |
+|---|---|---|---|
+| **G11** | D3 → *"Không có tệp/thư mục **Node.js**"* trong **43 ms**, model **không được gọi** | `REPO_PATH_REGEX` thấy `Node`+`.`+`js`; **8/8** tên khung bị bắt nhầm | `tenCongNghe.ts` (chỉ khi token TRỤI) **+** `cauChiNenNo()` — **cơ chế**: `NOT_FOUND` không được phủ quyết đơn sinh mã. Lỗ G2 không mở lại |
+| **G12** | Model sinh `password: 'your_password'` → bộ che thành `[REDACTED_SECRET],` → **JS không parse** | Hàng rào an toàn phá chính hiện vật nó bảo vệ | Che **giữ cú pháp**: `password: '[REDACTED_SECRET]'`. 142 lưới fuzz đổi trục: canh **giá trị** bí mật (chặt hơn bản cũ chỉ canh nhãn) |
+| **G13** | D2 → 509 ms → **thẻ duyệt `dotnet build`** trơ, đã mang sẵn `[CMD_NOT_ALLOWED]`, **0 ký tự mã**, 3/3 lượt | Đơn sinh mã bị định tuyến sang `run_command` | Mở rộng điểm hẹp `chanLenhKhiCauHoi`; HITL không nới |
+
+Kết quả 3 lượt/dự án: **D1** SQL 3/3 · C# 0/3 — **D2** SQL 3/3 · C# 3/3 — **D3** SQL 3/3 · JS/TSX 6/6.
+**18/21 hiện vật, 0/14 thực thể nghiệp vụ thiếu, ~6 s/dự án.** Khuyết tật còn lại (D1, ổn định 0/3):
+`reader.GetInt32("MaHocSinh")` — `SqlDataReader.GetInt32` nhận **số thứ tự cột**. **Một lỗi gốc lặp
+5 lần, không phải 5 lỗi** — sai **tầng API**, là lý lẽ để corpus tham chiếu API tồn tại (G15).
+
+**Thiết bị đo tự sinh 5 phát hiện giả**, chặn trước khi báo cáo: PostgreSQL chấm bài T‑SQL mà đơn hàng
+yêu cầu SQL Server · `p.csproj` thiếu driver ADO.NET · đòi khoá ngoại giữa 4 thực thể vốn độc lập ·
+`esbuild --loader=tsx` sai cách · 4 lượt D2 "hỏng" ở 144–715 ms là bị bóp tốc độ (hỏi lại: 5,8 s, xanh).
+⚠ **`duan.mjs` bản đầu chạy DDL lên Supabase TỪ XA** qua `DATABASE_URL` — rollback + bị quyền chặn nên
+không đổi một byte, nhưng đó là **may mắn, không phải thiết kế**. Nay ghim Postgres cục bộ.
+
+## 2. UI hai màn — 53 % → 65 % không gian, và thứ AI local cần mà AI đám mây không cần
+
+Đo bằng số ở 1920×1080: vùng làm việc bắt đầu **y=291/x=312** ⇒ khung vỏ ăn 27 % chiều cao; sau vá
+**y=216/x=288**, diện tích làm việc **53 % → 65 %**. Hai nguồn lãng phí: `p-0` **không thắng** `md:px-6
+md:py-6` của `PageContainer` (biến thể `md:` thắng ở mọi màn ≥768px); ribbon chiếm nguyên một hàng.
+
+**G14 — thanh trạng thái cỗ máy** (`ThanhTrangThaiAiLocal`): máy · model · VRAM còn · độ trễ · tok/s ·
+ngân sách. Lý do: ba sự cố **im lặng** đã đo (llama‑server chết giữa chừng; tiến trình ngoài chiếm
+23,5 GB; ngân sách cạn ⇒ tác nhân mù) — không cái nào nhìn thấy từ màn hình. Nguyên tắc: **không biết
+≠ 0** (hiện `—`); màu là **khẳng định có ngưỡng đo được**. ⚠ Bản đầu **báo động giả của chính tôi**:
+đọc `operational` (binding trong tiến trình) ⇒ "ENGINE HỎNG" đỏ khi `:8091/health` trả 200. Sửa: hỏi
+**đúng đường đang phục vụ**, kết luận tính ở MỘT nơi (server).
+
+**G15 — corpus lập trình**: thêm 7 ngôn ngữ + ST IEC 61131‑3 · G‑code · ZMotion + quy ước repo, xếp
+3 nhóm; sửa lời khuyên **sai** "nạp tài liệu lập trình KHÔNG dạy thêm gì" — model sai tầng API, corpus
+tham chiếu API chữa được; giáo trình nhập môn thì không.
+
+**G16** — hướng dẫn Training Studio gấp được (ô "Tên corpus" từng nằm ở y≈1050, dưới nếp gấp).
+
+**G17 — "Terminal" gõ được lệnh** (phản hồi chủ dự án: *"vốn dĩ terminal là để gõ lệnh"*). Pane cũ chỉ
+đọc — **cái tên** nói dối. Shell tự do là không thể (11 khuôn + HITL là hàng rào đã đo); ranh giới thật
+ở *"chạy khi chưa duyệt"*, **không** ở *"gõ"*. Nay: ô gõ lệnh → đúng thẻ duyệt; phơi 11 khuôn (`dotnet
+format` đánh dấu ⚠ ghi đè tệp); đổi tên **"Lệnh & Nhật ký"** (vi/en/zh). `BangTerminal` giữ 0 mutation.
+
+Nợ census **có sẵn** (ngoài phạm vi, phần tôi = 0 sau khi chuyển 15 chuỗi sang `t()`): viStringCoverage
+34 · rawErrorMessageCensus 4 · clientErrorCoverage 1 (twin3d / TwinVanHanh / AOIPackages).
+
+## 3. C++ vào bộ đo — msys2 có, toolchain không; MSVC có đủ
+
+Đo trên máy: `C:\msys64` **chưa cài gói toolchain** (0 tệp `g++.exe`); **MSVC 14.51.36231** (VS 2026)
+có đủ, không trên PATH. Đi qua **CMake** (tự dò MSVC qua registry). Ba bài khó C++ (`H-cpp1..3`); đối
+chứng **fake‑ok 3/3, fake‑bad 0/3** — sau khi bắt hai lỗi của chính bộ đo: `b\Release\solbench.exe`
+bị JS nuốt dấu thoát (biên dịch đạt mà 0/3); fake‑bad H‑cpp2 lọt vì Kahn trả rỗng *tình cờ* với chu
+trình thuần — thêm ca "chu trình LẪN thành phần sắp được".
+
+## 4. So model — bộ KHÓ 12 bài, 3 lượt, hai trục nghĩ
+
+**Không tồn tại "Qwen3.6‑Coder"/"Qwen3.8‑Coder"**; Qwen3.6‑27B *chính là* model code. Tải thêm
+**Qwen3.6‑35B‑A3B** (20,8 GB, `qwen35moe` — nạp được). **Qwen3‑Coder‑Next loại**: 48,5 GB > 32 GB VRAM.
+
+| Trục M · model thuần | Chạy được | Cụt | ms/bài |
+|---|---|---|---|
+| **Qwen3.6‑35B‑A3B** · nghĩ BẬT 16k | **30/36 = 83 %** | 0 | 30.346 |
+| **Qwen3.6‑27B** · nghĩ BẬT 16k | **30/36 = 83 %** | 0 | 79.826 |
+| Qwen3.8‑27B · nghĩ BẬT 16k | 27/36 = 75 % | **7** | 109.578 |
+| Qwen3.6‑27B · nghĩ TẮT | 26/36 = 72 % | 0 | 12.844 |
+| Qwen3.8‑27B · nghĩ TẮT | 26/36 = 72 % | 0 | 8.580 |
+| Qwen3.6‑35B‑A3B · nghĩ TẮT | 25/36 = 69 % | 1 | 5.342 |
+| Qwen3‑Coder‑30B *(đang dùng)* | 11/36 = 31 % | 0 | 1.702 |
+| Qwen3.8‑27B · nghĩ BẬT **32k** (5 bài cụt) | *đang đo* | | |
+| Devstral Small 2 (Ollama), bộ 12 | *đang đo* — bộ 9: 14/27 = 52 % | 0 | 5.097 |
+
+**Bật chế độ nghĩ mua +14 điểm % trên cùng MoE** (69 → 83). **Hai model Qwen3.6 bằng nhau về đúng**,
+MoE nhanh 2,6× ⇒ tiêu chí "đúng trước nhanh" ở đây **không** bắt trả giá tốc độ. Con số 92 % lượt đơn
+của bản dày là **nhiễu**. **H‑ts3** (topo nhỏ nhất theo từ điển + đúng nút trong chu trình) — từng
+"không model nào giải" — MoE có nghĩ giải **3/3**: lật một kết luận đợt trước (*"lỗi suy luận thuật toán
+LoRA không chữa được"* — đúng về LoRA, **sai** về "model không giải nổi": cần **chế độ nghĩ**).
+
+**LUẬT SỐ 1 — cụt ≠ 0 ⇒ chặn dưới.** Cắn **ba lần**: Qwen3.8 4k ⇒ 22 % giả; Qwen3.6 4k ⇒ 10/12 cụt
+⇒ 2/12 giả (lượt bị dừng giữa chừng, báo cáo **xoá**); Qwen3.8 16k ⇒ 7/36 cụt ⇒ 75 % là sàn. Trần phần
+cứng model dày 27B: ctx/slot 32.768 ⇒ `max_tokens` ≤ 32.253 (tính từ tokenizer thật, prompt dài nhất 195).
+
+## 5. G18 — đường ống bóp model 83 % về 8 %, và bản vá bằng cơ chế
+
+`MAX_TOKENS_SINH = 3_000` (hằng) trong khi model nghĩ tiêu **5.220 token/bài TB, max 8.015**.
+
+| Trục H · Qwen3.6‑27B nghĩ BẬT | Chạy được | Lượt chết vì đường ống (G5‑D) |
+|---|---|---|
+| TRƯỚC (trần 3.000) | **1/12 = 8 %** | **10/12** |
+| SAU G18 (trần theo lớp, thử lại 1 lần) | **24/36 = 67 %** | **0/36** |
+
+Không hằng mới, không cờ `.env` (cờ bị quên **hỏng trong im lặng**). Cơ chế: lượt đầu trần cũ; nổ
+`LoiTokenCanKietVaoSuyLuan` + chưa phát chữ ⇒ ghi ô nhớ "model biết nghĩ" + **thử lại một lần** ở trần
+rộng kẹp `ctx/slot − prompt`; lượt sau khởi động thẳng rộng. Chứng minh sống: log G18 nổ **1 lần** cho
+12 bài; `/slots` request kế tiếp `n_predict 16000`. Lỗi đi qua **ba lớp bọc** làm rơi `name`/`cause`
+⇒ nhận diện `name` → `cause.name` → dấu vết `TỪ CHỐI TRUNG THỰC (G5-D` trong thông điệp.
+⚠ **Bẫy thấy ngay lượt sống đầu**: `dinhDanhModel = GGUF_DEFAULT_MODEL` là nhãn **khai**, không phải
+model đang nạp (log ghi Coder‑30B khi :8091 chạy Qwen3.6). Chiều nguy hiểm vẫn được lượt thử lại bắt.
+**Khoảng cách H 67 % ↔ M 83 % là chi phí đường ống (ngữ cảnh repo + persona) — chưa vá, đã ghi.**
+
+## 6. Khuyến nghị theo tiêu chí "đúng trước nhanh" — chờ hai hàng đang đo
+
+Với dữ liệu đến giờ: **Qwen3.6‑35B‑A3B nghĩ BẬT** — bằng bản dày về đúng (83 %), nhanh 2,6×, nạp được
+trên llama.cpp b9814, và **H‑ts3 3/3**. Qwen3.8 chỉ đánh giá được sau hàng 32k. Devstral chờ bộ 12.
+Bản vá G18 là **điều kiện cần** cho mọi lựa chọn có nghĩ: không có nó, model thắng cũng chỉ tới tay
+người dùng ở 8 %.
+
+Commit: `494c10813` (G11–G13 + `duan.mjs`) · `6728376f` (UI G14–G17) · `4ee865da` (G18) · bench C++,
+`--khong-nghi`, `so-sanh`, README.
