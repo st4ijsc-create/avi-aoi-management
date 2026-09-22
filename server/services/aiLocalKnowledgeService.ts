@@ -5795,6 +5795,15 @@ async function* streamCodingGenerate(
    * ⚠ `execCtx` VẮNG ⇒ không tiêm cửa nào ⇒ `khong-cua-doc` ⇒ khối rỗng. Đúng: không có phiên thì
    *   không có RBAC để đi qua, và đọc mã không RBAC là một đường thoát.
    */
+  /**
+   * ★ K2 (2026-09-22) — ĐÃ THỬ và PHÉP ĐO BÁC: bỏ pha truy hồi cho đơn sinh mã "không neo vào repo" (không đường tệp,
+   * không @tệp, không từ chỉ repo). Lý lẽ: câu "kiểm tra số nguyên tố" kéo `kiemTraCayDay.ts` vào prompt vì khớp chữ.
+   * Ablation tắt hẳn ngữ cảnh (ctx 64k, budget 12k, 12 bài × 3): **27/36 = 75 % so 31/36 = 86 % CÓ ngữ cảnh** — py2 3→1,
+   * py3 2→0, ts3 2→0 (cs3/ts1 ngược chiều +1). Tức ngữ cảnh repo giúp đúng NGAY CẢ khi "không liên quan" về chủ đề —
+   * giả thuyết: khối mã thật làm mồi phong cách + persona "mã thật đứng trên trí nhớ" (§8.4) chỉ bật khi có ngữ cảnh.
+   * ⇒ KHÔNG đặt cổng ở đây; muốn tiết kiệm token phải tách được hai hiệu ứng ấy trước (ablation "persona giữ, khối
+   * mã rỗng"). Ghi để người sau không cắn lại: một ý tưởng hợp lý về "liên quan" đã bị 4 bài bác bỏ.
+   */
   const nguCanhMa: KetQuaNguCanhMa =
     khoiMaThayThe != null
       ? { khoi: khoiMaThayThe, tokens: 0, tep: [], lyDo: "ok", soDuongDanMucLuc: 0 }

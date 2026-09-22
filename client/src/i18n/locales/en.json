@@ -19081,7 +19081,62 @@
       "suspended": "Suspended"
     }
   },
+  "ttAiLocal": {
+    "dangDoc": "local AI status",
+    "may": "engine",
+    "engineHong": "ENGINE DOWN",
+    "engineOk": "engine ok",
+    "tipMayHong": "The inference engine is NOT healthy. Every answer right now reflects the MACHINE, not the model — draw no conclusion about model quality until this turns green again.",
+    "tipMayOk": "Engine running via {{duong}}. Models loaded: {{soModel}}. GPU mode: {{gpu}}.",
+    "duongNgoai": "llama-server (external process)",
+    "duongTrong": "in-process binding",
+    "model": "model",
+    "tipModel": "Model serving code tasks. Routing tier: T{{tier}} · task \"{{task}}\". This is the real GGUF file name being served, not a config label.",
+    "vram": "VRAM free",
+    "tipVram": "Bytes ACTUALLY free on the card per the DEVICE probe (total {{tong}}, {{pc}}% used) — updated {{giay}} s ago on the 60 s reconcile tick{{cu}}. Measured: an EXTERNAL process held 23.5 GB while the allocator promised 22 GiB on a card with 3 GiB left — so this is the number to watch, not the internal ledger.",
+    "tipVramCu": " — ⚠ STALE, the reconcile tick is being missed",
+    "tipVramTrongTienTrinh": "⚠ This VRAM figure is the IN-PROCESS view of node (no device reconcile tick yet) — it does NOT see llama-server or external processes, so it can be far too optimistic (measured: reported 26 GiB free when the card had 6.6). Wait for the tick or check nvidia-smi.",
+    "luotCuoi": "last turn",
+    "tipLuotCuoi": "Most recent turn: {{vao}} tokens in → {{ra}} tokens out in {{ms}} ms.",
+    "tipChuaCoLuot": "No successful turn in the last 30 minutes.",
+    "tocDo": "tok/s",
+    "tipTocDo": "Token generation speed of the last turn — the FIRST indicator to drop when the model spills to RAM or another process contends for the card. If it falls suddenly, suspect the MACHINE before the model.",
+    "nganSach": "read budget",
+    "docPc": "read {{pc}}%",
+    "tipNganSach": "{{pc}}% of the sandbox read budget for the current window is used; resets in ~{{giay}}s. Exhausted budget ⇒ the agent CANNOT read files and CANNOT run verification.",
+    "tipNganSachMu": "Cannot read the sandbox budget ledger.",
+    "nghiSinh": "think/emit",
+    "raGop": "{{ra}} tok (combined)",
+    "nghiSinhGiaTri": "{{nghi}} think · {{sinh}} emit",
+    "tipNghiSinh": "Turn \"{{luot}}\" on {{model}} · sampling profile {{hoSo}} · thinking: {{nghi}}. {{vao}} tokens in → {{ra}} tokens out ({{tocDo}}) in {{ms}} ms. Speed is the COMBINED think+emit figure — the server does not split the two phases' time.",
+    "nghiTat": "OFF",
+    "nghiBat": "yes, {{n}} tokens",
+    "nghiKhongBiet": "not measurable",
+    "tipChuaCoUsage": "No model turn in this session yet. This cell reads the `usage` event the server emits after every code generate/edit turn.",
+    "ctx": "ctx",
+    "ctxPc": "ctx {{pc}}%",
+    "tipCtx": "Last turn used {{dung}} / {{tran}} context tokens (in + out, reasoning included). ≥85% means the next turn of the same size will be clamped; ≥95% is at the edge — real case: thought up to the ceiling, then returned empty.",
+    "tipCtxMu": "Context ceiling of the turn unknown (no turn yet, or the server did not report it)."
+  },
   "repoWs": {
+    "nghi": {
+      "dang": "Model is thinking…",
+      "daNghi": "Model thought",
+      "soKyTu": "{{n}} chars"
+    },
+    "nghiPick": {
+      "label": "Choose thinking mode",
+      "canBang": "thinking: balanced",
+      "nhanh": "thinking: off (fast)",
+      "tip": "Balanced = code generate/edit turns THINK (more accurate, slower: ~30–120 s/turn on Qwen3.6); auxiliary turns (file pick, KB) do not. Off = no thinking on any turn (measured: 5–15× faster, ~10–15 points less accurate). Per request, no restart needed."
+    },
+    "modelPick": {
+      "label": "Choose model tier",
+      "auto": "model: auto",
+      "codeTen": "model: {{ten}}",
+      "code": "model: code tier",
+      "tip": "Auto = system default + question difficulty. Code tier = force the code-specialised tier (measured: more accurate on programming tasks). Takes effect on the NEXT turn — no restart. The badge next to it shows the model ACTUALLY chosen. Deliberately no \"Fast\" option: the router climbs tiers by DIFFICULTY and coding prompts are always hard, so such an option would be silently ignored."
+    },
     "khoi": {
       "modelSinh": "Code written by the model — may differ from the file on disk",
       "bangChung": "Real bytes from disk · {{luc}}",

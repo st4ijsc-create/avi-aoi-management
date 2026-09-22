@@ -19061,7 +19061,62 @@
       "suspended": "Tạm ngưng"
     }
   },
+  "ttAiLocal": {
+    "dangDoc": "trạng thái AI local",
+    "may": "máy",
+    "engineHong": "ENGINE HỎNG",
+    "engineOk": "engine ok",
+    "tipMayHong": "Engine suy luận KHÔNG khoẻ. Mọi câu trả lời lúc này phản ánh trạng thái MÁY, không phản ánh năng lực model — đừng kết luận gì về chất lượng model cho tới khi ô này xanh lại.",
+    "tipMayOk": "Engine đang chạy qua {{duong}}. Model đã nạp: {{soModel}}. Chế độ GPU: {{gpu}}.",
+    "duongNgoai": "llama-server (tiến trình ngoài)",
+    "duongTrong": "binding trong tiến trình",
+    "model": "model",
+    "tipModel": "Model đang phục vụ tác vụ mã. Tầng định tuyến: T{{tier}} · tác vụ \"{{task}}\". Đây là tên tệp GGUF thật đang được nạp, không phải nhãn cấu hình.",
+    "vram": "VRAM còn",
+    "tipVram": "Byte card THỰC SỰ còn trống theo ĐẦU DÒ THIẾT BỊ (tổng {{tong}}, đã dùng {{pc}}%) — cập nhật {{giay}} s trước theo nhịp đối chiếu 60 s{{cu}}. Đã đo: một tiến trình NGOÀI chiếm 23,5 GB khiến bộ cấp phát hứa 22 GiB trên một card còn 3 GiB — nên con số cần nhìn là con số này, không phải sổ nội bộ.",
+    "tipVramCu": " — ⚠ ĐÃ CŨ, nhịp đối chiếu đang lỡ",
+    "tipVramTrongTienTrinh": "⚠ Số VRAM này là cái nhìn TRONG TIẾN TRÌNH node (chưa có nhịp đối chiếu thiết bị) — nó KHÔNG thấy VRAM của llama-server hay tiến trình ngoài, nên có thể cao hơn thực tế rất nhiều (đã đo: báo còn 26 GiB khi card còn 6,6). Chờ nhịp đối chiếu hoặc kiểm bằng nvidia-smi.",
+    "luotCuoi": "lượt cuối",
+    "tipLuotCuoi": "Lượt gần nhất: {{vao}} token vào → {{ra}} token ra trong {{ms}} ms.",
+    "tipChuaCoLuot": "Chưa có lượt nào thành công trong 30 phút gần đây.",
+    "tocDo": "tok/s",
+    "tipTocDo": "Tốc độ sinh token của lượt gần nhất — chỉ số TỤT ĐẦU TIÊN khi model tràn sang RAM hoặc khi card bị tiến trình khác tranh chấp. Thấy nó rơi đột ngột thì hãy nghi MÁY trước khi nghi model.",
+    "nganSach": "ngân sách đọc",
+    "docPc": "đọc {{pc}}%",
+    "tipNganSach": "Đã dùng {{pc}}% ngân sách đọc hộp cát của cửa sổ hiện tại; đặt lại sau ~{{giay}}s. Cạn ngân sách ⇒ tác nhân KHÔNG đọc được tệp và KHÔNG chạy được kiểm chứng.",
+    "tipNganSachMu": "Không đọc được sổ ngân sách hộp cát.",
+    "nghiSinh": "nghĩ/sinh",
+    "raGop": "{{ra}} tok (gộp)",
+    "nghiSinhGiaTri": "{{nghi}} nghĩ · {{sinh}} sinh",
+    "tipNghiSinh": "Lượt \"{{luot}}\" trên {{model}} · hồ sơ sampling {{hoSo}} · nghĩ: {{nghi}}. {{vao}} token vào → {{ra}} token ra ({{tocDo}}) trong {{ms}} ms. Tốc độ là số GỘP nghĩ+sinh — server chưa tách thời gian hai pha.",
+    "nghiTat": "TẮT",
+    "nghiBat": "có, {{n}} token",
+    "nghiKhongBiet": "không đo được",
+    "tipChuaCoUsage": "Chưa có lượt model nào trong phiên này. Ô này đọc sự kiện `usage` mà server phát sau mỗi lượt sinh/sửa mã.",
+    "ctx": "ctx",
+    "ctxPc": "ctx {{pc}}%",
+    "tipCtx": "Lượt gần nhất dùng {{dung}} / {{tran}} token ngữ cảnh (vào + ra, gộp suy luận). ≥85% là lượt kế cùng cỡ sẽ bị kẹp trần; ≥95% là đã ở mép — ca thật: nghĩ hết trần rồi trả rỗng.",
+    "tipCtxMu": "Chưa biết trần ngữ cảnh của lượt (chưa có lượt, hoặc server không báo trần)."
+  },
   "repoWs": {
+    "nghi": {
+      "dang": "Model đang nghĩ…",
+      "daNghi": "Model đã nghĩ",
+      "soKyTu": "{{n}} ký tự"
+    },
+    "nghiPick": {
+      "label": "Chọn chế độ nghĩ",
+      "canBang": "nghĩ: cân bằng",
+      "nhanh": "nghĩ: tắt (nhanh)",
+      "tip": "Cân bằng = lượt sinh/sửa mã được NGHĨ (đúng hơn, chậm hơn: ~30–120 s/lượt trên Qwen3.6), lượt phụ (chọn tệp, KB) không nghĩ. Tắt = không nghĩ ở mọi lượt (đo được: nhanh 5–15×, đúng ít hơn ~10–15 điểm). Áp cho từng yêu cầu, không cần khởi động lại."
+    },
+    "modelPick": {
+      "label": "Chọn tầng model",
+      "auto": "model: tự động",
+      "codeTen": "model: {{ten}}",
+      "code": "model: tầng mã",
+      "tip": "Tự động = theo mặc định của hệ + độ khó câu hỏi. Coder = ép tầng chuyên sinh mã (đo được: chính xác hơn trên tác vụ lập trình). Đổi có hiệu lực NGAY ở lượt sau — KHÔNG cần khởi động lại. Huy hiệu bên cạnh cho biết model THẬT SỰ được chọn. Cố ý KHÔNG có lựa chọn \"Nhanh\": bộ định tuyến leo tầng theo ĐỘ KHÓ, mà prompt lập trình luôn là câu khó, nên một lựa chọn như thế sẽ bị bỏ qua trong im lặng."
+    },
     "khoi": {
       "modelSinh": "Mã do model viết — có thể khác tệp trên đĩa",
       "bangChung": "Byte thật từ đĩa · {{luc}}",

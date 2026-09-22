@@ -19089,7 +19089,62 @@
       "suspended": "已暂停"
     }
   },
+  "ttAiLocal": {
+    "dangDoc": "本地 AI 状态",
+    "may": "引擎",
+    "engineHong": "引擎故障",
+    "engineOk": "引擎正常",
+    "tipMayHong": "推理引擎不健康。此时的所有回答反映的是机器状态，而不是模型能力——在此格重新变绿之前，不要对模型质量下任何结论。",
+    "tipMayOk": "引擎通过 {{duong}} 运行。已加载模型：{{soModel}}。GPU 模式：{{gpu}}。",
+    "duongNgoai": "llama-server（外部进程）",
+    "duongTrong": "进程内绑定",
+    "model": "模型",
+    "tipModel": "为代码任务服务的模型。路由层级：T{{tier}} · 任务“{{task}}”。这是正在加载的真实 GGUF 文件名，不是配置标签。",
+    "vram": "剩余 VRAM",
+    "tipVram": "按设备探针得到的显卡实际剩余字节（总计 {{tong}}，已用 {{pc}}%）——{{giay}} 秒前按 60 秒对账节拍更新{{cu}}。实测：一个外部进程占用 23.5 GB，而分配器在只剩 3 GiB 的显卡上承诺了 22 GiB——因此该看的是这个数字，不是内部账本。",
+    "tipVramCu": " — ⚠ 已过期，对账节拍正在丢失",
+    "tipVramTrongTienTrinh": "⚠ 此 VRAM 数字是 node 进程内视角（尚无设备对账节拍）——它看不到 llama-server 或外部进程的显存，可能远高于实际（实测：显卡仅剩 6.6 GiB 时报告剩余 26 GiB）。请等待对账节拍或用 nvidia-smi 核对。",
+    "luotCuoi": "上一轮",
+    "tipLuotCuoi": "最近一轮：输入 {{vao}} token → 输出 {{ra}} token，耗时 {{ms}} ms。",
+    "tipChuaCoLuot": "最近 30 分钟内没有成功的轮次。",
+    "tocDo": "tok/s",
+    "tipTocDo": "上一轮的生成速度——模型溢出到内存或显卡被其他进程争用时最先下降的指标。骤降时先怀疑机器，再怀疑模型。",
+    "nganSach": "读取预算",
+    "docPc": "已读 {{pc}}%",
+    "tipNganSach": "当前窗口的沙箱读取预算已用 {{pc}}%；约 {{giay}} 秒后重置。预算耗尽 ⇒ 代理无法读取文件，也无法运行验证。",
+    "tipNganSachMu": "无法读取沙箱预算账本。",
+    "nghiSinh": "思考/输出",
+    "raGop": "{{ra}} tok（合计）",
+    "nghiSinhGiaTri": "思考 {{nghi}} · 输出 {{sinh}}",
+    "tipNghiSinh": "在 {{model}} 上的“{{luot}}”轮 · 采样配置 {{hoSo}} · 思考：{{nghi}}。输入 {{vao}} token → 输出 {{ra}} token（{{tocDo}}），耗时 {{ms}} ms。速度为思考+输出的合计值——服务器未拆分两个阶段的时间。",
+    "nghiTat": "关闭",
+    "nghiBat": "有，{{n}} token",
+    "nghiKhongBiet": "无法测量",
+    "tipChuaCoUsage": "本会话尚无模型轮次。此格读取服务器在每次生成/修改代码后发出的 `usage` 事件。",
+    "ctx": "ctx",
+    "ctxPc": "ctx {{pc}}%",
+    "tipCtx": "上一轮使用了 {{dung}} / {{tran}} 上下文 token（输入+输出，含推理）。≥85% 表示同等规模的下一轮会被上限截断；≥95% 已在边缘——真实案例：思考到上限后返回空。",
+    "tipCtxMu": "尚不知道本轮的上下文上限（尚无轮次，或服务器未报告上限）。"
+  },
   "repoWs": {
+    "nghi": {
+      "dang": "模型正在思考…",
+      "daNghi": "模型已思考",
+      "soKyTu": "{{n}} 字符"
+    },
+    "nghiPick": {
+      "label": "选择思考模式",
+      "canBang": "思考：平衡",
+      "nhanh": "思考：关闭（快速）",
+      "tip": "平衡 = 生成/修改代码的轮次会思考（更准确、更慢：Qwen3.6 上约 30–120 秒/轮），辅助轮次（选文件、知识库）不思考。关闭 = 所有轮次都不思考（实测：快 5–15 倍，准确率低约 10–15 分）。按请求生效，无需重启。"
+    },
+    "modelPick": {
+      "label": "选择模型层级",
+      "auto": "模型：自动",
+      "codeTen": "模型：{{ten}}",
+      "code": "模型：代码层",
+      "tip": "自动 = 系统默认 + 问题难度。代码层 = 强制使用代码专用层级（实测：编程任务更准确）。下一轮立即生效，无需重启。旁边的徽章显示实际被选中的模型。故意不提供“快速”选项：路由器按难度升层，而编程提示总是难题，该选项会被静默忽略。"
+    },
     "khoi": {
       "modelSinh": "模型编写的代码——可能与磁盘上的文件不同",
       "bangChung": "磁盘真实字节 · {{luc}}",

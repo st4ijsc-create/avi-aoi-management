@@ -108,8 +108,9 @@ cả M lẫn H; chỉ đổi mặc định khi ≥ cũ; ghi cả hai số vào R
 > | G5‑D / G18‑B1 | 0 | 0 |
 > | VRAM (llama-server + node) | 25,6–25,8 GiB | **26,5 GiB** ⇒ còn 6,1 GiB ≥ cổng 3 GB |
 >
-> Chỉ MỘT biến đổi (`-c 65536` + `GGUF_MAX_CTX=65536`); trần nghĩ vẫn 16k, sampling `hien-tai`. Lý do H tăng: `ggufMaxCtx()`
-> bó ngân sách ngữ cảnh repo (K2 trong rà soát) — ở 64k mục lục/khối mã vào prompt đầy hơn, và H‑ts3 (bài từng 0/3) sống lại.
+> Chỉ MỘT biến đổi (`-c 65536` + `GGUF_MAX_CTX=65536`); trần nghĩ vẫn 16k, sampling `hien-tai`. **Nguyên nhân H tăng CHƯA
+> TÁCH** — giả thuyết: ngân sách ngữ cảnh/trần kẹp theo `ggufMaxCtx()` rộng hơn; nhưng cũng có thể là nhiễu 3 lượt cộng
+> dồn (4 bài đổi chiều cùng một hướng là hiếm, không phải không thể). Ablation ngữ cảnh repo (K2, 20:00) sẽ tách phần này.
 > ⇒ `GGUF_MAX_CTX_DEFAULT` 32768 → **65536** (chủ dự án đã duyệt điều kiện "H tốt hơn + VRAM ≥ 3 GB"). Launcher sản xuất
 > (`start-llama-server.ps1`, mặc định `-np 2 -c 65536` = 32k/slot) **chưa đổi** — 64k/slot × 2 slot cần thêm 5 GiB KV; đưa
 > vào mục 8 để chủ dự án chọn 1 slot × 64k hay 2 × 32k.
@@ -305,12 +306,18 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
 đo được: tắt nghĩ lớp phụ, ngân sách nghĩ, và ngữ cảnh 64k. Hai commit: `b3906cee1`, `be8046a5c`.
 
 **Để lại cho phiên sau (theo thứ tự đề nghị):**
-1. **K2 — cổng liên quan cho ngữ cảnh repo**: đo sống 19:23 cho câu "kiểm tra số nguyên tố" mà đường ống đọc `kiemTraCayDay.ts`
-   + `kiemTraAsset.ts` (khớp chữ "kiểm tra") làm ngữ cảnh — vô hại lần này, là mẫu đằng sau các bài tụt (H‑ts3). Cần vị từ
-   "ngữ cảnh có liên quan không" trước khi nhồi vào prompt, đo bằng H ×3.
+1. ~~**K2 — cổng liên quan cho ngữ cảnh repo**~~ — **ĐÃ ĐO 20:38 và BỊ BÁC.** Giả thuyết: đơn sinh mã không neo vào repo ⇒ bỏ
+   truy hồi. Ablation tắt hẳn ngữ cảnh (cùng ctx 64k + budget 12k): **27/36 = 75 % so 31/36 = 86 % có ngữ cảnh** — py2 3→1,
+   py3 2→0, ts3 2→0 (cs3/ts1 +1); agentic 6/6 (n=1). Ngữ cảnh repo **giúp đúng ngay cả khi lạc chủ đề** — giả thuyết còn lại:
+   khối mã thật làm mồi phong cách + persona "mã thật đứng trên trí nhớ" chỉ bật khi có ngữ cảnh. Vị từ `cauCoNeoRepo` đã viết
+   (9 lưới, hai phiên bản bị lưới bác: camelCase làm neo · "giống" trần) và **đã xoá** — ghi ở docblock điểm gọi
+   `thuThapNguCanhMa`. Việc kế đúng: ablation "persona giữ, khối mã rỗng" để tách hai hiệu ứng; và giải thích cho B3 (64k)
+   nay có thêm nghi vấn: 64k ⇒ khối ngữ cảnh đầy hơn ⇒ đúng hơn — cùng chiều với ablation này.
 2. **Trần nghĩ 32k + nút "sâu" (F3)** ở ctx 64k — cổng ra: A2 ×3, H không tụt, ms/bài báo thật.
 3. **`TRAN_TOKEN_NGU_CANH_MA` 4.000 / `TRAN_TOKEN_MUC_LUC` 6.000** ở 64k — từng biến một.
-4. **i18n en/zh** cho `ttAiLocal.*`, `repoWs.nghiPick.*`, `repoWs.nghi.*` (giao diện tiếng Anh đang hiện nhãn Việt).
+4. ~~**i18n en/zh** cho `ttAiLocal.*`, `repoWs.nghiPick.*`, `repoWs.nghi.*`~~ — **XONG 20:30**: +47 khoá × 3 locale (chèn văn bản
+   giữ CRLF, `tmp/audit-ai/i18n-chen.mjs`, JSON parse lại OK, 6 lưới i18n xanh); `repoWs.modelPick.code` nay "model: tầng mã" /
+   "code tier" / "代码层" thay "Coder".
 5. **F4** pill "đã nghĩ N token · xem" sau lượt + lý do model cạnh diff; **F5/F6**; **B6** native tools dưới HITL; **B8** rút gọn
    service (xoá `agent_plan`/`agent_step` chết).
 6. **Training (R1–R5)** ở phiên riêng như chủ dự án đã định: corpus vàng csharp‑dotnet + ST4I, EvalTab thật.

@@ -910,8 +910,9 @@ Một biến (`-c 65536` llama-server + `GGUF_MAX_CTX=65536`; B4 12k giữ; samp
 | Agentic · G5‑D | 5/6 · 0 | 5/6 · 0 |
 | VRAM dùng (card 32,6 GiB) | 25,8 GiB | 26,5 GiB (còn 6,1) |
 
-Đường ống nay **trả nhiều hơn model thuần** (86 % vs M 83 %): ngữ cảnh repo (mục lục + khối mã) không còn bị `ggufMaxCtx()` bó
-ở 32k — khoảng cách K2 của bản rà soát đóng lại từ phía đúng. ⇒ **64k thành mặc định** (`GGUF_MAX_CTX_DEFAULT`), đúng điều
+Đường ống nay **trả nhiều hơn model thuần** (86 % vs M 83 %). **Nguyên nhân chưa tách**: giả thuyết là ngân sách ngữ cảnh/trần
+kẹp theo `ggufMaxCtx()` rộng hơn ở 64k; ablation ngữ cảnh repo (K2, 20:00) đo phần này — cho tới lúc đó "vì sao" là một
+lời khai, chỉ "bao nhiêu" là số đo. ⇒ **64k thành mặc định** (`GGUF_MAX_CTX_DEFAULT`), đúng điều
 kiện chủ dự án đã duyệt (H tốt hơn + VRAM ≥ 3 GB). Còn mở: launcher sản xuất `-np 2` (2 × 32k) — 64k/slot × 2 cần +5 GiB KV;
 việc chọn 1 × 64k hay 2 × 32k là của chủ dự án.
 
@@ -946,6 +947,26 @@ GGUF MTP chính hãng (`unsloth/Qwen3.6-35B-A3B-MTP-GGUF` UD‑Q4_K_XL, `nextn_p
 **cpp3 3/3 → 0/3**, py1 3→1: −4 bài, vượt nhiễu. Lợi 9 % thời gian không mua được điều đó ⇒ bỏ, trả server và `.env` về bản
 không‑MTP. Cấu hình cuối của ngày: **Qwen3.6‑35B‑A3B UD‑Q4_K_XL · ctx 65536 · `--reasoning-budget 12000` · sampling `hien-tai`
 · trần nghĩ 16k** = trục H **86 %**.
+
+### 8.4g K2 — "ngữ cảnh repo có liên quan không?" — giả thuyết hợp lý, phép đo bác bằng 4 bài
+
+Ý tưởng: câu sinh mã độc lập (*"kiểm tra số nguyên tố"*) kéo `kiemTraCayDay.ts` + `kiemTraAsset.ts` vào prompt chỉ vì khớp chữ
+⇒ đặt cổng ở CÂU HỎI (vì ngưỡng ĐIỂM đã được chứng minh không tách được trúng/lạc đề, 2026-08-20): không đường tệp, không
+@tệp, không từ chỉ repo ⇒ bỏ truy hồi. Vị từ `cauCoNeoRepo` viết xong với 9 lưới; lưới bác hai phiên bản đầu (định danh
+camelCase làm neo ⇒ 10/12 đề bộ khó "có neo" vì đề luôn đặt tên hàm cần viết; "giống" trần ⇒ H‑cpp3 *"chia nguyên (giống C++)"*).
+
+Trước khi nối dây, **ablation** tắt hẳn ngữ cảnh repo (`AI_CODING_REPO_CONTEXT=false`, mọi thứ khác giữ):
+
+| | CÓ ngữ cảnh (64k) | KHÔNG ngữ cảnh |
+|---|---|---|
+| Trục H 12 × 3 | **31/36 = 86 %** · 28,3 s | **27/36 = 75 %** · 25,7 s |
+| Theo bài | | py2 3→1 · py3 2→0 · **ts3 2→0** · cs3 2→3 · ts1 2→3 |
+| Agentic | 5/6 | 6/6 (n=1) |
+
+Ngữ cảnh repo **giúp đúng ngay cả khi lạc chủ đề** — chính các bài "tụt" mà tôi định đổ cho ngữ cảnh lạc (ts3) lại **tụt khi
+bỏ** nó. Giả thuyết còn lại (chưa đo): khối mã thật làm mồi phong cách/định dạng, và persona "mã thật đứng trên trí nhớ" (§8.4)
+chỉ bật khi có ngữ cảnh. ⇒ **KHÔNG nối cổng, xoá vị từ**; ghi số ở docblock điểm gọi `thuThapNguCanhMa`. Đây cũng là bằng chứng
+cùng chiều cho B3: 64k ⇒ khối ngữ cảnh đầy hơn ⇒ đúng hơn. Việc kế: ablation "persona giữ, khối rỗng" trước khi bàn tiết kiệm token.
 
 ### 8.5 Bảy bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
 
