@@ -165,6 +165,18 @@ Tải `Qwen3.6-35B-A3B-MTP` UD‑Q4_K_XL (21,3 GB), `--spec-type draft-mtp --spe
 (±nhiễu) và tok/s tăng; nếu H giảm ⇒ không dùng, ghi số.
 
 ### B6 — Native tool‑calling của template (`tools`) dưới HITL
+
+> **Trạng thái 2026-09-22 23:18: THƯỚC ĐÃ DỰNG + NỀN ĐÃ ĐO — chưa nối dây native (đo trước, nối sau).**
+> · Bộ ca `scripts/ai-eval/toolcall-coding-cases.json` (38 ca: 23 chọn tool · 7 từ chối · 8 cặp đối kháng) + `eval-toolcall.mjs --coding`
+>   (đổi BỘ CHỌN sang `classifyCodingToolIntent`, giữ nguyên THƯỚC). Nền heuristic tất định (3 ms, không model):
+>   **strict 0,889 · lenient 0,963 · args 0,958 · từ chối đúng 6/7 · cặp đối kháng 1/4.**
+> · Trượt có tên: **C05** *"Run python -m pytest tests/ and read the errors"* → `list_files tests` (thư mục nuốt lệnh); **N01** *"…class Ca
+>   với hàm Gom(IEnumerable<DateTime>…)"* → `grep_repo IEnumerable` (tên kiểu generic bị coi là mẫu tìm); **D01b/D03b/D04b** — câu HỎI/VIẾT
+>   MỚI nhắc nguyên văn một lệnh/tên tệp/thư mục ⇒ vẫn chọn tool (đúng lớp G11/G13); **E01/E02** (sửa tệp) → `read_file` — chấp nhận lenient
+>   vì dòng sửa đọc trước rồi đề xuất `apply_diff` qua HITL.
+> · Thiết kế đo tiếp (KHÔNG thay bộ chọn khi chưa có số): chạy CÙNG 38 ca qua đường native (`--native`: gửi `tools` = 5 tool lập trình
+>   dạng `WireTool`, `tool_choice:"auto"`, đọc `tool_calls`), so strict/lenient/refuse/cặp đối kháng; native chỉ được lên đường ống khi
+>   ≥ nền ở CẢ BỐN số và **0 tool ngoài 5 tên** (fail-closed như G2‑B). HITL/danh sách trắng không đổi trong mọi kịch bản.
 Cho model **đề xuất** chuỗi tool bằng định dạng nó được huấn luyện; HITL + 11 khuôn lệnh **không đổi** (thẻ duyệt là
 đích của mọi lời gọi). Lợi: bớt bộ phân loại tự dựng, ít định tuyến sai kiểu G11/G13. **Cổng ra:** agentic 6/6 giữ;
 tỷ lệ tool đúng trên 12 lệnh khác nhau ≥ hiện tại; 0 lệnh ngoài danh sách trắng chạy được.

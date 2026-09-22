@@ -98,6 +98,12 @@ const DO_LLM = has("--llm");
  *      (không phải một bản chép trong harness) và KHẲNG ĐỊNH `timGioiHanGrammar()` trả rỗng.
  */
 const DO_NATIVE = has("--native");
+/**
+ * ★ B6 (2026-09-22) — `--coding`: chấm BỘ CHỌN TOOL CHẾ ĐỘ LẬP TRÌNH (`classifyCodingToolIntent`, 5 tool) thay cho bộ chọn
+ * vận hành. Dùng với `--cases scripts/ai-eval/toolcall-coding-cases.json`. Đây là NỀN để so với đường native tool-calling
+ * (B6): cùng bộ ca, cùng thước — đổi bộ chọn mà không đổi thước.
+ */
+const DO_CODING = has("--coding");
 const GROUP = val("--group", null);
 const ONLY = val("--only", null);
 const LIMIT = Number(val("--limit", "0")) || 0;
@@ -464,7 +470,12 @@ function fmt(v) {
 async function main() {
   // ── 1. Nạp registry THẬT (side-effect đăng ký toàn bộ tool) ──
   const toolsMod = await import("../../server/services/aiLocalTools/index");
-  const { classifyToolIntent, classifyToolIntentLLM, listTools } = toolsMod;
+  const { classifyToolIntent: classifyVanHanh, classifyToolIntentLLM, listTools } = toolsMod;
+  // ★ B6 — `--coding` đổi BỘ CHỌN, giữ nguyên THƯỚC (bộ ca, cách chấm, báo cáo).
+  const classifyToolIntent = DO_CODING
+    ? (toolsMod.classifyCodingToolIntent ?? (await import("../../server/services/aiLocalTools/intentClassifier")).classifyCodingToolIntent)
+    : classifyVanHanh;
+  if (DO_CODING) log("[toolcall] ★ chế độ --coding: chấm classifyCodingToolIntent (5 tool lập trình)");
   const tools = listTools();
   const registryNames = new Set(tools.map((t) => t.name));
   const kinds = tools.reduce((a, t) => {

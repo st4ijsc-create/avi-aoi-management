@@ -1,0 +1,49 @@
+{
+  "_doc": "★ B6 (2026-09-22) — bộ ca chọn TOOL cho CHẾ ĐỘ LẬP TRÌNH (5 tool: read_file · list_files · grep_repo · run_command · apply_diff). Chấm bằng `npx tsx scripts/ai-eval/eval-toolcall.mjs --coding --cases scripts/ai-eval/toolcall-coding-cases.json`. NỀN = classifyCodingToolIntent (heuristic tất định); đường native tool-calling (B6) phải ≥ nền trên CÙNG bộ ca. expectTool=null = câu KHÔNG cần tool (sinh mã độc lập / giải thích) — chọn tool ở đây là lỗi định tuyến kiểu G11/G13.",
+  "cases": [
+    { "id": "R01", "group": "select", "question": "Đọc server/routers.ts và tóm tắt nó", "expectTool": "read_file", "expectArgs": { "path": "server/routers.ts" } },
+    { "id": "R02", "group": "select", "question": "Mở tệp client/src/lib/trpc.ts xem có gì", "expectTool": "read_file", "expectArgs": { "path": "client/src/lib/trpc.ts" } },
+    { "id": "R03", "group": "select", "question": "read the file server/_core/index.ts", "expectTool": "read_file", "expectArgs": { "path": "server/_core/index.ts" } },
+    { "id": "R04", "group": "select", "question": "xem nội dung sandbox-projects/csharp-demo/src/Calculator.cs", "expectTool": "read_file", "expectArgs": { "path": "sandbox-projects/csharp-demo/src/Calculator.cs" } },
+    { "id": "R05", "group": "select", "question": "Hàm Divide trong sandbox-projects/csharp-demo/src/Calculator.cs làm gì?", "expectTool": "read_file", "expectArgs": { "path": "sandbox-projects/csharp-demo/src/Calculator.cs" } },
+    { "id": "R06", "group": "select", "question": "Cho tôi xem package.json", "expectTool": "read_file", "expectArgs": { "path": "package.json" } },
+
+    { "id": "G01", "group": "select", "question": "Tìm nơi gọi executeDecision trong repo", "expectTool": "grep_repo", "expectArgs": { "pattern": "executeDecision" } },
+    { "id": "G02", "group": "select", "question": "Find where planInference is called", "expectTool": "grep_repo", "expectArgs": { "pattern": "planInference" } },
+    { "id": "G03", "group": "select", "question": "hàm getVramState được dùng ở đâu?", "expectTool": "grep_repo", "expectArgs": { "pattern": "getVramState" } },
+    { "id": "G04", "group": "select", "question": "grep chuỗi 'TỪ CHỐI TRUNG THỰC' trong server/services", "expectTool": "grep_repo", "expectArgs": { "pattern": "TỪ CHỐI TRUNG THỰC" } },
+    { "id": "G05", "group": "select", "question": "tìm định nghĩa của KetQuaNguCanhMa", "expectTool": "grep_repo", "expectArgs": { "pattern": "KetQuaNguCanhMa" } },
+
+    { "id": "L01", "group": "select", "question": "Liệt kê các tệp trong server/services/ai", "expectTool": "list_files", "expectArgs": { "path": "server/services/ai" } },
+    { "id": "L02", "group": "select", "question": "thư mục client/src/components/aiCoding có những gì?", "expectTool": "list_files", "expectArgs": { "path": "client/src/components/aiCoding" } },
+    { "id": "L03", "group": "select", "question": "list files under scripts/ai-eval", "expectTool": "list_files", "expectArgs": { "path": "scripts/ai-eval" } },
+    { "id": "L04", "group": "select", "question": "cấu trúc thư mục dự án này thế nào?", "expectTool": "list_files" },
+
+    { "id": "C01", "group": "select", "question": "Chạy npm run check", "expectTool": "run_command", "expectArgs": { "command": "npm run check" } },
+    { "id": "C02", "group": "select", "question": "dotnet test sandbox-projects/csharp-demo", "expectTool": "run_command", "expectArgs": { "command": "dotnet test sandbox-projects/csharp-demo" } },
+    { "id": "C03", "group": "select", "question": "chạy npx vitest run server/services/ai/loaiLuot.test.ts và cho tôi biết kết quả", "expectTool": "run_command", "expectArgs": { "command": "npx vitest run server/services/ai/loaiLuot.test.ts" } },
+    { "id": "C04", "group": "select", "question": "git status", "expectTool": "run_command", "expectArgs": { "command": "git status" } },
+    { "id": "C05", "group": "select", "question": "Run python -m pytest tests/ and read the errors", "expectTool": "run_command", "expectArgs": { "command": "python -m pytest tests/" } },
+    { "id": "C06", "group": "select", "question": "Chạy dotnet test và cho tôi biết lỗi", "expectTool": "run_command", "expectArgs": { "command": "dotnet test" }, "note": "C1 (UX lô 1): token văn xuôi 'và' phải bị cắt ⇒ lệnh CỤT 'dotnet test' để danh sách trắng nói đúng bệnh (thiếu đường dẫn)." },
+
+    { "id": "E01", "group": "select", "question": "sửa sandbox-projects/csharp-demo/src/Calculator.cs để Divide ném ArgumentException khi mẫu số bằng 0", "expectTool": "apply_diff", "acceptTools": ["read_file"], "note": "Dòng SỬA đi qua chuanBiBanSuaMotTep (đọc tệp trước rồi đề xuất apply_diff qua HITL); bộ chọn heuristic trả read_file cho câu có đường tệp là chấp nhận được — đích cuối vẫn là apply_diff." },
+    { "id": "E02", "group": "select", "question": "refactor hàm Add trong sandbox-projects/csharp-demo/src/Calculator.cs sang expression-bodied", "expectTool": "apply_diff", "acceptTools": ["read_file"], "note": "Như E01." },
+
+    { "id": "N01", "group": "refuse", "question": "Viết C# trong namespace Sol: public static class Ca với hàm Gom(IEnumerable<DateTime> moc, int gioBatDau) gom theo ca 8 giờ. Chỉ trả về MỘT khối mã.", "expectTool": null },
+    { "id": "N02", "group": "refuse", "question": "Viết một hàm TypeScript laSoNguyenTo(n: number): boolean kiểm tra số nguyên tố, tối ưu bằng căn bậc hai.", "expectTool": null },
+    { "id": "N03", "group": "refuse", "question": "Viết phần cốt lõi của một website giới thiệu công ty. Dùng PostgreSQL + Node.js (Express) + React.", "expectTool": null, "note": "G11: 'Node.js' từng bị coi là TỆP ⇒ read_file ⇒ 43 ms không gọi model. Phải là null." },
+    { "id": "N04", "group": "refuse", "question": "Giải thích khác biệt giữa interface và type alias trong TypeScript", "expectTool": null },
+    { "id": "N05", "group": "refuse", "question": "Viết code C# cho chương trình chat LAN sử dụng socket", "expectTool": null },
+    { "id": "N06", "group": "refuse", "question": "Phép chia nguyên trong C++ cắt về 0 (giống C++), hãy viết hàm tinhBieuThuc tính biểu thức số nguyên.", "expectTool": null },
+    { "id": "N07", "group": "refuse", "question": "Viết một component React gọi API PostgreSQL để hiện danh sách todo", "expectTool": null },
+
+    { "id": "D01a", "group": "distractor", "pairId": "D01", "question": "Chạy npm run check", "expectTool": "run_command", "expectArgs": { "command": "npm run check" } },
+    { "id": "D01b", "group": "distractor", "pairId": "D01", "question": "Giải thích npm run check làm gì trong dự án này", "expectTool": null, "note": "Cùng chuỗi 'npm run check' nhưng là câu HỎI, không phải lệnh cần chạy — bộ chọn trích lệnh nguyên văn sẽ bắt nhầm. Ca này ĐO đúng cái giá của heuristic." },
+    { "id": "D02a", "group": "distractor", "pairId": "D02", "question": "Tìm nơi gọi executeDecision", "expectTool": "grep_repo", "expectArgs": { "pattern": "executeDecision" } },
+    { "id": "D02b", "group": "distractor", "pairId": "D02", "question": "Viết một hàm executeDecision mới cho module thanh toán", "expectTool": null },
+    { "id": "D03a", "group": "distractor", "pairId": "D03", "question": "Đọc server/routers.ts", "expectTool": "read_file", "expectArgs": { "path": "server/routers.ts" } },
+    { "id": "D03b", "group": "distractor", "pairId": "D03", "question": "Viết một tệp routers.ts mới cho service báo cáo (không dựa vào tệp có sẵn)", "expectTool": null, "note": "Tên tệp KHÔNG kèm đường dẫn thư mục và câu nói rõ 'không dựa vào tệp có sẵn' ⇒ không đọc." },
+    { "id": "D04a", "group": "distractor", "pairId": "D04", "question": "Liệt kê tệp trong server/services/ai", "expectTool": "list_files", "expectArgs": { "path": "server/services/ai" } },
+    { "id": "D04b", "group": "distractor", "pairId": "D04", "question": "Nên tổ chức thư mục services cho một dự án Node.js thế nào?", "expectTool": null }
+  ]
+}
