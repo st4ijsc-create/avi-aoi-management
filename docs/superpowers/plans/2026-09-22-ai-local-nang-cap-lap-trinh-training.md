@@ -166,7 +166,7 @@ Tải `Qwen3.6-35B-A3B-MTP` UD‑Q4_K_XL (21,3 GB), `--spec-type draft-mtp --spe
 
 ### B6 — Native tool‑calling của template (`tools`) dưới HITL
 
-> **Trạng thái 2026-09-22 23:18: THƯỚC ĐÃ DỰNG + NỀN ĐÃ ĐO — chưa nối dây native (đo trước, nối sau).**
+> **Trạng thái 2026-09-23: XONG — phủ quyết lai (heuristic chọn, model native chỉ được xác nhận hoặc nói "không tool") BẬT trong sản xuất** (`c8f57fbe5`; số ở audit 8.4k: từ chối 0,5 → 1,0 trên hai tập giữ lại, không chỉ số nào tụt; agentic sống 6/6). Ghi chép lúc dựng thước (2026-09-22 23:18):
 > · Bộ ca `scripts/ai-eval/toolcall-coding-cases.json` (38 ca: 23 chọn tool · 7 từ chối · 8 cặp đối kháng) + `eval-toolcall.mjs --coding`
 >   (đổi BỘ CHỌN sang `classifyCodingToolIntent`, giữ nguyên THƯỚC). Nền heuristic tất định (3 ms, không model):
 >   **strict 0,889 · lenient 0,963 · args 0,958 · từ chối đúng 6/7 · cặp đối kháng 1/4.**
@@ -242,7 +242,7 @@ Tách: luồng sinh mã · luồng sửa/khối · vòng tool · KB‑QA · tạ
 
 ### F1 — Bảng "model đang nghĩ" (dùng `reasoning_content`)
 
-> **Trạng thái 2026-09-22 18:55: ĐÃ LÀM, lưới xanh, chờ nghiệm thu sống sau chuỗi đo B3.**
+> **Trạng thái 2026-09-23: XONG, đã nghiệm thu sống** (`f1-live.mjs`: `reasoning` tới trước token đầu; `ui-f1.mjs`: bảng hiện lúc nghĩ, gấp khi mã chảy). Ghi chép lúc làm (2026-09-22 18:55):
 > · Đường đi: `aiLlamaServerClient` phát chunk **`reasoning`** ngay khi có `delta.reasoning_content` (không đợi `done`) →
 >   `streamCodingModel` che bí mật bằng bộ che RIÊNG rồi yield **đối tượng `{ suyLuan }`** (không phải chuỗi — `rutChuCoCanh`
 >   chỉ gom chuỗi, `daPhat` chỉ đếm chuỗi ⇒ luật G1/cầu chì G18‑B1 vẫn đúng khi model đã nghĩ 10k) → `motLuotModel` và
@@ -278,7 +278,7 @@ Từ B7. Giữ nguyên tắc "không biết ≠ 0", tuổi số.
 
 ### F3 — Bộ chọn chế độ theo lượt: **Nghĩ sâu / Cân bằng / Nhanh (không nghĩ)**
 
-> **Trạng thái 2026-09-22: ĐÃ LÀM HAI NÚT THẬT, cố ý CHƯA bày nút thứ ba.**
+> **Trạng thái 2026-09-23: XONG hai nút; nút "sâu" ĐÃ NỐI server (`a6a747a7d`, `thinking_budget_tokens` 24k) nhưng KHÔNG bày — đo H sâu 25/36 vs cân bằng 30/36 (audit 8.4m).** Ghi chép 2026-09-22:
 > · Đường đi: `<select data-chon-che-do-nghi>` (nhớ `localStorage repoWs.cheDoNghi`) → `context.cheDoNghi` → cửa
 >   `aiLocalKnowledgeApi` lọc danh sách TRẮNG `locCheDoNghi` (chỉ 3 literal, không chuẩn hoá) → `KbQueryContext.cheDoNghi`
 >   → `motLuotModel.ghiDe` (khoi-sua · sua-tep · tao-khung) và lượt sinh mã (`disableThinking: true` khi `nhanh`).
@@ -303,6 +303,8 @@ Duyệt có ngữ cảnh: "vì sao sửa dòng này". HITL không đổi.
 
 ### F5 — Khung "Lệnh & Nhật ký": lịch sử lượt + `exit code` + thời lượng + lọc; nút "chạy lại kiểm chứng"
 Hoàn tất hướng đã bắt đầu (G17).
+
+> **Trạng thái 2026-09-23: XONG.** `BangTerminal` + `bangTerminalLogic.ts`: lịch sử lượt, exit code, thời lượng, lọc (tất cả/đỏ/xanh), nút "Chạy lại (qua cửa duyệt)" — HITL giữ nguyên.
 
 ### F6 — Chỉ số phiên: số lượt · token vào/ra/nghĩ · thời gian · số lần từ chối (và lý do mã máy)
 Một hàng cuối phiên; xuất JSON cho bộ đo.
@@ -526,7 +528,7 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
    canh mặc định), `.env` đã gỡ, node restart về hành vi thật. **Nhánh `khoi-khong-persona` ĐO XONG 23:34: 31/36 = 86 %** (= bản thật,
    24,2 s/bài) ⇒ ma trận 2×2 đóng: **byte mã thật mang toàn bộ giá trị**, persona "có mã" không thêm gì đo được và phá khi không khớp.
    Giữ nguyên cơ chế hiện tại (persona đổi theo khối = đúng thực tế).
-6b. **Trần nghĩ 32k + nút "sâu" — HOÃN, lý do ĐÃ XÁC NHẬN 21:30:** b9814 **KHÔNG** nhận `reasoning_budget` theo request (gửi
+6b. ~~**Trần nghĩ 32k + nút "sâu" — HOÃN**~~ **ĐÍNH CHÍNH 2026-09-23 (audit 8.4m):** b9814 CÓ nhận ngân sách theo request, tên trường là `thinking_budget_tokens` — phép thử cũ gửi sai tên. Đã nối (`a6a747a7d`); đo H sâu 25/36 < cân bằng 30/36 ⇒ không bày nút. Ghi chép cũ (SAI): b9814 **KHÔNG** nhận `reasoning_budget` theo request (gửi
    `reasoning_budget: 64` ⇒ suy luận vẫn 1.018 ký tự như mặc định, log vẫn "budget=12000") — ngân sách là server‑wide. "Sâu" chỉ
    làm được bằng cách đổi cờ khởi động (restart) hoặc chờ bản llama.cpp có ngân sách theo request; không bày nút vô hiệu.
 6. **Training (R1–R5)** ở phiên riêng như chủ dự án đã định: corpus vàng csharp‑dotnet + ST4I, EvalTab thật. — **R1 XONG

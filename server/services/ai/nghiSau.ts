@@ -28,6 +28,14 @@
  *   • Trần sinh 32.000 = ngân sách + ~8k cho mã/diff; vẫn bị `tranTokenSinhMa` kẹp theo ctx/slot − prompt
  *     (ctx 64k ⇒ còn chỗ). Cân bằng giữ 16.000 như cũ — chế độ mặc định KHÔNG đổi một byte.
  *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ĐO — VÀ VÌ SAO UI KHÔNG BÀY NÚT (2026-09-23, audit 8.4m)
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Trục H ×3, cùng HEAD, cùng engine: cân bằng 30/36 (83 %, 25,2 s/bài) · sâu 25/36 (69 %, 31,7 s/bài);
+ * Python 6/9 → 3/9. Chênh 5 bài > dải nhiễu ±3 ⇒ sâu KHÔNG đúng hơn, và chậm hơn. Server giữ khả năng
+ * (danh sách trắng vẫn nhận "sau", `run.mjs --che-do-nghi sau` đo lại được); màn lập trình KHÔNG bày nút —
+ * một lựa chọn đo được là kém đúng hơn mặc định là lời mời sai. Bày lại khi một phép đo cho ≥ cân bằng.
+ *
  * Module THUẦN: không I/O, không env. Mọi nhánh có lưới.
  */
 import { luotDuocNghi, type CheDoNghi, type LoaiLuot } from "./loaiLuot";

@@ -1342,13 +1342,14 @@ export default function AICodingWorkspace() {
   /**
    * ★ F3 (2026-09-22) — CHẾ ĐỘ NGHĨ theo lượt: `can-bang` (quy tắc lớp lượt: sinh/sửa mã NGHĨ, lượt phụ
    * không) hay `nhanh` (tắt nghĩ mọi lượt — đo được nhanh 5–15×, đúng ít hơn ~10–15 điểm). Đi theo TỪNG
-   * yêu cầu qua `context.cheDoNghi`; server lọc danh sách TRẮNG. **"sâu" (2026-09-23)**: ngân sách nghĩ 24k theo yêu cầu
-   * (`thinking_budget_tokens`, tên đã đo trên b9814) + trần sinh 32k — xem `server/services/ai/nghiSau.ts`.
+   * yêu cầu qua `context.cheDoNghi`; server lọc danh sách TRẮNG. **"sâu" KHÔNG bày** (2026-09-23): server hỗ trợ thật
+   * (`thinking_budget_tokens` 24k, `ai/nghiSau.ts`) nhưng ĐO trục H: sâu 25/36 vs cân bằng 30/36 — tụt, chậm hơn 25 %.
+   *   Một nút đo được là KÉM ĐÚNG hơn mặc định là lời mời sai (audit 8.4m). Bày lại khi có số ≥ cân bằng.
    */
-  const [cheDoNghi, datCheDoNghi] = useState<"can-bang" | "nhanh" | "sau">(() => {
+  const [cheDoNghi, datCheDoNghi] = useState<"can-bang" | "nhanh">(() => {
     try {
       const v = localStorage.getItem("repoWs.cheDoNghi");
-      return v === "nhanh" || v === "sau" ? v : "can-bang";
+      return v === "nhanh" ? v : "can-bang";
     } catch { return "can-bang"; }
   });
   useEffect(() => {
@@ -2253,26 +2254,25 @@ export default function AICodingWorkspace() {
                 )}
               </TooltipContent>
             </Tooltip>
-            {/* ★ F3 (2026-09-22) — BỘ CHỌN CHẾ ĐỘ NGHĨ theo lượt. Ba nút THẬT: cân bằng (quy tắc lớp
-                lượt) / nhanh (tắt nghĩ) / sâu (ngân sách nghĩ 24k theo yêu cầu — `ai/nghiSau.ts`). */}
+            {/* ★ F3 (2026-09-22) — BỘ CHỌN CHẾ ĐỘ NGHĨ theo lượt. Hai nút THẬT: cân bằng (quy tắc lớp
+                lượt) / nhanh (tắt nghĩ). "Sâu" có ở server nhưng đo H tụt (25 vs 30/36) ⇒ không bày (audit 8.4m). */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <select
                   data-chon-che-do-nghi
                   aria-label={t("repoWs.nghiPick.label", "Chọn chế độ nghĩ")}
                   value={cheDoNghi}
-                  onChange={(e) => datCheDoNghi(e.target.value === "nhanh" ? "nhanh" : e.target.value === "sau" ? "sau" : "can-bang")}
+                  onChange={(e) => datCheDoNghi(e.target.value === "nhanh" ? "nhanh" : "can-bang")}
                   className="h-[22px] cursor-pointer rounded-md border bg-background px-1.5 text-[10px]"
                 >
                   <option value="can-bang">{t("repoWs.nghiPick.canBang", "nghĩ: cân bằng")}</option>
                   <option value="nhanh">{t("repoWs.nghiPick.nhanh", "nghĩ: tắt (nhanh)")}</option>
-                  <option value="sau">{t("repoWs.nghiPick.sau", "nghĩ: sâu")}</option>
                 </select>
               </TooltipTrigger>
               <TooltipContent className="max-w-[340px] text-xs">
                 {t(
                   "repoWs.nghiPick.tip",
-                  "Cân bằng = lượt sinh/sửa mã được NGHĨ tới 12.000 token (đúng hơn, chậm hơn: ~30–120 s/lượt trên Qwen3.6), lượt phụ (chọn tệp, KB) không nghĩ. Tắt = không nghĩ ở mọi lượt (đo được: nhanh 5–15×, đúng ít hơn ~10–15 điểm). Sâu = nghĩ tới 24.000 token cho bài khó — chậm hơn nữa; chưa có số đo chứng minh đúng hơn cân bằng. Áp cho từng yêu cầu, không cần khởi động lại.",
+                  "Cân bằng = lượt sinh/sửa mã được NGHĨ tới 12.000 token (đúng hơn, chậm hơn: ~30–120 s/lượt trên Qwen3.6), lượt phụ (chọn tệp, KB) không nghĩ. Tắt = không nghĩ ở mọi lượt (đo được: nhanh 5–15×, đúng ít hơn ~10–15 điểm). Áp cho từng yêu cầu, không cần khởi động lại.",
                 )}
               </TooltipContent>
             </Tooltip>

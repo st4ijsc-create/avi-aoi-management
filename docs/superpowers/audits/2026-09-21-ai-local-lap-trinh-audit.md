@@ -1077,6 +1077,28 @@ tỉ lệ thật của A2 ≈ 12/27 = 44 % (gộp cả ngày), chuỗi 3/3 buổ
 luận thay đổi dưới ~40 điểm trên A2 — muốn dùng A2 làm cổng thì cần ≥ 12 lượt, hoặc thay bằng bài có tỉ lệ nền xa 50 %.
 Kiểu hỏng của A2 ổn định: sửa lần 1 → test đỏ (CA3) → sửa lần 2 → vẫn đỏ → hết lượt (5 sự kiện tool_loop).
 
+### 8.4m "Nghĩ sâu" — không bị chặn bởi engine (sai TÊN TRƯỜNG), nhưng ĐO thì tụt ⇒ không bày nút
+
+Kết luận §5b‑6b cũ *"b9814 không nhận ngân sách nghĩ theo request"* sai: nguồn llama.cpp b9814 đọc
+`thinking_budget_tokens` từ thân yêu cầu (`server-common.cpp`), b9982 chỉ thêm bí danh `reasoning_budget_tokens`.
+Đo sống cùng prompt trên `:8091`: `thinking_budget_tokens: 200` ⇒ nghĩ 550 ký tự (cắt đúng) · `reasoning_budget_tokens: 200`
+⇒ 6.984 ký tự (bỏ qua im lặng) · mặc định ⇒ 8.781. Không cần nâng llama.cpp (việc tải bản mới đã dừng: GitHub 7 KB/s ≈ 6 giờ).
+
+Nối dây `a6a747a7d`: chỉ "sau" + lớp nghĩ gửi `thinking_budget_tokens: 24000`, trần sinh 32k (kẹp ctx); cân bằng/nhanh không
+gửi trường nào. Sống: 38 dòng log `thinking_budget_tokens=24000` trong 38 lượt đo sâu, 0 ở lượt mặc định.
+
+| Chế độ (HEAD, cùng engine) | Trục H ×3 | ms/bài | ts · py · cs · cpp |
+|---|---|---|---|
+| cân bằng (`H-q36moe-head-0923-`) | **30/36 = 83 %** | 25.225 | 7 · 6 · 8 · 9 |
+| sâu (`H-q36moe-sau-`) | 25/36 = 69 % (7 · 11 · 7) | 31.657 | 7 · 3 · 7 · 8 |
+
+Chênh 5 bài > dải nhiễu ±3 (và một lượt sâu đạt 11/12 ⇒ phương sai lớn hơn). Không bài nào sâu hơn cân bằng quá 1 lượt;
+Python tụt rõ nhất (H-py2 3/3 → 1/3). **Quyết định:** server giữ khả năng (đo lại bằng `run.mjs --che-do-nghi sau`), màn
+lập trình **không** bày nút — một lựa chọn đo được là kém đúng hơn mặc định là lời mời sai theo tiêu chí "đúng hơn nhanh".
+Giả thuyết chưa kiểm vì sao nghĩ dài lại tụt: nghĩ dài hơn trôi khỏi đặc tả (tự "sửa" yêu cầu). Không đuổi theo giả thuyết này
+khi chưa có bài mà cân bằng hỏng vì CẠN ngân sách — B4 đo 0/36 lượt H bị cắt ở 12k, và nền 8.4l có 0 G5‑D / 0 G18‑B1, tức sâu
+không có lượt cạn nào để cứu.
+
 ### 8.5 Bảy bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
 
 1. `mockRestore()` xoá `mock.calls` — đọc spy SAU restore ⇒ đỏ oan.

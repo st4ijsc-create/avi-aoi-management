@@ -19318,8 +19318,7 @@
       "label": "Chọn chế độ nghĩ",
       "canBang": "nghĩ: cân bằng",
       "nhanh": "nghĩ: tắt (nhanh)",
-      "tip": "Cân bằng = lượt sinh/sửa mã được NGHĨ tới 12.000 token (đúng hơn, chậm hơn: ~30–120 s/lượt trên Qwen3.6), lượt phụ (chọn tệp, KB) không nghĩ. Tắt = không nghĩ ở mọi lượt (đo được: nhanh 5–15×, đúng ít hơn ~10–15 điểm). Sâu = nghĩ tới 24.000 token cho bài khó — chậm hơn nữa; chưa có số đo chứng minh đúng hơn cân bằng. Áp cho từng yêu cầu, không cần khởi động lại.",
-      "sau": "nghĩ: sâu"
+      "tip": "Cân bằng = lượt sinh/sửa mã được NGHĨ tới 12.000 token (đúng hơn, chậm hơn: ~30–120 s/lượt trên Qwen3.6), lượt phụ (chọn tệp, KB) không nghĩ. Tắt = không nghĩ ở mọi lượt (đo được: nhanh 5–15×, đúng ít hơn ~10–15 điểm). Áp cho từng yêu cầu, không cần khởi động lại."
     },
     "modelPick": {
       "label": "Chọn tầng model",
