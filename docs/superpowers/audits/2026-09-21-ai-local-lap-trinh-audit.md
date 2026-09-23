@@ -1058,6 +1058,25 @@ native trượt ở chỗ ngược lại (không chịu chạy lệnh khi câu "
 hỏi khi tín hiệu yếu, và chỉ để NÓI KHÔNG). Bài học: hai bộ chọn "đúng 89 %" và "đúng 85 %" có tập lỗi **rời nhau** — con số tổng che
 mất chính điều đáng dùng.
 
+### 8.4l Nền sản xuất trên HEAD (2026-09-23) + "A2 tụt" là NHIỄU, đã kiểm bằng đối chứng
+
+Cấu hình: Qwen3.6-35B-A3B · 1 slot × 64k · `--reasoning-budget 12000` · ngữ cảnh repo 4k · B6 phủ quyết BẬT. Dist gồm
+B8 (tách service), R1–R5, F4/F6 (`06c35fd09`).
+
+| Phép đo | Kết quả | So với |
+|---|---|---|
+| Trục H ×3 | **30/36 = 83 %** (11 · 9 · 10), ms/bài 25,2 s | `H-q36moe-64k-` 31/36 — chênh 1 bài, trong nhiễu ±3 |
+| G18‑B1 / G5‑D | 0 / 0 | — |
+| Agentic ×2 | 4/6 · 4/6 (A1 6/6, **A2 2/6**) | sáng nay 6/6 |
+
+A2 gộp theo thời gian: 3/3 (B6) · 2/3 (B6 tắt) · 2/3 (B8 bước 1) · 0/3 · 1/3 (B8 bước 2) · 1/3 · 1/3 (HEAD) ⇒ trước/sau B8 bước 2 là
+7/9 vs 3/12 (Fisher p≈0,03) — đủ để nghi hồi quy do tách service. **Đối chứng:** dựng server ở `1ca7f3288` (ngay TRƯỚC B8), cùng
+llama-server (PID khởi từ 22/09 19:50, cờ y nguyên), chạy agentic ×2 ⇒ **A2 2/6 — y hệt HEAD**. Nhánh lập trình không gọi embedding,
+nên các commit truy hồi (tiền tố Instruct, thang điểm Studio, ngưỡng 0,44) không chạm được bài này. Kết luận: **không hồi quy**;
+tỉ lệ thật của A2 ≈ 12/27 = 44 % (gộp cả ngày), chuỗi 3/3 buổi sáng là may. Hệ quả cho thước đo: agentic 6 lượt KHÔNG đủ để kết
+luận thay đổi dưới ~40 điểm trên A2 — muốn dùng A2 làm cổng thì cần ≥ 12 lượt, hoặc thay bằng bài có tỉ lệ nền xa 50 %.
+Kiểu hỏng của A2 ổn định: sửa lần 1 → test đỏ (CA3) → sửa lần 2 → vẫn đỏ → hết lượt (5 sự kiện tool_loop).
+
 ### 8.5 Bảy bẫy đo/lưới tự sinh trong đợt (để lần sau không cắn lại)
 
 1. `mockRestore()` xoá `mock.calls` — đọc spy SAU restore ⇒ đỏ oan.

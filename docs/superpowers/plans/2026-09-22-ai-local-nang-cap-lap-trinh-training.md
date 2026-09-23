@@ -298,7 +298,7 @@ lượng thời gian từ số đo (27 s / 5 s). Chế độ → (thinking, samp
 Duyệt có ngữ cảnh: "vì sao sửa dòng này". HITL không đổi.
 
 > **Trạng thái 2026-09-23: XONG.** Phần 1 (pill token nghĩ) trước đó; phần 2: khối gấp "Vì sao model đề xuất" trên thẻ duyệt diff
-> (`LyDoDuyet.tsx` + `lyDoDuyetLogic.ts`) — chụp đuôi `reasoning_content` ĐÚNG lúc `pending_action` tới, KHOÁ theo `actionId`
+> (`LyDoDuyet.tsx` + `lyDoDuyetLogic.ts`) — chụp `reasoning_content` ĐÚNG lúc `pending_action` tới, trích ĐẦU (kế hoạch) + ĐUÔI (đo live: đuôi toàn câu đệm), commit `06c35fd09`, KHOÁ theo `actionId`
 > (lượt mới đang chảy không bao giờ gán lý do sang thẻ cũ). Chỉ đọc; thẻ duyệt và HITL y nguyên.
 
 ### F5 — Khung "Lệnh & Nhật ký": lịch sử lượt + `exit code` + thời lượng + lọc; nút "chạy lại kiểm chứng"
