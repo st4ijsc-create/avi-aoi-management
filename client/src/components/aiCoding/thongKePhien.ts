@@ -45,3 +45,29 @@ export function congUsage(
 export function congTuChoi(tk: ThongKePhien): ThongKePhien {
   return { ...tk, soTuChoi: tk.soTuChoi + 1 };
 }
+
+/**
+ * ★ F6 phần 2 (2026-09-23) — XUẤT chỉ số phiên thành JSON để dán vào bảng so sánh bench (`so-sanh.mjs`, audit §8).
+ * Giữ "không biết ≠ 0": `tokensNghi` null vẫn là `null` trong JSON, model không rõ là `null`. Khoá `schema` để
+ * người đọc sau biết đang đọc hình dạng nào khi các trường đổi.
+ */
+export const SCHEMA_XUAT_PHIEN = "ai-local-phien/1";
+
+export function xuatThongKeJson(tk: ThongKePhien, o: { readonly model?: string | null; readonly luc: Date }): string {
+  return JSON.stringify(
+    {
+      schema: SCHEMA_XUAT_PHIEN,
+      luc: o.luc.toISOString(),
+      model: typeof o.model === "string" && o.model ? o.model : null,
+      soLuot: tk.soLuot,
+      tokensVao: tk.tokensVao,
+      tokensRa: tk.tokensRa,
+      tokensNghi: tk.tokensNghi,
+      nghiKhongDo: tk.nghiKhongDo,
+      msTong: tk.msTong,
+      soTuChoi: tk.soTuChoi,
+    },
+    null,
+    2,
+  );
+}

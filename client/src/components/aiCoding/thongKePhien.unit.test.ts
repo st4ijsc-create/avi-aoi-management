@@ -1,6 +1,6 @@
 /** ★ F6 — lưới cho bộ cộng chỉ số phiên. Luật đắt nhất: nghĩ không đếm được KHÔNG thành 0. */
 import { describe, it, expect } from "vitest";
-import { congTuChoi, congUsage, thongKeRong } from "./thongKePhien";
+import { SCHEMA_XUAT_PHIEN, congTuChoi, congUsage, thongKeRong, xuatThongKeJson } from "./thongKePhien";
 
 describe("thongKePhien", () => {
   it("rỗng: 0 lượt, tokensNghi null (không biết), 0 từ chối", () => {
@@ -29,5 +29,21 @@ describe("thongKePhien", () => {
     const tk = congTuChoi(congTuChoi(thongKeRong()));
     expect(tk.soTuChoi).toBe(2);
     expect(tk.soLuot).toBe(0);
+  });
+});
+
+describe("xuatThongKeJson — F6 phần 2", () => {
+  it("★ giữ `null` cho tokensNghi chưa đo và model không rõ (không biết ≠ 0)", () => {
+    const j = JSON.parse(xuatThongKeJson(thongKeRong(), { luc: new Date("2026-09-23T00:00:00Z") }));
+    expect(j).toEqual({
+      schema: SCHEMA_XUAT_PHIEN, luc: "2026-09-23T00:00:00.000Z", model: null,
+      soLuot: 0, tokensVao: 0, tokensRa: 0, tokensNghi: null, nghiKhongDo: 0, msTong: 0, soTuChoi: 0,
+    });
+  });
+  it("mang đủ số cộng dồn + tên model", () => {
+    const tk = congUsage(thongKeRong(), { tokensIn: 100, tokensOut: 50, tokensReasoning: 30, latencyMs: 2000 });
+    const j = JSON.parse(xuatThongKeJson(tk, { model: "Qwen3.6-35B-A3B", luc: new Date(0) }));
+    expect(j.model).toBe("Qwen3.6-35B-A3B");
+    expect([j.soLuot, j.tokensVao, j.tokensRa, j.tokensNghi, j.msTong]).toEqual([1, 100, 50, 30, 2000]);
   });
 });

@@ -64,6 +64,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThanhTrangThaiAiLocal } from "@/components/aiCoding/ThanhTrangThaiAiLocal";
 import { BangDangNghi } from "@/components/aiCoding/BangDangNghi";
+import { LyDoDuyet } from "@/components/aiCoding/LyDoDuyet";
+import { chupLyDoDuyet, lyDoChoThe, type LyDoDuyet as LyDoDuyetT } from "@/components/aiCoding/lyDoDuyetLogic";
 import { congTuChoi, congUsage, thongKeRong, type ThongKePhien } from "@/components/aiCoding/thongKePhien";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -925,6 +927,13 @@ export default function AICodingWorkspace() {
   const [dungLuotCuoi, setDungLuotCuoi] = useState<KbUsageLuot | null>(null);
   /** ★ F6 — chỉ số PHIÊN cộng dồn (lượt · token vào/ra/nghĩ · thời gian model · từ chối); reset khi đổi/mở phiên. */
   const [thongKe, setThongKe] = useState<ThongKePhien>(() => thongKeRong());
+  /**
+   * ★ F4 phần 2 — lý do model cho thẻ duyệt. `streamingReasoning` là state: callback SSE đọc nó qua ref (closure cũ
+   * thấy chuỗi của lần render trước). Chụp một lần lúc `pending_action` tới, khoá theo `actionId`.
+   */
+  const nghiRef = useRef("");
+  nghiRef.current = streamingReasoning;
+  const [lyDoDuyet, setLyDoDuyet] = useState<LyDoDuyetT | null>(null);
 
   const confirmM = trpc.aiCopilot.confirmAction.useMutation();
   const cancelM = trpc.aiCopilot.cancelAction.useMutation();
@@ -1454,8 +1463,12 @@ export default function AICodingWorkspace() {
         onToolResult: (tr) => { setStreamTool(tr); setLucNhanTool(dinhDangLucNhan(new Date())); },
         // ★★★ doc 81 · VIỆC 2 — "đang ở vòng mấy". `phase:"dung"` mang theo lý do dừng.
         onToolLoop: (p) => setVongTool(p),
+        // ★ F4 — ref cập nhật ĐỒNG BỘ theo từng mảnh: React gộp setState, nên nếu `pending_action` tới cùng gói đọc với
+        //   mảnh nghĩ cuối thì bản render chưa kịp mang mảnh đó — chụp từ state sẽ hụt đuôi (chính là phần lý do).
+        onReasoning: (nghi) => { nghiRef.current = nghi; },
         onPendingAction: (pa) => {
           setPending(pa);
+          setLyDoDuyet(chupLyDoDuyet(pa.actionId, nghiRef.current));
           setActionState("pending");
           setKetCucThongDiep(null);
           // apply_diff → mở diff ở khung giữa (dựng từ args THẬT server gửi kèm).
@@ -2925,6 +2938,10 @@ export default function AICodingWorkspace() {
                      để trình đọc màn hình vẫn báo thẻ khi hiện (cột chat nay chỉ còn con trỏ). Cột chat vẽ
                      con trỏ; thẻ `run_command` (không phải diff) VẪN ở chat. */
                   <div aria-live="assertive" role="status" data-diff-khung-giua>
+                    {(() => {
+                      const ly = lyDoChoThe(lyDoDuyet, pending?.actionId);
+                      return ly ? <LyDoDuyet lyDo={ly} /> : null;
+                    })()}
                     {theDuyetDiffDon ? (
                       <TheDuyetDiff
                         action={pending!}

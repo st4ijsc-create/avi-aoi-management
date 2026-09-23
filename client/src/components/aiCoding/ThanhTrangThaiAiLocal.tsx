@@ -33,12 +33,12 @@
  *   `trangThaiNganSach`, bảng `ai_gateway_metrics`). Không một con số nào ở đây được ước lượng
  *   phía client.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Activity, AlertTriangle, Brain, Cpu, Gauge, HardDrive, Layers, Timer, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Brain, Check, Copy, Cpu, Gauge, HardDrive, Layers, Timer, Zap } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import type { KbUsageLuot } from "@/hooks/useKbChatStream";
-import type { ThongKePhien } from "./thongKePhien";
+import { xuatThongKeJson, type ThongKePhien } from "./thongKePhien";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const GiB = 1024 ** 3;
@@ -162,6 +162,8 @@ export function ThanhTrangThaiAiLocal({
   thongKe?: ThongKePhien | null;
 } = {}) {
   const { t } = useTranslation();
+  /** ★ F6 phần 2 — trạng thái nút chép JSON: "ok" | "loi" hiện 2 s rồi về null. */
+  const [chep, setChep] = useState<"ok" | "loi" | null>(null);
   const nghiSinh = useMemo(() => (dungLuot ? tachNghiSinh(dungLuot) : null), [dungLuot]);
   /**
    * 10 giây: đủ nhanh để bắt được lúc `llama-server` chết giữa một phiên làm việc, đủ chậm để
@@ -350,6 +352,27 @@ export function ThanhTrangThaiAiLocal({
             : t("ttAiLocal.tipPhienRong", "Chưa có lượt model nào trong phiên này.")
         }
       />
+      {thongKe && thongKe.soLuot > 0 && (
+        <button
+          type="button"
+          data-testid="tt-ai-local-chep-json"
+          className="inline-flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          title={t("ttAiLocal.chepJsonTip", "Chép chỉ số phiên dạng JSON (dán vào bảng so sánh bench)")}
+          onClick={() => {
+            const json = xuatThongKeJson(thongKe, { model: tenModel === KHONG_BIET ? null : tenModel, luc: new Date() });
+            const xong = (kq: "ok" | "loi") => { setChep(kq); window.setTimeout(() => setChep(null), 2000); };
+            if (!navigator.clipboard?.writeText) { xong("loi"); return; }
+            navigator.clipboard.writeText(json).then(() => xong("ok"), () => xong("loi"));
+          }}
+        >
+          {chep === "ok" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {chep === "ok"
+            ? t("ttAiLocal.chepJsonOk", "đã chép")
+            : chep === "loi"
+              ? t("ttAiLocal.chepJsonLoi", "không chép được")
+              : t("ttAiLocal.chepJson", "JSON")}
+        </button>
+      )}
     </div>
   );
 }
