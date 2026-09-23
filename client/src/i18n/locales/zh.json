@@ -3800,7 +3800,8 @@
       "workshop": "车间",
       "workstation": "工位",
       "yieldAlertThreshold": "良率告警阈值",
-      "zone": "区域(zone)"
+      "zone": "区域(zone)",
+      "kbGoldenSet": "黄金问题集"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3941,7 +3942,8 @@
       "kbHealthCheck": "检查知识库状态",
       "commitTemplateImage": "提交模板图像",
       "taiAnhNenTang": "上传楼层背景图",
-      "dungNhaXuong": "搭建厂房布局"
+      "dungNhaXuong": "搭建厂房布局",
+      "runKbEval": "运行语料评估"
     },
     "field": {
       "changeReason": "变更原因",
@@ -4032,7 +4034,8 @@
       "images[].sha256": "图像SHA256哈希值",
       "productModelCode": "产品型号编码",
       "deXuat": "提案内容",
-      "mimeType": "图像格式"
+      "mimeType": "图像格式",
+      "goldenSet": "黄金问题集"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -4084,7 +4087,8 @@
       "unknownModule": "未知模块",
       "secsGem": "SECS/GEM 主机通信",
       "secsGemLive": "SECS/GEM 实时调度",
-      "gem300": "GEM300"
+      "gem300": "GEM300",
+      "kbEvalRuns": "Training Studio 评估记录"
     },
     "action": {
       "viewOthersPermissions": "查看他人的权限",
@@ -4199,7 +4203,8 @@
       "weakAuthDisabled": "本服务器已禁用共享密钥／仅设备码认证——请配置按设备分配的密钥（mk_...）。",
       "faiNotPassed": "产品 #{{productModelId}} 需要通过首件检验（FAI）后才能发布/接受生产。",
       "releasedProgramRequiresApproval": "该产品已有已发布的检验程序——阈值变更须通过审批队列（Threshold Approvals）。",
-      "productLifecycleRequiresApproval": "该产品处于生命周期状态 '{{lifecycleStatus}}'——阈值变更须通过审批队列（Threshold Approvals）。"
+      "productLifecycleRequiresApproval": "该产品处于生命周期状态 '{{lifecycleStatus}}'——阈值变更须通过审批队列（Threshold Approvals）。",
+      "evalAlreadyRunning": "已有一轮评估在运行——请等待其完成。"
     },
     "client": {
       "generic": "系统错误，请重试",
@@ -15487,17 +15492,80 @@
       "adminOnlyNote": "只有已启用 2FA 的管理员才能删除语料库。"
     },
     "eval": {
-      "title": "评估（片段预览）",
-      "desc": "语料库已导入内容的样本 — 不调用模型，仅读取已存储的片段",
+      "title": "检索质量评估",
+      "desc": "用语料的黄金问题集走助手真实的检索路径并由机器评分：期望文档是否在 top‑K 中、是否超过引用阈值、答案是否在检索上下文中——按轮次保存，便于比较导入前后。",
       "corpusLabel": "语料库",
-      "corpusSelectAria": "要预览的语料库",
+      "corpusSelectAria": "要评估的语料",
       "corpusPlaceholder": "选择一个语料库",
       "corpusRequired": "请选择一个语料库进行预览。",
       "loadError": "无法加载语料库预览 — 请检查权限或 2FA 状态后重试。",
       "empty": "该语料库尚未导入任何片段。",
       "totalChunks": "片段总数",
       "distinctSources": "来源数",
-      "opsNote": "这只是样本查看，不是质量评分。完整的回答质量评估需要实际运行的嵌入/LLM 模型与标准问题集 — 请将 scripts/ai-kb/eval-rag.mjs（针对此语料库调整后）作为人工运维步骤运行。"
+      "goldenSelectAria": "黄金问题集",
+      "goldenPlaceholder": "选择黄金问题集",
+      "goldenCount": "{{trong}} 题 + {{ngoai}} 题外",
+      "pipelineToggle": "包含真实管线",
+      "pipelineHint": "额外运行助手的完整检索（系统知识库 + Studio + 重排序）以确认文档是否真正进入回答。较慢，每题约 1–3 秒。",
+      "running": "运行中… {{giay}} 秒",
+      "run": {
+        "button": "运行评估",
+        "notMeasured": "本轮无法测量——未给出任何分数。",
+        "meta": "{{cau}} 题 · 运行时语料 {{chunk}} 段 / {{nguon}} 个来源 · 嵌入 {{model}} · {{giay}} 秒",
+        "broken": "{{n}} 题的题目有误（来源文件在语料中，但期望答案不匹配任何段落）——已从所有比率中排除；请修正黄金集。",
+        "detail": "第 #{{id}} 轮详情"
+      },
+      "noGoldenForCorpus": "语料 \"{{corpus}}\" 还没有自己的黄金问题集。请创建 knowledge/studio-golden/{{corpus}}.jsonl（每行：id、cauHoi、nguon、dapAn.regex），或在上方选择其他集。",
+      "goldenBroken": "该黄金集有 {{n}} 行错误——修复前无法运行。",
+      "tableUnavailable": "评估记录表尚未迁移（0359）。",
+      "noRuns": "该语料尚无评估记录。",
+      "noRunsHint": "选择黄金集后点击“运行评估”。",
+      "chart": {
+        "ingest": "导入",
+        "hit": "命中来源",
+        "answer": "答案在上下文中",
+        "pipeline": "到达助手"
+      },
+      "runs": {
+        "col": {
+          "run": "轮次",
+          "time": "时间",
+          "corpus": "段 / 来源",
+          "duration": "耗时"
+        },
+        "notMeasured": "未测量"
+      },
+      "onlyWrong": "仅显示错误",
+      "previewTitle": "浏览已导入段落",
+      "metric": {
+        "hit": "来源命中 @{{k}}",
+        "hitHint": "期望文件的段落出现在语料 top‑K 中的题目比例。",
+        "mrrHint": "首个命中段落的平均 1/名次（1 = 总是第一）。",
+        "overThreshold": "超过阈值 {{nguong}}",
+        "overThresholdHint": "命中段落得分 ≥ 编程助手的 Studio 引用阈值——即真正进入提示词。",
+        "answer": "答案在上下文中",
+        "answerHint": "期望答案（正则）出现在 top‑K 文本中——机器评分，不使用 LLM。",
+        "pipeline": "到达助手",
+        "pipelineHint": "合并系统知识库 + Studio + 阈值 + 重排后，最终引用包含来自该语料的期望文件。",
+        "pipelineOff": "本轮未运行真实管线层。",
+        "reject": "正确拒绝（{{n}} 题外）",
+        "rejectHint": "题外问题中没有段落超过阈值——噪声未进入提示词。",
+        "pipelineAny": "正确来源到达助手（任意库）",
+        "pipelineAnyHint": "最终引用包含来自任意库的期望文件——系统知识库可能有同名副本并胜过你导入的版本。与左侧对比，区分“导入被挤出”与“助手确实缺少来源”。"
+      },
+      "col": {
+        "question": "问题",
+        "rank": "来源名次",
+        "score": "分数",
+        "threshold": "超过阈值",
+        "answer": "答案",
+        "pipeline": "到达助手",
+        "top1": "Top‑1"
+      },
+      "outOfCorpus": "题外",
+      "brokenBadge": "题目有误",
+      "missingFileBadge": "缺少文件",
+      "systemCopyBadge": "系统副本"
     },
     "modelBuilder": {
       "title": "模型构建",

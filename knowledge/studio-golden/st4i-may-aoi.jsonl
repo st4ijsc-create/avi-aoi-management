@@ -1,0 +1,34 @@
+{"id":"T01","cauHoi":"Tỷ lệ NG vượt bao nhiêu thì phải dừng line để điều tra?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"Critical\\s*\\|\\s*>\\s*2(?:[.,]0)?\\s*%"}}
+{"id":"T02","cauHoi":"Độ tin cậy phán đoán của máy AOI dưới mức nào thì kỹ sư phải xem thủ công?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"<\\s*70\\s*%"}}
+{"id":"T03","cauHoi":"Tụ chip 0402 được phép lệch trục X tối đa bao nhiêu?","nguon":["aoi-thresholds.md","aoi-defect-types.md"],"dapAn":{"regex":"0402[^\\n]{0,12}±\\s*0[.,]10?\\s*mm"}}
+{"id":"T04","cauHoi":"Lỗ rỗng (void) trong mối hàn BGA được phép tối đa bao nhiêu phần trăm diện tích pad?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"Void[^\\n]{0,30}25\\s*%"}}
+{"id":"T05","cauHoi":"Bao lâu phải hiệu chỉnh camera một lần?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"Camera calibration\\s*\\|\\s*Hàng tuần"}}
+{"id":"T06","cauHoi":"Khi chạy board chuẩn để kiểm tra máy thì được phép bao nhiêu cảnh báo sai?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"False alarm\\s*(?:≤|<=)\\s*2"}}
+{"id":"T07","cauHoi":"Kiểm tra độ đồng đều ánh sáng thì sai lệch cho phép là bao nhiêu?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"±\\s*5\\s*%"}}
+{"id":"T08","cauHoi":"Linh kiện bị kéo dựng đứng lên một đầu thì mã lỗi là gì?","nguon":["aoi-defect-types.md"],"dapAn":{"regex":"\\bTBT\\b"}}
+{"id":"T09","cauHoi":"Mã lỗi POL trên máy AOI nghĩa là gì?","nguon":["aoi-defect-types.md"],"dapAn":{"regex":"POL[^\\n]{0,10}Polarity|Polarity Error"}}
+{"id":"T10","cauHoi":"Lỗi tombstone thường xảy ra ở những cỡ linh kiện nào?","nguon":["aoi-defect-types.md"],"dapAn":{"regex":"0201"}}
+{"id":"T11","cauHoi":"Máy báo lỗi E061 thì xử lý thế nào?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"E061[^\\n]*fiducial"}}
+{"id":"T12","cauHoi":"Áp suất khí nén thấp thì máy hiện mã lỗi nào?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"E082"}}
+{"id":"T13","cauHoi":"Bật máy AOI xong phải chờ làm nóng tối thiểu bao lâu mới chạy?","nguon":["aoi-troubleshooting.md","aoi-workflow.md"],"dapAn":{"regex":"15 phút"}}
+{"id":"T14","cauHoi":"Thứ tự bật nguồn các thiết bị của hệ thống AOI là gì?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"UPS\\s*→\\s*Server"}}
+{"id":"T15","cauHoi":"Khi chỉnh độ rộng băng tải phải chừa thêm bao nhiêu mỗi bên?","nguon":["aoi-workflow.md"],"dapAn":{"regex":"clearance 2\\s*mm"}}
+{"id":"T16","cauHoi":"Muốn duyệt một chương trình kiểm tra mới thì phải chạy thẩm định bao nhiêu bảng?","nguon":["aoi-workflow.md"],"dapAn":{"regex":"30 bảng"}}
+{"id":"T17","cauHoi":"Bảng sửa lại mà vẫn hỏng sau mấy lần thì phải loại bỏ?","nguon":["aoi-workflow.md"],"dapAn":{"regex":"2 lần rework"}}
+{"id":"T18","cauHoi":"Chỉ tiêu FPY mục tiêu của line là bao nhiêu?","nguon":["aoi-reports.md"],"dapAn":{"regex":"FPY[^\\n]*>\\s*98\\s*%"}}
+{"id":"T19","cauHoi":"Thời gian trung bình giữa hai lần hỏng máy (MTBF) mục tiêu là bao nhiêu?","nguon":["aoi-reports.md"],"dapAn":{"regex":"MTBF[^\\n]*500\\s*h"}}
+{"id":"T20","cauHoi":"Chỉ số năng lực quá trình Cpk bao nhiêu thì được coi là tốt?","nguon":["aoi-reports.md","howto-spc-control.md"],"dapAn":{"regex":"1[.,]33"}}
+{"id":"T21","cauHoi":"Trong điểm hoàn thiện khi onboarding board mới, hạng mục nào có trọng số lớn nhất?","nguon":["commission-a-new-pcb.md"],"dapAn":{"regex":"(?:limit|giới hạn)[^\\n]{0,40}25"}}
+{"id":"T22","cauHoi":"Vì sao ảnh mẫu của sản phẩm bắt buộc phải có kích thước?","nguon":["commission-a-new-pcb.md"],"dapAn":{"regex":"portable|không chuyển được"}}
+{"id":"T23","cauHoi":"Tỷ lệ báo lỗi giả (false call) vượt bao nhiêu thì phải xem lại điểm đo?","nguon":["howto-ng-handling-sop.md"],"dapAn":{"regex":"false-call rate\\s*>\\s*10\\s*%"}}
+{"id":"T24","cauHoi":"ngRate được làm mới bao lâu một lần?","nguon":["howto-ng-handling-sop.md"],"dapAn":{"regex":"60 giây"}}
+{"id":"T25","cauHoi":"Trưởng ca phải có mặt trước giờ bàn giao bao lâu?","nguon":["howto-shift-change.md"],"dapAn":{"regex":"trước giờ giao 10 phút"}}
+{"id":"T26","cauHoi":"Có được khởi động lại máy AOI ngay lúc đổi ca không?","nguon":["howto-shift-change.md"],"dapAn":{"regex":"5 phút trước/sau"}}
+{"id":"T27","cauHoi":"Mã lệnh sản xuất của lô được đặt theo định dạng nào?","nguon":["howto-lot-management.md"],"dapAn":{"regex":"L\\{?YYYYMMDD\\}?-NNN"}}
+{"id":"T28","cauHoi":"Ai có quyền huỷ một lô sản xuất?","nguon":["howto-lot-management.md"],"dapAn":{"regex":"production_manager"}}
+{"id":"T29","cauHoi":"Bao nhiêu điểm liên tiếp nằm cùng một phía đường tâm thì biểu đồ kiểm soát phải cảnh báo?","nguon":["howto-spc-control.md"],"dapAn":{"regex":"8 điểm liên tiếp"}}
+{"id":"T30","cauHoi":"Cỡ nhóm con mặc định khi vẽ biểu đồ SPC là bao nhiêu?","nguon":["howto-spc-control.md"],"dapAn":{"regex":"Subgroup size mặc định\\s*=\\s*5"}}
+{"id":"N01","cauHoi":"Cách cấu hình VLAN trunk trên switch Cisco Catalyst?","nguon":[]}
+{"id":"N02","cauHoi":"Công thức nấu phở bò Hà Nội gồm những gì?","nguon":[]}
+{"id":"N03","cauHoi":"Giá cổ phiếu Apple hôm nay là bao nhiêu?","nguon":[]}
+{"id":"N04","cauHoi":"Viết vòng lặp for trong Python như thế nào?","nguon":[]}

@@ -3808,7 +3808,8 @@
       "workshop": "workshop",
       "workstation": "workstation",
       "yieldAlertThreshold": "yield alert threshold",
-      "zone": "zone"
+      "zone": "zone",
+      "kbGoldenSet": "golden question set"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3949,7 +3950,8 @@
       "kbHealthCheck": "check knowledge-base health",
       "commitTemplateImage": "commit template image",
       "taiAnhNenTang": "upload floor background image",
-      "dungNhaXuong": "build factory layout"
+      "dungNhaXuong": "build factory layout",
+      "runKbEval": "run the corpus evaluation"
     },
     "field": {
       "changeReason": "change reason",
@@ -4040,7 +4042,8 @@
       "images[].sha256": "image SHA-256 hash",
       "productModelCode": "product model code",
       "deXuat": "proposal",
-      "mimeType": "image format"
+      "mimeType": "image format",
+      "goldenSet": "golden set"
     },
     "feature": {
       "webIngest": "web content ingestion",
@@ -4092,7 +4095,8 @@
       "unknownModule": "unknown module",
       "secsGem": "SECS/GEM host communication",
       "secsGemLive": "SECS/GEM live dispatch",
-      "gem300": "GEM300"
+      "gem300": "GEM300",
+      "kbEvalRuns": "Training Studio evaluation log"
     },
     "action": {
       "viewOthersPermissions": "view another user's permissions",
@@ -4207,7 +4211,8 @@
       "weakAuthDisabled": "Shared-key / machine-code-only authentication is disabled on this server — configure a per-machine key (mk_...).",
       "faiNotPassed": "A passing First-Article Inspection (FAI) is required for product #{{productModelId}} before releasing/accepting production.",
       "releasedProgramRequiresApproval": "The product already has a released inspection program — threshold changes require approval via the queue (Threshold Approvals).",
-      "productLifecycleRequiresApproval": "The product is in lifecycle status '{{lifecycleStatus}}' — threshold changes require approval via the queue (Threshold Approvals)."
+      "productLifecycleRequiresApproval": "The product is in lifecycle status '{{lifecycleStatus}}' — threshold changes require approval via the queue (Threshold Approvals).",
+      "evalAlreadyRunning": "An evaluation is already running — wait for it to finish."
     },
     "client": {
       "generic": "System error, please try again",
@@ -14929,17 +14934,80 @@
       "adminOnlyNote": "Only an admin with 2FA enabled can delete a corpus."
     },
     "eval": {
-      "title": "Eval (chunk preview)",
-      "desc": "A sample of what got ingested into a corpus — no model call, just a read of the stored chunks",
+      "title": "Retrieval quality evaluation",
+      "desc": "Runs the corpus golden question set through the assistant's real retrieval path and grades it by machine: is the expected document in the top‑K, does it clear the citation threshold, is the answer in the retrieved context — stored per run so you can compare before/after ingest.",
       "corpusLabel": "Corpus",
-      "corpusSelectAria": "Corpus to preview",
+      "corpusSelectAria": "Corpus to evaluate",
       "corpusPlaceholder": "Pick a corpus",
       "corpusRequired": "Pick a corpus to preview.",
       "loadError": "Failed to load the corpus preview — check your permission or 2FA status, then retry.",
       "empty": "No chunks ingested into this corpus yet.",
       "totalChunks": "Total chunks",
       "distinctSources": "Sources",
-      "opsNote": "This is a sample view, not a quality score. A full answer-quality evaluation needs a live embedding/LLM model and a golden question set — run scripts/ai-kb/eval-rag.mjs (adapted to this corpus) as a manual ops step."
+      "goldenSelectAria": "Golden question set",
+      "goldenPlaceholder": "Choose a golden set",
+      "goldenCount": "{{trong}} in + {{ngoai}} out",
+      "pipelineToggle": "Include real pipeline",
+      "pipelineHint": "Also runs the assistant's full retrieval (system KB + Studio + reranker) to see whether the document ACTUALLY reaches the answer. Slower, ~1–3 s per question.",
+      "running": "Running… {{giay}} s",
+      "run": {
+        "button": "Run evaluation",
+        "notMeasured": "This run could NOT be measured — no score was issued.",
+        "meta": "{{cau}} questions · corpus at run time {{chunk}} chunks / {{nguon}} sources · embedding {{model}} · {{giay}} s",
+        "broken": "{{n}} question(s) have a BROKEN spec (source file is in the corpus but the expected answer matches no chunk) — excluded from every rate; fix the golden set.",
+        "detail": "Run #{{id}} detail"
+      },
+      "noGoldenForCorpus": "Corpus \"{{corpus}}\" has no golden set of its own. Create knowledge/studio-golden/{{corpus}}.jsonl (one line each: id, cauHoi, nguon, dapAn.regex), or pick another set above.",
+      "goldenBroken": "This golden set has {{n}} invalid line(s) — it cannot run until fixed.",
+      "tableUnavailable": "The eval run log is not migrated yet (0359).",
+      "noRuns": "No evaluation runs for this corpus yet.",
+      "noRunsHint": "Choose a golden set and press \"Run evaluation\".",
+      "chart": {
+        "ingest": "ingest",
+        "hit": "Source hit",
+        "answer": "Answer in context",
+        "pipeline": "Reaches assistant"
+      },
+      "runs": {
+        "col": {
+          "run": "Run",
+          "time": "Time",
+          "corpus": "Chunks / sources",
+          "duration": "Duration"
+        },
+        "notMeasured": "not measured"
+      },
+      "onlyWrong": "Only failures",
+      "previewTitle": "Browse ingested chunks",
+      "metric": {
+        "hit": "Source hit @{{k}}",
+        "hitHint": "Share of questions with a chunk of the expected file in the corpus top‑K.",
+        "mrrHint": "Mean 1/rank of the first matching chunk (1 = always first).",
+        "overThreshold": "Over {{nguong}}",
+        "overThresholdHint": "The matching chunk scores ≥ the coding assistant's Studio citation threshold — i.e. it actually enters the prompt.",
+        "answer": "Answer in context",
+        "answerHint": "The expected answer (regex) is present in the top‑K text — machine graded, no LLM.",
+        "pipeline": "Reaches assistant",
+        "pipelineHint": "After merging system KB + Studio + threshold + re-sort, the final citations include the expected file from this corpus.",
+        "pipelineOff": "This run did not include the real-pipeline tier.",
+        "reject": "Correct rejects ({{n}} off-corpus)",
+        "rejectHint": "Off-corpus questions where no chunk clears the threshold — noise stays out of the prompt.",
+        "pipelineAny": "Right source reaches assistant (any store)",
+        "pipelineAnyHint": "The final citations include the expected file from ANY store — the system KB may hold a same-named copy that wins over your upload. Compare with the tile on the left to tell 'upload crowded out' from 'assistant truly lacks the source'."
+      },
+      "col": {
+        "question": "Question",
+        "rank": "Source rank",
+        "score": "Score",
+        "threshold": "Over threshold",
+        "answer": "Answer",
+        "pipeline": "Assistant",
+        "top1": "Top‑1"
+      },
+      "outOfCorpus": "off",
+      "brokenBadge": "broken spec",
+      "missingFileBadge": "file missing",
+      "systemCopyBadge": "system copy"
     },
     "modelBuilder": {
       "title": "Model Builder",

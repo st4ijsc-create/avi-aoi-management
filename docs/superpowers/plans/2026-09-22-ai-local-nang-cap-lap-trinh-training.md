@@ -299,6 +299,30 @@ chạy retrieve → rerank → (tuỳ chọn) sinh; chấm: **trúng nguồn** (
 Frontend: bảng câu hỏi × đúng/sai × nguồn, biểu đồ trước/sau. **Cổng ra:** corpus mẫu (ST4I) ≥ 20 câu; chạy 3 lượt
 ổn định; `fake-bad` (corpus rỗng) phải 0 %.
 
+> **R1 — XONG 2026-09-23 (cổng ra ĐẠT).** Quyết định mục 8.3: bắt đầu từ **tài liệu máy ST4I** (corpus `st4i-may-aoi`, 10 tệp
+> `knowledge/domain/aoi-*.md` + `howto-*` + `commission-a-new-pcb.md`, nạp qua `ingestDocumentJob` thật ⇒ 29 đoạn); `csharp-dotnet`
+> để cho R2. Bộ vàng `knowledge/studio-golden/st4i-may-aoi.jsonl`: **30 câu trong + 4 câu ngoài corpus**, đáp án regex.
+> Cơ chế: `server/services/kbStudioEvalCham.ts` (chấm thuần) + `kbStudioEval.ts` (I/O) · mig **0359 `kb_eval_runs`** (avi_app chỉ
+> INSERT/SELECT — UPDATE/DELETE bị REVOKE, đo 42501) · `kbStudio.evalCorpus/listEvalRuns/getEvalRun/listGoldenSets` · EvalTab mới.
+> Nhúng câu hỏi bằng `embedQuestion` và ngưỡng `MIN_STUDIO_CITATION_SCORE` **export từ sản xuất** (không chép). Ba trạng thái đề:
+> `hong` (tệp có, regex không khớp đoạn nào ⇒ lỗi BỘ ĐO, loại khỏi mẫu số) · `vang-tep` (trượt thật) · mẫu số 0 ⇒ `null`.
+>
+> | Lượt (cùng bộ đề, 29 đoạn) | Trúng nguồn @5 | MRR | Qua ngưỡng 0,5 | Đáp án trong ngữ cảnh | Tới trợ lý (từ corpus) | Nguồn đúng tới trợ lý (mọi kho) | Từ chối đúng |
+> |---|---|---|---|---|---|---|---|
+> | #3 · #4 · #5 · #7 (UI) | **97 %** | 0,77 | **50 %** | 93 % | **20 %** | 70 % | 4/4 |
+> | `fake-bad` #6 (corpus rỗng) | **0 %** | 0 | 0 % | 0 % | 0 % | 70 % | 4/4 |
+>
+> Bốn lượt giống nhau tới từng câu (xác định). **Ba phát hiện có số — việc cho vòng sau, KHÔNG vá trong R1:**
+> 1. **Tài liệu nạp hiếm khi tới được trợ lý: 6/30.** Trong 15 câu có đoạn đúng QUA ngưỡng, chỉ 5 tới trích dẫn cuối. Nhánh web
+>    `retrieveKnowledge` sort chung điểm cosine THUẦN của Studio với điểm HYBRID (0,72·ngữ nghĩa + 0,28·từ khoá) của kho hệ thống —
+>    hai thang không cùng đơn vị. Ví dụ T06: đoạn Studio đúng 0,582 thua 5 đoạn `alerts.md` lạc đề 0,64–0,71. 15/30 câu bản sao cùng
+>    tên trong kho hệ thống thắng chỗ; **9/30 không kho nào đưa đúng nguồn**.
+> 2. **Ngưỡng 0,5 cắt nửa số đoạn đúng.** Điểm đoạn đúng: min 0,277 · trung vị 0,510 · max 0,638; nhiễu câu ngoài max 0,340 ⇒ hai
+>    cụm CHỒNG LẤN (đoạn đúng thấp nhất < nhiễu cao nhất). Đây là mẫu 30 câu thay cho N=1 mà docblock B2 ghi "CÒN MỞ".
+> 3. **Ô "mọi kho" 70 % là của kho hệ thống, không phải của corpus** — `fake-bad` vẫn ra 70 %. UI tách hai ô vì thế; không được đọc
+>    ô đó như chất lượng corpus. Giả thuyết cần đo (chưa đo): Qwen3‑Embedding khuyến nghị tiền tố `Instruct:` cho câu hỏi — điểm
+>    cosine thấp (0,3–0,6) có thể do thiếu tiền tố.
+
 ### R2 — Nguồn dữ liệu lập trình: ingest **tham chiếu API** có cấu trúc
 Từ phát hiện D1 (`GetInt32(string)` — sai tầng API): corpus `csharp-dotnet` nên nhận **tài liệu API** (XML doc /
 docs.microsoft dạng markdown) với chunk theo *ký hiệu* (class.method) chứ không theo 512 token trơn; chân nguồn
@@ -378,7 +402,8 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
 6b. **Trần nghĩ 32k + nút "sâu" — HOÃN, lý do ĐÃ XÁC NHẬN 21:30:** b9814 **KHÔNG** nhận `reasoning_budget` theo request (gửi
    `reasoning_budget: 64` ⇒ suy luận vẫn 1.018 ký tự như mặc định, log vẫn "budget=12000") — ngân sách là server‑wide. "Sâu" chỉ
    làm được bằng cách đổi cờ khởi động (restart) hoặc chờ bản llama.cpp có ngân sách theo request; không bày nút vô hiệu.
-6. **Training (R1–R5)** ở phiên riêng như chủ dự án đã định: corpus vàng csharp‑dotnet + ST4I, EvalTab thật.
+6. **Training (R1–R5)** ở phiên riêng như chủ dự án đã định: corpus vàng csharp‑dotnet + ST4I, EvalTab thật. — **R1 XONG
+   2026-09-23** (xem §4 R1); R2–R5 còn lại, cộng ba phát hiện R1 (thang điểm sort chung · ngưỡng 0,5 · tiền tố `Instruct:`).
 7. Quyết định launcher sản xuất 1 × 64k hay 2 × 32k (mục 8).
 
 ## 6. Thứ tự & lý do

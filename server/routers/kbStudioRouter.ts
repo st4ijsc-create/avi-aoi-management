@@ -65,6 +65,13 @@ import {
 import * as kbStudioService from "../services/kbStudioService";
 import { KbStudioTableUnavailableError, KbCorpusNotFoundError } from "../services/kbStudioService";
 import { startLoraFinetune, LoraFinetuneUnavailableError, LoraFinetuneError } from "../services/aiLlmFinetuneSidecar";
+import * as kbStudioEval from "../services/kbStudioEval";
+import {
+  KbEvalBoVangVangError,
+  KbEvalBoVangLoiError,
+  KbEvalDangChayError,
+  KbEvalBangVangError,
+} from "../services/kbStudioEval";
 import {
   buildTooLargeError,
   buildUnsupportedTypeError,
@@ -350,13 +357,9 @@ export const kbStudioRouter = router({
 
   // ─── Eval-lite ────────────────────────────────────────────────────────
   /** Reads a sample of kb_studio_chunks for `corpus` (+counts). NO embedding, NO model call —
-   * see server/services/kbStudioService.ts's previewCorpus doc comment. A full RAG-answer-
-   * quality eval (does the model answer WELL from this corpus, not just "what got ingested")
-   * needs a live embed/LLM model and a golden question/answer set, and is a documented OPS
-   * STEP, not built here: `scripts/ai-kb/eval-rag.mjs` already implements exactly this
-   * methodology (golden-set + recall@K, optional LLM reranker) against the file-based ops-KB
-   * — an operator adapts/points that same harness at a Studio corpus's golden set (or writes
-   * the small per-corpus variant) rather than this endpoint growing a second, live eval path. */
+   * a plain browse of what got ingested. The QUALITY measurement (golden set × real retrieval,
+   * machine-graded, stored per run) is `evalCorpus` below (R1) — this stays the "what is in there"
+   * view next to it. */
   corpusPreview: kbStudioProcedure
     .input(
       z.object({
@@ -365,6 +368,69 @@ export const kbStudioRouter = router({
       }),
     )
     .query(({ input }) => kbStudioService.previewCorpus(input.corpus, input.limit ?? 20)),
+
+  // ─── Eval thật (R1, kế hoạch AI Local 2026-09-22 §4) ─────────────────────
+  /** Các bộ câu hỏi vàng trong `knowledge/studio-golden/*.jsonl` + số câu + số dòng lỗi (đọc tệp,
+   * không model). */
+  listGoldenSets: kbStudioProcedure.query(() => ({ sets: kbStudioEval.listBoVang() })),
+
+  /**
+   * Chạy một lượt eval — xem docblock `server/services/kbStudioEval.ts` (hai tầng: truy hồi corpus +
+   * đường ống thật `retrieveKnowledge`). Đồng bộ trong request (≈ 1–3 s/câu khi bật tầng đường ống,
+   * vì reranker chạy thật); một lượt tại một thời điểm. `callerRole` lấy từ PHIÊN (không từ body) —
+   * đúng kỷ luật `KbQueryContext.callerRole`: tầng đường ống phải thấy Studio đúng như người gọi thấy.
+   */
+  evalCorpus: kbStudioProcedure
+    .input(
+      z.object({
+        corpus: z.string().trim().min(1).max(120),
+        goldenSet: z.string().trim().min(1).max(120).optional(),
+        k: z.number().int().min(1).max(20).optional(),
+        pipeline: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await kbStudioEval.chayEval({
+          corpus: input.corpus,
+          boVang: input.goldenSet,
+          k: input.k,
+          duongOng: input.pipeline,
+          callerRole: ctx.user?.role,
+          userId: ctx.user?.id,
+        });
+      } catch (err) {
+        if (err instanceof KbEvalBoVangVangError) {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "kbGoldenSet" }, err.message);
+        }
+        if (err instanceof KbEvalBoVangLoiError) {
+          const dau = err.loi[0];
+          throw appError(
+            "PRECONDITION_FAILED",
+            "INVALID_VALUE",
+            dau ? { field: "goldenSet", reason: `dòng ${dau.dong}: ${dau.lyDo}` } : { field: "goldenSet" },
+            err.message,
+          );
+        }
+        if (err instanceof KbEvalDangChayError) {
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "runKbEval", reason: "evalAlreadyRunning" }, err.message);
+        }
+        if (err instanceof KbEvalBangVangError) {
+          throw appError("PRECONDITION_FAILED", "FEATURE_NOT_CONFIGURED", { feature: "kbEvalRuns" }, err.message);
+        }
+        throw err;
+      }
+    }),
+
+  /** Lịch sử lượt eval của một corpus (mới nhất trước), KHÔNG kèm kết quả từng câu. */
+  listEvalRuns: kbStudioProcedure
+    .input(z.object({ corpus: z.string().trim().min(1).max(120), limit: z.number().int().min(1).max(200).optional() }))
+    .query(({ input }) => kbStudioEval.listEvalRuns(input.corpus, input.limit ?? 30)),
+
+  /** Một lượt đầy đủ (kèm kết quả từng câu). Khoá theo cả `corpus` để một id đoán mò không đọc chéo. */
+  getEvalRun: kbStudioProcedure
+    .input(z.object({ id: z.number().int().positive(), corpus: z.string().trim().min(1).max(120) }))
+    .query(({ input }) => kbStudioEval.getEvalRun(input.id, input.corpus)),
 
   // ─── Model Builder — LoRA fine-tune (doc69 E3-6) ─────────────────────────
   /**

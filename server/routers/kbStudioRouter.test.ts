@@ -77,7 +77,28 @@ vi.mock("../services/aiLlmFinetuneSidecar", async (importOriginal) => {
   };
 });
 
+const chayEvalMock = vi.fn();
+const listEvalRunsMock = vi.fn();
+const getEvalRunMock = vi.fn();
+const listBoVangMock = vi.fn();
+vi.mock("../services/kbStudioEval", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/kbStudioEval")>();
+  return {
+    ...actual,
+    chayEval: (...a: unknown[]) => chayEvalMock(...a),
+    listEvalRuns: (...a: unknown[]) => listEvalRunsMock(...a),
+    getEvalRun: (...a: unknown[]) => getEvalRunMock(...a),
+    listBoVang: (...a: unknown[]) => listBoVangMock(...a),
+  };
+});
+
 import { kbStudioRouter } from "./kbStudioRouter";
+import {
+  KbEvalBoVangVangError,
+  KbEvalBoVangLoiError,
+  KbEvalDangChayError,
+  KbEvalBangVangError,
+} from "../services/kbStudioEval";
 import { KbIngestDisabledError, KbIngestValidationError, KbEmbedError, KbStoreError } from "../services/kbIngestService";
 import { KbUnsupportedTypeError, KbParseError } from "../services/kbDocParser";
 import { WebIngestDisabledError, SsrfBlockedError, FetchError } from "../services/kbWebFetcher";
@@ -424,5 +445,62 @@ describe("kbStudioRouter — startFinetune", () => {
       callerFor("admin", true).startFinetune({ ...validInput, hyperparams: { rank: -1 } }),
     ).rejects.toBeTruthy();
     expect(startLoraFinetuneMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─── R1 — eval thật ─────────────────────────────────────────────────────────
+
+describe("kbStudioRouter — evalCorpus / listEvalRuns / getEvalRun / listGoldenSets (R1)", () => {
+  it.each(["operator", "viewer"])("%s không được chạy eval (và service không bị gọi)", async (role) => {
+    await expect(callerFor(role).evalCorpus({ corpus: "st4i-may-aoi" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(callerFor(role).listEvalRuns({ corpus: "st4i-may-aoi" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(chayEvalMock).not.toHaveBeenCalled();
+    expect(listEvalRunsMock).not.toHaveBeenCalled();
+  });
+
+  it("engineer thiếu 2FA ⇒ FORBIDDEN", async () => {
+    await expect(callerFor("engineer", false).evalCorpus({ corpus: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("callerRole + userId lấy từ PHIÊN, tham số đổi tên đúng sang service", async () => {
+    chayEvalMock.mockResolvedValue({ id: 7 });
+    await callerFor("engineer").evalCorpus({ corpus: "st4i-may-aoi", goldenSet: "st4i-may-aoi", k: 5, pipeline: false });
+    expect(chayEvalMock).toHaveBeenCalledWith({
+      corpus: "st4i-may-aoi",
+      boVang: "st4i-may-aoi",
+      k: 5,
+      duongOng: false,
+      callerRole: "engineer",
+      userId: 1,
+    });
+  });
+
+  it.each([
+    [new KbEvalBoVangVangError("x"), "NOT_FOUND", "ENTITY_NOT_FOUND"],
+    [new KbEvalBoVangLoiError("x", [{ dong: 3, lyDo: "JSON không hợp lệ" }]), "PRECONDITION_FAILED", "INVALID_VALUE"],
+    [new KbEvalDangChayError(), "CONFLICT", "OPERATION_FAILED"],
+    [new KbEvalBangVangError(), "PRECONDITION_FAILED", "FEATURE_NOT_CONFIGURED"],
+  ])("lỗi service %s ⇒ %s / %s", async (err, code, appCode) => {
+    chayEvalMock.mockRejectedValue(err);
+    const e = await callerFor("admin").evalCorpus({ corpus: "x" }).catch((x) => x);
+    expect(e).toMatchObject({ code });
+    expect((e as { cause?: { appCode?: string } }).cause?.appCode).toBe(appCode);
+  });
+
+  it("bộ vàng lỗi ⇒ reason mang số dòng đầu tiên (người sửa đề biết sửa ở đâu)", async () => {
+    chayEvalMock.mockRejectedValue(new KbEvalBoVangLoiError("x", [{ dong: 3, lyDo: "JSON không hợp lệ" }]));
+    const e = await callerFor("admin").evalCorpus({ corpus: "x" }).catch((x) => x);
+    expect((e as { cause?: { appParams?: { reason?: string } } }).cause?.appParams?.reason).toBe("dòng 3: JSON không hợp lệ");
+  });
+
+  it("listEvalRuns mặc định limit 30; getEvalRun khoá theo corpus; listGoldenSets bọc {sets}", async () => {
+    listEvalRunsMock.mockResolvedValue({ tableAvailable: true, runs: [] });
+    getEvalRunMock.mockResolvedValue(null);
+    listBoVangMock.mockReturnValue([{ ten: "st4i-may-aoi", soCauTrong: 30, soCauNgoai: 4, soDongLoi: 0, hash: "ab" }]);
+    await callerFor("admin").listEvalRuns({ corpus: "c" });
+    expect(listEvalRunsMock).toHaveBeenCalledWith("c", 30);
+    await callerFor("admin").getEvalRun({ id: 4, corpus: "c" });
+    expect(getEvalRunMock).toHaveBeenCalledWith(4, "c");
+    expect((await callerFor("admin").listGoldenSets()).sets[0].ten).toBe("st4i-may-aoi");
   });
 });

@@ -3808,7 +3808,8 @@
       "workshop": "xưởng",
       "workstation": "trạm làm việc",
       "yieldAlertThreshold": "ngưỡng cảnh báo hiệu suất",
-      "zone": "vùng (zone)"
+      "zone": "vùng (zone)",
+      "kbGoldenSet": "bộ câu hỏi vàng"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3949,7 +3950,8 @@
       "kbHealthCheck": "kiểm tra tình trạng kho tri thức",
       "commitTemplateImage": "chốt ảnh mẫu",
       "taiAnhNenTang": "tải ảnh nền của tầng lên",
-      "dungNhaXuong": "dựng nhà xưởng"
+      "dungNhaXuong": "dựng nhà xưởng",
+      "runKbEval": "chạy đánh giá corpus"
     },
     "field": {
       "changeReason": "lý do thay đổi",
@@ -4040,7 +4042,8 @@
       "images[].sha256": "mã băm sha256 của ảnh",
       "productModelCode": "mã sản phẩm",
       "deXuat": "nội dung đề xuất",
-      "mimeType": "định dạng ảnh"
+      "mimeType": "định dạng ảnh",
+      "goldenSet": "bộ câu hỏi vàng"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -4092,7 +4095,8 @@
       "unknownModule": "module không xác định",
       "secsGem": "SECS/GEM (giao tiếp host bán dẫn)",
       "secsGemLive": "SECS/GEM điều phối trực tiếp",
-      "gem300": "GEM300"
+      "gem300": "GEM300",
+      "kbEvalRuns": "sổ lượt đánh giá Training Studio"
     },
     "action": {
       "viewOthersPermissions": "xem quyền của người khác",
@@ -4199,7 +4203,8 @@
       "weakAuthDisabled": "Xác thực bằng khoá dùng chung / mã máy đã bị tắt trên máy chủ này — cấu hình khoá riêng theo máy (mk_...).",
       "faiNotPassed": "Cần First-Article Inspection (FAI) đạt PASS cho sản phẩm #{{productModelId}} trước khi phát hành/chấp nhận sản xuất.",
       "releasedProgramRequiresApproval": "Sản phẩm đã có chương trình kiểm tra được phát hành — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals).",
-      "productLifecycleRequiresApproval": "Sản phẩm đang ở trạng thái vòng đời '{{lifecycleStatus}}' — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals)."
+      "productLifecycleRequiresApproval": "Sản phẩm đang ở trạng thái vòng đời '{{lifecycleStatus}}' — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals).",
+      "evalAlreadyRunning": "Đang có một lượt đánh giá chạy — chờ lượt đó xong."
     },
     "client": {
       "generic": "Lỗi hệ thống, vui lòng thử lại",
@@ -14909,17 +14914,80 @@
       "adminOnlyNote": "Chỉ admin đã bật 2FA mới có thể xóa corpus."
     },
     "eval": {
-      "title": "Đánh giá (xem trước đoạn)",
-      "desc": "Một mẫu nội dung đã nạp vào corpus — không gọi mô hình, chỉ đọc các đoạn đã lưu",
+      "title": "Đánh giá chất lượng truy hồi",
+      "desc": "Chạy bộ câu hỏi vàng của corpus qua đúng đường truy hồi của trợ lý và chấm bằng máy: tài liệu kỳ vọng có nằm trong top‑K không, có qua ngưỡng trích dẫn không, đáp án có trong ngữ cảnh không — lưu theo lượt để so trước/sau khi nạp.",
       "corpusLabel": "Corpus",
-      "corpusSelectAria": "Corpus cần xem trước",
+      "corpusSelectAria": "Corpus cần đánh giá",
       "corpusPlaceholder": "Chọn một corpus",
       "corpusRequired": "Chọn một corpus để xem trước.",
       "loadError": "Không tải được bản xem trước corpus — kiểm tra quyền hoặc trạng thái 2FA rồi thử lại.",
       "empty": "Corpus này chưa có đoạn nào được nạp.",
       "totalChunks": "Tổng số đoạn",
       "distinctSources": "Số nguồn",
-      "opsNote": "Đây là xem mẫu, không phải điểm chất lượng. Đánh giá chất lượng trả lời đầy đủ cần mô hình embedding/LLM chạy thật và bộ câu hỏi chuẩn — chạy scripts/ai-kb/eval-rag.mjs (điều chỉnh cho corpus này) như một bước vận hành thủ công."
+      "goldenSelectAria": "Bộ câu hỏi vàng",
+      "goldenPlaceholder": "Chọn bộ câu hỏi vàng",
+      "goldenCount": "{{trong}} câu + {{ngoai}} ngoài",
+      "pipelineToggle": "Kèm đường ống thật",
+      "pipelineHint": "Chạy thêm truy hồi đầy đủ của trợ lý (kho hệ thống + Studio + reranker) để biết tài liệu có THẬT SỰ tới được câu trả lời không. Chậm hơn ~1–3 s/câu.",
+      "running": "Đang chạy… {{giay}} s",
+      "run": {
+        "button": "Chạy đánh giá",
+        "notMeasured": "Lượt này KHÔNG đo được — không có con số nào được phát.",
+        "meta": "{{cau}} câu · corpus lúc chạy {{chunk}} đoạn / {{nguon}} nguồn · embedding {{model}} · {{giay}} s",
+        "broken": "{{n}} câu có ĐỀ HỎNG (tệp nguồn có trong corpus nhưng đáp án kỳ vọng không khớp đoạn nào) — đã loại khỏi mọi tỷ lệ; sửa bộ vàng.",
+        "detail": "Chi tiết lượt #{{id}}"
+      },
+      "noGoldenForCorpus": "Corpus \"{{corpus}}\" chưa có bộ câu hỏi vàng riêng. Tạo knowledge/studio-golden/{{corpus}}.jsonl (mỗi dòng: id, cauHoi, nguon, dapAn.regex), hoặc chọn một bộ khác ở trên.",
+      "goldenBroken": "Bộ vàng này có {{n}} dòng lỗi — không chạy được cho tới khi sửa.",
+      "tableUnavailable": "Sổ lượt eval chưa được migrate (0359).",
+      "noRuns": "Corpus này chưa có lượt đánh giá nào.",
+      "noRunsHint": "Chọn bộ câu hỏi vàng rồi bấm \"Chạy đánh giá\".",
+      "chart": {
+        "ingest": "nạp",
+        "hit": "Trúng nguồn",
+        "answer": "Đáp án trong ngữ cảnh",
+        "pipeline": "Tới trợ lý"
+      },
+      "runs": {
+        "col": {
+          "run": "Lượt",
+          "time": "Thời điểm",
+          "corpus": "Đoạn / nguồn",
+          "duration": "Thời lượng"
+        },
+        "notMeasured": "không đo được"
+      },
+      "onlyWrong": "Chỉ câu sai",
+      "previewTitle": "Xem mẫu đoạn đã nạp",
+      "metric": {
+        "hit": "Trúng nguồn @{{k}}",
+        "hitHint": "Tỷ lệ câu có một đoạn của tệp kỳ vọng nằm trong top‑K truy hồi của corpus.",
+        "mrrHint": "Trung bình 1/hạng của đoạn trúng đầu tiên (1 = luôn đứng đầu).",
+        "overThreshold": "Qua ngưỡng {{nguong}}",
+        "overThresholdHint": "Đoạn trúng có điểm ≥ ngưỡng trích dẫn Studio của trợ lý lập trình — tức là thật sự được đưa vào prompt.",
+        "answer": "Đáp án trong ngữ cảnh",
+        "answerHint": "Đáp án kỳ vọng (regex) có mặt trong văn bản top‑K — chấm bằng máy, không dùng LLM.",
+        "pipeline": "Tới trợ lý",
+        "pipelineHint": "Sau khi trộn kho hệ thống + Studio + ngưỡng + sắp lại, trích dẫn cuối có đoạn của tệp kỳ vọng từ corpus này.",
+        "pipelineOff": "Lượt này không chạy tầng đường ống thật.",
+        "reject": "Từ chối đúng ({{n}} câu ngoài)",
+        "rejectHint": "Câu hỏi không thuộc corpus mà không đoạn nào qua ngưỡng — nhiễu không lọt vào prompt.",
+        "pipelineAny": "Nguồn đúng tới trợ lý (mọi kho)",
+        "pipelineAnyHint": "Trích dẫn cuối có tệp kỳ vọng từ BẤT KỲ kho nào — kho hệ thống có thể giữ bản sao cùng tên và thắng chỗ bản bạn nạp. So với ô bên trái để biết tài liệu nạp bị lấn át hay trợ lý thật sự thiếu nguồn."
+      },
+      "col": {
+        "question": "Câu hỏi",
+        "rank": "Hạng nguồn",
+        "score": "Điểm",
+        "threshold": "Qua ngưỡng",
+        "answer": "Đáp án",
+        "pipeline": "Tới trợ lý",
+        "top1": "Top‑1"
+      },
+      "outOfCorpus": "ngoài",
+      "brokenBadge": "đề hỏng",
+      "missingFileBadge": "thiếu tệp",
+      "systemCopyBadge": "bản hệ thống"
     },
     "modelBuilder": {
       "title": "Xây dựng mô hình",

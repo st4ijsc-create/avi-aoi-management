@@ -1025,7 +1025,9 @@ async function embedQuestionGguf(question: string): Promise<number[] | null> {
   return l2normalizeVec(embedding);
 }
 
-async function embedQuestion(question: string): Promise<number[] | null> {
+/** Exported cho eval Training Studio (R1, `kbStudioEval.ts`) — eval phải nhúng câu hỏi bằng ĐÚNG
+ * đường sản xuất (cùng model, cùng chuẩn hoá L2, cùng guard số chiều), không phải một bản chép. */
+export async function embedQuestion(question: string): Promise<number[] | null> {
   const cacheKey = normalizeText(question);
   const cached = embedCache.get(cacheKey);
   if (cached) {
@@ -2501,6 +2503,11 @@ export function detectProgrammingVendors(question: string): string[] {
   return Array.from(found);
 }
 
+/** Ngưỡng trích dẫn Studio của route vscode — xem ★★★ B2 trong docblock ngay dưới (vì sao 0,5, vì sao
+ * KHÔNG dùng 0,18 của nhánh web). Export để eval Training Studio (R1, `kbStudioEval.ts`) chấm "qua
+ * ngưỡng" bằng ĐÚNG hằng số sản xuất, không phải bản chép. */
+export const MIN_STUDIO_CITATION_SCORE = 0.5;
+
 /**
  * ★★★ VIỆC 8 (`docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md` §12,
  * vá lỗ hổng do CHÍNH Việc 1 tạo ra) — route "vscode" giờ CŨNG trộn thêm kho **Training Studio**
@@ -2707,7 +2714,6 @@ async function retrieveProgrammingKnowledgeForVscode(
         // nhánh web, ngược triết lý "lạc miền ⇒ rỗng" đã tuyên bố cho route vscode. Ngưỡng RIÊNG,
         // đặt giữa hai cụm ĐO ĐƯỢC trên chính không gian mxbai của Studio (nhiễu ≤0,4040 · đúng
         // miền ≥0,7303, N=1 câu hỏi thật — mẫu mỏng, xem CÒN MỞ trong báo cáo).
-        const MIN_STUDIO_CITATION_SCORE = 0.5;
         for (const h of studioHits) {
           if (!(h.score >= MIN_STUDIO_CITATION_SCORE)) continue;
           citations.push({

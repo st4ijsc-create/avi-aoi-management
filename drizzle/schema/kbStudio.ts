@@ -23,7 +23,7 @@
 // `embeddingVec` column. Index HNSW (idx_kb_studio_chunks_vec_hnsw, vector_cosine_ops) is
 // kept MANUALLY in drizzle/0304_kb_studio_chunks_pgvector.sql (drizzle-kit cannot emit
 // `USING hnsw`).
-import { pgTable, serial, integer, varchar, text, timestamp, index, unique, customType } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, text, timestamp, index, unique, customType, boolean, real, jsonb } from "drizzle-orm/pg-core";
 
 /**
  * pgvector `vector(N)` column type — local copy of the helper in drizzle/schema/ai.ts
@@ -135,3 +135,32 @@ export const kbStudioChunks = pgTable("kb_studio_chunks", {
 
 export type KbStudioChunk = typeof kbStudioChunks.$inferSelect;
 export type InsertKbStudioChunk = typeof kbStudioChunks.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// R1 (kế hoạch AI Local 2026-09-22 §4) — `kb_eval_runs`, migration drizzle/0359_kb_eval_runs.sql.
+// Một hàng = một lượt eval (bộ câu hỏi vàng × truy hồi thật, chấm bằng máy) của MỘT corpus. Sổ
+// CHỈ GHI THÊM (avi_app bị REVOKE UPDATE/DELETE). `tongHop` NULL ⇔ `trangThai`='khong-do-duoc'.
+// Hình dạng jsonb: `TongHopEval` / `KetQuaCau[]` ở server/services/kbStudioEvalCham.ts.
+// ─────────────────────────────────────────────────────────────────────────
+export const kbEvalRuns = pgTable("kb_eval_runs", {
+  id: serial("id").primaryKey(),
+  corpus: varchar("corpus", { length: 120 }).notNull(),
+  boVang: varchar("boVang", { length: 120 }).notNull(),
+  trangThai: varchar("trangThai", { length: 24 }).notNull().$type<"xong" | "khong-do-duoc">(),
+  lyDo: text("lyDo"),
+  k: integer("k").notNull(),
+  nguong: real("nguong").notNull(),
+  tangDuongOng: boolean("tangDuongOng").notNull(),
+  soChunk: integer("soChunk").notNull(),
+  soNguon: integer("soNguon").notNull(),
+  lanNapCuoi: timestamp("lanNapCuoi"),
+  embedModel: varchar("embedModel", { length: 200 }),
+  boVangHash: varchar("boVangHash", { length: 16 }).notNull(),
+  tongHop: jsonb("tongHop"),
+  ketQua: jsonb("ketQua").notNull(),
+  msTong: integer("msTong").notNull(),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [index("idx_kb_eval_runs_corpus_created").on(table.corpus, table.createdAt)]);
+
+export type KbEvalRun = typeof kbEvalRuns.$inferSelect;
