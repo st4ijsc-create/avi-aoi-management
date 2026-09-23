@@ -26,9 +26,17 @@
 {"id":"T26","cauHoi":"Có được khởi động lại máy AOI ngay lúc đổi ca không?","nguon":["howto-shift-change.md"],"dapAn":{"regex":"5 phút trước/sau"}}
 {"id":"T27","cauHoi":"Mã lệnh sản xuất của lô được đặt theo định dạng nào?","nguon":["howto-lot-management.md"],"dapAn":{"regex":"L\\{?YYYYMMDD\\}?-NNN"}}
 {"id":"T28","cauHoi":"Ai có quyền huỷ một lô sản xuất?","nguon":["howto-lot-management.md"],"dapAn":{"regex":"production_manager"}}
-{"id":"T29","cauHoi":"Bao nhiêu điểm liên tiếp nằm cùng một phía đường tâm thì biểu đồ kiểm soát phải cảnh báo?","nguon":["howto-spc-control.md"],"dapAn":{"regex":"8 điểm liên tiếp"}}
+{"id":"T29","cauHoi":"Bao nhiêu điểm liên tiếp nằm cùng một phía đường tâm thì biểu đồ kiểm soát phải cảnh báo?","nguon":["howto-spc-control.md","spc-rules.md"],"dapAn":{"regex":"8 điểm liên tiếp"}}
 {"id":"T30","cauHoi":"Cỡ nhóm con mặc định khi vẽ biểu đồ SPC là bao nhiêu?","nguon":["howto-spc-control.md"],"dapAn":{"regex":"Subgroup size mặc định\\s*=\\s*5"}}
 {"id":"N01","cauHoi":"Cách cấu hình VLAN trunk trên switch Cisco Catalyst?","nguon":[]}
 {"id":"N02","cauHoi":"Công thức nấu phở bò Hà Nội gồm những gì?","nguon":[]}
 {"id":"N03","cauHoi":"Giá cổ phiếu Apple hôm nay là bao nhiêu?","nguon":[]}
 {"id":"N04","cauHoi":"Viết vòng lặp for trong Python như thế nào?","nguon":[]}
+{"id":"N05","cauHoi":"Nhiệt độ đỉnh (peak) của reflow profile cho kem hàn SAC305 là bao nhiêu độ C?","nguon":[]}
+{"id":"N06","cauHoi":"Độ dày stencil khuyến nghị cho linh kiện 0201 là bao nhiêu micromet?","nguon":[]}
+{"id":"N07","cauHoi":"Vòng đeo tay chống tĩnh điện ESD phải có điện trở bao nhiêu megaohm?","nguon":[]}
+{"id":"N08","cauHoi":"Linh kiện nhạy ẩm mức MSL 3 được để ngoài tủ khô tối đa bao nhiêu giờ?","nguon":[]}
+{"id":"N09","cauHoi":"PCB bị ẩm phải nướng ở bao nhiêu độ C trước khi hàn?","nguon":[]}
+{"id":"N10","cauHoi":"Tốc độ băng tải của lò reflow thường đặt bao nhiêu cm/phút?","nguon":[]}
+{"id":"N11","cauHoi":"Lò reflow dùng khí nitơ cần hàm lượng oxy dưới bao nhiêu ppm?","nguon":[]}
+{"id":"N12","cauHoi":"Máy AOI của hãng Koh Young dùng phần mềm lập trình tên gì?","nguon":[]}
