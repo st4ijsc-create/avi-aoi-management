@@ -45,7 +45,7 @@ KB‑QA ngắn); nghĩ BẬT chỉ cho sinh/sửa/tạo khung. Một vị từ t
 thay cho từng nơi tự quyết. **Cổng ra:** lưới hợp đồng — mỗi call site phụ khẳng định body có
 `chat_template_kwargs.enable_thinking === false`; đo sống 0/12 lượt chọn tệp trả rỗng trên MoE.
 
-> **Trạng thái 2026-09-22 (cùng ngày): ĐÃ LÀM, cổng ra đạt MỘT NỬA — và phép đo lật một giả định.**
+> **Trạng thái 2026-09-23: XONG.** Nửa còn lại (khoi-sua tiêu hết 16k vào nghĩ) đóng bởi B4 `--reasoning-budget 12000`: G5‑D 3/6 → 0/12. Ghi chép 2026-09-22: ĐÃ LÀM, cổng ra đạt MỘT NỬA — và phép đo lật một giả định.
 > · `server/services/ai/loaiLuot.ts` (+12 lưới) · `motLuotModel` nhận `loai`, gửi `disableThinking: !nghi`,
 >   trần theo lớp · KB‑QA và `warmModel` tắt nghĩ (warm với `maxTokens: 1` trên model nghĩ nổ G5‑D + 2 dòng lỗi
 >   MỌI LẦN boot — đo trong `node-b1.err.log`) · hợp đồng: 3 lưới ở `aiCodingMode.stream.test` đo cờ THẬT tới engine.
@@ -70,7 +70,7 @@ Bảng `SAMPLING_PROFILES` trong `aiModelRouter` cạnh hồ sơ hiệu năng: M
 repeat 1,0}, instruct {0,7·0,8·20·0,0·1,5·1,0}; client gửi **tường minh** mọi trường. **Cổng ra:** A/B 12 bài × 3 lượt,
 cả M lẫn H; chỉ đổi mặc định khi ≥ cũ; ghi cả hai số vào README bộ đo.
 
-> **Trạng thái 2026-09-22: ĐƯỜNG ỐNG XONG (B2a), A/B trục M XONG — chính hãng KHÔNG ≥ cũ; trục H đang đo.**
+> **Trạng thái 2026-09-23: XONG — KHÔNG áp dụng hồ sơ chính hãng** (M 78 % vs 83 % · H 67 % vs 69 %; giữ `hien-tai`, bảng §5b). Ghi chép 2026-09-22: đường ống xong (B2a), A/B trục M xong.
 > · Đường ống: `GgufGenerateOptions.minP/presencePenalty` · `aiLlamaServerClient.lapCoSampling()` ở cả 5 builder (census:
 >   `body.min_p`/`presence_penalty` đúng MỘT điểm ghi; số điểm gọi = số điểm gọi `lapCoTatSuyLuan`) · `ai/hoSoSampling.ts`
 >   với cần gạt `AI_SAMPLING_PROFILE` (vắng ⇒ `hien-tai` trả NGUYÊN hồ sơ bên gọi — **không một con số nào đổi**) ·
@@ -208,7 +208,7 @@ tỷ lệ tool đúng trên 12 lệnh khác nhau ≥ hiện tại; 0 lệnh ngo�
 Để thanh trạng thái và bộ đo phân biệt "nghĩ 5k rồi trả 300" với "trả 5k". **Cổng ra:** cột mới có trong mọi hàng
 lượt sinh mã; UI đọc được.
 
-> **Trạng thái 2026-09-22: ĐÃ LÀM (chờ nghiệm thu sống sau lần restart kế).**
+> **Trạng thái 2026-09-23: XONG, đã nghiệm thu sống** — sự kiện `usage` mang `tokensReasoning`/`thinking`/`samplingProfile`/`ctxMax` (f1-live, sau-live). Ghi chép 2026-09-22: đã làm, chờ nghiệm thu.
 > · Migration **0358** (viết tay, áp dev+test cục bộ bằng `scripts/apply-migration-0358.mjs`, 3 phép đo — cột/kiểu/
 >   NULLABLE, quyền `avi_app` + hàng không có ba cột ra **NULL không 0**, sổ migration) + `drizzle/schema/ai.ts`.
 > · Nguồn số: `aiLlamaServerClient` đếm **sự kiện SSE mang `reasoning_content`** ⇒ `tokensReasoning` trên chunk `done`
@@ -266,7 +266,7 @@ trị lớn nhất của model biết nghĩ mà UI hiện đang vứt.
 ### F2 — Thanh trạng thái: thêm `reasoning tok` · tok/s **sinh** vs **nghĩ** · hồ sơ sampling · ctx đã dùng/trần
 Từ B7. Giữ nguyên tắc "không biết ≠ 0", tuổi số.
 
-> **Trạng thái 2026-09-22: ĐÃ LÀM phần đo được, NÓI THẲNG phần chưa.**
+> **Trạng thái 2026-09-23: XONG** — phần còn lại (tok/s nghĩ vs sinh) làm bằng đồng hồ hai pha phía trình duyệt (`ebec44f1d`; sống: gộp 180,2 · nghĩ 160,6 · sinh 199 tok/s). Ghi chép 2026-09-22: đã làm phần đo được, nói thẳng phần chưa.
 > · `useKbChatStream`: `onUsage` + `bocUsage()` (gói hỏng ⇒ bỏ, không dựng ô 0; `tokensReasoning` vắng giữ VẮNG) —
 >   3 lưới. `AICodingWorkspace` giữ lượt cuối ⇒ `ThanhTrangThaiAiLocal dungLuot=…`.
 > · Hai ô mới: **nghĩ/sinh** (`tachNghiSinh`: sinh = ra − nghĩ; không đếm được ⇒ hiện "(gộp)", không giả là sinh) và
