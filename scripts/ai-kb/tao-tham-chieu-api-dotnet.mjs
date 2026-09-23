@@ -150,7 +150,46 @@ function viet(nguon, danhSachKieu) {
   console.log(`${nguon.nhan}: ${soTep} tệp, ${soMuc} ký hiệu`);
 }
 
+/**
+ * R2 phần B — CHỈ MỤC "kiểu/phương thức mở rộng → không gian tên" cho bộ bổ sung `using` sau sinh mã
+ * (`server/services/ai/boSungUsingCSharp.ts`). Lấy TOÀN BỘ kiểu công khai của các không gian tên ADO.NET
+ * trong hai tệp XML (không chỉ danh sách KIEU ở trên) — một kiểu thiếu trong chỉ mục là một `using`
+ * không bao giờ được bổ sung. Tệp nhỏ, tất định, commit vào repo: `knowledge/api-ref/dotnet-using.json`.
+ */
+function chiMucUsing(nguonDs) {
+  const NS = /^(System\.Data|System\.Data\.Common|System\.Data\.SqlTypes|Microsoft\.Data\.SqlClient)$/;
+  const kieu = {};
+  const moRong = {};
+  for (const nguon of nguonDs) {
+    for (const m of docXml(nguon.tep)) {
+      const t = tachTen(m.ten);
+      if (t.loai === "T") {
+        const ns = t.kieu.slice(0, t.kieu.lastIndexOf("."));
+        const ten = t.kieu.slice(t.kieu.lastIndexOf(".") + 1);
+        if (!NS.test(ns) || ten.includes("+")) continue;
+        (kieu[ten] ??= []).includes(ns) || kieu[ten].push(ns);
+      } else if (t.loai === "M" && /Extensions$/.test(t.kieu) && (t.thamSoDay?.length ?? 0) >= 2) {
+        const ns = t.kieu.slice(0, t.kieu.lastIndexOf("."));
+        if (!NS.test(ns)) continue;
+        const tenPt = t.thanhVien.replace(/<T>$/, "");
+        const muc = (moRong[tenPt] ??= { ns, doiTuong: [], thamSo2: [] });
+        const dt = t.thamSo[0];
+        if (!muc.doiTuong.includes(dt)) muc.doiTuong.push(dt);
+        const ts2 = t.thamSo[1];
+        if (!muc.thamSo2.includes(ts2)) muc.thamSo2.push(ts2);
+      }
+    }
+  }
+  return { nguon: nguonDs.map((n) => n.nhan), kieu, moRong };
+}
+
 fs.mkdirSync(RA, { recursive: true });
-viet(timXmlNet(), KIEU.net);
-viet(timXmlSqlClient(), KIEU.sql);
-console.log(`→ ${RA}`);
+const NGUON_NET = timXmlNet();
+const NGUON_SQL = timXmlSqlClient();
+viet(NGUON_NET, KIEU.net);
+viet(NGUON_SQL, KIEU.sql);
+const CHI_MUC = path.resolve("knowledge/api-ref/dotnet-using.json");
+fs.mkdirSync(path.dirname(CHI_MUC), { recursive: true });
+const cm = chiMucUsing([NGUON_NET, NGUON_SQL]);
+fs.writeFileSync(CHI_MUC, JSON.stringify(cm, null, 1) + "\n");
+console.log(`→ ${RA}\n→ ${CHI_MUC}: ${Object.keys(cm.kieu).length} kiểu, ${Object.keys(cm.moRong).length} phương thức mở rộng`);

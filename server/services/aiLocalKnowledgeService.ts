@@ -140,6 +140,7 @@ import { bocYDinhBaiHoc, GIOI_HAN_BAI_HOC } from "@shared/aiCodingLesson";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 // ★ G4-B — trọng số hạng nguồn (module LÁ, dùng CHUNG với bộ eval `--parity`).
 import { sourceTypeWeight, sourceLanguageWeight, devJournalWeight } from "./aiKbSourceWeights";
+import { boSungUsingTrongVanBan, thongBaoBoSung } from "./ai/boSungUsingCSharp";
 import { tienToNhungCauHoi } from "./ai/tienToNhungCauHoi";
 import { loadSemanticGraph, expandWithGraph } from "./aiSemanticGraph";
 // FE-W0.3 (doc 46 §2.3) — degenerate-loop guard (pure, dependency-free).
@@ -3376,6 +3377,11 @@ export type StreamEvent =
        */
       degraded?: boolean;
       degradedReason?: string;
+      /**
+       * R2 phần B — `answer` là văn bản đã được SỬA TẤT ĐỊNH sau khi stream (vd bổ sung `using` C#);
+       * client phải THAY văn bản đã tích luỹ bằng `answer` (khác `degraded`: KHÔNG phải từ chối/thoái hoá).
+       */
+      answerRevised?: boolean;
       /** ★ Hoá đơn nguồn dữ liệu — THÊM MỚI, thuần bổ sung: consumer SSE cũ đọc
        *  `done` theo từng ô sẽ bỏ qua ô lạ mà không đổi hành vi. */
       dataCitations?: KbDataCitation[];
@@ -6027,8 +6033,45 @@ async function* streamCodingGenerate(
    */
   const chan = chanNguonNguCanhMa(tepDaDung, language === "en" ? "en" : language === "zh" ? "zh" : "vi");
   if (chan) yield { type: "token", token: chan };
+
+  /**
+   * ★★★ R2 phần B (chủ dự án chọn "sau sinh, tất định", 2026-09-23) — BỔ SUNG `using` C# còn thiếu theo
+   * chỉ mục tham chiếu API (`ai/boSungUsingCSharp.ts`). Mã đã STREAM xong nên không thể sửa lại token
+   * đã gửi ⇒ `done.answer` mang văn bản ĐÃ SỬA + `answerRevised: true` (client THAY văn bản đã tích luỹ,
+   * cùng khuôn `degraded`), kèm một câu NÓI RÕ đã thêm gì và vì sao. Đo ngoại tuyến trên 35 khối C# thật
+   * của các lượt duan trước: biên dịch được 21 → 34, 0 khối đang đúng bị làm hỏng; 228 lời giải C# trục
+   * H/M: 0 lần đụng. Tắt để ablation: `AI_CODING_BO_SUNG_USING=0`.
+   */
+  const boSung = boSungUsingChoCauTraLoi(kq.text, language);
+  if (boSung) {
+    yield { type: "token", token: boSung.thongBao };
+    const doneDaSua = doneSinhMa(boSung.text + chan + boSung.thongBao, "ollama") as Extract<StreamEvent, { type: "done" }>;
+    yield { ...doneDaSua, answerRevised: true };
+    return "xong";
+  }
   yield doneSinhMa(kq.text + chan, "ollama");
   return "xong";
+}
+
+let chiMucUsingCache: import("./ai/boSungUsingCSharp").ChiMucUsing | null | undefined;
+/** `null` khi tắt / không có chỉ mục / không có gì để bổ sung. Không bao giờ ném. */
+function boSungUsingChoCauTraLoi(text: string, language: KbLanguage): { text: string; thongBao: string } | null {
+  if (String(process.env.AI_CODING_BO_SUNG_USING ?? "").trim() === "0") return null;
+  try {
+    if (chiMucUsingCache === undefined) {
+      const p = path.join(process.cwd(), "knowledge", "api-ref", "dotnet-using.json");
+      chiMucUsingCache = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
+    }
+    if (!chiMucUsingCache) return null;
+    const r = boSungUsingTrongVanBan(text, chiMucUsingCache);
+    if (r.them.length === 0) return null;
+    const lang: "vi" | "en" | "zh" = language === "en" ? "en" : language === "zh" ? "zh" : "vi";
+    console.log(`[aiLocalKnowledge] bổ sung using C#: ${r.them.map((t) => `${t.ns}←${t.vi.join(",")}`).join("; ")}`);
+    return { text: r.text, thongBao: thongBaoBoSung(r.them, lang) };
+  } catch (e) {
+    console.warn("[aiLocalKnowledge] bổ sung using C# lỗi (bỏ qua, giữ nguyên mã):", (e as Error)?.message);
+    return null;
+  }
 }
 
 /**

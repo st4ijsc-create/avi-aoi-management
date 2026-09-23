@@ -1348,3 +1348,50 @@ describe("B2 — hồ sơ sampling tới engine (hợp đồng + cần gạt A/B
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+describe("§R2B — bổ sung `using` C# còn thiếu SAU sinh (tất định, theo chỉ mục tham chiếu API)", () => {
+  const CAU = "viết lớp C# HocSinhRepository dùng ADO.NET tham số hoá";
+  const MA_THIEU = [
+    "```csharp",
+    "using Microsoft.Data.SqlClient;",
+    "public class HocSinhRepository {",
+    "  public int Lay(SqlDataReader r) => r.GetInt32(\"MaHocSinh\");",
+    "  public void Them(SqlCommand c) { c.Parameters.Add(\"@a\", SqlDbType.Int).Value = 1; }",
+    "}",
+    "```",
+  ].join("\n");
+
+  it("★★★ mã thiếu `using System.Data;` ⇒ done.answer ĐÃ SỬA + answerRevised + câu nói rõ lý do; token đã stream KHÔNG bị viết lại", async () => {
+    h.manh = [MA_THIEU];
+    const r = await chay(CAU, admin());
+    expect(r.done?.type).toBe("done");
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(d.answerRevised).toBe(true);
+    expect(d.answer).toContain("using Microsoft.Data.SqlClient;\nusing System.Data;\npublic class HocSinhRepository");
+    expect(d.answer).toContain("`SqlDbType`");
+    expect(d.answer).toContain('`GetInt32("…")`');
+    // Luồng token giữ bản GỐC (đã gửi rồi) + có token thông báo — client thay bằng done.answer.
+    expect(r.chu).toContain("using Microsoft.Data.SqlClient;\npublic class");
+    expect(r.chu).toContain("Đã bổ sung");
+  });
+
+  it("★★ mã ĐỦ using ⇒ không answerRevised, không câu thông báo (y hệt trước)", async () => {
+    h.manh = [MA_CSHARP];
+    const r = await chay("viết code C# cho chương trình chat LAN sử dụng socket", admin());
+    const d = r.done as Extract<StreamEvent, { type: "done" }>;
+    expect(d.answerRevised).toBeUndefined();
+    expect(r.chu).not.toContain("Đã bổ sung");
+  });
+
+  it("★ ablation `AI_CODING_BO_SUNG_USING=0` ⇒ tắt hẳn", async () => {
+    process.env.AI_CODING_BO_SUNG_USING = "0";
+    try {
+      h.manh = [MA_THIEU];
+      const r = await chay(CAU, admin());
+      expect((r.done as Extract<StreamEvent, { type: "done" }>).answerRevised).toBeUndefined();
+    } finally {
+      delete process.env.AI_CODING_BO_SUNG_USING;
+    }
+  });
+});

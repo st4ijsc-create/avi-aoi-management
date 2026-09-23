@@ -46,6 +46,9 @@ async function genPipeline(t) {
       const m = blk.match(/^data:\s*([\s\S]*)$/m); if (!m) continue;
       let o; try { o = JSON.parse(m[1]); } catch { continue; }
       if (o.type === "token") { if (tFirst === null) tFirst = Date.now() - t0; text += o.token ?? ""; }
+      // R2 phần B — soi GƯƠNG client (useKbChatStream): `done.answerRevised` ⇒ văn bản đã sửa tất định sau stream
+      // (bổ sung `using` C#) THAY văn bản tích luỹ. Thiết bị đo phải thấy đúng thứ người dùng thấy.
+      else if (o.type === "done" && o.answerRevised === true && typeof o.answer === "string") { text = o.answer; evs.push("done:revised"); }
       else evs.push(o.type + (o.stop ? `(${o.stop})` : ""));
     }
   }

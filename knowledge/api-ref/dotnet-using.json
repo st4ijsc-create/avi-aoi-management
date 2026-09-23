@@ -1,0 +1,1164 @@
+{
+ "nguon": [
+  ".NET 10.0.10 (net10.0)",
+  "Microsoft.Data.SqlClient 5.2.2"
+ ],
+ "kieu": {
+  "AcceptRejectRule": [
+   "System.Data"
+  ],
+  "CommandBehavior": [
+   "System.Data"
+  ],
+  "CommandType": [
+   "System.Data"
+  ],
+  "CatalogLocation": [
+   "System.Data.Common"
+  ],
+  "DataAdapter": [
+   "System.Data.Common"
+  ],
+  "DataColumnMapping": [
+   "System.Data.Common"
+  ],
+  "DataColumnMappingCollection": [
+   "System.Data.Common"
+  ],
+  "DataTableMapping": [
+   "System.Data.Common"
+  ],
+  "DataTableMappingCollection": [
+   "System.Data.Common"
+  ],
+  "DbBatch": [
+   "System.Data.Common"
+  ],
+  "DbBatchCommand": [
+   "System.Data.Common"
+  ],
+  "DbBatchCommandCollection": [
+   "System.Data.Common"
+  ],
+  "DbColumn": [
+   "System.Data.Common"
+  ],
+  "DbCommand": [
+   "System.Data.Common"
+  ],
+  "DbCommandBuilder": [
+   "System.Data.Common"
+  ],
+  "DbConnection": [
+   "System.Data.Common"
+  ],
+  "DbConnectionStringBuilder": [
+   "System.Data.Common"
+  ],
+  "DbDataAdapter": [
+   "System.Data.Common"
+  ],
+  "DbDataReader": [
+   "System.Data.Common"
+  ],
+  "DbDataReaderExtensions": [
+   "System.Data.Common"
+  ],
+  "DbDataRecord": [
+   "System.Data.Common"
+  ],
+  "DbDataSource": [
+   "System.Data.Common"
+  ],
+  "DbDataSourceEnumerator": [
+   "System.Data.Common"
+  ],
+  "DbEnumerator": [
+   "System.Data.Common"
+  ],
+  "DbException": [
+   "System.Data.Common"
+  ],
+  "DbMetaDataCollectionNames": [
+   "System.Data.Common"
+  ],
+  "DbMetaDataColumnNames": [
+   "System.Data.Common"
+  ],
+  "DbParameter": [
+   "System.Data.Common"
+  ],
+  "DbParameterCollection": [
+   "System.Data.Common"
+  ],
+  "DbProviderFactories": [
+   "System.Data.Common"
+  ],
+  "DbProviderFactory": [
+   "System.Data.Common"
+  ],
+  "DbProviderSpecificTypePropertyAttribute": [
+   "System.Data.Common"
+  ],
+  "DbTransaction": [
+   "System.Data.Common"
+  ],
+  "GroupByBehavior": [
+   "System.Data.Common"
+  ],
+  "IDbColumnSchemaGenerator": [
+   "System.Data.Common"
+  ],
+  "IdentifierCase": [
+   "System.Data.Common"
+  ],
+  "RowUpdatedEventArgs": [
+   "System.Data.Common"
+  ],
+  "RowUpdatingEventArgs": [
+   "System.Data.Common"
+  ],
+  "SchemaTableColumn": [
+   "System.Data.Common"
+  ],
+  "SchemaTableOptionalColumn": [
+   "System.Data.Common"
+  ],
+  "SupportedJoinOperators": [
+   "System.Data.Common"
+  ],
+  "ConflictOption": [
+   "System.Data"
+  ],
+  "ConnectionState": [
+   "System.Data"
+  ],
+  "Constraint": [
+   "System.Data"
+  ],
+  "ConstraintCollection": [
+   "System.Data"
+  ],
+  "ConstraintException": [
+   "System.Data"
+  ],
+  "DataColumn": [
+   "System.Data"
+  ],
+  "DataColumnChangeEventArgs": [
+   "System.Data"
+  ],
+  "DataColumnChangeEventHandler": [
+   "System.Data"
+  ],
+  "DataColumnCollection": [
+   "System.Data"
+  ],
+  "DataException": [
+   "System.Data"
+  ],
+  "DataReaderExtensions": [
+   "System.Data"
+  ],
+  "DataRelation": [
+   "System.Data"
+  ],
+  "DataRelationCollection": [
+   "System.Data"
+  ],
+  "DataRow": [
+   "System.Data"
+  ],
+  "DataRowAction": [
+   "System.Data"
+  ],
+  "DataRowBuilder": [
+   "System.Data"
+  ],
+  "DataRowChangeEventArgs": [
+   "System.Data"
+  ],
+  "DataRowChangeEventHandler": [
+   "System.Data"
+  ],
+  "DataRowCollection": [
+   "System.Data"
+  ],
+  "DataRowComparer": [
+   "System.Data"
+  ],
+  "DataRowComparer`1": [
+   "System.Data"
+  ],
+  "DataRowExtensions": [
+   "System.Data"
+  ],
+  "DataRowState": [
+   "System.Data"
+  ],
+  "DataRowVersion": [
+   "System.Data"
+  ],
+  "DataRowView": [
+   "System.Data"
+  ],
+  "DataSet": [
+   "System.Data"
+  ],
+  "DataSetDateTime": [
+   "System.Data"
+  ],
+  "DataSysDescriptionAttribute": [
+   "System.Data"
+  ],
+  "DataTable": [
+   "System.Data"
+  ],
+  "DataTableClearEventArgs": [
+   "System.Data"
+  ],
+  "DataTableClearEventHandler": [
+   "System.Data"
+  ],
+  "DataTableCollection": [
+   "System.Data"
+  ],
+  "DataTableExtensions": [
+   "System.Data"
+  ],
+  "DataTableNewRowEventArgs": [
+   "System.Data"
+  ],
+  "DataTableNewRowEventHandler": [
+   "System.Data"
+  ],
+  "DataTableReader": [
+   "System.Data"
+  ],
+  "DataView": [
+   "System.Data"
+  ],
+  "DataViewManager": [
+   "System.Data"
+  ],
+  "DataViewRowState": [
+   "System.Data"
+  ],
+  "DataViewSetting": [
+   "System.Data"
+  ],
+  "DataViewSettingCollection": [
+   "System.Data"
+  ],
+  "DBConcurrencyException": [
+   "System.Data"
+  ],
+  "DbType": [
+   "System.Data"
+  ],
+  "DeletedRowInaccessibleException": [
+   "System.Data"
+  ],
+  "DuplicateNameException": [
+   "System.Data"
+  ],
+  "EnumerableRowCollection": [
+   "System.Data"
+  ],
+  "EnumerableRowCollection`1": [
+   "System.Data"
+  ],
+  "EnumerableRowCollectionExtensions": [
+   "System.Data"
+  ],
+  "EvaluateException": [
+   "System.Data"
+  ],
+  "FillErrorEventArgs": [
+   "System.Data"
+  ],
+  "FillErrorEventHandler": [
+   "System.Data"
+  ],
+  "ForeignKeyConstraint": [
+   "System.Data"
+  ],
+  "IColumnMapping": [
+   "System.Data"
+  ],
+  "IColumnMappingCollection": [
+   "System.Data"
+  ],
+  "IDataAdapter": [
+   "System.Data"
+  ],
+  "IDataParameter": [
+   "System.Data"
+  ],
+  "IDataParameterCollection": [
+   "System.Data"
+  ],
+  "IDataReader": [
+   "System.Data"
+  ],
+  "IDataRecord": [
+   "System.Data"
+  ],
+  "IDbCommand": [
+   "System.Data"
+  ],
+  "IDbConnection": [
+   "System.Data"
+  ],
+  "IDbDataAdapter": [
+   "System.Data"
+  ],
+  "IDbDataParameter": [
+   "System.Data"
+  ],
+  "IDbTransaction": [
+   "System.Data"
+  ],
+  "InRowChangingEventException": [
+   "System.Data"
+  ],
+  "InternalDataCollectionBase": [
+   "System.Data"
+  ],
+  "InvalidConstraintException": [
+   "System.Data"
+  ],
+  "InvalidExpressionException": [
+   "System.Data"
+  ],
+  "IsolationLevel": [
+   "System.Data"
+  ],
+  "ITableMapping": [
+   "System.Data"
+  ],
+  "ITableMappingCollection": [
+   "System.Data"
+  ],
+  "KeyRestrictionBehavior": [
+   "System.Data"
+  ],
+  "LoadOption": [
+   "System.Data"
+  ],
+  "MappingType": [
+   "System.Data"
+  ],
+  "MergeFailedEventArgs": [
+   "System.Data"
+  ],
+  "MergeFailedEventHandler": [
+   "System.Data"
+  ],
+  "MissingMappingAction": [
+   "System.Data"
+  ],
+  "MissingPrimaryKeyException": [
+   "System.Data"
+  ],
+  "MissingSchemaAction": [
+   "System.Data"
+  ],
+  "NoNullAllowedException": [
+   "System.Data"
+  ],
+  "OrderedEnumerableRowCollection`1": [
+   "System.Data"
+  ],
+  "ParameterDirection": [
+   "System.Data"
+  ],
+  "PropertyCollection": [
+   "System.Data"
+  ],
+  "ReadOnlyException": [
+   "System.Data"
+  ],
+  "RowNotInTableException": [
+   "System.Data"
+  ],
+  "Rule": [
+   "System.Data"
+  ],
+  "SchemaSerializationMode": [
+   "System.Data"
+  ],
+  "SchemaType": [
+   "System.Data"
+  ],
+  "SerializationFormat": [
+   "System.Data"
+  ],
+  "SqlDbType": [
+   "System.Data"
+  ],
+  "INullable": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlAlreadyFilledException": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlBinary": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlBoolean": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlByte": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlBytes": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlChars": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlCompareOptions": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlDateTime": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlDecimal": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlDouble": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlGuid": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlInt16": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlInt32": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlInt64": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlMoney": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlNotFilledException": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlNullValueException": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlSingle": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlString": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlTruncateException": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlTypeException": [
+   "System.Data.SqlTypes"
+  ],
+  "SqlXml": [
+   "System.Data.SqlTypes"
+  ],
+  "StorageState": [
+   "System.Data.SqlTypes"
+  ],
+  "StateChangeEventArgs": [
+   "System.Data"
+  ],
+  "StateChangeEventHandler": [
+   "System.Data"
+  ],
+  "StatementCompletedEventArgs": [
+   "System.Data"
+  ],
+  "StatementCompletedEventHandler": [
+   "System.Data"
+  ],
+  "StatementType": [
+   "System.Data"
+  ],
+  "StrongTypingException": [
+   "System.Data"
+  ],
+  "SyntaxErrorException": [
+   "System.Data"
+  ],
+  "TypedTableBase`1": [
+   "System.Data"
+  ],
+  "TypedTableBaseExtensions": [
+   "System.Data"
+  ],
+  "UniqueConstraint": [
+   "System.Data"
+  ],
+  "UpdateRowSource": [
+   "System.Data"
+  ],
+  "UpdateStatus": [
+   "System.Data"
+  ],
+  "VersionNotFoundException": [
+   "System.Data"
+  ],
+  "XmlReadMode": [
+   "System.Data"
+  ],
+  "XmlWriteMode": [
+   "System.Data"
+  ],
+  "ActiveDirectoryAuthenticationProvider": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "ActiveDirectoryAuthenticationTimeoutRetryState": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "ActiveDirectoryAuthenticationTimeoutRetryHelper": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "ApplicationIntent": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "ColumnEncryptionKeyInfo": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "EnclaveDelegate": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "EnclavePackage": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "OnChangeEventHandler": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "PoolBlockingPeriod": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "AppConfigManager": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConfigurableRetryConnectionSection": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConfigurableRetryCommandSection": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRetryingEventArgs": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRetryIntervalBaseEnumerator": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRetryLogicBase": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRetryLogicBaseProvider": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRetryLogicProvider": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRetryLogicOption": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConfigurableRetryFactory": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConfigurableRetryLogicLoader": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConfigurableRetryLogicManager": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRowsCopiedEventArgs": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRowsCopiedEventHandler": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlTransaction": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "ColumnMasterKeyMetadataSignatureVerificationCache": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SortOrder": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAeadAes256CbcHmac256Algorithm": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAeadAes256CbcHmac256EncryptionKey": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAeadAes256CbcHmac256Factory": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAuthenticationParameters": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAuthenticationProvider": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAuthenticationToken": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlBatch": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlBatchCommand": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlBatchCommandCollection": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlBulkCopyColumnMapping": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlBulkCopyColumnMappingCollection": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlBulkCopyColumnOrderHint": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlBulkCopyColumnOrderHintCollection": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlBulkCopyOptions": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientEncryptionAlgorithm": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientEncryptionAlgorithmFactory": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientEncryptionAlgorithmFactoryList": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientEncryptionType": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientEventSource": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientLogger": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientMetaDataCollectionNames": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientSymmetricKey": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlColumnEncryptionKeyStoreProvider": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlCommandBuilder": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConnectionEncryptOption": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConnectionStringBuilder": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlCredential": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlDataAdapter": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlDependency": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlEnclaveSession": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlError": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlErrorCollection": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlException": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlInfoMessageEventArgs": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlInfoMessageEventHandler": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlNotificationEventArgs": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlNotificationInfo": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlNotificationSource": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlNotificationType": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlParameter": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlParameterCollection": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlQueryMetadataCache": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRowUpdatedEventArgs": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRowUpdatedEventHandler": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRowUpdatingEventArgs": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlRowUpdatingEventHandler": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlSymmetricKeyCache": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlReliabilityUtil": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "TdsEnums": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConnectionAttestationProtocol": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConnectionIPAddressPreference": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConnectionColumnEncryptionSetting": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConnectionOverrides": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlCommandColumnEncryptionSetting": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAuthenticationMethod": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlEnclaveAttestationParameters": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAuthenticationProviderManager": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlColumnEncryptionEnclaveProvider": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlEncryptionKeyInfo": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlTceCipherInfoEntry": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlTceCipherInfoTable": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlCipherMetadata": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlColumnEncryptionInputParameterInfo": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAppContextSwitchManager": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "AppContextSwitchOverridesSection": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlAuthenticationInitializer": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlBulkCopy": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientDiagnosticListenerExtensions": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlClientFactory": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlCommand": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlConnection": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlDataReader": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlServerEscapeHelper": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SysTxForGlobalTransactions": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "FederatedAuthenticationFeatureExtensionData": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlColumnEncryptionCertificateStoreProvider": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlColumnEncryptionCngProvider": [
+   "Microsoft.Data.SqlClient"
+  ],
+  "SqlColumnEncryptionCspProvider": [
+   "Microsoft.Data.SqlClient"
+  ]
+ },
+ "moRong": {
+  "GetBoolean": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetByte": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetBytes": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetChar": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetChars": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetData": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetDataTypeName": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetDateTime": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetDecimal": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetDouble": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetFieldType": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetFieldValue": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetFieldValueAsync": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetFloat": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetGuid": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetInt16": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetInt32": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetInt64": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetProviderSpecificFieldType": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetProviderSpecificValue": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetStream": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetString": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetTextReader": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "GetValue": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "IsDBNull": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "IsDBNullAsync": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DbDataReader"
+   ],
+   "thamSo2": [
+    "String"
+   ]
+  },
+  "Field": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DataRow"
+   ],
+   "thamSo2": [
+    "DataColumn",
+    "Int32",
+    "String"
+   ]
+  },
+  "SetField": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "DataRow"
+   ],
+   "thamSo2": [
+    "DataColumn",
+    "Int32",
+    "String"
+   ]
+  },
+  "CopyToDataTable": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "IEnumerable<>"
+   ],
+   "thamSo2": [
+    "DataTable"
+   ]
+  },
+  "OrderBy": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "EnumerableRowCollection<>",
+    "TypedTableBase<>"
+   ],
+   "thamSo2": [
+    "Func<,>"
+   ]
+  },
+  "OrderByDescending": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "EnumerableRowCollection<>",
+    "TypedTableBase<>"
+   ],
+   "thamSo2": [
+    "Func<,>"
+   ]
+  },
+  "Select": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "EnumerableRowCollection<>",
+    "TypedTableBase<>"
+   ],
+   "thamSo2": [
+    "Func<,>"
+   ]
+  },
+  "ThenBy": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "OrderedEnumerableRowCollection<>"
+   ],
+   "thamSo2": [
+    "Func<,>"
+   ]
+  },
+  "ThenByDescending": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "OrderedEnumerableRowCollection<>"
+   ],
+   "thamSo2": [
+    "Func<,>"
+   ]
+  },
+  "Where": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "EnumerableRowCollection<>",
+    "TypedTableBase<>"
+   ],
+   "thamSo2": [
+    "Boolean>"
+   ]
+  },
+  "ElementAtOrDefault": {
+   "ns": "System.Data",
+   "doiTuong": [
+    "TypedTableBase<>"
+   ],
+   "thamSo2": [
+    "Int32"
+   ]
+  }
+ }
+}

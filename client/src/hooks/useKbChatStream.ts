@@ -530,7 +530,9 @@ export function useKbChatStream() {
                 // output as a degenerate loop ("cell cell cell…") and sent a clean
                 // fallback in `answer`. REPLACE the accumulated garbage tokens so the
                 // user (and the saved message) never see the loop.
-                if ((payload as any).degraded === true && typeof doneAnswer === "string") {
+                // R2 phần B — `answerRevised`: server đã SỬA TẤT ĐỊNH văn bản sau khi stream (bổ sung `using`
+                // C# còn thiếu) — thay như `degraded`, nhưng KHÔNG báo từ chối (onDone ở trên giữ nguyên).
+                if (((payload as any).degraded === true || (payload as any).answerRevised === true) && typeof doneAnswer === "string") {
                   accumulated = doneAnswer;
                   setStreamingText(accumulated);
                   callbacks?.onText?.(accumulated);

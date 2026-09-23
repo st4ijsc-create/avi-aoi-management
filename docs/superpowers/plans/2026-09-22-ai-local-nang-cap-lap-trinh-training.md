@@ -367,6 +367,25 @@ trích đúng ký hiệu. **Cổng ra:** R1 với 10 câu hỏi API C# → trún
 > cơ chế đã đo là không chạm được mục tiêu. Mã nối đã viết (13 lưới) được CẤT ngoài cây, chờ quyết định cơ chế. Nền H×3 + dự án×3 +
 > D1×3 trên bản dựng hiện tại vẫn chạy để làm số "trước" cho cơ chế được chọn.
 >
+> **R2 phần B — XONG 2026-09-23 theo cơ chế chủ dự án chọn: "sau sinh, tất định".** `ai/boSungUsingCSharp.ts` quét khối C#
+> vừa sinh (bỏ chuỗi + chú thích; kiểu chỉ tính ở VỊ TRÍ KIỂU; phương thức mở rộng chỉ tính ở dạng khác overload gốc như
+> `.GetInt32("…")`), tra chỉ mục `knowledge/api-ref/dotnet-using.json` (274 kiểu · 36 phương thức mở rộng, sinh từ XML doc), thêm
+> `using` còn thiếu và NÓI RÕ trong câu trả lời. Mã đã stream nên `done.answer` mang bản sửa + `answerRevised: true`; route SSE,
+> `useKbChatStream` (thay văn bản như `degraded`, không tính từ chối) và ba bộ đo (`run`/`duan`/`agentic` — soi gương client) đều
+> theo. Tắt để ablation: `AI_CODING_BO_SUNG_USING=0`.
+>
+> | Phép đo | Kết quả |
+> |---|---|
+> | Ngoại tuyến — 35 khối C# THẬT từ mọi báo cáo `duan-*` | biên dịch được **21 → 34**; 13 khối được sửa, cả 13 thành đạt; **0** khối đang đúng bị làm hỏng; khối còn hỏng là lỗi kiểu (`DbTransaction` → `SqlTransaction`), ngoài phạm vi |
+> | Ngoại tuyến — 228 lời giải C# trục H/M đã lưu | **0 lần đụng** (không báo oan) |
+> | Thăm dò sống ép thiếu using | log `bổ sung using C#: System.Data←SqlDbType` · SSE `answerRevised: true` · UI `/ai-coding-workspace` hiện `using System.Data;` + câu thông báo |
+> | H ×3 trước / sau | 27/36 (75 %) / 25/36 (69 %) — bộ sửa **không kích hoạt lần nào** trong 36 bài (0 `done:revised`); chênh lệch là nhiễu (H‑cpp3 3/3 → 0/3 ở đường C++ không hề bị đụng) |
+> | Ba dự án ×3 + D1 ×3 trước / sau | D1 C# 6/6 / 5/6 (trượt: `??` giữa `DateTime?` và `DBNull`, lỗi kiểu) · D2 C# 1/3 / 3/3 · D3 6/6 / 6/6 — 0 lần kích hoạt ⇒ cũng là nhiễu |
+>
+> ⇒ Cổng gốc "D1 2/3 → 3/3" **không còn phân định**: nền hôm nay đã 6/6 và lớp lỗi thiếu‑using xuất hiện 1/21 lượt sống gần đây
+> (13/35 ở các lượt cũ, phần lớn với model Coder trước). Cơ chế được giữ vì nó sửa ĐÚNG lớp lỗi đo được mà không đụng gì khác
+> (0/228). Khối "tham chiếu API theo câu hỏi" (đã viết, 13 lưới) KHÔNG nối — số đo ở trên cho thấy nó không chạm được mục tiêu.
+>
 > **(Ghi chú cũ) R2 phần B (D1 C# 2/3 → 3/3) — CHƯA LÀM.** Đường sinh mã `/ai-coding-workspace` hôm nay KHÔNG truy hồi kho Studio (chỉ ngữ cảnh
 > repo + bài học), nên corpus mới chưa chạm được D1. Nối truy hồi API vào prompt sinh mã là đổi HÀNH VI MODEL ⇒ theo §5 phải đo M
 > và H ×3 trước/sau + ba dự án thật (≈ 1–2 giờ GPU trên llama-server dùng chung).
