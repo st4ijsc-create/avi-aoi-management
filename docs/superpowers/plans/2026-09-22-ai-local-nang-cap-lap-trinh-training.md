@@ -225,6 +225,19 @@ lượt sinh mã; UI đọc được.
 Tách: luồng sinh mã · luồng sửa/khối · vòng tool · KB‑QA · tạo khung — thành module có lưới riêng; không đổi hành vi
 (lưới hiện có là hợp đồng). Làm **sau** B1–B4 để không trộn refactor với đổi hành vi.
 
+> **B8 — XONG 2026-09-23 (ba commit `3e4931515` · `ad4c36cee` · `12ec4c2de`).** `aiLocalKnowledgeService.ts` **7.333 → 3.965 dòng**
+> (còn: KB‑QA, truy hồi, định tuyến `streamAnswer`). Tách theo LUỒNG: `aiLocalKnowledgeCoding.ts` (điều phối `streamCodingAnswer`,
+> bài học, helper chung, 964) · `…CodingSua.ts` (sửa một tệp · tự trị · nhiều tệp · `motLuotModel`, 1.181) · `…CodingTaoKhung.ts`
+> (323) · `…CodingSinhMa.ts` (429) · `…CodingThongBao.ts` (373) · `aiLocalKnowledgeVongTool.ts` (vòng tool + cổng vscode, 244).
+> Cách làm: công cụ AST `scripts/refactor/tach-khai-bao.cjs` — thân mã giữ TỪNG BYTE, import mang theo chú thích của nó, tệp gốc
+> re-export mọi tên từng export (0 người gọi phải sửa), `export … from` lẫn trong dải ở lại tệp gốc. Hợp đồng = 62 tệp lưới chạm
+> service (1.218 ca): tập ca đỏ **trước/sau GIỐNG HỆT** ở cả ba bước (4 ca đỏ có sẵn); tsc 8 lỗi có sẵn, 0 mới. Hai lưới census SSE
+> nay quét theo mẫu tên `aiLocalKnowledge*.ts` (đã thử: bỏ tệp tách ⇒ `tool_loop ≥ 2` ĐỎ). Sống: ba dự án 7/7 (×2) · agentic 5/6,
+> 3/6, 4/6 (A2 vốn nhiễu) · bổ sung `using` vẫn `answerRevised` · web gọi tool có `tool_loop`, vscode không · eval R1 y hệt. Một lần
+> server chết im lặng giữa lượt dự án đầu (không log, không event Windows), chạy lại hai lần không tái hiện — ghi để theo dõi.
+> Không tách tầng TRUY HỒI: đo phụ thuộc thấy nó cần 18 helper/trạng thái của tệp gốc (cache dữ liệu, tokenize, cosine…) — tách
+> chỉ đổi một tệp lớn lấy hai tệp dính chặt.
+
 ## 3. Gói việc FRONTEND (lập trình — `/ai-coding-workspace`)
 
 ### F1 — Bảng "model đang nghĩ" (dùng `reasoning_content`)
