@@ -39,7 +39,7 @@ import { hoSoSamplingCho } from "./ai/hoSoSampling";
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
  */
-import { apDungKhoiSua, bocKhoiMa, bocKhoiSua, chepCaTepDuocKhong, chuanHoaTepMoi, codingEditEnabled, codingKhoiSuaEnabled, codingModelSanSang, chonDuongTuTri, dongBoXuongDong, MOC_TEP_KHUNG, personaSuaTep, personaSuaTepKhoi, personaTaoTep, promptSuaTep, promptSuaTepKhoi, promptTaoTep, rutChuCoCanh, streamCodingModel, tranTokenChoTep, TRAN_KY_TU_TEP_SUA, TRAN_TOKEN_KHOI_SUA, dungKhoiLichSu, type KetQuaChu, type LuotHoiThoai, type MaKhoiHong, type DungLuotModel } from "./aiCodingAgent";
+import { apDungKhoiSua, bocKhoiMa, bocKhoiSua, chepCaTepDuocKhong, chuanHoaTepMoi, codingEditEnabled, codingKhoiSuaEnabled, codingModelSanSang, chonDuongTuTri, dongBoXuongDong, MOC_TEP_KHUNG, personaSuaTep, personaSuaTepKhoi, personaTaoTep, promptSuaTep, promptSuaTepKhoi, promptTaoTep, rutChuCoCanh, streamCodingModel, tranTokenChoTep, TRAN_KY_TU_TEP_SUA, TRAN_TOKEN_KHOI_SUA, dungKhoiLichSu, type KetQuaChu, type LuotHoiThoai, type MaKhoiHong, type DungLuotModel, type ManhSuyLuan } from "./aiCodingAgent";
 /**
  * ★★★ doc 79 · TRỤC 1 (D) — MỤC LỤC (chunk) → MÃ THẬT (đọc đĩa qua `read_file`). Xem docblock đầu
  * `ai/codingRepoContext.ts`: module ấy KHÔNG nhập `fs`; cửa đọc do CHÍNH file này tiêm vào.
@@ -988,7 +988,7 @@ export async function* motLuotModel(y: {
    */
   try {
     for (;;) {
-      let n: IteratorResult<string, KetQuaChu>;
+      let n: IteratorResult<string | ManhSuyLuan, KetQuaChu>;
       try {
         n = await it.next();
       } catch (e) {

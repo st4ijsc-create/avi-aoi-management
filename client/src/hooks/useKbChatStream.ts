@@ -217,6 +217,10 @@ export interface KbStreamContext {
    *   nhất — đúng như CLI đã làm. Xem `KbQueryContext.dauRaKhongTinCay`.
    */
   dauRaKhongTinCay?: string;
+  /** ★ G4 — tầng model người dùng chọn cho lượt (`auto` | `code`); server lọc danh sách TRẮNG (`locTacVuNguoiChon`). */
+  modelTask?: string;
+  /** ★ F3 — chế độ nghĩ cho lượt (`can-bang` | `nhanh`); server lọc danh sách TRẮNG (`locCheDoNghi`). */
+  cheDoNghi?: string;
 }
 
 export interface KbStreamRequest {

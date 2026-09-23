@@ -34,7 +34,7 @@ import { hoSoSamplingCho } from "./ai/hoSoSampling";
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
  * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
  */
-import { codingGenEnabled, codingModelSanSang, personaSinhMa, promptSinhMa, rutChuCoCanh, streamCodingModel, dungKhoiLichSu, type KetQuaChu, type LuotHoiThoai, type DungLuotModel } from "./aiCodingAgent";
+import { codingGenEnabled, codingModelSanSang, personaSinhMa, promptSinhMa, rutChuCoCanh, streamCodingModel, dungKhoiLichSu, type KetQuaChu, type LuotHoiThoai, type DungLuotModel, type ManhSuyLuan } from "./aiCodingAgent";
 /**
  * ★★★ doc 79 · TRỤC 1 (D) — MỤC LỤC (chunk) → MÃ THẬT (đọc đĩa qua `read_file`). Xem docblock đầu
  * `ai/codingRepoContext.ts`: module ấy KHÔNG nhập `fs`; cửa đọc do CHÍNH file này tiêm vào.
@@ -322,7 +322,7 @@ export async function* streamCodingGenerate(
   //   llama-server bị giữ tới idle-timeout 120.000 ms.
   try {
     for (;;) {
-      let n: IteratorResult<string, KetQuaChu>;
+      let n: IteratorResult<string | ManhSuyLuan, KetQuaChu>;
       try {
         n = await it.next();
       } catch (e) {

@@ -146,6 +146,8 @@ export function __tickFieldsForTests(
     baselineVerified,
     baselineUnverifiedReasons: baselineVerified ? [] : ["chua-chup-nen"],
     baselineOrigin: "local",
+    // G7 thêm trường bắt buộc; helper test mặc định "không có số thiết bị" (null) — đúng nghĩa "không biết".
+    deviceUsedBytes: null,
   };
 }
 

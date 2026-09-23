@@ -257,6 +257,10 @@ export async function* streamCodingTaoKhung(
     ghepPrompt: (khoiLichSu, khoiBai) => promptTaoKhung(question, language, khoiLichSu, khoiBai),
     khoiBaiHoc,
     tranToken: TRAN_TOKEN_TAO_KHUNG,
+    // ★ B1 (vá 2026-09-23) — lượt ĐẦU của dựng khung từng THIẾU `loai` (chỉ lượt tự sửa có) ⇒ `luotDuocNghi(undefined)`
+    //   = false ⇒ lượt khung chính chạy KHÔNG nghĩ, trần gốc. tsc bắt được (TS2345) nhưng không ai đọc lỗi.
+    ghiDe: context.cheDoNghi, // ★ F3
+    loai: "tao-khung",
     language,
     history,
     relPath: "(khung dự án)",

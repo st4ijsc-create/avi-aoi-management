@@ -209,6 +209,13 @@ const DISTRUST_UNITS: Record<VramDegradationReason, number> = {
   "shared-ledger-stale": 1,
   "shared-ledger-unsynced": 1,
   /**
+   * ★ G7 (2026-09-21, khai bổ sung 2026-09-23 — `tsc` bắt: hàng rào `Record<…>` ở dưới làm đúng việc của nó).
+   * `device-free-cap` được đẩy SAU khi phụ phí đã tính (`reasons.push` ở cuối `effectiveHeadroom…`), và bản thân trần
+   * thiết bị đã là phép MIN theo byte thật ⇒ phụ phí thêm = 0: nó là một lý do để GIẢI THÍCH con số nhỏ đi, không phải
+   * một mức mất-tin-cậy phải trừ thêm lần hai.
+   */
+  "device-free-cap": 0,
+  /**
    * ★★★ I-3 (review TOÀN NHÁNH) — **HÀNG `"gguf-slot-cap": 0` ĐÃ BỊ XOÁ Ở ĐÂY, CÓ CHỦ Ý.**
    *
    * Task 7 đặt nó vào bảng này với `0` đơn vị để "không trộn hai thước" (Đ4) — đúng về phép tính,
