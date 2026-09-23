@@ -93,7 +93,7 @@ cả M lẫn H; chỉ đổi mặc định khi ≥ cũ; ghi cả hai số vào R
 
 ### B3 — Ngữ cảnh 64k cho MoE (T3) + tái dùng KV
 
-> **Trạng thái 2026-09-22 18:50: ĐANG ĐO (một biến: ctx 32k → 64k, giữ B4 12k).** `.env GGUF_MAX_CTX=65536`,
+> **Trạng thái 2026-09-23: ĐÃ ÁP DỤNG** — H 86 % (31/36), không bài tụt, VRAM còn 6,1 GiB; launcher chốt 1 slot × 64k (bảng §7). Ghi chép lúc đo (2026-09-22 18:50): `.env GGUF_MAX_CTX=65536`,
 > llama-server `-c 65536` (VRAM 25,85 → 26,41 GiB sau nạp; còn 6,2 GiB ≥ cổng 3 GB), node restart `node-b3`. Cổng ra: trục
 > H ×3 so `H-q36moe-b4-12k-` (27/36) + agentic; H không tụt và VRAM giữ ⇒ 64k thành mặc định; sau đó mới nới
 > `TRAN_TOKEN_NGU_CANH_MA`/`TRAN_TOKEN_MUC_LUC` (K2) và trần nghĩ 32k (nút "sâu" F3) — từng biến một.
@@ -120,7 +120,7 @@ K2), TTFT lượt 2+ trong vòng tác nhân giảm đo được.
 
 ### B4 — Trần suy luận riêng (`--reasoning-budget`) + G18 thu hẹp
 
-> **Trạng thái 2026-09-22 18:19: ĐANG ĐO (lên hạng sau phát hiện B1).** llama-server b9814 khởi động lại với
+> **Trạng thái 2026-09-23: ĐÃ ÁP DỤNG** — G5‑D 3/6 → 0/12, agentic 5/6 ×2, 0/36 lượt H bị cắt (bảng §7). Ghi chép lúc đo (2026-09-22 18:19): llama-server b9814 khởi động lại với
 > `--reasoning-budget 12000` (ctx 32k, model/sampling y nguyên; log xác nhận *"reasoning-budget: activated, budget=12000"*
 > — `/props` KHÔNG lộ cờ này, phải đọc log). Cổng ra: agentic **A2 ×3** (nền 2/3 → 1/3, cả 3 lượt A2 kích G18‑B1 ở 16k) +
 > trục H ×3 so `H-q36moe-b1-` (25/36). Kỳ vọng: 0 G5‑D/G18‑B1 trên `khoi-sua`; nếu H tụt > 2 bài ⇒ ngân sách 12k cắt
@@ -144,7 +144,7 @@ Thay "nới toàn bộ max_tokens" bằng trần riêng cho `<think>` (server h�
 
 ### B5 — MTP speculative decoding (T4)
 
-> **Trạng thái 2026-09-22 19:30: ĐANG ĐO.** GGUF MTP chính hãng (`unsloth/Qwen3.6-35B-A3B-MTP-GGUF` UD‑Q4_K_XL, 21,28 GB, có
+> **Trạng thái 2026-09-23: KHÔNG ÁP DỤNG** — H 75 % vs 86 %, agentic 4/6, chỉ nhanh hơn 9 % (bảng §7). Ghi chép lúc đo (2026-09-22 19:30): GGUF MTP chính hãng (`unsloth/Qwen3.6-35B-A3B-MTP-GGUF` UD‑Q4_K_XL, 21,28 GB, có
 > `nextn_predict_layers`) nạp lên `:8091` với `--spec-type draft-mtp --spec-draft-n-max 2`, ctx 64k, ngân sách nghĩ 12k — chỉ đổi
 > model+cờ, mọi thứ khác giữ. Ba khoá `.env` trỏ tên tệp MTP (bẫy `LLAMA_SERVER_MODEL` lệch ⇒ lùi in‑process ⇒ OOM). Cổng ra:
 > H ×3 so `H-q36moe-64k-` (31/36) — **đúng ≥ −1 bài (nhiễu) và ms/bài giảm rõ** ⇒ giữ; đúng tụt ⇒ bỏ (tốc độ không mua được đúng).
@@ -297,11 +297,18 @@ lượng thời gian từ số đo (27 s / 5 s). Chế độ → (thinking, samp
 ### F4 — Thẻ diff & thẻ duyệt: hiện **lý do** model (từ `reasoning_content` đã cắt gọn) cạnh diff
 Duyệt có ngữ cảnh: "vì sao sửa dòng này". HITL không đổi.
 
+> **Trạng thái 2026-09-23: XONG.** Phần 1 (pill token nghĩ) trước đó; phần 2: khối gấp "Vì sao model đề xuất" trên thẻ duyệt diff
+> (`LyDoDuyet.tsx` + `lyDoDuyetLogic.ts`) — chụp đuôi `reasoning_content` ĐÚNG lúc `pending_action` tới, KHOÁ theo `actionId`
+> (lượt mới đang chảy không bao giờ gán lý do sang thẻ cũ). Chỉ đọc; thẻ duyệt và HITL y nguyên.
+
 ### F5 — Khung "Lệnh & Nhật ký": lịch sử lượt + `exit code` + thời lượng + lọc; nút "chạy lại kiểm chứng"
 Hoàn tất hướng đã bắt đầu (G17).
 
 ### F6 — Chỉ số phiên: số lượt · token vào/ra/nghĩ · thời gian · số lần từ chối (và lý do mã máy)
 Một hàng cuối phiên; xuất JSON cho bộ đo.
+
+> **Trạng thái 2026-09-23: XONG.** Ô "phiên" trên thanh trạng thái + nút chép JSON (`xuatThongKeJson`, schema
+> `ai-local-phien/1`; `tokensNghi` chưa đo giữ `null`, không thành 0).
 
 ## 4. Gói việc TRAINING (`/ai-training-studio`) — backend + frontend
 
@@ -348,6 +355,13 @@ Frontend: bảng câu hỏi × đúng/sai × nguồn, biểu đồ trước/sau.
 >    0,80 · mọi kho 70 → 77 % · tới trợ lý 40 % (không đổi: T24 +1, T09 −1) · đáp án trong ngữ cảnh 93 → 90 % (T14: đoạn
 >    chứa "UPS → Server" rơi khỏi top‑5) · hệ thống 151/151 · `fake-bad` #15 0 %. Cơ chế: `ai/tienToNhungCauHoi.ts` suy từ TÊN
 >    model nhúng (đổi `GGUF_EMBED_MODEL` ⇒ tự đổi), chỉ câu hỏi — tài liệu vẫn nhúng trơn nên KHÔNG cần nhúng lại kho.
+> 5. **Ngưỡng `MIN_STUDIO_CITATION_SCORE` 0,5 → 0,44 — ĐO trên hai corpus, ÁP DỤNG 2026-09-23 (`a2799ef03`).** Mẫu: 38 câu có nguồn
+>    đúng trong top‑5 (#14 st4i · #21 csharp) và 51 câu NGOÀI corpus (6 câu khai ngoài + 45 câu CHÉO — bộ câu của corpus này hỏi vào
+>    corpus kia, #23/#24; bỏ N02 "E082" vì nó thật sự có trong st4i). Nguồn đúng min 0,340 · … 0,444 · 0,450 · 0,457; nhiễu max 0,415
+>    (p90 0,382) ⇒ hai cụm CHỒNG nhau ở 0,34–0,415, không ngưỡng nào tách sạch. 0,5: 29/38 đúng · 0/51 nhiễu; **0,44: 34/38 đúng ·
+>    0/51 nhiễu** (cách đỉnh nhiễu 0,025). Server sau đổi: st4i **qua ngưỡng 67 % → 83 %** (#25, đúng số tính trước từ hits đã lưu) ·
+>    csharp 90 % (#26, không đổi) · từ chối đúng 4/4 và 2/2 · `fake-bad` #27 0 %. Bốn câu còn trượt (0,340–0,429) nằm TRONG cụm nhiễu —
+>    ngưỡng không cứu được, cần xếp hạng/nhúng tốt hơn. Hằng này CHỈ route vscode đọc; "tới trợ lý" (đường web) không đổi (40 %).
 
 ### R2 — Nguồn dữ liệu lập trình: ingest **tham chiếu API** có cấu trúc
 Từ phát hiện D1 (`GetInt32(string)` — sai tầng API): corpus `csharp-dotnet` nên nhận **tài liệu API** (XML doc /
@@ -429,6 +443,18 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
 > về thất bại trong 20–45 ms không một dòng log. `kbPdfOcr.lyDoOcrKhongSan()` nay trả mã lý do → `meta.ocrLyDo` → tooltip nói đúng
 > khoá cần sửa ("chưa khai PDFTOPPM_BIN"). Cài poppler + khai `PDFTOPPM_BIN` là việc VẬN HÀNH, chưa làm. Đính chính kèm: câu cảnh báo
 > bước 1 ở tab Nguồn (×3 locale) còn nói chẩn đoán D1 cũ đã bị bác — nay nói đúng "thiếu `using System.Data;`".
+>
+> **R4 phần OCR — CHẠY THẬT 2026-09-23 (`7456cc85b`, `466d7a3d0`).** Vận hành: poppler 25.07 qua winget + `PDFTOPPM_BIN` trong `.env`;
+> model `models/ocr/` từ `monkt/paddleocr-onnx` (Apache‑2.0): `det.onnx` PP‑OCRv3 + `rec.onnx` latin PP‑OCRv5 + từ điển (không vào
+> git; nguồn ghi ở `.env.example`). Cài xong, OCR "chạy" mà **0 chữ**: `runOcr` chỉ nhận dạng MỘT dòng trên cả ảnh (đúng cho tem AOI
+> đã cắt ROI) — trang A4 bị ép về cao 48 px. Cắt tay từng dòng thì đọc đúng ⇒ thiếu tầng TÌM DÒNG. Nay `ocrService.runOcrTrang`: DET
+> DBNet (tiền xử lý đúng PaddleOCR) → `dbTimHop` (thuần: ngưỡng 0,3 · liên thông 8 hướng · điểm hộp 0,6 · nở 1,5) → `xepThuTuDoc` →
+> REC từng dòng (bỏ dòng < 0,5); `runOcr` giữ nguyên cho AOI; `kbPdfOcr` gọi bản trang. Đo: trang PDF quét thật **8/8 dòng, điểm
+> 0,99, 1 lỗi ký tự** (AOI → AOl), 3,4 s CPU; trang trắng ⇒ 0 dòng; đột biến "không nở hộp" làm ca model thật ĐỎ. Sống qua
+> `ingestDocumentJob`: PDF ảnh‑chụp‑chữ ⇒ 336 ký tự · 1 đoạn · vàng "chữ từ OCR"; PDF chỉ hình ⇒ đỏ, nhãn mới "OCR không ra chữ"
+> (nhãn cũ "chưa OCR" + lời khuyên "bật OCR" là SAI khi OCR đã chạy). ⚠ **Giới hạn đo được:** bộ chữ latin THIẾU ư/ơ/ạ/ế/ộ… — "Bảo trì
+> … thiếc" ⇒ "bo trì … thiéc" mà điểm vẫn **0,97** ⇒ điểm tin cậy KHÔNG báo được lỗi này; `boChuThieuDauViet()` đọc bộ chữ ⇒ cảnh
+> báo vàng mới `ocr-mat-dau`. Tài liệu tiếng Việt quét vẫn cần một model rec có bộ chữ tiếng Việt (CÒN MỞ).
 
 ### R5 — Gọn bề mặt: hướng dẫn gấp (đã làm G16) → **checklist 4 bước có trạng thái** đọc từ dữ liệu thật
 (đã có corpus? đã ingest? đã eval? điểm?).
@@ -506,6 +532,8 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
 6. **Training (R1–R5)** ở phiên riêng như chủ dự án đã định: corpus vàng csharp‑dotnet + ST4I, EvalTab thật. — **R1 XONG
    2026-09-23** (xem §4 R1); R2–R5 còn lại. Phát hiện R1: thang điểm sort chung — VÁ (20 → 40 %); tiền tố `Instruct:` — ÁP DỤNG (qua ngưỡng 50 → 67 %);
    ngưỡng 0,5 — chưa đổi (cụm nay đã tách: đoạn đúng ≥ 0,340 > nhiễu ≤ 0,308, cần đo lại trên corpus thứ hai trước khi chọn số).
+   **→ 2026-09-23: R1–R5 + B8 XONG; ngưỡng đo lại trên hai corpus ⇒ 0,44 (§4 R1 mục 5); OCR PDF quét chạy thật (§4 R4).** Báo cáo
+   tiến độ: `docs/superpowers/reports/2026-09-23-bao-cao-tien-do-ai-local-training.md`.
 7. Quyết định launcher sản xuất 1 × 64k hay 2 × 32k (mục 8).
 
 ## 6. Thứ tự & lý do
