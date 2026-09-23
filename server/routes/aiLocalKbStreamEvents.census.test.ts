@@ -53,13 +53,14 @@ import { registerAiLocalKnowledgeRoutes } from "./aiLocalKnowledgeApi";
 const DUONG_TUYEN = path.resolve(process.cwd(), "server/routes/aiLocalKnowledgeApi.ts");
 const DUONG_SERVICE = path.resolve(process.cwd(), "server/services/aiLocalKnowledgeService.ts");
 /**
- * ★ B8 (2026-09-23) — nhánh LẬP TRÌNH (streamCodingAnswer và mọi điểm `yield` của nó) đã tách sang tệp
- * anh em. "Service" của lưới này = HỢP các tệp phát sự kiện: khai báo `StreamEvent` vẫn ở tệp gốc (đọc
- * TRƯỚC), điểm phát đếm trên cả hai — bỏ tệp tách ra khỏi danh sách thì lưới MÙ đúng nửa số điểm phát.
+ * ★ B8 (2026-09-23) — nhánh LẬP TRÌNH và vòng tool của `streamAnswer` (cùng mọi điểm `yield`) đã tách sang
+ * các tệp anh em `aiLocalKnowledge*.ts`. "Service" của lưới này = HỢP các tệp đó: khai báo `StreamEvent`
+ * vẫn ở tệp gốc (đọc TRƯỚC), điểm phát đếm trên tất cả — quét theo MẪU TÊN nên tệp tách mới tự vào lưới;
+ * bỏ một tệp khỏi danh sách thì lưới MÙ đúng các điểm phát của nó (đã thử: `tool_loop ≥ 2` ĐỎ).
  */
 const DUONG_PHAT_THEM = fs
   .readdirSync(path.resolve(process.cwd(), "server/services"))
-  .filter((f) => /^aiLocalKnowledgeCoding[A-Za-z]*\.ts$/.test(f))
+  .filter((f) => /^aiLocalKnowledge(?!Service)[A-Za-z]+\.ts$/.test(f))
   .map((f) => path.resolve(process.cwd(), "server/services", f));
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
