@@ -12,6 +12,7 @@ import { useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { HuyHieuKiemMay, type KetQuaMayNap } from "./HuyHieuKiemMay";
+import { ChecklistCorpus } from "./ChecklistCorpus";
 import {
   Upload,
   Link as LinkIcon,
@@ -178,6 +179,10 @@ function IngestGuidanceCard({
               )}
         </CardDescription>
       </CardHeader>
+      {/* R5 — checklist có trạng thái, hiện cả khi hướng dẫn đã gấp. */}
+      <CardContent className="pb-3">
+        <ChecklistCorpus tenCorpus={corpus} />
+      </CardContent>
       <CardContent className="space-y-4 text-sm" hidden={!moHuongDan}>
         <ol className="space-y-4">
           <li>
@@ -294,7 +299,7 @@ function IngestGuidanceCard({
             <p className="text-xs text-muted-foreground mt-0.5">
               {t(
                 "kbStudio.source.guidance.step4Body",
-                "Hỏi trợ lý AI Local một câu MÌNH BIẾT TRƯỚC đáp án, lấy thẳng từ tài liệu vừa nạp (vd một giá trị thanh ghi, một mã lỗi cụ thể). Trả lời đúng và dẫn đúng tên tệp vừa nạp = corpus sống. Trả lời chung chung hoặc không nhắc tới tài liệu = chưa vào hoặc chưa nhúng.",
+                "Mở tab \"Đánh giá\": bộ câu hỏi vàng knowledge/studio-golden/<corpus>.jsonl được chấm bằng MÁY — tài liệu có nằm trong top‑K không, có qua ngưỡng không, có tới được trợ lý không (checklist ở trên hiện điểm lượt mới nhất). Chưa có bộ vàng thì hỏi trợ lý một câu MÌNH BIẾT TRƯỚC đáp án và xem nó có dẫn đúng tên tệp vừa nạp không.",
               )}
             </p>
           </li>
@@ -308,7 +313,7 @@ function IngestGuidanceCard({
             </span>{" "}
             {t(
               "kbStudio.source.guidance.scanWarningBody",
-              "bộ đọc PDF của hệ thống không đọc được chữ trong ảnh — nó trả về RỖNG mà KHÔNG báo lỗi, nghĩa là có thể nạp một corpus rỗng mà không hề biết. Sau khi tải lên, nhìn số đoạn (chunk) hiện ngay bên dưới tên tệp — ra 0 hoặc rất thấp là dấu hiệu tài liệu chưa thật sự vào được.",
+              "các trang là ẢNH, không có lớp chữ. Khi OCR chưa chạy được, hệ thống nay tự gắn huy hiệu đỏ \"PDF quét ảnh — chưa OCR\" kèm lý do (vd chưa khai PDFTOPPM_BIN) ngay dưới tên tệp và ở tab \"Tác vụ\" — không còn nạp một corpus rỗng mà không biết.",
             )}
           </p>
         </div>

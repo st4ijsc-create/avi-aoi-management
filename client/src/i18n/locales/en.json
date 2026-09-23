@@ -14868,9 +14868,9 @@
         "step3Title": "3. Nothing else to run",
         "step3Body": "Clicking \"Upload & ingest\" is ALL you need: the system automatically PARSES → CHUNKS → EMBEDS → SAVES in one pass. No script needs to be run manually after uploading — this is the easiest point to misunderstand, since other project docs mention a manual embedding step (a CLI command over a vendor's PDF folder); this Training Studio path does NOT need that step.",
         "step4Title": "4. Check it actually went in",
-        "step4Body": "Ask the AI Local assistant a question whose answer you ALREADY KNOW, taken straight from the document you just ingested (e.g. a specific register value or error code). A correct answer that cites the right file name means the corpus is alive. A vague answer, or one that never mentions the document, means it did not ingest or was not embedded.",
+        "step4Body": "Open the \"Evaluation\" tab: the golden set knowledge/studio-golden/<corpus>.jsonl is MACHINE-graded — is the document in the top‑K, does it clear the threshold, does it reach the assistant (the checklist above shows the latest score). No golden set yet? Ask the assistant a question whose answer you already know and check it cites the file you just ingested.",
         "scanWarningTitle": "Scanned-image PDF warning:",
-        "scanWarningBody": "the system's PDF reader cannot read text embedded in images — it returns EMPTY without an error, meaning a corpus can end up empty without you knowing. After uploading, check the chunk count shown right under the file name — 0 or very low is a sign the document did not actually make it in.",
+        "scanWarningBody": "the pages are IMAGES with no text layer. When OCR cannot run, the system now tags a red \"Scanned PDF — no OCR\" badge with the reason (e.g. PDFTOPPM_BIN not set) right under the file name and in the \"Jobs\" tab — no more silently ingesting an empty corpus.",
         "resultNote": "Result after ingesting: the chunk count appears right under each file below once done. See the full picture (document name, corpus, chunk count, status, error if any) on the \"Jobs\" tab."
       }
     },
@@ -15044,6 +15044,38 @@
         "tat-ocr-engine": "Why OCR did not run: OCR_ENGINE_ENABLED is off.",
         "thieu-model-ocr": "Why OCR did not run: the OCR engine's ONNX model files are missing.",
         "khong-doc-duoc": "OCR ran but no page yielded text."
+      }
+    },
+    "checklist": {
+      "corpus": {
+        "ten": "Corpus",
+        "chuaChon": "No corpus name yet.",
+        "dangTai": "Loading…",
+        "daCo": "\"{{ten}}\" exists.",
+        "moi": "\"{{ten}}\" does not exist yet — it is created with the first ingested file."
+      },
+      "nap": {
+        "ten": "Ingested",
+        "choCorpus": "Waiting for a corpus.",
+        "dangTai": "Loading…",
+        "chuaNap": "No chunks yet.",
+        "daNap": "{{doan}} chunks, no red machine-check warnings.",
+        "napCoCanhBao": "{{doan}} chunks — {{n}} file(s) with red warnings (see Jobs tab)."
+      },
+      "danh-gia": {
+        "ten": "Evaluated",
+        "choCorpus": "Waiting for a corpus.",
+        "dangTai": "Loading…",
+        "chuaBoVang": "No golden set yet — create knowledge/studio-golden/{{ten}}.jsonl.",
+        "boVangLoi": "Golden set has {{n}} invalid line(s) — fix before running.",
+        "chuaChay": "Golden set of {{cau}} questions, not run yet (Evaluation tab).",
+        "daChay": "{{cau}} questions · {{luot}} run(s)."
+      },
+      "diem": {
+        "ten": "Score",
+        "chuaCoDiem": "No evaluation run yet.",
+        "diem": "Source hit {{trung}} · reaches assistant {{toi}}.",
+        "diemCu": "{{trung}} · {{toi}} — STALE: the corpus changed after this run, re-run."
       }
     }
   },

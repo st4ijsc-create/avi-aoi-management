@@ -14848,9 +14848,9 @@
         "step3Title": "3. Không cần chạy thêm gì",
         "step3Body": "Bấm \"Tải lên & nạp\" là XONG: hệ thống tự PARSE → CHIA NHỎ (chunk) → NHÚNG (embed) → LƯU trong một lượt. Không có script nào phải tự chạy sau khi tải lên — đây là điểm dễ hiểu lầm nhất vì nhiều tài liệu khác của dự án nói tới bước nhúng thủ công (đường dòng lệnh, cho thư mục PDF theo hãng); đường Training Studio này KHÔNG cần bước đó.",
         "step4Title": "4. Kiểm tra đã vào chưa",
-        "step4Body": "Hỏi trợ lý AI Local một câu MÌNH BIẾT TRƯỚC đáp án, lấy thẳng từ tài liệu vừa nạp (vd một giá trị thanh ghi, một mã lỗi cụ thể). Trả lời đúng và dẫn đúng tên tệp vừa nạp = corpus sống. Trả lời chung chung hoặc không nhắc tới tài liệu = chưa vào hoặc chưa nhúng.",
+        "step4Body": "Mở tab \"Đánh giá\": bộ câu hỏi vàng knowledge/studio-golden/<corpus>.jsonl được chấm bằng MÁY — tài liệu có nằm trong top‑K không, có qua ngưỡng không, có tới được trợ lý không (checklist ở trên hiện điểm lượt mới nhất). Chưa có bộ vàng thì hỏi trợ lý một câu MÌNH BIẾT TRƯỚC đáp án và xem nó có dẫn đúng tên tệp vừa nạp không.",
         "scanWarningTitle": "Cảnh báo PDF quét ảnh (scan):",
-        "scanWarningBody": "bộ đọc PDF của hệ thống không đọc được chữ trong ảnh — nó trả về RỖNG mà KHÔNG báo lỗi, nghĩa là có thể nạp một corpus rỗng mà không hề biết. Sau khi tải lên, nhìn số đoạn (chunk) hiện ngay bên dưới tên tệp — ra 0 hoặc rất thấp là dấu hiệu tài liệu chưa thật sự vào được.",
+        "scanWarningBody": "các trang là ẢNH, không có lớp chữ. Khi OCR chưa chạy được, hệ thống nay tự gắn huy hiệu đỏ \"PDF quét ảnh — chưa OCR\" kèm lý do (vd chưa khai PDFTOPPM_BIN) ngay dưới tên tệp và ở tab \"Tác vụ\" — không còn nạp một corpus rỗng mà không biết.",
         "resultNote": "Kết quả sau khi nạp: số đoạn (chunk) hiện ngay dưới mỗi tệp bên dưới sau khi xong. Xem lại đầy đủ (tên tài liệu, corpus, số đoạn, trạng thái, lỗi nếu có) ở tab \"Tác vụ\"."
       }
     },
@@ -15024,6 +15024,38 @@
         "tat-ocr-engine": "Lý do OCR không chạy: OCR_ENGINE_ENABLED đang tắt.",
         "thieu-model-ocr": "Lý do OCR không chạy: thiếu tệp model ONNX của bộ OCR.",
         "khong-doc-duoc": "OCR có chạy nhưng không trang nào ra chữ."
+      }
+    },
+    "checklist": {
+      "corpus": {
+        "ten": "Corpus",
+        "chuaChon": "Chưa nhập tên corpus.",
+        "dangTai": "Đang tải…",
+        "daCo": "\"{{ten}}\" đã có.",
+        "moi": "\"{{ten}}\" chưa có — sẽ được tạo khi nạp tệp đầu tiên."
+      },
+      "nap": {
+        "ten": "Đã nạp",
+        "choCorpus": "Chờ chọn corpus.",
+        "dangTai": "Đang tải…",
+        "chuaNap": "Chưa có đoạn nào.",
+        "daNap": "{{doan}} đoạn, kiểm máy không có cảnh báo đỏ.",
+        "napCoCanhBao": "{{doan}} đoạn — {{n}} tệp có cảnh báo đỏ (xem tab Tác vụ)."
+      },
+      "danh-gia": {
+        "ten": "Đã đánh giá",
+        "choCorpus": "Chờ chọn corpus.",
+        "dangTai": "Đang tải…",
+        "chuaBoVang": "Chưa có bộ câu hỏi vàng — tạo knowledge/studio-golden/{{ten}}.jsonl.",
+        "boVangLoi": "Bộ vàng có {{n}} dòng lỗi — sửa trước khi chạy.",
+        "chuaChay": "Có bộ vàng {{cau}} câu, chưa chạy lượt nào (tab Đánh giá).",
+        "daChay": "{{cau}} câu · {{luot}} lượt đã chạy."
+      },
+      "diem": {
+        "ten": "Điểm",
+        "chuaCoDiem": "Chưa có lượt đánh giá nào.",
+        "diem": "Trúng nguồn {{trung}} · tới trợ lý {{toi}}.",
+        "diemCu": "{{trung}} · {{toi}} — CŨ: corpus đã nạp thêm sau lượt này, chạy lại."
       }
     }
   },

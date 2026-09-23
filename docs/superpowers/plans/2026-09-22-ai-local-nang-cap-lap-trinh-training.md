@@ -412,6 +412,13 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
 ### R5 — Gọn bề mặt: hướng dẫn gấp (đã làm G16) → **checklist 4 bước có trạng thái** đọc từ dữ liệu thật
 (đã có corpus? đã ingest? đã eval? điểm?).
 
+> **R5 — XONG 2026-09-23.** `checklistCorpusLogic.ts` (thuần) + `ChecklistCorpus.tsx` ở đầu thẻ hướng dẫn tab Nguồn, hiện CẢ KHI hướng
+> dẫn đã gấp, theo đúng corpus đang nhập: (1) corpus có chưa · (2) đã nạp bao nhiêu đoạn + cảnh báo đỏ của kiểm máy R4 (chỉ job MỚI
+> NHẤT mỗi nguồn — nạp lại tệp đã sửa thì hết cảnh báo) · (3) bộ vàng + số lượt eval · (4) điểm lượt mới nhất (trúng nguồn · tới trợ
+> lý), gắn "CŨ" khi có job THÀNH CÔNG sau lượt đo. Đang tải ⇒ "dang-tai", không vẽ ✗ oan. Kiểm sống: `st4i-may-aoi` 4/4 xong (29 đoạn ·
+> 30 câu · 12 lượt · 97 % / 40 %); `csharp-dotnet` 4/4 (964 đoạn · 90 % / 90 %); tên mới ⇒ 4 bước "chưa" kèm việc cần làm (đường dẫn bộ
+> vàng). Chữ bước 4 + cảnh báo PDF quét ảnh viết lại theo cơ chế thật (eval máy, huy hiệu R4) thay cho lời dặn tự kiểm bằng tay.
+
 ## 5. Đo lường & cổng ra chung
 
 - Bộ đo `codegen-chay-duoc`: thêm cột `reasoningTok`, `nghi`, `samplingProfile`; `so-sanh.mjs` in kèm.
