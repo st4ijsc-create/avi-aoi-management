@@ -111,6 +111,42 @@ export function chunkText(
   return chunks;
 }
 
+/** Dòng đánh dấu (dòng không rỗng ĐẦU TIÊN của tài liệu) xin cắt THEO KÝ HIỆU — xem {@link chunkTheoKyHieu}. */
+export const DAU_CHUNK_KY_HIEU = "<!-- kb:chunk=ky-hieu -->";
+
+/**
+ * R2 (kế hoạch AI Local 2026-09-22 §4) — cắt tài liệu THAM CHIẾU API theo KÝ HIỆU: mỗi mục `## …` là
+ * một đoạn, mang kèm dòng `# <Kiểu>` ở đầu, để một đoạn truy hồi là một ký hiệu NGUYÊN VẸN (chữ ký +
+ * tham số + trả về) chứ không phải lát 1.800 ký tự cắt ngang hai phương thức. Chỉ kích hoạt khi tài
+ * liệu TỰ KHAI bằng {@link DAU_CHUNK_KY_HIEU} (vd `scripts/ai-kb/tao-tham-chieu-api-dotnet.mjs`) —
+ * tài liệu thường đi đường {@link chunkText} y hệt trước. Mục dài quá `maxChars` được cắt tiếp bằng
+ * `chunkText`, mỗi lát vẫn mang `# Kiểu` + `## Ký hiệu (tiếp)`. Trả `null` khi không có dấu.
+ */
+export function chunkTheoKyHieu(text: string, maxChars: number = DEFAULT_CHUNK_CHARS): string[] | null {
+  const normalized = (text ?? "").replace(/\r\n/g, "\n").trim();
+  if (!normalized.startsWith(DAU_CHUNK_KY_HIEU)) return null;
+  const than = normalized.slice(DAU_CHUNK_KY_HIEU.length).trim();
+  const dauDe = than.match(/^# .*$/m);
+  const tieuDe = dauDe ? dauDe[0].trim() : "";
+  const phan = than.split(/^(?=## )/m);
+  const out: string[] = [];
+  const loiMo = phan[0].replace(tieuDe, "").trim();
+  if (loiMo) out.push(...chunkText(`${tieuDe}\n${loiMo}`.trim(), maxChars, 0));
+  for (const muc of phan.slice(1)) {
+    const m = muc.trim();
+    const dong1 = m.split("\n", 1)[0];
+    const day = `${tieuDe}\n${m}`.trim();
+    if (day.length <= maxChars) {
+      out.push(day);
+      continue;
+    }
+    const dau = `${tieuDe}\n${dong1} (tiếp)\n`;
+    const lat = chunkText(m.slice(dong1.length).trim(), Math.max(200, maxChars - dau.length), 0);
+    lat.forEach((x, i) => out.push(i === 0 ? `${tieuDe}\n${dong1}\n${x}` : `${dau}${x}`));
+  }
+  return out;
+}
+
 /** Cheap approximation (~4 chars/token) — NOT a real tokenizer; good enough for a stored hint. */
 export function estimateTokenCount(text: string): number {
   return Math.max(1, Math.ceil((text ?? "").length / 4));
@@ -158,7 +194,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   }
 
   // 2) Chunk — bounded size + overlap, hard-capped chunk count.
-  let pieces = chunkText(parsed.text);
+  let pieces = chunkTheoKyHieu(parsed.text) ?? chunkText(parsed.text);
   if (pieces.length > MAX_CHUNKS_PER_DOC) {
     pieces = pieces.slice(0, MAX_CHUNKS_PER_DOC);
   }

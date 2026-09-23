@@ -341,6 +341,25 @@ Từ phát hiện D1 (`GetInt32(string)` — sai tầng API): corpus `csharp-dot
 docs.microsoft dạng markdown) với chunk theo *ký hiệu* (class.method) chứ không theo 512 token trơn; chân nguồn
 trích đúng ký hiệu. **Cổng ra:** R1 với 10 câu hỏi API C# → trúng nguồn ≥ 8/10; bài D1 C# 2/3 → 3/3.
 
+> **R2 phần A — XONG 2026-09-23 (cổng "≥ 8/10" ĐẠT: 9/10).** Nguồn: tệp XML doc CÓ SẴN trên máy (không mạng) —
+> `System.Data.Common.xml` (.NET 10.0.10) + `Microsoft.Data.SqlClient.xml` 5.2.2 ⇒ `scripts/ai-kb/tao-tham-chieu-api-dotnet.mjs`
+> sinh 22 tệp/kiểu, 807 ký hiệu, dòng đầu `<!-- kb:chunk=ky-hieu -->` ⇒ `kbIngestService.chunkTheoKyHieu` cắt MỖI `##` một đoạn,
+> mang `# Kiểu` (tài liệu không có dấu đi `chunkText` y hệt trước). Nạp qua `ingestDocumentJob` thật: 1.200 đoạn. Bộ vàng
+> `knowledge/studio-golden/csharp-dotnet.jsonl` 10 câu API + 2 câu ngoài (một câu của corpus ST4I). Lượt #16 · #17 · #18 giống hệt:
+> **trúng nguồn 90 % · MRR 0,85 · qua ngưỡng 90 % · đáp án 90 % · tới trợ lý 90 % · từ chối 2/2**; `fake-bad` #19 0 % (ô "mọi kho"
+> vẫn 90 % vì tầng đường ống thấy corpus `csharp-dotnet` THẬT — đúng ngữ nghĩa ô đó). Trượt duy nhất A05 (`AddWithValue` — top‑1 là
+> `SqlCommand.md`). Không hồi quy: ST4I #20 y hệt #12–#14; hệ thống 151/151 (thêm 1 câu hệ thống bị Studio chen: "How do I change
+> my password?" ⇒ `SqlConnection.ChangePassword`, 0,433).
+>
+> ⚠ **Đính chính chẩn đoán D1 (audit 2026-09-21 §1):** `reader.GetInt32("MaHocSinh")` KHÔNG phải "sai tầng API". Trên net10.0
+> `System.Data.DataReaderExtensions.GetInt32(DbDataReader, String)` tồn tại; đo bằng `dotnet build` trên khuôn `cs-template`:
+> **có `using System.Data;` ⇒ Build succeeded · thiếu ⇒ CS1503**. Gốc lỗi là THIẾU `using`, không phải dùng sai overload. Tài liệu
+> sinh ra ghi rõ điều đó ở mọi phương thức mở rộng (câu A02 của bộ vàng canh nó).
+>
+> **R2 phần B (D1 C# 2/3 → 3/3) — CHƯA LÀM.** Đường sinh mã `/ai-coding-workspace` hôm nay KHÔNG truy hồi kho Studio (chỉ ngữ cảnh
+> repo + bài học), nên corpus mới chưa chạm được D1. Nối truy hồi API vào prompt sinh mã là đổi HÀNH VI MODEL ⇒ theo §5 phải đo M
+> và H ×3 trước/sau + ba dự án thật (≈ 1–2 giờ GPU trên llama-server dùng chung).
+
 ### R3 — ModelBuilderTab: thành **"Hồ sơ model"** thật thay panel vô hiệu
 Hiện model đang phục vụ, hồ sơ router (đo tại chỗ / thừa kế), sampling profile, ctx, các trục đo mới nhất (M/H/dự
 án) — đọc từ B7 + reports. Finetune (LoRA) **để sau**: G9 đã kết luận bằng số LoRA không chữa lỗi suy luận; khi bật

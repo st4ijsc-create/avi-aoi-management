@@ -1,0 +1,12 @@
+{"id":"A01","cauHoi":"SqlDataReader.GetInt32 nhận tham số gì — tên cột hay số thứ tự?","nguon":["Microsoft.Data.SqlClient.SqlDataReader.md"],"dapAn":{"regex":"GetInt32\\(Int32\\)[\\s\\S]{0,300}zero-based column ordinal"}}
+{"id":"A02","cauHoi":"Có đọc được cột số nguyên theo TÊN cột, kiểu reader.GetInt32(\"MaHocSinh\"), không? Cần gì để biên dịch?","nguon":["System.Data.DataReaderExtensions.md"],"dapAn":{"regex":"GetInt32\\(DbDataReader, String\\)[\\s\\S]{0,400}using System\\.Data;"}}
+{"id":"A03","cauHoi":"Làm sao lấy số thứ tự của một cột khi chỉ biết tên cột trong SqlDataReader?","nguon":["Microsoft.Data.SqlClient.SqlDataReader.md","System.Data.IDataRecord.md","System.Data.Common.DbDataReader.md"],"dapAn":{"regex":"GetOrdinal\\(String\\)"}}
+{"id":"A04","cauHoi":"Làm sao kiểm tra một cột đang có giá trị NULL trước khi đọc bằng SqlDataReader?","nguon":["Microsoft.Data.SqlClient.SqlDataReader.md","System.Data.IDataRecord.md","System.Data.Common.DbDataReader.md","System.Data.DataReaderExtensions.md"],"dapAn":{"regex":"IsDBNull\\("}}
+{"id":"A05","cauHoi":"Thêm tham số có giá trị vào SqlCommand bằng phương thức nào để tránh nối chuỗi SQL?","nguon":["Microsoft.Data.SqlClient.SqlParameterCollection.md"],"dapAn":{"regex":"AddWithValue\\(String, Object\\)"}}
+{"id":"A06","cauHoi":"ExecuteScalar của SqlCommand trả về cái gì?","nguon":["Microsoft.Data.SqlClient.SqlCommand.md","System.Data.Common.DbCommand.md"],"dapAn":{"regex":"first column of the first row"}}
+{"id":"A07","cauHoi":"ExecuteNonQuery trả về con số gì?","nguon":["Microsoft.Data.SqlClient.SqlCommand.md","System.Data.Common.DbCommand.md"],"dapAn":{"regex":"number of rows affected"}}
+{"id":"A08","cauHoi":"Làm sao mở một giao dịch (transaction) trên kết nối SQL Server?","nguon":["Microsoft.Data.SqlClient.SqlConnection.md"],"dapAn":{"regex":"## SqlConnection\\.BeginTransaction\\("}}
+{"id":"A09","cauHoi":"Muốn chèn nhanh hàng chục nghìn dòng từ DataTable vào bảng SQL Server thì dùng lớp và phương thức nào?","nguon":["Microsoft.Data.SqlClient.SqlBulkCopy.md"],"dapAn":{"regex":"## SqlBulkCopy\\.WriteToServer\\(DataTable\\)"}}
+{"id":"A10","cauHoi":"Đặt thời gian chờ tối đa cho một câu lệnh SQL bằng thuộc tính nào?","nguon":["Microsoft.Data.SqlClient.SqlCommand.md","System.Data.Common.DbCommand.md"],"dapAn":{"regex":"CommandTimeout"}}
+{"id":"N01","cauHoi":"Công thức nấu phở bò Hà Nội gồm những gì?","nguon":[]}
+{"id":"N02","cauHoi":"Máy AOI báo lỗi E082 thì xử lý thế nào?","nguon":[]}
