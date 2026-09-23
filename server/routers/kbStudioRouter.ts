@@ -66,6 +66,7 @@ import * as kbStudioService from "../services/kbStudioService";
 import { KbStudioTableUnavailableError, KbCorpusNotFoundError } from "../services/kbStudioService";
 import { startLoraFinetune, LoraFinetuneUnavailableError, LoraFinetuneError } from "../services/aiLlmFinetuneSidecar";
 import * as kbStudioEval from "../services/kbStudioEval";
+import { kiemSauNap, kiemKhiKhongCoChu } from "../services/kbKiemSauNap";
 import {
   KbEvalBoVangVangError,
   KbEvalBoVangLoiError,
@@ -83,6 +84,11 @@ import {
 } from "./kbErrors";
 
 const kbStudioProcedure = roleProcedure("admin", "engineer").use(require2FA);
+
+/** R4 — job thất bại vì KHÔNG trích được chữ vẫn mang kết quả kiểm máy (vd cờ PDF quét ảnh); lỗi khác ⇒ null. */
+function ketQuaMayKhiLoi(err: unknown) {
+  return err instanceof KbIngestValidationError && err.meta ? kiemKhiKhongCoChu(err.meta) : null;
+}
 /** deleteCorpus only — see module doc comment for why this is narrower than the rest. */
 const kbStudioDeleteProcedure = roleProcedure("admin").use(require2FA);
 
@@ -308,10 +314,12 @@ export const kbStudioRouter = router({
           buffer,
           userId: ctx.user?.id,
         });
-        await kbStudioService.markJobSucceeded(jobId, result.chunksAdded);
-        return { ...result, jobId };
+        // R4 — kiểm máy sau nạp (mig 0360): trả cả về client để thẻ kết quả hiện cảnh báo ngay.
+        const ketQuaMay = kiemSauNap(result.parsedMeta, result.chunksAdded);
+        await kbStudioService.markJobSucceeded(jobId, result.chunksAdded, ketQuaMay);
+        return { ...result, jobId, ketQuaMay };
       } catch (err) {
-        await kbStudioService.markJobFailed(jobId, err instanceof Error ? err.message : String(err));
+        await kbStudioService.markJobFailed(jobId, err instanceof Error ? err.message : String(err), ketQuaMayKhiLoi(err));
         mapIngestDocumentError(err, input.sourceRef);
       }
     }),
@@ -347,10 +355,11 @@ export const kbStudioRouter = router({
 
       try {
         const result = await ingestUrl({ corpus: input.corpus, url: input.url, userId: ctx.user?.id });
-        await kbStudioService.markJobSucceeded(jobId, result.chunksAdded);
-        return { ...result, jobId };
+        const ketQuaMay = kiemSauNap(result.parsedMeta, result.chunksAdded);
+        await kbStudioService.markJobSucceeded(jobId, result.chunksAdded, ketQuaMay);
+        return { ...result, jobId, ketQuaMay };
       } catch (err) {
-        await kbStudioService.markJobFailed(jobId, err instanceof Error ? err.message : String(err));
+        await kbStudioService.markJobFailed(jobId, err instanceof Error ? err.message : String(err), ketQuaMayKhiLoi(err));
         mapIngestUrlError(err, input.url);
       }
     }),

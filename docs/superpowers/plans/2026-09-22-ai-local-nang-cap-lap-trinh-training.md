@@ -398,6 +398,17 @@ lại, eval của sidecar phải đi qua llama‑server + `disableThinking` (K5)
 ### R4 — Jobs: tiến độ ingest thật (chunk/đoạn/ảnh) + cảnh báo "PDF quét ảnh ra 0 đoạn" thành cảnh báo **máy**
 Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest (0 chunk ⇒ badge đỏ + lý do).
 
+> **R4 — XONG 2026-09-23.** Bộ parse đã tính sẵn sự thật (`scannedNoOcr`, `ocrUsed`, `truncated`, `pageCount`) rồi VỨT đi — job chỉ
+> giữ `chunksAdded` + chuỗi lỗi. Nay `kbKiemSauNap.ts` (thuần) dựng kết quả kiểm máy → `kb_ingest_jobs."ketQuaMay"` (mig **0360**,
+> nullable: NULL = chưa kiểm ≠ "ổn") cho cả job thành công lẫn job thất bại vì không có chữ (lỗi mang `meta`). Mã: `pdf-quet-khong-ocr`
+> · `khong-trich-duoc-chu` · `khong-doan` (đỏ) · `ocr` · `bi-cat` (vàng). Tab Tác vụ thêm cột "Kiểm máy" (tooltip: số trang, ký
+> tự/trang, lý do); hàng đợi nạp ở tab Nguồn hiện huy hiệu ngay sau nạp. Đo sống ba PDF sinh bằng pdfkit: PDF chữ 2 trang ⇒ "ổn"
+> (2.802 ký tự/trang, 4 đoạn); PDF ảnh‑chụp‑chữ và PDF chỉ hình ⇒ đỏ "không trích được chữ" + "PDF quét ảnh — chưa OCR".
+> ★ **Phát hiện:** `.env` bật cả `KB_OCR_ENABLED` lẫn `OCR_ENGINE_ENABLED` nhưng `PDFTOPPM_BIN` trống ⇒ OCR "bật" mà trơ, PDF ảnh rơi
+> về thất bại trong 20–45 ms không một dòng log. `kbPdfOcr.lyDoOcrKhongSan()` nay trả mã lý do → `meta.ocrLyDo` → tooltip nói đúng
+> khoá cần sửa ("chưa khai PDFTOPPM_BIN"). Cài poppler + khai `PDFTOPPM_BIN` là việc VẬN HÀNH, chưa làm. Đính chính kèm: câu cảnh báo
+> bước 1 ở tab Nguồn (×3 locale) còn nói chẩn đoán D1 cũ đã bị bác — nay nói đúng "thiếu `using System.Data;`".
+
 ### R5 — Gọn bề mặt: hướng dẫn gấp (đã làm G16) → **checklist 4 bước có trạng thái** đọc từ dữ liệu thật
 (đã có corpus? đã ingest? đã eval? điểm?).
 

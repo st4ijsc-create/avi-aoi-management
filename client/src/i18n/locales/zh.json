@@ -15416,7 +15416,7 @@
         "fillCorpusAria": "将建议的语料库名称「{{corpus}}」填入语料库名称栏",
         "step1Note": "点击建议只会把名称填入下方的「语料库名称」栏（不会自动创建空语料库）——语料库要等第一份文档导入后才真正存在。",
         "currentlySelected": "当前选择：",
-        "step1WebWarning": "网页/应用编程领域（C#、React、Node.js、HTML、CSS、JavaScript）：模型在训练时已经掌握这些语言——为此领域导入文档不会带来新知识，反而会给回答增加噪音（已实测：评估集中剩余 2/2 个错误案例，都是把跑题的厂商文档引用匹配到了领域外的问题）。不必为此领域创建语料库。",
+        "step1WebWarning": "对于主流编程语言（C#、React、Node.js、Python、SQL）：导入入门教程毫无用处且制造噪声——模型已掌握语法。API 参考与项目约定确实有用：2026-09-23 实测，模型反复出现的 C# 错误是遗漏命名空间——`reader.GetInt32(\"MaHocSinh\")` 与 `SqlDbType` 都需要 `using System.Data;`（缺少会使 dotnet build 拒绝整个文件）。API 参考为每个符号写明所需的 `using`。⇒ 请导入 API 参考、编码规范与约定，而不是教程。",
         "step2Title": "2. 选择文件",
         "step2Accepts": "接受：{{formats}}",
         "step2AcceptsUrl": "、网址（粘贴到右侧面板的链接框）",
@@ -15573,6 +15573,36 @@
       "comingSoon": "将在后续任务中提供（E3-6）",
       "comingSoonDesc": "LoRA 微调功能尚未构建。您已导入语料库的文档现在会被 AI 助手用作回答中的引用来源（标注为“您上传的文档”）— 而专用微调模型仍是未来的升级项，尚未构建。",
       "startButton": "开始微调"
+    },
+    "kiemMay": {
+      "cot": "机器检查",
+      "on": "正常",
+      "onHint": "导入后已检查：无警告。",
+      "chuaKiemHint": "此任务早于机器检查功能——无检查结果（不代表正常）。",
+      "soTrang": "{{n}} 页",
+      "kyTuMoiTrang": "每页 {{n}} 字符",
+      "soDoan": "{{n}} 段",
+      "ma": {
+        "pdf-quet-khong-ocr": "扫描 PDF——未 OCR",
+        "khong-trich-duoc-chu": "未提取到文字",
+        "khong-doan": "0 段",
+        "ocr": "文字来自 OCR",
+        "bi-cat": "已截断"
+      },
+      "lyDo": {
+        "pdf-quet-khong-ocr": "{{trang}} 页文件每页仅约 {{kyTu}} 字符：页面是图像、没有文字层，且 OCR 未提供文字。助手几乎无法使用此文档——请启用 OCR（KB_OCR_ENABLED + OCR_ENGINE_ENABLED）或导入带文字的 PDF。",
+        "khong-trich-duoc-chu": "文档读取器未提取到任何文字——未存储任何内容。",
+        "khong-doan": "导入显示成功，但存储了 0 段。",
+        "ocr": "文字来自 OCR（{{ocr}} 页）——OCR 可能弄错变音符号和数字；请在评估页查看样本段落。",
+        "bi-cat": "文本超过导入字符上限——文档末尾未被存储。"
+      },
+      "ocrLyDo": {
+        "tat-kb-ocr": "OCR 未运行的原因：KB_OCR_ENABLED 已关闭。",
+        "thieu-pdftoppm": "OCR 未运行的原因：未设置 PDFTOPPM_BIN（poppler 的 pdftoppm 路径）——OCR 开关已开启但没有页面渲染器。",
+        "tat-ocr-engine": "OCR 未运行的原因：OCR_ENGINE_ENABLED 已关闭。",
+        "thieu-model-ocr": "OCR 未运行的原因：缺少 OCR 引擎的 ONNX 模型文件。",
+        "khong-doc-duoc": "OCR 已运行，但没有任何页面识别出文字。"
+      }
     }
   },
   "batch": {

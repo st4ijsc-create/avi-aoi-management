@@ -106,8 +106,10 @@ export interface KbCorpusDomainSuggestion {
  * Trước bản này danh sách chỉ có năm miền CÔNG NGHIỆP, và màn hình còn khuyên thẳng rằng nạp tài
  * liệu lập trình *"KHÔNG dạy thêm gì"*. Đo được trong đợt audit ba dự án thật (2026-09-22) cho
  * thấy lời khuyên ấy **quá mạnh**: model nắm cú pháp, nhưng sai ở tầng **API**. Ca cụ thể, ổn định
- * 0/3 lượt: nó sinh `reader.GetInt32("MaHocSinh")` — `SqlDataReader.GetInt32` nhận **số thứ tự
- * cột**, không nhận tên cột. Một lỗi gốc lặp 5 lần, và `dotnet build` chặn cả tệp.
+ * 0/3 lượt: nó sinh `reader.GetInt32("MaHocSinh")` và `dotnet build` chặn cả tệp.
+ * ⚠ ĐÍNH CHÍNH 2026-09-23 (R2, đo bằng `dotnet build`): chẩn đoán cũ *"GetInt32 chỉ nhận số thứ tự cột"*
+ * SAI — trên net10.0 `DataReaderExtensions.GetInt32(DbDataReader, String)` tồn tại; gốc lỗi là THIẾU
+ * `using System.Data;` (cùng gốc với `SqlDbType` CS0103). Vẫn đúng tầng "tham chiếu API" chữa được.
  *
  * Đó chính là loại sai mà một corpus **tham chiếu API + quy ước** chữa được, và là loại sai mà
  * "model đã biết ngôn ngữ này rồi" không chữa nổi. Phân biệt phải nói rõ:

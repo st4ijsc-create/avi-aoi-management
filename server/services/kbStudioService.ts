@@ -31,6 +31,7 @@
  */
 import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
+import type { KetQuaMayNap } from "./kbKiemSauNap";
 import { isMissingTable } from "../_core/dbErrors";
 import {
   kbCorpora,
@@ -334,14 +335,18 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
 /** Best-effort — swallows ALL errors (including 42P01 and a missing/already-finished job
  * id). NEVER throws: called from the SUCCESS path of the ingest mutation, and a bookkeeping
  * failure here must never turn an actually-successful ingest into a reported failure. */
-export async function markJobSucceeded(jobId: number | null, chunksAdded: number): Promise<void> {
+export async function markJobSucceeded(
+  jobId: number | null,
+  chunksAdded: number,
+  ketQuaMay?: KetQuaMayNap | null,
+): Promise<void> {
   if (jobId == null) return;
   try {
     const db = await getDb();
     if (!db) return;
     await db
       .update(kbIngestJobs)
-      .set({ status: "succeeded", chunksAdded, finishedAt: new Date() })
+      .set({ status: "succeeded", chunksAdded, finishedAt: new Date(), ...(ketQuaMay ? { ketQuaMay } : {}) })
       .where(eq(kbIngestJobs.id, jobId));
   } catch (e) {
     if (!isMissingTableError(e)) {
@@ -355,14 +360,14 @@ export async function markJobSucceeded(jobId: number | null, chunksAdded: number
  * (see kbStudioRouter.ts) so a throw from ingestDocument/ingestUrl ALWAYS ends with the job
  * marked 'failed' when the table is available, and NEVER masks the original error when it
  * isn't (the caller re-throws the original error regardless of what happens here). */
-export async function markJobFailed(jobId: number | null, error: string): Promise<void> {
+export async function markJobFailed(jobId: number | null, error: string, ketQuaMay?: KetQuaMayNap | null): Promise<void> {
   if (jobId == null) return;
   try {
     const db = await getDb();
     if (!db) return;
     await db
       .update(kbIngestJobs)
-      .set({ status: "failed", error: error.slice(0, 4000), finishedAt: new Date() })
+      .set({ status: "failed", error: error.slice(0, 4000), finishedAt: new Date(), ...(ketQuaMay ? { ketQuaMay } : {}) })
       .where(eq(kbIngestJobs.id, jobId));
   } catch (e) {
     if (!isMissingTableError(e)) {

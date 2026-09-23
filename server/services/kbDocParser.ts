@@ -85,6 +85,9 @@ export interface ParsedDocumentMeta {
   scannedNoOcr?: boolean;
   /** E3-5: number of pages actually OCR'd successfully when `ocrUsed:true`. */
   ocrPagesProcessed?: number;
+  /** R4 — chỉ khi `scannedNoOcr`: vì sao OCR không cấp được chữ (`kbPdfOcr.lyDoOcrKhongSan`), hoặc
+   * `khong-doc-duoc` khi OCR có chạy mà không trang nào ra chữ. */
+  ocrLyDo?: string;
 }
 
 export interface ParsedDocument {
@@ -306,9 +309,16 @@ async function parsePdf(buf: Buffer): Promise<ParsedDocument> {
         // ANY unexpected failure here must fall back to the honest pdf-parse result below, not
         // crash parsePdf or fabricate text.
       }
+      let ocrLyDo = "khong-doc-duoc";
+      try {
+        const { lyDoOcrKhongSan } = await import("./kbPdfOcr");
+        ocrLyDo = (await lyDoOcrKhongSan()) ?? "khong-doc-duoc";
+      } catch {
+        /* giữ "khong-doc-duoc" — không bao giờ làm hỏng lượt parse vì một câu chẩn đoán */
+      }
       return {
         text,
-        meta: { sourceType: "pdf", charCount: text.length, truncated, pageCount, ocrUsed: false, scannedNoOcr: true },
+        meta: { sourceType: "pdf", charCount: text.length, truncated, pageCount, ocrUsed: false, scannedNoOcr: true, ocrLyDo },
       };
     }
 

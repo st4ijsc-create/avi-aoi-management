@@ -14838,7 +14838,7 @@
         "fillCorpusAria": "Điền tên corpus gợi ý \"{{corpus}}\" vào ô Tên corpus",
         "step1Note": "Bấm một gợi ý chỉ ĐIỀN tên vào ô \"Tên corpus\" bên dưới (không tự tạo corpus rỗng) — corpus chỉ thật sự tồn tại sau khi tài liệu đầu tiên được nạp vào nó.",
         "currentlySelected": "Đang chọn:",
-        "step1WebWarning": "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN là vô ích và gây nhiễu — model đã nắm cú pháp từ lúc huấn luyện (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi bị gán trích dẫn lạc đề). Nhưng tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN thì có ích thật, vì model sai ở đúng tầng đó: đo 2026-09-22, nó sinh reader.GetInt32(\"MaHocSinh\") trong khi SqlDataReader.GetInt32 chỉ nhận SỐ THỨ TỰ CỘT — một lỗi gốc lặp 5 lần, đủ để dotnet build chặn cả tệp. ⇒ Nạp tài liệu tra cứu API, chuẩn mã và quy ước; đừng nạp giáo trình.",
+        "step1WebWarning": "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN là vô ích và gây nhiễu — model đã nắm cú pháp từ lúc huấn luyện. Tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN thì có ích thật: đo 2026-09-23, lỗi C# lặp lại của model là QUÊN KHÔNG GIAN TÊN — `reader.GetInt32(\"MaHocSinh\")` và `SqlDbType` đều cần `using System.Data;` (thiếu ⇒ dotnet build chặn cả tệp). Tham chiếu API ghi rõ `using` cho từng ký hiệu. ⇒ Nạp tài liệu tra cứu API, chuẩn mã và quy ước; đừng nạp giáo trình.",
         "step2Title": "2. Chọn tệp",
         "step2Accepts": "Nhận: {{formats}}",
         "step2AcceptsUrl": ", URL (dán link ở khung bên phải)",
@@ -14995,6 +14995,36 @@
       "comingSoon": "Sẽ có ở tác vụ sau (E3-6)",
       "comingSoonDesc": "Tinh chỉnh (fine-tune) LoRA chưa được xây dựng. Tài liệu bạn đã nạp vào corpus giờ được trợ lý AI dùng làm nguồn trích dẫn (nhãn \"Tài liệu bạn nạp\") trong câu trả lời — còn việc huấn luyện một mô hình tinh chỉnh riêng vẫn là nâng cấp trong tương lai, chưa được xây dựng.",
       "startButton": "Bắt đầu tinh chỉnh"
+    },
+    "kiemMay": {
+      "cot": "Kiểm máy",
+      "on": "ổn",
+      "onHint": "Đã kiểm sau nạp: không có cảnh báo nào.",
+      "chuaKiemHint": "Job này nạp trước khi có kiểm máy — không có kết quả kiểm (không có nghĩa là ổn).",
+      "soTrang": "{{n}} trang",
+      "kyTuMoiTrang": "{{n}} ký tự/trang",
+      "soDoan": "{{n}} đoạn",
+      "ma": {
+        "pdf-quet-khong-ocr": "PDF quét ảnh — chưa OCR",
+        "khong-trich-duoc-chu": "không trích được chữ",
+        "khong-doan": "0 đoạn",
+        "ocr": "chữ từ OCR",
+        "bi-cat": "bị cắt"
+      },
+      "lyDo": {
+        "pdf-quet-khong-ocr": "Tệp {{trang}} trang chỉ có ~{{kyTu}} ký tự/trang: các trang là ẢNH, không có lớp chữ, và OCR không cấp được chữ. Trợ lý gần như không dùng được tài liệu này — bật OCR (KB_OCR_ENABLED + OCR_ENGINE_ENABLED) hoặc nạp bản PDF có chữ.",
+        "khong-trich-duoc-chu": "Bộ đọc tài liệu không lấy ra được chữ nào — không đoạn nào được lưu.",
+        "khong-doan": "Nạp báo thành công nhưng 0 đoạn được lưu.",
+        "ocr": "Chữ lấy bằng OCR ({{ocr}} trang) — OCR có thể sai dấu tiếng Việt và chữ số; nên xem mẫu đoạn ở tab Đánh giá.",
+        "bi-cat": "Văn bản vượt trần ký tự khi nạp — phần cuối tài liệu KHÔNG vào kho."
+      },
+      "ocrLyDo": {
+        "tat-kb-ocr": "Lý do OCR không chạy: KB_OCR_ENABLED đang tắt.",
+        "thieu-pdftoppm": "Lý do OCR không chạy: chưa khai PDFTOPPM_BIN (đường dẫn pdftoppm của poppler) — cờ OCR bật nhưng không có bộ dựng trang ảnh.",
+        "tat-ocr-engine": "Lý do OCR không chạy: OCR_ENGINE_ENABLED đang tắt.",
+        "thieu-model-ocr": "Lý do OCR không chạy: thiếu tệp model ONNX của bộ OCR.",
+        "khong-doc-duoc": "OCR có chạy nhưng không trang nào ra chữ."
+      }
     }
   },
   "batch": {

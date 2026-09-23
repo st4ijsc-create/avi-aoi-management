@@ -11,6 +11,7 @@
 import { useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { HuyHieuKiemMay, type KetQuaMayNap } from "./HuyHieuKiemMay";
 import {
   Upload,
   Link as LinkIcon,
@@ -67,6 +68,8 @@ interface QueuedFile {
   status: FileIngestStatus;
   error?: string;
   chunksAdded?: number;
+  /** R4 — kết quả kiểm máy sau nạp do server trả về (mig 0360). */
+  ketQuaMay?: KetQuaMayNap | null;
 }
 
 function newFileId(): string {
@@ -233,7 +236,7 @@ function IngestGuidanceCard({
               <p className="text-xs text-amber-800 dark:text-amber-300">
                 {t(
                   "kbStudio.source.guidance.step1WebWarning",
-                  "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN là vô ích và gây nhiễu — model đã nắm cú pháp từ lúc huấn luyện (đã đo: 2/2 ca sai còn lại trong bộ đánh giá là câu hỏi bị gán trích dẫn lạc đề). Nhưng tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN thì có ích thật, vì model sai ở đúng tầng đó: đo 2026-09-22, nó sinh reader.GetInt32(\"MaHocSinh\") trong khi SqlDataReader.GetInt32 chỉ nhận SỐ THỨ TỰ CỘT — một lỗi gốc lặp 5 lần, đủ để dotnet build chặn cả tệp. ⇒ Nạp tài liệu tra cứu API, chuẩn mã và quy ước; đừng nạp giáo trình.",
+                  "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN là vô ích và gây nhiễu — model đã nắm cú pháp từ lúc huấn luyện. Tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN thì có ích thật: đo 2026-09-23, lỗi C# lặp lại của model là QUÊN KHÔNG GIAN TÊN — `reader.GetInt32(\"MaHocSinh\")` và `SqlDbType` đều cần `using System.Data;` (thiếu ⇒ dotnet build chặn cả tệp). Tham chiếu API ghi rõ `using` cho từng ký hiệu. ⇒ Nạp tài liệu tra cứu API, chuẩn mã và quy ước; đừng nạp giáo trình.",
                 )}
               </p>
             </div>
@@ -431,7 +434,7 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
         done += 1;
         applyQueue(
           queuedFilesRef.current.map((x) =>
-            x.id === qf.id ? { ...x, status: "done", chunksAdded: result.chunksAdded } : x,
+            x.id === qf.id ? { ...x, status: "done", chunksAdded: result.chunksAdded, ketQuaMay: result.ketQuaMay } : x,
           ),
         );
       } catch (err) {
@@ -591,6 +594,9 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             {t("kbStudio.source.fileStatusDone", { chunksAdded: qf.chunksAdded ?? 0 })}
                           </span>
+                        )}
+                        {qf.status === "done" && qf.ketQuaMay && qf.ketQuaMay.canhBao.length > 0 && (
+                          <HuyHieuKiemMay kq={qf.ketQuaMay} />
                         )}
                         {qf.status === "error" && (
                           <span

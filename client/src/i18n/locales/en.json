@@ -14858,7 +14858,7 @@
         "fillCorpusAria": "Fill the suggested corpus name \"{{corpus}}\" into the Corpus name field",
         "step1Note": "Clicking a suggestion only FILLS the \"Corpus name\" field below (it does not create an empty corpus) — a corpus only really exists once its first document has been ingested.",
         "currentlySelected": "Currently selected:",
-        "step1WebWarning": "Web/app programming domains (C#, React, Node.js, HTML, CSS, JavaScript): the model already knows these languages from training — ingesting documents for this domain does NOT teach it anything new and instead ADDS NOISE to answers (measured: 2/2 remaining wrong cases in the eval set are off-domain questions matched to off-topic vendor-document citations). Don't bother creating a corpus for this domain.",
+        "step1WebWarning": "For mainstream languages (C#, React, Node.js, Python, SQL): ingesting BEGINNER TUTORIALS is useless noise — the model already knows the syntax. API REFERENCE and PROJECT CONVENTIONS do help: measured 2026-09-23, the model's recurring C# error is a FORGOTTEN NAMESPACE — `reader.GetInt32(\"MaHocSinh\")` and `SqlDbType` both need `using System.Data;` (missing it ⇒ dotnet build rejects the whole file). The API reference states the `using` for every symbol. ⇒ Ingest API reference, coding standards and conventions; not tutorials.",
         "step2Title": "2. Pick files",
         "step2Accepts": "Accepts: {{formats}}",
         "step2AcceptsUrl": ", URL (paste a link in the panel on the right)",
@@ -15015,6 +15015,36 @@
       "comingSoon": "Coming in a later task (E3-6)",
       "comingSoonDesc": "LoRA fine-tuning is not built yet. Documents you've ingested into a corpus are now used by the AI assistant as citation sources (labeled \"Your uploaded documents\") in its answers — a dedicated fine-tuned model is a separate future upgrade, not built yet.",
       "startButton": "Start fine-tune"
+    },
+    "kiemMay": {
+      "cot": "Machine check",
+      "on": "ok",
+      "onHint": "Checked after ingest: no warnings.",
+      "chuaKiemHint": "This job ran before machine checks existed — no check result (which does not mean OK).",
+      "soTrang": "{{n}} pages",
+      "kyTuMoiTrang": "{{n}} chars/page",
+      "soDoan": "{{n}} chunks",
+      "ma": {
+        "pdf-quet-khong-ocr": "Scanned PDF — no OCR",
+        "khong-trich-duoc-chu": "no text extracted",
+        "khong-doan": "0 chunks",
+        "ocr": "text from OCR",
+        "bi-cat": "truncated"
+      },
+      "lyDo": {
+        "pdf-quet-khong-ocr": "{{trang}}-page file has only ~{{kyTu}} chars/page: the pages are IMAGES with no text layer, and OCR supplied no text. The assistant can barely use this document — enable OCR (KB_OCR_ENABLED + OCR_ENGINE_ENABLED) or ingest a text PDF.",
+        "khong-trich-duoc-chu": "The document reader extracted no text at all — nothing was stored.",
+        "khong-doan": "Ingest reported success but 0 chunks were stored.",
+        "ocr": "Text came from OCR ({{ocr}} pages) — OCR can garble diacritics and digits; review sample chunks in the Evaluation tab.",
+        "bi-cat": "The text exceeded the ingest character cap — the END of the document was NOT stored."
+      },
+      "ocrLyDo": {
+        "tat-kb-ocr": "Why OCR did not run: KB_OCR_ENABLED is off.",
+        "thieu-pdftoppm": "Why OCR did not run: PDFTOPPM_BIN (path to poppler's pdftoppm) is not set — the OCR flags are on but there is no page renderer.",
+        "tat-ocr-engine": "Why OCR did not run: OCR_ENGINE_ENABLED is off.",
+        "thieu-model-ocr": "Why OCR did not run: the OCR engine's ONNX model files are missing.",
+        "khong-doc-duoc": "OCR ran but no page yielded text."
+      }
     }
   },
   "batch": {

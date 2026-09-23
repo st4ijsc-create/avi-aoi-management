@@ -397,7 +397,7 @@ describe("kbStudioRouter — appCode thật sự tới được TRPCError.cause 
     expect(meta?.appParams).toEqual({ url: "https://example.com/page" });
     // markJobFailed vẫn nhận message của lỗi GỐC (chưa map) — hành vi đã có từ trước, không đổi.
     // Đây KHÔNG phải đường ra client — job-log nội bộ, không đi qua appError/i18n.
-    expect(markJobFailedMock).toHaveBeenCalledWith(42, "timed out");
+    expect(markJobFailedMock).toHaveBeenCalledWith(42, "timed out", null);
   });
 
   it("ingestDocumentJob: service ném KbIngestValidationError (không còn chữ) ⇒ KB_NO_TEXT_EXTRACTED kèm sourceRef", async () => {

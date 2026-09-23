@@ -277,7 +277,7 @@ describe("kbStudioRouter — ingestDocumentJob job lifecycle", () => {
       expect.objectContaining({ corpus: "vendor-x", sourceType: "application/pdf", sourceRef: "manual.pdf" }),
     );
     expect(ingestDocumentMock).toHaveBeenCalledTimes(1);
-    expect(markJobSucceededMock).toHaveBeenCalledWith(42, 3);
+    expect(markJobSucceededMock).toHaveBeenCalledWith(42, 3, expect.objectContaining({ soDoan: 3 }));
     expect(markJobFailedMock).not.toHaveBeenCalled();
     expect(result).toMatchObject({ chunksAdded: 3, jobId: 42 });
   });
@@ -287,7 +287,7 @@ describe("kbStudioRouter — ingestDocumentJob job lifecycle", () => {
     await expect(callerFor("admin", true).ingestDocumentJob(validInput)).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
     });
-    expect(markJobFailedMock).toHaveBeenCalledWith(42, "table not migrated");
+    expect(markJobFailedMock).toHaveBeenCalledWith(42, "table not migrated", null);
     expect(markJobSucceededMock).not.toHaveBeenCalled();
   });
 
@@ -296,7 +296,7 @@ describe("kbStudioRouter — ingestDocumentJob job lifecycle", () => {
     const result = await callerFor("admin", true).ingestDocumentJob(validInput);
     expect(ingestDocumentMock).toHaveBeenCalledTimes(1); // ingest itself is NEVER blocked
     expect(result).toMatchObject({ chunksAdded: 3, jobId: null });
-    expect(markJobSucceededMock).toHaveBeenCalledWith(null, 3); // best-effort no-op, verified at the service layer
+    expect(markJobSucceededMock).toHaveBeenCalledWith(null, 3, expect.objectContaining({ soDoan: 3 })); // best-effort no-op, verified at the service layer
   });
 
   const typedErrorCases: Array<[name: string, err: Error, code: string]> = [
@@ -312,7 +312,7 @@ describe("kbStudioRouter — ingestDocumentJob job lifecycle", () => {
     it(`${name} ⇒ ${code} (mirrors kbIngestRouter's mapping), job marked failed`, async () => {
       ingestDocumentMock.mockRejectedValueOnce(err);
       await expect(callerFor("admin", true).ingestDocumentJob(validInput)).rejects.toMatchObject({ code });
-      expect(markJobFailedMock).toHaveBeenCalledWith(42, err.message);
+      expect(markJobFailedMock).toHaveBeenCalledWith(42, err.message, null);
     });
   }
 });
@@ -346,14 +346,14 @@ describe("kbStudioRouter — ingestUrlJob job lifecycle", () => {
     expect(createJobMock).toHaveBeenCalledWith(
       expect.objectContaining({ corpus: "vendor-x", sourceType: "url", sourceRef: "https://example.com/page" }),
     );
-    expect(markJobSucceededMock).toHaveBeenCalledWith(42, 2);
+    expect(markJobSucceededMock).toHaveBeenCalledWith(42, 2, expect.objectContaining({ soDoan: 2 }));
     expect(result).toMatchObject({ chunksAdded: 2, jobId: 42 });
   });
 
   it("SsrfBlockedError ⇒ BAD_REQUEST, job marked failed (never stuck)", async () => {
     ingestUrlMock.mockRejectedValueOnce(new SsrfBlockedError("blocked IP"));
     await expect(callerFor("admin", true).ingestUrlJob(urlInput)).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(markJobFailedMock).toHaveBeenCalledWith(42, "blocked IP");
+    expect(markJobFailedMock).toHaveBeenCalledWith(42, "blocked IP", null);
   });
 
   it("FetchError ⇒ BAD_REQUEST", async () => {
@@ -502,5 +502,32 @@ describe("kbStudioRouter — evalCorpus / listEvalRuns / getEvalRun / listGolden
     await callerFor("admin").getEvalRun({ id: 4, corpus: "c" });
     expect(getEvalRunMock).toHaveBeenCalledWith(4, "c");
     expect((await callerFor("admin").listGoldenSets()).sets[0].ten).toBe("st4i-may-aoi");
+  });
+});
+
+// ─── R4 — kiểm máy sau nạp đi vào job ───────────────────────────────────────
+
+describe("kbStudioRouter — R4 kiểm máy sau nạp (ketQuaMay)", () => {
+  it("nạp thành công ⇒ markJobSucceeded nhận ketQuaMay, client nhận lại cùng giá trị", async () => {
+    ingestDocumentMock.mockResolvedValue({
+      corpus: "c", sourceRef: "scan.pdf", chunksAdded: 1,
+      parsedMeta: { sourceType: "pdf", charCount: 20, truncated: false, pageCount: 4, scannedNoOcr: true },
+    });
+    const r = await callerFor("admin").ingestDocumentJob({ corpus: "c", sourceRef: "scan.pdf", mimeOrExt: "pdf", base64: SMALL_PDF_B64 });
+    expect(r.ketQuaMay.canhBao.map((c: { ma: string }) => c.ma)).toEqual(["pdf-quet-khong-ocr"]);
+    expect(markJobSucceededMock).toHaveBeenCalledWith(42, 1, r.ketQuaMay);
+  });
+
+  it("không trích được chữ (lỗi mang meta) ⇒ markJobFailed nhận ketQuaMay `khong-trich-duoc-chu`; lỗi khác ⇒ null", async () => {
+    ingestDocumentMock.mockRejectedValue(
+      new KbIngestValidationError("no text", { sourceType: "pdf", charCount: 0, truncated: false, pageCount: 2, scannedNoOcr: true }),
+    );
+    await callerFor("admin").ingestDocumentJob({ corpus: "c", sourceRef: "s.pdf", mimeOrExt: "pdf", base64: SMALL_PDF_B64 }).catch(() => {});
+    const kq = markJobFailedMock.mock.calls.at(-1)?.[2] as { canhBao: { ma: string }[] };
+    expect(kq.canhBao.map((c) => c.ma)).toEqual(["khong-trich-duoc-chu", "pdf-quet-khong-ocr"]);
+
+    ingestDocumentMock.mockRejectedValue(new KbEmbedError("embed down"));
+    await callerFor("admin").ingestDocumentJob({ corpus: "c", sourceRef: "s.pdf", mimeOrExt: "pdf", base64: SMALL_PDF_B64 }).catch(() => {});
+    expect(markJobFailedMock.mock.calls.at(-1)?.[2]).toBeNull();
   });
 });

@@ -106,6 +106,25 @@ async function loadOcrServiceIfAvailable(): Promise<typeof import("./ai/ocrServi
   }
 }
 
+/**
+ * R4 — VÌ SAO OCR không chạy, bằng mã máy (`null` = mọi điều kiện đủ). Đo 2026-09-23: `.env` bật cả
+ * `KB_OCR_ENABLED` lẫn `OCR_ENGINE_ENABLED` nhưng `PDFTOPPM_BIN` trống ⇒ OCR "bật" mà trơ, và một PDF ảnh
+ * chụp chữ rơi thẳng về "không trích được chữ" trong 45 ms, không một dòng log. Mã này đi vào
+ * `meta.ocrLyDo` ⇒ kiểm máy sau nạp nói ĐÚNG khoá cần sửa. Không bao giờ ném.
+ */
+export async function lyDoOcrKhongSan(): Promise<null | "tat-kb-ocr" | "thieu-pdftoppm" | "tat-ocr-engine" | "thieu-model-ocr"> {
+  if (!isKbOcrEnabled()) return "tat-kb-ocr";
+  if (!getPdftoppmBin()) return "thieu-pdftoppm";
+  try {
+    const mod = await import("./ai/ocrService");
+    if (!mod.isOcrEngineEnabled()) return "tat-ocr-engine";
+    if (!mod.ocrModelsAvailable()) return "thieu-model-ocr";
+    return null;
+  } catch {
+    return "tat-ocr-engine";
+  }
+}
+
 /** True only when EVERY precondition for KB-ingest OCR is met right now. Never throws. Exposed
  * mainly for status/introspection callers (e.g. a future Studio UI capability check); the
  * internal `ocrScannedPdf` flow performs the same check itself and does not depend on this. */

@@ -35,9 +35,13 @@ export class KbIngestDisabledError extends Error {
 
 /** Thrown for bad/insufficient input (missing corpus, no content, zero chunks after parsing). */
 export class KbIngestValidationError extends Error {
-  constructor(message: string) {
+  /** R4 — meta bộ parse ĐÃ tính khi lỗi xảy ra SAU bước parse (vd PDF quét ảnh ra 0 ký tự) — để job
+   * thất bại vẫn mang kết quả kiểm máy (`kbKiemSauNap.kiemKhiKhongCoChu`). Vắng với lỗi đầu vào. */
+  readonly meta?: ParsedDocumentMeta;
+  constructor(message: string, meta?: ParsedDocumentMeta) {
     super(message);
     this.name = "KbIngestValidationError";
+    this.meta = meta;
   }
 }
 
@@ -190,7 +194,7 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
   // 1) Parse. KbUnsupportedTypeError / KbParseError are already typed — let them propagate.
   const parsed = await parseDocument(input.buffer ?? input.text!, input.sourceType);
   if (!parsed.text.trim()) {
-    throw new KbIngestValidationError(`Document "${sourceRef}" produced no extractable text`);
+    throw new KbIngestValidationError(`Document "${sourceRef}" produced no extractable text`, parsed.meta);
   }
 
   // 2) Chunk — bounded size + overlap, hard-capped chunk count.

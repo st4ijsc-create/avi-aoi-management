@@ -93,6 +93,9 @@ export const kbIngestJobs = pgTable("kb_ingest_jobs", {
     .$type<"pending" | "running" | "succeeded" | "failed">(),
   chunksAdded: integer("chunksAdded"),
   error: text("error"),
+  // R4 (mig 0360) — kết quả KIỂM MÁY sau nạp (`server/services/kbKiemSauNap.ts` · KetQuaMayNap).
+  // NULL = chưa từng kiểm (hàng cũ) — KHÁC `{canhBao: []}` (đã kiểm, ổn).
+  ketQuaMay: jsonb("ketQuaMay").$type<import("../../server/services/kbKiemSauNap").KetQuaMayNap>(),
   createdBy: integer("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   finishedAt: timestamp("finishedAt"),

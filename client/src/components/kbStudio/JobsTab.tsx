@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { HuyHieuKiemMay, tomTatNap } from "./HuyHieuKiemMay";
 
 const STATUS_CLASS: Record<string, string> = {
   succeeded: "status-ok",
@@ -100,6 +101,7 @@ export function JobsTab() {
                   <TableHead>{t("kbStudio.jobs.colType")}</TableHead>
                   <TableHead>{t("kbStudio.jobs.colStatus")}</TableHead>
                   <TableHead className="text-right">{t("kbStudio.jobs.colChunks")}</TableHead>
+                  <TableHead>{t("kbStudio.kiemMay.cot")}</TableHead>
                   <TableHead>{t("kbStudio.jobs.colCreated")}</TableHead>
                   <TableHead>{t("kbStudio.jobs.colError")}</TableHead>
                 </TableRow>
@@ -117,7 +119,12 @@ export function JobsTab() {
                         {t(`kbStudio.jobs.status.${job.status}`, job.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">{job.chunksAdded ?? "—"}</TableCell>
+                    <TableCell className="text-right" title={tomTatNap(job.ketQuaMay, t)}>
+                      {job.chunksAdded ?? "—"}
+                    </TableCell>
+                    <TableCell data-testid={`job-kiem-may-${job.id}`}>
+                      <HuyHieuKiemMay kq={job.ketQuaMay} />
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                       {new Date(job.createdAt).toLocaleString()}
                     </TableCell>
