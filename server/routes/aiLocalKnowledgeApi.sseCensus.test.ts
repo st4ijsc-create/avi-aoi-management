@@ -47,7 +47,12 @@ const KIEU_KHAI_MA_KHONG_PHAT: ReadonlySet<string> = new Set<string>([]);
 
 /** Số điểm PHÁT (`type: "x"`) của một kiểu trong service, KHÔNG tính khối khai báo union. */
 function soDiemPhat(kieu: string): number {
-  const src = bocChuThich(readFileSync(resolve(process.cwd(), "server/services/aiLocalKnowledgeService.ts"), "utf8"));
+  // ★ B8 — điểm phát nằm ở CẢ tệp gốc lẫn nhánh lập trình đã tách (`aiLocalKnowledgeCoding.ts`); khai báo union ở tệp gốc.
+  const src = bocChuThich(
+    ["server/services/aiLocalKnowledgeService.ts", "server/services/aiLocalKnowledgeCoding.ts"]
+      .map((p) => readFileSync(resolve(process.cwd(), p), "utf8"))
+      .join("\n"),
+  );
   const dau = src.indexOf("export type StreamEvent =");
   const sau = src.indexOf("\n;", dau) > 0 ? src.indexOf("\n;", dau) : src.indexOf("};\n", dau) + 2;
   const ngoaiUnion = src.slice(0, dau) + src.slice(sau);

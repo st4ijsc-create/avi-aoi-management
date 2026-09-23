@@ -52,6 +52,12 @@ import { registerAiLocalKnowledgeRoutes } from "./aiLocalKnowledgeApi";
 
 const DUONG_TUYEN = path.resolve(process.cwd(), "server/routes/aiLocalKnowledgeApi.ts");
 const DUONG_SERVICE = path.resolve(process.cwd(), "server/services/aiLocalKnowledgeService.ts");
+/**
+ * ★ B8 (2026-09-23) — nhánh LẬP TRÌNH (streamCodingAnswer và mọi điểm `yield` của nó) đã tách sang tệp
+ * anh em. "Service" của lưới này = HỢP các tệp phát sự kiện: khai báo `StreamEvent` vẫn ở tệp gốc (đọc
+ * TRƯỚC), điểm phát đếm trên cả hai — bỏ tệp tách ra khỏi danh sách thì lưới MÙ đúng nửa số điểm phát.
+ */
+const DUONG_PHAT_THEM = [path.resolve(process.cwd(), "server/services/aiLocalKnowledgeCoding.ts")];
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // §A — KIỂM KÊ: mọi loại sự kiện service phát ĐỀU có một `case` ở tuyến
@@ -133,7 +139,7 @@ function soDiemPhat(src: string, loai: string): number {
 
 describe("§A — KIỂM KÊ: tuyến chuyển tiếp ĐỦ mọi loại sự kiện service phát", () => {
   const srcTuyen = fs.readFileSync(DUONG_TUYEN, "utf8");
-  const srcService = fs.readFileSync(DUONG_SERVICE, "utf8");
+  const srcService = [DUONG_SERVICE, ...DUONG_PHAT_THEM].map((p) => fs.readFileSync(p, "utf8")).join("\n");
 
   it("★★★ `tool_loop` CÓ trong danh sách `case` của tuyến (đây là ô đã đứt)", () => {
     expect(caseCuaTuyen(srcTuyen)).toContain("tool_loop");
