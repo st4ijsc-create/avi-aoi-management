@@ -21,7 +21,7 @@
  *   - đổi `MIN_STUDIO_CITATION_SCORE` về ngưỡng CŨ 0,18 (giá trị lỏng đã ĐO SỐNG rồi BÁC BỎ — xem
  *     docblock lớn trong `aiLocalKnowledgeService.ts`) ⇒ §C1 ĐỎ (hit Studio 0.40 — đúng cụm nhiễu
  *     đo được — lọt qua oan). ★ CHÚ Ý cho người sửa sau: `MIN_STUDIO_CITATION_SCORE` và
- *     `MIN_PROG_KB_CITATION_SCORE` HIỆN cùng bằng 0,5 — TRÙNG SỐ NGẪU NHIÊN (hai không gian nhúng
+ *     `MIN_PROG_KB_CITATION_SCORE` TỪNG cùng bằng 0,5 (R1 2026-09-23 đo lại Studio ⇒ 0,44) — TRÙNG SỐ NGẪU NHIÊN (hai không gian nhúng
  *     khác nhau, hai cụm đo độc lập, xem B2), KHÔNG PHẢI một hằng số dùng chung — đừng gộp chúng
  *     lại thành MỘT biến khi thấy giá trị giống nhau, đó đúng lớp lỗi "chép tay hai nơi" đã cắn dự
  *     án này nhiều lần trước.
@@ -214,6 +214,16 @@ describe("§C — B2: HAI NGƯỠNG RIÊNG cho hai thang điểm khác nhau (kh�
     const r = await retrieveKnowledge("hỏi gì đó", 5, { route: "vscode", callerRole: "engineer" });
     expect(r.citations).toHaveLength(1);
     expect(r.citations[0].score).toBeCloseTo(0.73);
+  });
+
+  // ★★★ R1 (2026-09-23) — biên ĐO trên hai corpus (eval #14/#21/#23/#24, xem docblock hằng): đỉnh cụm NHIỄU
+  // ngoài corpus 0,415; nguồn ĐÚNG thấp nhất mà 0,5 cũ bỏ oan: 0,4443 (T25 st4i) · 0,4503 (T17) · 0,4571 (T12).
+  // Fixture = NGUYÊN VĂN số đo. Đột biến phải bắt: quay về 0,5 (ca 0,4443 đỏ) · hạ xuống ≤ 0,415 (ca nhiễu đỏ).
+  it("★★★ R1 — nguồn ĐÚNG đo được 0,4443 (0,5 cũ bỏ oan) ⇒ GIỮ; đỉnh nhiễu ngoài corpus đo được 0,415 ⇒ LOẠI", async () => {
+    searchProgrammingKb.mockResolvedValue(emptyVendorResult);
+    gatherStudioHits.mockResolvedValue([studioHit("dung", 0.4443), studioHit("nhieu", 0.415)]);
+    const r = await retrieveKnowledge("hỏi gì đó", 5, { route: "vscode", callerRole: "engineer" });
+    expect(r.citations.map((c) => c.score)).toEqual([0.4443]);
   });
 
   it("★★★ Studio score 0.10 (dưới cả ngưỡng CŨ lẫn ngưỡng MỚI) ⇒ bị loại ở CẢ HAI đời ngưỡng", async () => {

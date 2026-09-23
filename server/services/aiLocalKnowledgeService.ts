@@ -2397,10 +2397,21 @@ export function detectProgrammingVendors(question: string): string[] {
   return Array.from(found);
 }
 
-/** Ngưỡng trích dẫn Studio của route vscode — xem ★★★ B2 trong docblock ngay dưới (vì sao 0,5, vì sao
- * KHÔNG dùng 0,18 của nhánh web). Export để eval Training Studio (R1, `kbStudioEval.ts`) chấm "qua
- * ngưỡng" bằng ĐÚNG hằng số sản xuất, không phải bản chép. */
-export const MIN_STUDIO_CITATION_SCORE = 0.5;
+/** Ngưỡng trích dẫn Studio của route vscode — xem ★★★ B2 trong docblock ngay dưới (vì sao KHÔNG dùng
+ * 0,18 của nhánh web). Export để eval Training Studio (R1, `kbStudioEval.ts`) chấm "qua ngưỡng" bằng
+ * ĐÚNG hằng số sản xuất, không phải bản chép.
+ *
+ * ★★★ R1 (2026-09-23) — 0,5 → 0,44, ĐO trên HAI corpus (thay cho N=1 câu của task-v8). Thang: cosine
+ * `searchCorpus`, Qwen3-Embedding-0.6B + tiền tố Instruct (eval #14 st4i-may-aoi, #21 csharp-dotnet,
+ * #23/#24 chéo corpus — bộ câu của corpus này hỏi vào corpus kia = NGOÀI corpus theo cấu tạo):
+ *   · ĐÚNG nguồn (38 câu tìm thấy nguồn trong top‑5): min 0,340 · 0,384 · 0,407 · 0,429 · 0,444 · 0,450 … max 0,849.
+ *   · NHIỄU ngoài corpus (6 câu khai ngoài + 45 câu chéo; bỏ N02 "E082" — nó THẬT SỰ có trong st4i):
+ *     max 0,415 · 0,413 · 0,383 · p90 0,382.
+ *   ⇒ Hai cụm CHỒNG nhau ở 0,34–0,415 — KHÔNG ngưỡng nào tách sạch. 0,5 cũ: 29/38 đúng, 0/51 nhiễu — bỏ
+ *     oan 9 nguồn đúng (0,44–0,50) mà không chặn thêm nhiễu nào. 0,44: 34/38 đúng, 0/51 nhiễu, cách đỉnh
+ *     nhiễu 0,025. Bốn câu còn trượt (0,340–0,429) nằm TRONG cụm nhiễu — ngưỡng không cứu được, cần xếp
+ *     hạng/nhúng tốt hơn. ⚠ Chỉ áp cho route vscode; đường web (`retrieveKnowledge` mặc định) không đọc hằng này. */
+export const MIN_STUDIO_CITATION_SCORE = 0.44;
 
 /**
  * ★★★ VIỆC 8 (`docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md` §12,
@@ -2607,7 +2618,8 @@ async function retrieveProgrammingKnowledgeForVscode(
         // BỎ — xem docblock lớn phía trên hàm này): 0,18 mã hoá triết lý "giữ top-1 dù yếu" của
         // nhánh web, ngược triết lý "lạc miền ⇒ rỗng" đã tuyên bố cho route vscode. Ngưỡng RIÊNG,
         // đặt giữa hai cụm ĐO ĐƯỢC trên chính không gian mxbai của Studio (nhiễu ≤0,4040 · đúng
-        // miền ≥0,7303, N=1 câu hỏi thật — mẫu mỏng, xem CÒN MỞ trong báo cáo).
+        // miền ≥0,7303, N=1 câu hỏi thật — mẫu mỏng, xem CÒN MỞ trong báo cáo). ★ R1 2026-09-23: đo lại
+        // 38 đúng / 51 nhiễu trên hai corpus ⇒ 0,44 (số đo ở docblock của hằng).
         for (const h of studioHits) {
           if (!(h.score >= MIN_STUDIO_CITATION_SCORE)) continue;
           citations.push({
