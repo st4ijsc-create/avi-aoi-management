@@ -140,6 +140,7 @@ import { bocYDinhBaiHoc, GIOI_HAN_BAI_HOC } from "@shared/aiCodingLesson";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 // ★ G4-B — trọng số hạng nguồn (module LÁ, dùng CHUNG với bộ eval `--parity`).
 import { sourceTypeWeight, sourceLanguageWeight, devJournalWeight } from "./aiKbSourceWeights";
+import { tienToNhungCauHoi } from "./ai/tienToNhungCauHoi";
 import { loadSemanticGraph, expandWithGraph } from "./aiSemanticGraph";
 // FE-W0.3 (doc 46 §2.3) — degenerate-loop guard (pure, dependency-free).
 import { guardGeneratedText, isDegenerateStream } from "./ai/generationGuard";
@@ -1013,7 +1014,9 @@ async function embedQuestionOllama(question: string): Promise<number[] | null> {
 async function embedQuestionGguf(question: string): Promise<number[] | null> {
   const { generateEmbedding, isGgufAvailable } = await import("./aiGgufEngine");
   if (!(await isGgufAvailable())) return null;
-  const { embedding } = await generateEmbedding(question, GGUF_EMBED_MODEL_ID);
+  // Sau R1 — model nhúng bất đối xứng (Qwen3-Embedding) cần tiền tố nhiệm vụ cho CÂU HỎI; suy từ tên
+  // model, đo trước/sau ở `ai/tienToNhungCauHoi.ts`. Tài liệu (kho hệ thống, Studio) vẫn nhúng trơn.
+  const { embedding } = await generateEmbedding(tienToNhungCauHoi(GGUF_EMBED_MODEL_ID) + question, GGUF_EMBED_MODEL_ID);
   if (!Array.isArray(embedding) || embedding.length === 0) return null;
   if (embedding.length !== KB_EMBED_DIM) {
     console.warn(

@@ -327,8 +327,14 @@ Frontend: bảng câu hỏi × đúng/sai × nguồn, biểu đồ trước/sau.
 > 2. **Ngưỡng 0,5 cắt nửa số đoạn đúng.** Điểm đoạn đúng: min 0,277 · trung vị 0,510 · max 0,638; nhiễu câu ngoài max 0,340 ⇒ hai
 >    cụm CHỒNG LẤN (đoạn đúng thấp nhất < nhiễu cao nhất). Đây là mẫu 30 câu thay cho N=1 mà docblock B2 ghi "CÒN MỞ".
 > 3. **Ô "mọi kho" 70 % là của kho hệ thống, không phải của corpus** — `fake-bad` vẫn ra 70 %. UI tách hai ô vì thế; không được đọc
->    ô đó như chất lượng corpus. Giả thuyết cần đo (chưa đo): Qwen3‑Embedding khuyến nghị tiền tố `Instruct:` cho câu hỏi — điểm
->    cosine thấp (0,3–0,6) có thể do thiếu tiền tố.
+>    ô đó như chất lượng corpus.
+> 4. **Tiền tố `Instruct:` cho câu hỏi (Qwen3‑Embedding) — ĐO 2026-09-23, ÁP DỤNG.** Ngoại tuyến (`tmp/audit-ai/r1c-instruct.mjs`,
+>    biến "không tiền tố" tái lập đúng số server) so ba biến: câu nhiệm vụ CHUNG của thẻ model thắng — đoạn đúng thấp nhất
+>    0,277 → **0,340 > nhiễu cao nhất 0,308** (hai cụm tách lần đầu), hệ thống 151/151 giữ; câu nhiệm vụ riêng miền AOI bị bác
+>    (nhiễu 0,496, hệ thống 151 → 146). Server sau áp dụng (#12 · #13 · #14 giống hệt): **qua ngưỡng 50 % → 67 %** · MRR 0,77 →
+>    0,80 · mọi kho 70 → 77 % · tới trợ lý 40 % (không đổi: T24 +1, T09 −1) · đáp án trong ngữ cảnh 93 → 90 % (T14: đoạn
+>    chứa "UPS → Server" rơi khỏi top‑5) · hệ thống 151/151 · `fake-bad` #15 0 %. Cơ chế: `ai/tienToNhungCauHoi.ts` suy từ TÊN
+>    model nhúng (đổi `GGUF_EMBED_MODEL` ⇒ tự đổi), chỉ câu hỏi — tài liệu vẫn nhúng trơn nên KHÔNG cần nhúng lại kho.
 
 ### R2 — Nguồn dữ liệu lập trình: ingest **tham chiếu API** có cấu trúc
 Từ phát hiện D1 (`GetInt32(string)` — sai tầng API): corpus `csharp-dotnet` nên nhận **tài liệu API** (XML doc /
@@ -410,7 +416,8 @@ Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest 
    `reasoning_budget: 64` ⇒ suy luận vẫn 1.018 ký tự như mặc định, log vẫn "budget=12000") — ngân sách là server‑wide. "Sâu" chỉ
    làm được bằng cách đổi cờ khởi động (restart) hoặc chờ bản llama.cpp có ngân sách theo request; không bày nút vô hiệu.
 6. **Training (R1–R5)** ở phiên riêng như chủ dự án đã định: corpus vàng csharp‑dotnet + ST4I, EvalTab thật. — **R1 XONG
-   2026-09-23** (xem §4 R1); R2–R5 còn lại, cộng ba phát hiện R1 (thang điểm sort chung · ngưỡng 0,5 · tiền tố `Instruct:`).
+   2026-09-23** (xem §4 R1); R2–R5 còn lại. Phát hiện R1: thang điểm sort chung — VÁ (20 → 40 %); tiền tố `Instruct:` — ÁP DỤNG (qua ngưỡng 50 → 67 %);
+   ngưỡng 0,5 — chưa đổi (cụm nay đã tách: đoạn đúng ≥ 0,340 > nhiễu ≤ 0,308, cần đo lại trên corpus thứ hai trước khi chọn số).
 7. Quyết định launcher sản xuất 1 × 64k hay 2 × 32k (mục 8).
 
 ## 6. Thứ tự & lý do
