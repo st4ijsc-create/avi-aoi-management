@@ -21,6 +21,8 @@ const CONFIG = arg("--config", "pipeline");
 const ONLY = arg("--only", null);
 const RAW_URL = arg("--raw-url", "http://127.0.0.1:8091/v1/chat/completions");
 const LABEL = arg("--label", CONFIG);
+// ★ F3 — chế độ nghĩ theo lượt gửi kèm (sau | can-bang | nhanh); vắng ⇒ không gửi ⇒ mặc định sản phẩm.
+const CHE_DO_NGHI = arg("--che-do-nghi", null);
 
 const TASKFILE = arg("--tasks", "tasks.json");
 const FAKEFILE = arg("--fake", TASKFILE.startsWith("tasks-hard") ? "fake-hard.json" : "fake.json");
@@ -35,7 +37,7 @@ async function genPipeline(t) {
   const res = await fetch("http://127.0.0.1:3000/api/ai/local-kb/stream", {
     method: "POST", headers: { "Content-Type": "application/json", Cookie: CK },
     body: JSON.stringify({ question: t.prompt, topK: 5, history: [], userRole: "admin",
-      context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo" } }),
+      context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo", ...(CHE_DO_NGHI ? { cheDoNghi: CHE_DO_NGHI } : {}) } }),
   });
   if (!res.ok) return { text: "", err: `HTTP ${res.status}`, ttftMs: null, totalMs: Date.now() - t0 };
   let text = "", buf = ""; const dec = new TextDecoder(); const evs = [];

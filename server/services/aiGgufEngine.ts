@@ -119,6 +119,12 @@ export interface GgufGenerateOptions {
    * `maxTokens` mới là thứ giữ cho lượt gọi sống trong ca đó.
    */
   disableThinking?: boolean;
+  /**
+   * ★ F3 "Nghĩ sâu" — ngân sách nghĩ THEO YÊU CẦU (token), gửi thành `thinking_budget_tokens` (tên đã
+   * xác minh trên b9814 — xem `ai/nghiSau.ts`). Vắng ⇒ không gửi ⇒ `--reasoning-budget` của server.
+   * Chỉ đường `llama-server`; in-process bỏ qua. Bị bỏ qua khi `disableThinking`.
+   */
+  thinkingBudgetTokens?: number;
   /** Language hint */
   language?: "en" | "vi";
   /**
@@ -158,6 +164,8 @@ export interface GgufChatOptions {
   jsonMode?: boolean;
   /** G5-D — xem `GgufGenerateOptions.disableThinking`. */
   disableThinking?: boolean;
+  /** ★ F3 — xem `GgufGenerateOptions.thinkingBudgetTokens`. */
+  thinkingBudgetTokens?: number;
   /** B0.2 — Per-task KV-cache sizing hint (n_ctx on first load). See GgufGenerateOptions.contextSize. */
   contextSize?: number;
   /**

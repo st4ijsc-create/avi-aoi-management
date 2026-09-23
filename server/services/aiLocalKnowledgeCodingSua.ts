@@ -34,6 +34,7 @@ import {
 } from "./ai/tranTokenSinhMa";
 import { kiemNganSachNguCanh } from "./aiLlamaServerClient";
 import { luotDuocNghi, tranTokenTheoLop, type LoaiLuot, type CheDoNghi } from "./ai/loaiLuot";
+import { nganSachNghiChoLuot, tranMongMuonChoCheDo } from "./ai/nghiSau";
 import { hoSoSamplingCho } from "./ai/hoSoSampling";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
@@ -919,10 +920,14 @@ export async function* motLuotModel(y: {
           ctxSlotTokens: ns.tranMoiSlot,
           tokenPrompt: ns.tokenVao,
           modelDaTungNghi: modelNenCoiLaBietNghi(process.env.GGUF_DEFAULT_MODEL || "default"),
+          // ★ F3 "Nghĩ sâu" — trần mong muốn 32k (vẫn kẹp ctx); vắng ⇒ 16k như cũ.
+          tranMongMuon: tranMongMuonChoCheDo(y.ghiDe),
         });
       })()
     : null;
   const tranLuot = tranTokenTheoLop(y.loai, y.tranToken, tranNghi, y.ghiDe);
+  /** ★ F3 "Nghĩ sâu" — ngân sách nghĩ theo yêu cầu (chỉ "sau" + lớp nghĩ); `undefined` ⇒ không gửi. */
+  const nganSachNghi = nganSachNghiChoLuot(y.loai, y.ghiDe);
 
   const dinhDanhModelLuot = process.env.GGUF_DEFAULT_MODEL || "default";
   /**
@@ -944,6 +949,7 @@ export async function* motLuotModel(y: {
           dungLuot = u;
         },
         disableThinking: !nghi || tatNghi,
+        ...(nghi && !tatNghi && nganSachNghi !== undefined ? { thinkingBudgetTokens: nganSachNghi } : {}),
         // Phạt lặp làm hỏng việc chép lại NGUYÊN VĂN (thụt đầu dòng, `}` liên tiếp…) — và một đoạn
         // NEO cũng là một bản chép nguyên văn, nên đường khối cần đúng con số này (repeat 1,0).
         // ★ B2 — hồ sơ sampling qua cần gạt A/B (`AI_SAMPLING_PROFILE`); vắng ⇒ đúng ba số cũ, y nguyên.

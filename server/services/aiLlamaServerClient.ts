@@ -217,6 +217,19 @@ function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | undefined
 }
 
 /**
+ * ★ F3 "Nghĩ sâu" (2026-09-23) — NGÂN SÁCH NGHĨ THEO YÊU CẦU. Tên trường `thinking_budget_tokens` là tên
+ * b9814 ĐỌC (nguồn `server-common.cpp`; đo sống: 200 ⇒ 550 ký tự nghĩ). `reasoning_budget_tokens` bị
+ * b9814 bỏ qua IM LẶNG — đừng "sửa" sang tên đó. Không gửi khi tắt nghĩ (vô nghĩa) hoặc số rác.
+ */
+export function lapNganSachNghi(body: Record<string, unknown>, n: number | undefined, tatNghi: boolean | undefined): void {
+  if (tatNghi) return;
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return;
+  body.thinking_budget_tokens = Math.floor(n);
+  // Chỉ chế độ "Nghĩ sâu" đặt trường này ⇒ một dòng mỗi lượt sâu, không ồn ở chế độ mặc định.
+  console.info(`[llama-server] thinking_budget_tokens=${body.thinking_budget_tokens} (ngân sách nghĩ theo yêu cầu)`);
+}
+
+/**
  * ★ B2 (2026-09-22) — **GỬI TƯỜNG MINH ba trường sampling mà tài liệu Qwen3.6 khuyến nghị**, thay cho
  * việc để llama-server điền mặc định của NÓ.
  *
@@ -643,6 +656,7 @@ export async function serverGenerateText(
   if (options.stopSequences?.length) body.stop = options.stopSequences;
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
 
   const { json, totalTimeMs } = await postChatCompletion(body);
@@ -700,6 +714,7 @@ export async function serverChatCompletion(
   };
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
   lapToolsLenThan(body, options);
 
@@ -774,6 +789,7 @@ export async function serverGenerateJSON<T = unknown>(
   // `<think>` không thể xuất hiện. Nhưng với model LAI, llama.cpp hoãn grammar cho tới khi khối
   // suy luận đóng (`grammar_lazy`), nên model vẫn tiêu token vào suy luận TRƯỚC — đúng ca (B).
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
 
   const { json, totalTimeMs } = await postChatCompletion(body);
@@ -1229,6 +1245,7 @@ export async function* serverGenerateTextStream(
   if (options.stopSequences?.length) body.stop = options.stopSequences;
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
 
   yield* streamChatCompletion(body, signal, model);
@@ -1257,6 +1274,7 @@ export async function* serverChatCompletionStream(
   };
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
   lapToolsLenThan(body, options);
 

@@ -29,6 +29,7 @@ import {
 } from "./ai/tranTokenSinhMa";
 import { kiemNganSachNguCanh } from "./aiLlamaServerClient";
 import { luotDuocNghi } from "./ai/loaiLuot";
+import { nganSachNghiChoLuot, tranMongMuonChoCheDo } from "./ai/nghiSau";
 import { hoSoSamplingCho } from "./ai/hoSoSampling";
 /**
  * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
@@ -111,6 +112,8 @@ export async function* streamCodingGenerate(
       ctxSlotTokens: ns.tranMoiSlot,
       tokenPrompt: ns.tokenVao,
       modelDaTungNghi: epRong || modelNenCoiLaBietNghi(dinhDanhModel),
+      // ★ F3 "Nghĩ sâu" — trần mong muốn 32k (vẫn kẹp ctx); vắng ⇒ 16k như cũ.
+      tranMongMuon: tranMongMuonChoCheDo(context.cheDoNghi),
     });
   };
   // Trần dùng để CÂN lịch sử/ngữ cảnh mã (chưa có prompt cuối ⇒ lấy theo lớp model, không kẹp ctx).
@@ -301,6 +304,10 @@ export async function* streamCodingGenerate(
         // ★ B2 — hồ sơ sampling qua cần gạt A/B; vắng ⇒ đúng bộ cũ (0,25 · 0,9 · repeat 1,05), y nguyên.
         // ★ F3 — "nhanh" ⇒ gửi `enable_thinking=false`; còn lại để template quyết (undefined ⇒ hành vi cũ).
         ...(sinhMaDuocNghi ? {} : { disableThinking: true }),
+        // ★ F3 "Nghĩ sâu" — `thinking_budget_tokens` 24k; cân bằng/nhanh ⇒ không gửi (mặc định server 12k).
+        ...(sinhMaDuocNghi && nganSachNghiChoLuot("sinh-ma", cheDoNghi) !== undefined
+          ? { thinkingBudgetTokens: nganSachNghiChoLuot("sinh-ma", cheDoNghi) }
+          : {}),
         ...hoSoSamplingCho(
           { temperature: 0.25, topP: 0.9, repeatPenalty: 1.05 },
           sinhMaDuocNghi && modelNenCoiLaBietNghi(dinhDanhModel),

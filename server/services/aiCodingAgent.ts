@@ -254,6 +254,8 @@ export interface YeuCauSinhChu {
    *   token (`tranTokenTheoLop`) mới là thứ giữ lượt gọi sống. Xem `GgufGenerateOptions.disableThinking`.
    */
   disableThinking?: boolean;
+  /** ★ F3 "Nghĩ sâu" — ngân sách nghĩ theo yêu cầu; xem `GgufGenerateOptions.thinkingBudgetTokens`. */
+  thinkingBudgetTokens?: number;
   userId?: number;
   /**
    * ★★★ Đường SỬA TỆP đặt `true`. Chữ model sinh ra ở đường ấy **sẽ được ghi ra đĩa**, nên prompt
@@ -339,6 +341,7 @@ export async function* streamCodingModel(y: YeuCauSinhChu): AsyncGenerator<strin
         // ★ B1 — cờ tắt nghĩ đi tới `ggufStream` → `lapCoTatSuyLuan` → `chat_template_kwargs`.
         //   Vắng ⇒ `undefined` ⇒ hành vi cũ (template quyết, tức NGHĨ với Qwen3.6). Xem `YeuCauSinhChu`.
         ...(y.disableThinking !== undefined ? { disableThinking: y.disableThinking } : {}),
+        ...(y.thinkingBudgetTokens !== undefined ? { thinkingBudgetTokens: y.thinkingBudgetTokens } : {}),
       },
       plan.decision.modelId,
       // ★★★ ĐỐI SỐ THỨ BA — xem `YeuCauSinhChu.signal`. Thiếu nó, mỗi lượt Dừng giữ một khe

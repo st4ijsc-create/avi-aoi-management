@@ -52,9 +52,9 @@ const LOP_DUOC_NGHI: ReadonlySet<LoaiLuot> = new Set<LoaiLuot>(["sinh-ma", "sua-
  * `context.cheDoNghi`, không qua `.env`). Vắng ⇒ quy tắc lớp lượt.
  *   · `"nhanh"`    — tắt nghĩ cả lớp sinh/sửa mã (đo được: nhanh 5–15× nhưng đúng ít hơn ~10–15 điểm);
  *   · `"can-bang"` — đúng quy tắc lớp lượt (mặc định);
- *   · `"sau"`      — hôm nay ≡ `"can-bang"`: trần lớp nghĩ đã là trần cứng của ctx 32k. Có nghĩa riêng
- *                    khi B3 (ctx 64k) mở trần nghĩ 32k — **UI không được bày nút này trước lúc đó**
- *                    (một lựa chọn không làm gì là lớp lỗi "cờ khai mà vô hiệu").
+ *   · `"sau"`      — ngân sách nghĩ 24k THEO YÊU CẦU + trần sinh 32k (`ai/nghiSau.ts`, 2026-09-23). Trước đây
+ *                    nó ≡ "can-bang" vì tưởng b9814 bỏ qua ngân sách theo yêu cầu — sai TÊN TRƯỜNG, không phải
+ *                    thiếu khả năng (đo sống: `thinking_budget_tokens` 200 ⇒ nghĩ bị cắt đúng ngân sách).
  */
 export type CheDoNghi = "sau" | "can-bang" | "nhanh";
 

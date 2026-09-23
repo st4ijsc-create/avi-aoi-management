@@ -68,6 +68,11 @@ export interface ThamSoTranToken {
   readonly tokenPrompt: number;
   /** Ô nhớ: model đang phục vụ ĐÃ TỪNG phát khối suy luận trong tiến trình này. */
   readonly modelDaTungNghi: boolean;
+  /**
+   * ★ F3 "Nghĩ sâu" (`ai/nghiSau.ts`) — trần MONG MUỐN thay cho `TRAN_SINH_BIET_NGHI` khi model biết nghĩ.
+   * Vắng/rác ⇒ 16.000 như cũ. Vẫn bị kẹp ctx/slot − prompt: chỉ nới MONG MUỐN, không bao giờ nới ctx.
+   */
+  readonly tranMongMuon?: number;
 }
 
 const huuHan = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
@@ -77,14 +82,15 @@ const huuHan = (n: unknown): n is number => typeof n === "number" && Number.isFi
  *
  * Hợp đồng:
  *   • model KHÔNG nghĩ ⇒ kết quả ≤ `TRAN_SINH_KHONG_NGHI` (hành vi cũ, không đổi);
- *   • model BIẾT nghĩ  ⇒ kết quả ≤ `TRAN_SINH_BIET_NGHI`;
+ *   • model BIẾT nghĩ  ⇒ kết quả ≤ `tranMongMuon` nếu đặt ("Nghĩ sâu"), ngược lại ≤ `TRAN_SINH_BIET_NGHI`;
  *   • luôn ≤ `ctxSlotTokens − tokenPrompt − DEM_AN_TOAN_TOKEN` khi hai số ấy hữu hạn;
  *   • luôn ≥ `SAN_TOKEN_SINH`.
  * Đầu vào rác (NaN/âm/không hữu hạn) ⇒ bỏ qua ràng buộc ctx, KHÔNG ném — đường sinh chữ không
  * được chết vì một con số cấu hình hỏng; nó rơi về trần theo lớp model.
  */
 export function tranTokenSinhMa(t: ThamSoTranToken): number {
-  const mongMuon = t.modelDaTungNghi ? TRAN_SINH_BIET_NGHI : TRAN_SINH_KHONG_NGHI;
+  const mongMuonNghi = huuHan(t.tranMongMuon) && t.tranMongMuon > 0 ? t.tranMongMuon : TRAN_SINH_BIET_NGHI;
+  const mongMuon = t.modelDaTungNghi ? mongMuonNghi : TRAN_SINH_KHONG_NGHI;
   let tran = mongMuon;
   if (huuHan(t.ctxSlotTokens) && t.ctxSlotTokens > 0) {
     const prompt = huuHan(t.tokenPrompt) && t.tokenPrompt > 0 ? t.tokenPrompt : 0;

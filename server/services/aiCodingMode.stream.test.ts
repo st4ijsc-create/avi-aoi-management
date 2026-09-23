@@ -32,6 +32,9 @@ const h = vi.hoisted(() => ({
   promptNhan: "" as string,
   /** ★ B1 — cờ `disableThinking` THẬT tới engine, theo từng lượt gọi (đo hợp đồng, không đo lời khai). */
   disableThinkingNhan: [] as Array<boolean | undefined>,
+  /** ★ F3 "Nghĩ sâu" — `thinkingBudgetTokens` + `maxTokens` THẬT tới engine, cùng chỉ số với `disableThinkingNhan`. */
+  nganSachNghiNhan: [] as Array<number | undefined>,
+  maxTokensNhan: [] as Array<number | undefined>,
   // ★ B2 — hồ sơ sampling THẬT tới engine (temperature · topP · topK · minP · presencePenalty · repeatPenalty)
   samplingNhan: [] as Array<Record<string, unknown>>,
   /**
@@ -127,6 +130,8 @@ vi.mock("./aiGgufEngine", () => ({
     h.systemPromptNhan = String(opt?.systemPrompt ?? "");
     h.promptNhan = String(opt?.prompt ?? "");
     h.disableThinkingNhan.push(opt?.disableThinking); // ★ B1 — ghi cờ THẬT tới engine
+    h.nganSachNghiNhan.push(opt?.thinkingBudgetTokens);
+    h.maxTokensNhan.push(opt?.maxTokens);
     h.promptTheoLuot.push(String(opt?.prompt ?? ""));
     h.samplingNhan.push({
       temperature: opt?.temperature,
@@ -244,6 +249,8 @@ beforeEach(() => {
   h.systemPromptNhan = "";
   h.promptNhan = "";
   h.disableThinkingNhan = [];
+  h.nganSachNghiNhan = [];
+  h.maxTokensNhan = [];
   h.samplingNhan = [];
   h.nemLuotNghi = null;
   h.chiSoNem = -1;
@@ -1231,11 +1238,36 @@ describe("B2 — hồ sơ sampling tới engine (hợp đồng + cần gạt A/B
     });
   });
 
-  it("F3 chế độ lạ / `sau` qua SERVICE ⇒ như mặc định (sau ≡ can-bang hôm nay)", async () => {
-    h.manh = [MA_CSHARP];
-    await chay(CAU, admin(), { cheDoNghi: "sau" });
-    const i = h.samplingNhan.findIndex((s) => s.temperature === 0.25);
-    expect(h.disableThinkingNhan[i]).not.toBe(true);
+  it("★★★ F3 `sau` qua SERVICE ⇒ lượt SINH MÃ nghĩ + gửi ngân sách 24k + trần > 16k; mặc định KHÔNG gửi ngân sách", async () => {
+    await voiEnv({ GGUF_DEFAULT_MODEL: "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf" }, async () => {
+      h.manh = [MA_CSHARP];
+      await chay(CAU, admin(), { cheDoNghi: "sau" });
+      const i = h.samplingNhan.findIndex((s) => s.temperature === 0.25);
+      expect(i, "phải có lượt sinh mã").toBeGreaterThanOrEqual(0);
+      expect(h.disableThinkingNhan[i]).not.toBe(true);
+      expect(h.nganSachNghiNhan[i]).toBe(24_000);
+      expect(h.maxTokensNhan[i]!).toBeGreaterThan(16_000);
+
+      h.samplingNhan = [];
+      h.disableThinkingNhan = [];
+      h.nganSachNghiNhan = [];
+      h.maxTokensNhan = [];
+      h.manh = [MA_CSHARP];
+      await chay(CAU, admin());
+      const j = h.samplingNhan.findIndex((s) => s.temperature === 0.25);
+      expect(h.nganSachNghiNhan[j], "cân bằng: không gửi trường ⇒ mặc định server 12k").toBeUndefined();
+      expect(h.maxTokensNhan[j]!).toBeLessThanOrEqual(16_000);
+    });
+  });
+
+  it("★★ F3 `sau` trên dòng SỬA: lượt NGHĨ mang ngân sách 24k, lượt PHỤ không mang", async () => {
+    const goc = fs.readFileSync(DUONG_THI, "utf8");
+    h.manh = ["```csharp\n", maDaSua(goc), "\n```"];
+    await chay(CAU_SUA, admin(), { cheDoNghi: "sau" });
+    const coNghi = h.disableThinkingNhan.map((d, k) => ({ d, n: h.nganSachNghiNhan[k] }));
+    expect(coNghi.some((x) => x.d !== true && x.n === 24_000), JSON.stringify(coNghi)).toBe(true);
+    expect(coNghi.every((x) => x.d !== true || x.n === undefined), "lượt tắt nghĩ không được mang ngân sách").toBe(true);
+    expect(h.quyetDinh.find((q) => q.tool === "apply_diff")).toBeTruthy();
   });
 
   // ── F1 — suy luận SỐNG lên SSE kiểu `reasoning`, tách hẳn khỏi câu trả lời, đã che bí mật ──────────────
