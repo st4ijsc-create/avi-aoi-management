@@ -41,6 +41,7 @@ const KIEU = {
     "System.Data.DataReaderExtensions", "System.Data.IDataRecord", "System.Data.IDataReader", "System.Data.Common.DbDataReader",
     "System.Data.Common.DbCommand", "System.Data.Common.DbConnection", "System.Data.DataTable", "System.Data.DataRow",
     "System.Data.DataRowExtensions", "System.Data.CommandType", "System.Data.ConnectionState", "System.Data.IsolationLevel",
+    "System.Data.SqlDbType", "System.Data.DbType", "System.Data.ParameterDirection", "System.Data.CommandBehavior",
   ],
   sql: [
     "Microsoft.Data.SqlClient.SqlConnection", "Microsoft.Data.SqlClient.SqlCommand", "Microsoft.Data.SqlClient.SqlDataReader",
@@ -69,6 +70,9 @@ function lamPhang(x) {
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
+    // Tiêu đề markdown NHÚNG trong remarks ("## Remarks", "## Examples") hạ xuống chữ thường: để nguyên thì
+    // chunkTheoKyHieu tách chúng thành "ký hiệu" mồ côi không mang tên thành viên (đo: 335 mục như thế).
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
     .trim();
 }
 
@@ -83,9 +87,10 @@ function tachTen(ten) {
   const than = ten.slice(2);
   const i = than.indexOf("(");
   const truoc = i >= 0 ? than.slice(0, i) : than;
-  const thamSo = i >= 0 ? than.slice(i + 1, -1).split(/,(?![^{]*})/).map((t) => t.replace(/`+\d+/g, "").replace(/\{/g, "<").replace(/\}/g, ">").split(".").pop()) : [];
+  const thamSoDay = i >= 0 ? than.slice(i + 1, -1).split(/,(?![^{]*})/).map((t) => t.replace(/`+\d+/g, "").replace(/\{/g, "<").replace(/\}/g, ">")) : [];
+  const thamSo = thamSoDay.map((t) => t.split(".").pop());
   const cham = truoc.lastIndexOf(".");
-  return { loai, kieu: loai === "T" ? truoc : truoc.slice(0, cham), thanhVien: loai === "T" ? "" : truoc.slice(cham + 1).replace(/``\d+/, "<T>"), thamSo };
+  return { loai, kieu: loai === "T" ? truoc : truoc.slice(0, cham), thanhVien: loai === "T" ? "" : truoc.slice(cham + 1).replace(/``\d+/, "<T>"), thamSo, thamSoDay };
 }
 
 function docXml(tep) {
@@ -108,7 +113,9 @@ function viet(nguon, danhSachKieu) {
     const tenKieu = kieu.split(".").pop();
     const moRong = /Extensions$/.test(tenKieu);
     const dau = cua.find((m) => m.ten.startsWith("T:"));
-    const dong = ["<!-- kb:chunk=ky-hieu -->", `# ${kieu}`, "", `Nguồn: tài liệu XML chính thức — ${nguon.nhan}.`];
+    const nsKieu = kieu.slice(0, kieu.lastIndexOf("."));
+    // Dòng `# …` đi kèm MỌI đoạn (chunkTheoKyHieu) ⇒ không gian tên có mặt ở từng ký hiệu truy hồi được.
+    const dong = ["<!-- kb:chunk=ky-hieu -->", `# ${kieu} — cần \`using ${nsKieu};\``, "", `Nguồn: tài liệu XML chính thức — ${nguon.nhan}.`];
     if (dau) dong.push("", the(dau.noi, "summary"));
     for (const m of cua.filter((x) => !x.ten.startsWith("T:"))) {
       const t = tachTen(m.ten);
@@ -119,6 +126,12 @@ function viet(nguon, danhSachKieu) {
         const ns = kieu.slice(0, kieu.lastIndexOf("."));
         dong.push(`Phương thức MỞ RỘNG cho \`${t.thamSo[0]}\` — gọi dạng \`doiTuong.${t.thanhVien}(${t.thamSo.slice(1).join(", ")})\`, cần \`using ${ns};\` (thiếu using ⇒ trình biên dịch chỉ thấy các overload gốc của \`${t.thamSo[0]}\`).`);
       }
+      // Kiểu tham số ở KHÔNG GIAN TÊN KHÁC (vd `SqlParameter(String, SqlDbType)` ⇒ SqlDbType ở System.Data):
+      // đo 2026-09-23, D1 trượt vì `SqlDbType` CS0103 — model dùng đúng kiểu nhưng thiếu `using`.
+      const ngoai = [...new Set((t.thamSoDay ?? []).map((x) => x.replace(/[<>\[\]@*&].*$/, "")).filter((x) => x.includes(".") && !x.startsWith("System.") ? true : /^System\.(Data|Data\.Common)\./.test(x)))]
+        .map((x) => [x.split(".").pop(), x.slice(0, x.lastIndexOf("."))])
+        .filter(([, ns]) => ns !== nsKieu);
+      if (ngoai.length) dong.push(`Kiểu trong chữ ký: ${ngoai.map(([k, ns]) => `\`${k}\` (\`using ${ns};\`)`).join(", ")}.`);
       const tom = the(m.noi, "summary");
       if (tom) dong.push("", tom);
       for (const p of m.noi.matchAll(/<param name="([^"]+)">([\s\S]*?)<\/param>/g)) dong.push(`- Tham số \`${p[1]}\`: ${lamPhang(p[2])}`);

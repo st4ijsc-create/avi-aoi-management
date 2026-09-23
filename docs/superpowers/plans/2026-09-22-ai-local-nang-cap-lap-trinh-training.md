@@ -356,7 +356,18 @@ trích đúng ký hiệu. **Cổng ra:** R1 với 10 câu hỏi API C# → trún
 > **có `using System.Data;` ⇒ Build succeeded · thiếu ⇒ CS1503**. Gốc lỗi là THIẾU `using`, không phải dùng sai overload. Tài liệu
 > sinh ra ghi rõ điều đó ở mọi phương thức mở rộng (câu A02 của bộ vàng canh nó).
 >
-> **R2 phần B (D1 C# 2/3 → 3/3) — CHƯA LÀM.** Đường sinh mã `/ai-coding-workspace` hôm nay KHÔNG truy hồi kho Studio (chỉ ngữ cảnh
+> **R2 phần B — ĐO TRƯỚC KHI NỐI (2026-09-23 chiều) bác cách nối ngây thơ.** Hai hình dạng lỗi D1 đo được đều là THIẾU
+> `using System.Data;`: `reader.GetInt32("Ten")` ⇒ CS1503 và `SqlDbType` ⇒ CS0103 (`duanMoe-C`). Tài liệu sinh lại nay mang
+> `# <Kiểu> — cần \`using <ns>;\`` ở MỌI đoạn + dòng "Kiểu trong chữ ký: `SqlDbType` (`using System.Data;`)" + 4 enum
+> (`SqlDbType`, `DbType`, `ParameterDirection`, `CommandBehavior`); vá luôn lỗi 335 mục "## Remarks/## Examples" mồ côi (tiêu đề
+> nhúng trong remarks bị tách thành ký hiệu) ⇒ 878 mục = đúng 878 ký hiệu, 964 đoạn, R1 corpus này #21 vẫn 9/10. Nhưng phép dò
+> ngoại tuyến (`tmp/audit-ai/r2b-do-truy-hoi.mjs`, cùng model + tiền tố như server) cho thấy **truy hồi bằng NGUYÊN VĂN đơn hàng D1
+> chỉ ra `SqlConnection`/`SqlCommand`/`SqlDataAdapter` — 0/12 đoạn thuộc `System.Data`**: thứ model thiếu chỉ xuất hiện trong MÃ
+> nó sắp viết, không trong câu hỏi. ⇒ Nối khối "top‑K theo câu hỏi" vào prompt sinh mã KHÔNG thể sửa D1; không chạy A/B GPU cho một
+> cơ chế đã đo là không chạm được mục tiêu. Mã nối đã viết (13 lưới) được CẤT ngoài cây, chờ quyết định cơ chế. Nền H×3 + dự án×3 +
+> D1×3 trên bản dựng hiện tại vẫn chạy để làm số "trước" cho cơ chế được chọn.
+>
+> **(Ghi chú cũ) R2 phần B (D1 C# 2/3 → 3/3) — CHƯA LÀM.** Đường sinh mã `/ai-coding-workspace` hôm nay KHÔNG truy hồi kho Studio (chỉ ngữ cảnh
 > repo + bài học), nên corpus mới chưa chạm được D1. Nối truy hồi API vào prompt sinh mã là đổi HÀNH VI MODEL ⇒ theo §5 phải đo M
 > và H ×3 trước/sau + ba dự án thật (≈ 1–2 giờ GPU trên llama-server dùng chung).
 
