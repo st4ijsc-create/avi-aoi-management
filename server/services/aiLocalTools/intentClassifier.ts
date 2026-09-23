@@ -443,6 +443,14 @@ const REPO_PATH_REGEX =
 /** Thư mục trong repo: một token có `/` mà KHÔNG có đuôi tệp (vd `server/services/aiLocalTools`). */
 const REPO_DIR_REGEX = /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+\/){1,}[\w.@~$-]*)(?=$|[\s"'`,;)\]。，、])/;
 
+/**
+ * ★ HR3/Q14 (2026-09-23) — TỆP DẤU CHẤM không có đuôi trong bảng (`.gitignore`, `.gitattributes`, `.env.example`,
+ * `.editorconfig`…). Chỉ nhận khi ký tự sau dấu chấm là chữ THƯỜNG: tệp dấu chấm quy ước viết thường, còn `.NET`
+ * (tên công nghệ) viết hoa — không để "tôi dùng .NET 8" thành một lượt đọc tệp. Hộp cát vẫn là thứ từ chối `.env`
+ * (không nới rào DENIED_SECRET — tệp bí mật đi qua đây để bị TỪ CHỐI đúng chỗ, như `REPO_PATH_REGEX`).
+ */
+const REPO_DOTFILE_REGEX = /(?:^|[\s"'`:：(\[])((?:[\w.@~$-]+[/\\])*\.[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*)(?![\w@~$/\\-])/;
+
 function extractRepoPath(question: string): string | undefined {
   /**
    * ★★★ G11 (2026-09-22) — `Node.js` KHÔNG PHẢI MỘT TỆP. Xem `tenCongNghe.ts` cho ca thật đã đo
@@ -451,7 +459,9 @@ function extractRepoPath(question: string): string | undefined {
    * một đường dẫn*; cái nó không biết là NGỮ NGHĨA, và ngữ nghĩa thuộc về một vị từ có lưới riêng.
    */
   const d = question.match(REPO_PATH_REGEX)?.[1];
-  return d !== undefined && laTenCongNghe(d) ? undefined : d;
+  if (d !== undefined) return laTenCongNghe(d) ? undefined : d;
+  const dot = question.match(REPO_DOTFILE_REGEX)?.[1];
+  return dot !== undefined && !laTenCongNghe(dot) ? dot : undefined;
 }
 
 /**
@@ -1948,7 +1958,14 @@ export function classifyCodingToolIntent(question: string, context?: ToolContext
   // 2) grep_repo — có ý định TÌM và trích được một mẫu.
   if (CODING_GREP_VERB.test(khongDau)) {
     const mau = extractCodingGrepPattern(question);
-    if (mau) {
+    /**
+     * ★ HR3 (2026-09-23) — "`a/b/loaiLuot.ts` định nghĩa những gì?": động từ tìm/định nghĩa + ĐƯỜNG TỆP mà mẫu trích
+     * được chỉ là một MẢNH của chính đường ấy ("services", "loaiLuot") ⇒ đích là NỘI DUNG tệp, không phải một cuộc tìm.
+     * Rơi xuống bước 3 (read_file). Mẫu là một ký hiệu KHÁC tên tệp ("tìm TRAN_X trong a/b.ts") ⇒ vẫn là tìm.
+     */
+    const tepNeu = extractRepoPath(question);
+    const mauLaManhDuongTep = !!(mau && tepNeu && tepNeu.toLowerCase().includes(mau.toLowerCase()));
+    if (mau && !mauLaManhDuongTep) {
       const dir = extractRepoDir(question);
       const args: Record<string, unknown> = { pattern: mau };
       if (dir && dir !== mau) args.path = dir;

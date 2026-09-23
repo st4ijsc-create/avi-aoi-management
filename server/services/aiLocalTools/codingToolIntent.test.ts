@@ -11,7 +11,7 @@
  *      nhau ở hai bộ chọn ⇒ hai đường độc lập.
  *   3. **CHỈ 5 TOOL** — mọi quyết định của bộ chọn lập trình nằm trong `CODING_TOOL_NAMES`.
  */
-import { chanLenhKhiCauHoi, describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import "./index"; // đăng ký toàn bộ tool (side-effect)
 import {
   chanLenhKhiCauHoi,
@@ -304,5 +304,33 @@ describe("chanLenhKhiCauHoi — G13 (audit 2026-09-22 · dự án thật D2)", (
     const q = "Viết cho tôi một hàm tính thuế";
     const doc = { tool: "read_file", args: { path: "src/a.cs" }, reason: "CODING_READ_SHORTCUT" } as never;
     expect(chanLenhKhiCauHoi(q, doc).tool).toBe("read_file");
+  });
+});
+
+describe("§HR3/Q14 (2026-09-23) — tệp dấu chấm + 'tìm' mà đích là CHÍNH tệp đã nêu", () => {
+  it("★ tệp dấu chấm viết thường ⇒ read_file (.gitignore, .env.example, .gitattributes)", () => {
+    for (const [q, p] of [["đọc tệp .env.example", ".env.example"], ["xem nội dung .gitignore", ".gitignore"], ["open .gitattributes", ".gitattributes"]] as const) {
+      const d = classifyCodingToolIntent(q);
+      expect(d.tool, q).toBe("read_file");
+      expect(d.args.path, q).toBe(p);
+    }
+  });
+  it("★★ `.NET` (tên công nghệ viết HOA) KHÔNG thành tệp", () => {
+    expect(classifyCodingToolIntent("Tôi dùng .NET 8 thì nên chọn ORM nào").tool).not.toBe("read_file");
+  });
+  it("★★★ đường tệp + 'định nghĩa/khai báo' mà mẫu chỉ là MẢNH của đường ⇒ read_file", () => {
+    const d = classifyCodingToolIntent("Tệp server/services/ai/loaiLuot.ts định nghĩa những lớp lượt nào?");
+    expect(d.tool).toBe("read_file");
+    expect(d.args.path).toBe("server/services/ai/loaiLuot.ts");
+  });
+  it("★★★ ĐỐI CHỨNG: đường tệp + KÝ HIỆU khác tên tệp ⇒ vẫn grep_repo với đúng ký hiệu", () => {
+    const d = classifyCodingToolIntent("tìm TRAN_SINH_NGHI_SAU trong server/services/ai/nghiSau.ts");
+    expect(d.tool).toBe("grep_repo");
+    expect(d.args.pattern).toBe("TRAN_SINH_NGHI_SAU");
+  });
+  it("không có đường tệp ⇒ 'định nghĩa ở đâu' vẫn là grep", () => {
+    const d = classifyCodingToolIntent("hàm chupLyDoDuyet được định nghĩa ở đâu?");
+    expect(d.tool).toBe("grep_repo");
+    expect(d.args.pattern).toBe("chupLyDoDuyet");
   });
 });
