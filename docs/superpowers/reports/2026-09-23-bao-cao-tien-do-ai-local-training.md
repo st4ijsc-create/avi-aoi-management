@@ -118,8 +118,9 @@ Hợp đồng kiểm là tập ca đỏ **y hệt** trước/sau trên 62 tệp 
 5. ~~**B6** và **trần nghĩ 32k** vẫn hoãn: b9814 không nhận ngân sách nghĩ theo từng request.~~ **Đính chính (phiên lập trình
    song song, cùng ngày):** câu này SAI. B6 đã làm (`c8f57fbe5`, hybrid phủ quyết cho bộ chọn tool; lưới vá `70d86ba82`). b9814
    CÓ đọc ngân sách nghĩ theo yêu cầu qua `thinking_budget_tokens` (đo: 200 ⇒ nghĩ bị cắt ở 550 ký tự) — trường thử trước đây
-   (`reasoning_budget`) mới là trường bị bỏ qua. Chế độ "Nghĩ sâu" (24k nghĩ, trần sinh 32k) đã có ở `a6a747a7d`; số H×3 ở chế
-   độ sâu ghi ở audit 2026-09-21 §8.4m của phiên đó. Không cần nâng llama.cpp.
+   (`reasoning_budget`) mới là trường bị bỏ qua. Không cần nâng llama.cpp. "Nghĩ sâu" (24k nghĩ, trần sinh 32k) nối phía server ở
+   `a6a747a7d`, **đo rồi KHÔNG bày**: H×3 chế độ sâu **25/36** (7·11·7) < cân bằng 30/36, chậm hơn 25 % ⇒ nút đã gỡ khỏi UI
+   (`4d0291406`; server giữ khả năng). Số ở audit 2026-09-21 §8.4m. Nghĩ nhiều hơn KHÔNG đồng nghĩa đúng hơn trên bộ bài này.
 
 ## 5. Thay đổi vận hành trên máy này (không vào git)
 - `.env`: đã thêm `PDFTOPPM_BIN`, trỏ tới poppler cài bằng winget (`oschwartz10612.Poppler`).
