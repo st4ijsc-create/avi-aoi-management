@@ -57,7 +57,10 @@ const DUONG_SERVICE = path.resolve(process.cwd(), "server/services/aiLocalKnowle
  * anh em. "Service" của lưới này = HỢP các tệp phát sự kiện: khai báo `StreamEvent` vẫn ở tệp gốc (đọc
  * TRƯỚC), điểm phát đếm trên cả hai — bỏ tệp tách ra khỏi danh sách thì lưới MÙ đúng nửa số điểm phát.
  */
-const DUONG_PHAT_THEM = [path.resolve(process.cwd(), "server/services/aiLocalKnowledgeCoding.ts")];
+const DUONG_PHAT_THEM = fs
+  .readdirSync(path.resolve(process.cwd(), "server/services"))
+  .filter((f) => /^aiLocalKnowledgeCoding[A-Za-z]*\.ts$/.test(f))
+  .map((f) => path.resolve(process.cwd(), "server/services", f));
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // §A — KIỂM KÊ: mọi loại sự kiện service phát ĐỀU có một `case` ở tuyến

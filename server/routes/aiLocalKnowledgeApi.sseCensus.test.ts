@@ -9,7 +9,7 @@
  * ⚠ Cố ý đọc nguồn thay vì import kiểu: kiểu TypeScript bị xoá lúc chạy, không đếm được.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 function bocChuThich(s: string): string {
@@ -47,9 +47,14 @@ const KIEU_KHAI_MA_KHONG_PHAT: ReadonlySet<string> = new Set<string>([]);
 
 /** Số điểm PHÁT (`type: "x"`) của một kiểu trong service, KHÔNG tính khối khai báo union. */
 function soDiemPhat(kieu: string): number {
-  // ★ B8 — điểm phát nằm ở CẢ tệp gốc lẫn nhánh lập trình đã tách (`aiLocalKnowledgeCoding.ts`); khai báo union ở tệp gốc.
+  // ★ B8 — điểm phát nằm ở CẢ tệp gốc lẫn các tệp nhánh lập trình đã tách (`aiLocalKnowledgeCoding*.ts`); khai báo union ở tệp gốc.
   const src = bocChuThich(
-    ["server/services/aiLocalKnowledgeService.ts", "server/services/aiLocalKnowledgeCoding.ts"]
+    [
+      "server/services/aiLocalKnowledgeService.ts",
+      ...readdirSync(resolve(process.cwd(), "server/services"))
+        .filter((f) => /^aiLocalKnowledgeCoding[A-Za-z]*\.ts$/.test(f))
+        .map((f) => `server/services/${f}`),
+    ]
       .map((p) => readFileSync(resolve(process.cwd(), p), "utf8"))
       .join("\n"),
   );
