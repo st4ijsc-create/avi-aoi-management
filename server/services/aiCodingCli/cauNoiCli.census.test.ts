@@ -93,8 +93,10 @@ function moiDiemGoi(ten: string): DiemGoi[] {
 }
 
 describe("doc 83 · điều tra dân số cửa CLI/MCP", () => {
-  it("★ vũ trụ quét không rỗng và gồm đúng năm file sản xuất", () => {
-    expect(FILE.map(TEN)).toEqual(["batDau.ts", "cauNoiCli.ts", "cli.ts", "danhTinhCli.ts", "mcpServer.ts"]);
+  it("★ vũ trụ quét không rỗng và gồm đúng sáu file sản xuất", () => {
+    // `mcpStdoutSach.ts` (954914503, 2026-08-24 — stdout MCP thuần JSON-RPC) thêm vào mà danh sách này không theo ⇒ đỏ
+    // từ tháng 8. Nó LÀ file sản xuất của cửa CLI/MCP nên thuộc vũ trụ quét; mọi luật census bên dưới áp cho nó.
+    expect(FILE.map(TEN)).toEqual(["batDau.ts", "cauNoiCli.ts", "cli.ts", "danhTinhCli.ts", "mcpServer.ts", "mcpStdoutSach.ts"]);
   });
 
   /**
