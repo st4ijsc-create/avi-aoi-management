@@ -115,7 +115,11 @@ Hợp đồng kiểm là tập ca đỏ **y hệt** trước/sau trên 62 tệp 
 2. **Truy hồi phía kho hệ thống:** 9/30 câu ST4I không kho nào đưa ra nguồn đúng (ví dụ T06: `alerts.md` lạc đề thắng). "Tới trợ lý" đang dừng ở 40 %.
 3. **Bốn câu ST4I có nguồn đúng nằm trong cụm nhiễu** (0,340–0,429): ngưỡng không cứu được, cần xếp hạng hoặc nhúng tốt hơn.
 4. **Bộ câu ngoài corpus cùng miền** (câu vận hành không có trong tài liệu) còn mỏng: 6 câu. Nên thêm câu để canh ngưỡng 0,44.
-5. **B6** (native tool‑calling) và **trần nghĩ 32k** vẫn hoãn: b9814 không nhận ngân sách nghĩ theo từng request.
+5. ~~**B6** và **trần nghĩ 32k** vẫn hoãn: b9814 không nhận ngân sách nghĩ theo từng request.~~ **Đính chính (phiên lập trình
+   song song, cùng ngày):** câu này SAI. B6 đã làm (`c8f57fbe5`, hybrid phủ quyết cho bộ chọn tool; lưới vá `70d86ba82`). b9814
+   CÓ đọc ngân sách nghĩ theo yêu cầu qua `thinking_budget_tokens` (đo: 200 ⇒ nghĩ bị cắt ở 550 ký tự) — trường thử trước đây
+   (`reasoning_budget`) mới là trường bị bỏ qua. Chế độ "Nghĩ sâu" (24k nghĩ, trần sinh 32k) đã có ở `a6a747a7d`; số H×3 ở chế
+   độ sâu ghi ở audit 2026-09-21 §8.4m của phiên đó. Không cần nâng llama.cpp.
 
 ## 5. Thay đổi vận hành trên máy này (không vào git)
 - `.env`: đã thêm `PDFTOPPM_BIN`, trỏ tới poppler cài bằng winget (`oschwartz10612.Poppler`).
