@@ -48,6 +48,15 @@ describe("HuyHieuKiemMay — ba trạng thái KHÔNG gộp", () => {
     expect(h).not.toContain("‹THIẾU:");
   });
 
+  it("R4 — OCR CÓ chạy mà 0 chữ (`khong-doc-duoc`) ⇒ nhãn KHÔNG nói 'chưa OCR', tooltip KHÔNG khuyên 'bật OCR'; mã máy giữ nguyên", () => {
+    const h = ve({ soTrang: 3, soKyTu: 0, soDoan: 0, kyTuMoiTrang: 0, ocrSoTrang: null, ocrLyDo: "khong-doc-duoc", canhBao: [{ ma: "pdf-quet-khong-ocr", muc: "do" }] });
+    expect(h).toContain('data-kiem-may="pdf-quet-khong-ocr"');
+    expect(h).toContain("OCR không ra chữ");
+    expect(h).not.toContain("chưa OCR");
+    expect(h).not.toContain("KB_OCR_ENABLED");
+    expect(h).not.toContain("‹THIẾU:");
+  });
+
   it("OCR ⇒ VÀNG; tomTatNap ghép số trang · ký tự/trang · đoạn", () => {
     const kq = { soTrang: 2, soKyTu: 4000, soDoan: 3, kyTuMoiTrang: 2000, ocrSoTrang: 2, canhBao: [{ ma: "ocr", muc: "vang" }] };
     expect(ve(kq)).toMatch(/status-ntf[^"]*"[^>]*data-kiem-may="ocr"/);

@@ -15010,7 +15010,8 @@
         "khong-doan": "0 đoạn",
         "ocr": "chữ từ OCR",
         "bi-cat": "bị cắt",
-        "ocr-mat-dau": "OCR mất dấu"
+        "ocr-mat-dau": "OCR mất dấu",
+        "pdf-quet-ocr-rong": "PDF quét ảnh — OCR không ra chữ"
       },
       "lyDo": {
         "pdf-quet-khong-ocr": "Tệp {{trang}} trang chỉ có ~{{kyTu}} ký tự/trang: các trang là ẢNH, không có lớp chữ, và OCR không cấp được chữ. Trợ lý gần như không dùng được tài liệu này — bật OCR (KB_OCR_ENABLED + OCR_ENGINE_ENABLED) hoặc nạp bản PDF có chữ.",
@@ -15018,7 +15019,8 @@
         "khong-doan": "Nạp báo thành công nhưng 0 đoạn được lưu.",
         "ocr": "Chữ lấy bằng OCR ({{ocr}} trang) — OCR có thể sai dấu tiếng Việt và chữ số; nên xem mẫu đoạn ở tab Đánh giá.",
         "bi-cat": "Văn bản vượt trần ký tự khi nạp — phần cuối tài liệu KHÔNG vào kho.",
-        "ocr-mat-dau": "Model OCR đang cài có bộ chữ KHÔNG đủ dấu tiếng Việt (thiếu ư, ơ, ạ, ế, ộ…): chữ có dấu bị rơi hoặc đọc thành chữ khác, mà điểm tin cậy vẫn cao. Tài liệu tiếng Việt nên nạp bản PDF có chữ, hoặc cài model OCR có bộ chữ tiếng Việt."
+        "ocr-mat-dau": "Model OCR đang cài có bộ chữ KHÔNG đủ dấu tiếng Việt (thiếu ư, ơ, ạ, ế, ộ…): chữ có dấu bị rơi hoặc đọc thành chữ khác, mà điểm tin cậy vẫn cao. Tài liệu tiếng Việt nên nạp bản PDF có chữ, hoặc cài model OCR có bộ chữ tiếng Việt.",
+        "pdf-quet-ocr-rong": "Tệp {{trang}} trang chỉ có ~{{kyTu}} ký tự/trang: các trang là ẢNH. OCR ĐÃ chạy nhưng không tìm thấy dòng chữ nào — tài liệu có thể chỉ là hình vẽ/ảnh chụp, hoặc chữ quá nhỏ/mờ. Nạp bản PDF có chữ nếu có."
       },
       "ocrLyDo": {
         "tat-kb-ocr": "Lý do OCR không chạy: KB_OCR_ENABLED đang tắt.",
@@ -19297,14 +19299,20 @@
     "phien": "phiên",
     "phienGiaTri": "{{n}} lượt",
     "tipPhien": "Phiên này: {{luot}} lượt model · {{vao}} token vào · {{ra}} token ra (nghĩ {{nghi}}) · {{giay}} s thời gian model · {{tuChoi}} lần từ chối/thoái hoá.",
-    "tipPhienRong": "Chưa có lượt model nào trong phiên này."
+    "tipPhienRong": "Chưa có lượt model nào trong phiên này.",
+    "chepJson": "JSON",
+    "chepJsonTip": "Chép chỉ số phiên dạng JSON (dán vào bảng so sánh bench)",
+    "chepJsonOk": "đã chép",
+    "chepJsonLoi": "không chép được"
   },
   "repoWs": {
     "nghi": {
       "dang": "Model đang nghĩ…",
       "daNghi": "Model đã nghĩ",
       "soKyTu": "{{n}} ký tự",
-      "token": "{{n}} token"
+      "token": "{{n}} token",
+      "lyDoDuyet": "Vì sao model đề xuất thay đổi này",
+      "lyDoGhiChu": "Trích suy luận của model ở lượt này — chỉ để tham khảo; bạn vẫn là người duyệt."
     },
     "nghiPick": {
       "label": "Chọn chế độ nghĩ",
