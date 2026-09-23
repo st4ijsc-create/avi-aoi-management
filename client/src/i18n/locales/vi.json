@@ -15009,14 +15009,16 @@
         "khong-trich-duoc-chu": "không trích được chữ",
         "khong-doan": "0 đoạn",
         "ocr": "chữ từ OCR",
-        "bi-cat": "bị cắt"
+        "bi-cat": "bị cắt",
+        "ocr-mat-dau": "OCR mất dấu"
       },
       "lyDo": {
         "pdf-quet-khong-ocr": "Tệp {{trang}} trang chỉ có ~{{kyTu}} ký tự/trang: các trang là ẢNH, không có lớp chữ, và OCR không cấp được chữ. Trợ lý gần như không dùng được tài liệu này — bật OCR (KB_OCR_ENABLED + OCR_ENGINE_ENABLED) hoặc nạp bản PDF có chữ.",
         "khong-trich-duoc-chu": "Bộ đọc tài liệu không lấy ra được chữ nào — không đoạn nào được lưu.",
         "khong-doan": "Nạp báo thành công nhưng 0 đoạn được lưu.",
         "ocr": "Chữ lấy bằng OCR ({{ocr}} trang) — OCR có thể sai dấu tiếng Việt và chữ số; nên xem mẫu đoạn ở tab Đánh giá.",
-        "bi-cat": "Văn bản vượt trần ký tự khi nạp — phần cuối tài liệu KHÔNG vào kho."
+        "bi-cat": "Văn bản vượt trần ký tự khi nạp — phần cuối tài liệu KHÔNG vào kho.",
+        "ocr-mat-dau": "Model OCR đang cài có bộ chữ KHÔNG đủ dấu tiếng Việt (thiếu ư, ơ, ạ, ế, ộ…): chữ có dấu bị rơi hoặc đọc thành chữ khác, mà điểm tin cậy vẫn cao. Tài liệu tiếng Việt nên nạp bản PDF có chữ, hoặc cài model OCR có bộ chữ tiếng Việt."
       },
       "ocrLyDo": {
         "tat-kb-ocr": "Lý do OCR không chạy: KB_OCR_ENABLED đang tắt.",

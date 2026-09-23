@@ -225,6 +225,9 @@ export interface OcrScannedPdfResult {
   pagesAttempted: number;
   pagesProcessed: number;
   pagesFailed: number;
+  /** R4 — bộ chữ của model OCR thiếu dấu tiếng Việt (`ocrService.boChuThieuDauViet`): chữ có dấu sẽ rơi/sai mà
+   * điểm tin cậy vẫn cao. Chỉ có khi `ocrUsed`. */
+  thieuDauViet?: boolean;
 }
 
 const EMPTY_RESULT: OcrScannedPdfResult = {
@@ -279,7 +282,9 @@ export async function ocrScannedPdf(
       try {
         await runPdftoppm(pdftoppmBin, pdfPath, page, outPrefix);
         const png = await fs.promises.readFile(pngPath);
-        const ocr = await withTimeout(ocrServiceMod.runOcr(png, { language: opts.language }), PAGE_OCR_TIMEOUT_MS, "OCR");
+        // R4 — `runOcrTrang` (DET → từng dòng → REC), KHÔNG `runOcr`: `runOcr` đọc MỘT dòng trên cả ảnh, đưa nguyên
+        // trang A4 vào thì trả "" (đo sống 2026-09-23: OCR "chạy" mà 0 chữ).
+        const ocr = await withTimeout(ocrServiceMod.runOcrTrang(png, { language: opts.language }), PAGE_OCR_TIMEOUT_MS, "OCR");
         if (ocr.ok && ocr.text.trim()) {
           texts.push(ocr.text.trim());
           pagesProcessed++;
@@ -309,5 +314,7 @@ export async function ocrScannedPdf(
   }
 
   const text = texts.join("\n\n");
-  return { text, ocrUsed: text.length > 0, pagesAttempted, pagesProcessed, pagesFailed };
+  const ocrUsed = text.length > 0;
+  const thieuDauViet = ocrUsed && ocrServiceMod.boChuThieuDauViet?.() === true;
+  return { text, ocrUsed, pagesAttempted, pagesProcessed, pagesFailed, ...(thieuDauViet ? { thieuDauViet } : {}) };
 }

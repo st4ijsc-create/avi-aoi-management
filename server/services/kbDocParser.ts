@@ -88,6 +88,8 @@ export interface ParsedDocumentMeta {
   /** R4 — chỉ khi `scannedNoOcr`: vì sao OCR không cấp được chữ (`kbPdfOcr.lyDoOcrKhongSan`), hoặc
    * `khong-doc-duoc` khi OCR có chạy mà không trang nào ra chữ. */
   ocrLyDo?: string;
+  /** R4 — chữ OCR đến từ một model có bộ chữ THIẾU dấu tiếng Việt (`kbPdfOcr.thieuDauViet`). */
+  ocrThieuDauViet?: boolean;
 }
 
 export interface ParsedDocument {
@@ -301,6 +303,7 @@ async function parsePdf(buf: Buffer): Promise<ParsedDocument> {
               pageCount,
               ocrUsed: true,
               ocrPagesProcessed: ocr.pagesProcessed,
+              ...(ocr.thieuDauViet ? { ocrThieuDauViet: true } : {}),
             },
           };
         }

@@ -15587,14 +15587,16 @@
         "khong-trich-duoc-chu": "未提取到文字",
         "khong-doan": "0 段",
         "ocr": "文字来自 OCR",
-        "bi-cat": "已截断"
+        "bi-cat": "已截断",
+        "ocr-mat-dau": "OCR 丢失声调"
       },
       "lyDo": {
         "pdf-quet-khong-ocr": "{{trang}} 页文件每页仅约 {{kyTu}} 字符：页面是图像、没有文字层，且 OCR 未提供文字。助手几乎无法使用此文档——请启用 OCR（KB_OCR_ENABLED + OCR_ENGINE_ENABLED）或导入带文字的 PDF。",
         "khong-trich-duoc-chu": "文档读取器未提取到任何文字——未存储任何内容。",
         "khong-doan": "导入显示成功，但存储了 0 段。",
         "ocr": "文字来自 OCR（{{ocr}} 页）——OCR 可能弄错变音符号和数字；请在评估页查看样本段落。",
-        "bi-cat": "文本超过导入字符上限——文档末尾未被存储。"
+        "bi-cat": "文本超过导入字符上限——文档末尾未被存储。",
+        "ocr-mat-dau": "当前安装的 OCR 模型字符集缺少越南语声调符号（无 ư、ơ、ạ、ế、ộ 等）：带声调的字母会被丢失或误读，而置信度仍然很高。越南语文档请导入带文字的 PDF，或安装带越南语字符集的 OCR 模型。"
       },
       "ocrLyDo": {
         "tat-kb-ocr": "OCR 未运行的原因：KB_OCR_ENABLED 已关闭。",

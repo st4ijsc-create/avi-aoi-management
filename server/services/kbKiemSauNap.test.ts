@@ -32,6 +32,13 @@ describe("kiemSauNap", () => {
     expect(k.ocrSoTrang).toBe(2);
   });
 
+  it("R4 — chữ OCR từ model THIẾU dấu tiếng Việt ⇒ thêm VÀNG `ocr-mat-dau`; cờ lạc khi không dùng OCR ⇒ bỏ qua", () => {
+    const k = kiemSauNap({ sourceType: "pdf", charCount: 900, truncated: false, pageCount: 1, ocrUsed: true, ocrPagesProcessed: 1, ocrThieuDauViet: true }, 2);
+    expect(ma(k)).toEqual(["ocr", "ocr-mat-dau"]);
+    expect(k.canhBao.find((c) => c.ma === "ocr-mat-dau")?.muc).toBe("vang");
+    expect(ma(kiemSauNap({ sourceType: "pdf", charCount: 900, truncated: false, pageCount: 1, ocrThieuDauViet: true }, 2))).toEqual([]);
+  });
+
   it("0 đoạn ⇒ ĐỎ `khong-doan`; tệp không phải PDF ⇒ không có số trang", () => {
     const k = kiemSauNap({ sourceType: "md", charCount: 10, truncated: false }, 0);
     expect(ma(k)).toEqual(["khong-doan"]);

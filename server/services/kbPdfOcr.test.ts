@@ -29,10 +29,17 @@ vi.mock("node:child_process", () => ({
 const isOcrEngineEnabledMock = vi.fn(() => true);
 const ocrModelsAvailableMock = vi.fn(() => true);
 const runOcrMock = vi.fn();
+const boChuThieuDauVietMock = vi.fn((): boolean | null => false);
 vi.mock("./ai/ocrService", () => ({
   isOcrEngineEnabled: () => isOcrEngineEnabledMock(),
   ocrModelsAvailable: () => ocrModelsAvailableMock(),
-  runOcr: (...args: unknown[]) => runOcrMock(...args),
+  // R4 — bản MỘT DÒNG (`runOcr`) trả "" cho cả trang A4 (đo sống 2026-09-23) ⇒ kbPdfOcr KHÔNG được gọi nó; gọi
+  // ⇒ ném ⇒ mọi ca thành công bên dưới đỏ. `runOcrMock` là bản TRANG (DET → dòng → REC).
+  runOcr: () => {
+    throw new Error("kbPdfOcr gọi runOcr (một dòng) cho cả trang — phải là runOcrTrang");
+  },
+  runOcrTrang: (...args: unknown[]) => runOcrMock(...args),
+  boChuThieuDauViet: () => boChuThieuDauVietMock(),
 }));
 
 // ─── fixtures ───────────────────────────────────────────────────────────────────────────────
@@ -340,6 +347,24 @@ describe("ocrScannedPdf — success path", () => {
     expect(result.text).toBe("page 1 text\n\npage 2 text");
     expect(execFileMock).toHaveBeenCalledTimes(2);
     expect(runOcrMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("R4 — bộ chữ model thiếu dấu tiếng Việt ⇒ `thieuDauViet: true` CHỈ khi có chữ OCR; bộ chữ đủ ⇒ không có cờ", async () => {
+    mockOcrSuccess("Buoc 1: Tat nguon");
+    boChuThieuDauVietMock.mockReturnValue(true);
+    let mod = await loadFresh();
+    expect((await mod.ocrScannedPdf(Buffer.from("%PDF-1.4 fake"), 1)).thieuDauViet).toBe(true);
+    boChuThieuDauVietMock.mockReturnValue(false);
+    mod = await loadFresh();
+    expect((await mod.ocrScannedPdf(Buffer.from("%PDF-1.4 fake"), 1)).thieuDauViet).toBeUndefined();
+    // Không trang nào ra chữ ⇒ không có chữ để mất dấu ⇒ không cờ, dù bộ chữ thiếu.
+    boChuThieuDauVietMock.mockReturnValue(true);
+    runOcrMock.mockResolvedValue({ ok: true, engine: "onnx", text: "", lines: [], confidence: 0, degraded: false });
+    mod = await loadFresh();
+    const r = await mod.ocrScannedPdf(Buffer.from("%PDF-1.4 fake"), 1);
+    expect(r.ocrUsed).toBe(false);
+    expect(r.thieuDauViet).toBeUndefined();
+    boChuThieuDauVietMock.mockReturnValue(false);
   });
 
   it("passes the requested language through to ocrService.runOcr", async () => {

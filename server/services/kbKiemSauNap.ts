@@ -9,12 +9,14 @@
  *   · `khong-trich-duoc-chu` (đỏ) — tệp không ra chữ nào (job thất bại) — kèm cờ quét ảnh nếu bộ parse biết.
  *   · `khong-doan` (đỏ)          — nạp "thành công" mà 0 đoạn được lưu.
  *   · `ocr` (vàng)               — chữ đến từ OCR: nên xem mẫu đoạn, OCR có thể sai dấu/chữ số.
+ *   · `ocr-mat-dau` (vàng)       — model OCR có bộ chữ THIẾU dấu tiếng Việt: chữ có dấu rơi/sai mà điểm tin cậy
+ *                                  vẫn ~0.97 (đo 2026-09-23) ⇒ chỉ bộ chữ báo được, điểm thì không.
  *   · `bi-cat` (vàng)            — văn bản vượt trần ký tự, phần đuôi KHÔNG được nạp.
  * Không có cảnh báo ⇒ `canhBao: []` (đã kiểm, ổn) — KHÁC `ketQuaMay: null` (chưa từng kiểm).
  */
 import type { ParsedDocumentMeta } from "./kbDocParser";
 
-export type MaCanhBaoNap = "pdf-quet-khong-ocr" | "khong-trich-duoc-chu" | "khong-doan" | "ocr" | "bi-cat";
+export type MaCanhBaoNap = "pdf-quet-khong-ocr" | "khong-trich-duoc-chu" | "khong-doan" | "ocr" | "ocr-mat-dau" | "bi-cat";
 export type MucCanhBao = "do" | "vang";
 
 export interface CanhBaoNap {
@@ -39,6 +41,7 @@ const MUC: Record<MaCanhBaoNap, MucCanhBao> = {
   "khong-trich-duoc-chu": "do",
   "khong-doan": "do",
   ocr: "vang",
+  "ocr-mat-dau": "vang",
   "bi-cat": "vang",
 };
 
@@ -53,6 +56,7 @@ export function kiemSauNap(meta: Partial<ParsedDocumentMeta> | null | undefined,
   if (meta?.scannedNoOcr) canhBao.push(co("pdf-quet-khong-ocr"));
   if (soDoan <= 0) canhBao.push(co("khong-doan"));
   if (meta?.ocrUsed) canhBao.push(co("ocr"));
+  if (meta?.ocrUsed && meta.ocrThieuDauViet) canhBao.push(co("ocr-mat-dau"));
   if (meta?.truncated) canhBao.push(co("bi-cat"));
   return {
     soTrang,

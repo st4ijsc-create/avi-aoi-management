@@ -261,6 +261,106 @@ export function ctcGreedyDecode(
   return { text, score: scoreN > 0 ? Number((scoreSum / scoreN).toFixed(4)) : 0 };
 }
 
+// ─── PURE: DB (DBNet) hậu xử lý — bản đồ xác suất → hộp dòng chữ ──────────────
+
+/** Một hộp chữ trên hệ toạ độ của bản đồ xác suất (trục thẳng — tài liệu quét gần như không nghiêng). */
+export interface HopChu {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Trung bình xác suất trong hình chữ nhật bao (cách tính "fast" của PaddleOCR) — 0..1. */
+  score: number;
+}
+
+/**
+ * ★ R4 (2026-09-23) — hậu xử lý DBNet, THUẦN: ngưỡng hoá `prob` (H×W, hàng trước) ở `nguong`, gom thành phần
+ * liên thông 8 hướng, lấy hình chữ nhật bao, bỏ hộp có cạnh < `canhMin` hoặc điểm < `nguongHop`, rồi NỞ hộp
+ * (unclip) một khoảng d = diện tích·`noRong`/chu vi — đúng công thức PaddleOCR, vì DBNet học vùng CO LẠI của
+ * dòng chữ; không nở thì rec cắt mất nét trên/dưới. Mặc định = mặc định PaddleOCR (0.3 / 0.6 / 1.5).
+ */
+export function dbTimHop(
+  prob: Float32Array | number[],
+  W: number,
+  H: number,
+  opts: { nguong?: number; nguongHop?: number; noRong?: number; canhMin?: number } = {},
+): HopChu[] {
+  const nguong = opts.nguong ?? 0.3;
+  const nguongHop = opts.nguongHop ?? 0.6;
+  const noRong = opts.noRong ?? 1.5;
+  const canhMin = opts.canhMin ?? 3;
+  if (W <= 0 || H <= 0 || prob.length < W * H) return [];
+  const daXet = new Uint8Array(W * H);
+  const stack = new Int32Array(W * H);
+  const hops: HopChu[] = [];
+  for (let start = 0; start < W * H; start++) {
+    if (daXet[start] || Number(prob[start]) <= nguong) continue;
+    let top = 0;
+    stack[top++] = start;
+    daXet[start] = 1;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    while (top > 0) {
+      const p = stack[--top];
+      const px = p % W;
+      const py = (p - px) / W;
+      if (px < x0) x0 = px;
+      if (px > x1) x1 = px;
+      if (py < y0) y0 = py;
+      if (py > y1) y1 = py;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = py + dy;
+        if (ny < 0 || ny >= H) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = px + dx;
+          if ((dx === 0 && dy === 0) || nx < 0 || nx >= W) continue;
+          const q = ny * W + nx;
+          if (!daXet[q] && Number(prob[q]) > nguong) {
+            daXet[q] = 1;
+            stack[top++] = q;
+          }
+        }
+      }
+    }
+    const w = x1 - x0 + 1;
+    const h = y1 - y0 + 1;
+    if (Math.min(w, h) < canhMin) continue;
+    let tong = 0;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) tong += Number(prob[y * W + x]);
+    const score = tong / (w * h);
+    if (score < nguongHop) continue;
+    const d = (w * h * noRong) / (2 * (w + h));
+    const nx0 = Math.max(0, Math.floor(x0 - d));
+    const ny0 = Math.max(0, Math.floor(y0 - d));
+    const nx1 = Math.min(W - 1, Math.ceil(x1 + d));
+    const ny1 = Math.min(H - 1, Math.ceil(y1 + d));
+    hops.push({ x: nx0, y: ny0, w: nx1 - nx0 + 1, h: ny1 - ny0 + 1, score: Number(score.toFixed(4)) });
+  }
+  return hops;
+}
+
+/**
+ * Xếp hộp theo THỨ TỰ ĐỌC: gom thành HÀNG (hai hộp cùng hàng khi tâm dọc của hộp sau nằm trong nửa chiều cao
+ * của hàng), hàng từ trên xuống, trong hàng từ trái sang. Thuần.
+ */
+export function xepThuTuDoc<T extends { x: number; y: number; w: number; h: number }>(hops: T[]): T[][] {
+  const theoY = [...hops].sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2) || a.x - b.x);
+  const hang: T[][] = [];
+  for (const hop of theoY) {
+    const tam = hop.y + hop.h / 2;
+    const cuoi = hang[hang.length - 1];
+    if (cuoi) {
+      const tamHang = cuoi.reduce((s, b) => s + b.y + b.h / 2, 0) / cuoi.length;
+      const caoHang = cuoi.reduce((s, b) => s + b.h, 0) / cuoi.length;
+      if (Math.abs(tam - tamHang) <= Math.min(caoHang, hop.h) / 2) {
+        cuoi.push(hop);
+        continue;
+      }
+    }
+    hang.push([hop]);
+  }
+  return hang.map((r) => r.sort((a, b) => a.x - b.x));
+}
+
 // ─── Dictionary loader (CTC charset) ──────────────────────────────────────────
 
 /**
@@ -286,6 +386,23 @@ export function loadCharset(dictPath: string, blankIndex = 0): string[] {
     charset.push("");
   }
   return charset;
+}
+
+/**
+ * ★ R4 (2026-09-23) — bộ chữ CTC có ĐỦ dấu tiếng Việt không. Đo sống: model latin PP-OCRv5 (bộ chữ 500 ký tự,
+ * không có ư/ơ/ạ/ế/ộ…) đọc "Bảo trì … thiếc" thành "bo trì … thiéc" — ký tự ngoài bộ chữ bị RƠI hoặc thay
+ * bằng họ hàng gần, mà điểm rec vẫn 0.97 ⇒ ĐIỂM TIN CẬY KHÔNG BÁO ĐƯỢC LỖI NÀY; chỉ bộ chữ báo được.
+ * `null` = không có model để hỏi. Never throws.
+ */
+export function boChuThieuDauViet(): boolean | null {
+  try {
+    if (!ocrModelsAvailable()) return null;
+    const { dictPath, blankIndex } = ocrModelPaths();
+    const bo = new Set(getCharset(dictPath, blankIndex));
+    return !["ư", "ơ", "ă", "ạ", "ả", "ế", "ộ", "ữ", "ỳ"].every((c) => bo.has(c));
+  } catch {
+    return null;
+  }
 }
 
 // ─── ONNX inference (lazy — never imported unless models exist & flag on) ─────
@@ -582,6 +699,142 @@ export async function runOcr(
     text: line.text,
     lines: [line],
     confidence: line.score,
+    degraded: false,
+  };
+}
+
+// ─── Trang tài liệu: DET (DBNet) → cắt từng dòng → REC ─────────────────────────
+
+/** Cạnh dài tối đa của ảnh đưa vào DET (bội 32). Trang A4 200 dpi ≈ 1654×2339 ⇒ thu về 1152×1632. */
+function detCanhMax(): number {
+  const n = Number(process.env.OCR_DET_MAX_SIDE ?? 1632);
+  return Number.isFinite(n) && n >= 64 ? Math.floor(n) : 1632;
+}
+
+/** PaddleOCR `drop_score`: dòng rec dưới ngưỡng này bị bỏ (thường là nhiễu DET — viền, khung, vết bẩn). */
+function recDiemMin(): number {
+  const n = Number(process.env.OCR_REC_MIN_SCORE ?? 0.5);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : 0.5;
+}
+
+/**
+ * Chạy DET trên cả ảnh ⇒ hộp dòng chữ trên toạ độ ẢNH GỐC. `null` = DET hỏng (khác "0 hộp" = trang trắng).
+ * Tiền xử lý đúng PaddleOCR: thu cạnh dài về ≤ `detCanhMax()`, làm tròn mỗi cạnh về bội 32, chuẩn hoá
+ * mean/std ImageNet theo thứ tự kênh BGR (Paddle đọc ảnh bằng cv2).
+ */
+async function timHopChu(
+  image: Buffer,
+  models: OcrModelPaths,
+): Promise<{ hops: HopChu[]; srcW: number; srcH: number } | null> {
+  if (!models.detPath) return null;
+  try {
+    const sharp = (await import("sharp")).default as typeof sharpNs;
+    const ort = await import("onnxruntime-node");
+    const meta = await sharp(image).metadata();
+    const srcW = meta.width ?? 0;
+    const srcH = meta.height ?? 0;
+    if (srcW < 8 || srcH < 8) return { hops: [], srcW, srcH };
+    const tiLe = Math.min(1, detCanhMax() / Math.max(srcW, srcH));
+    const W = Math.max(32, Math.round((srcW * tiLe) / 32) * 32);
+    const H = Math.max(32, Math.round((srcH * tiLe) / 32) * 32);
+    const raw = await sharp(image).resize(W, H, { fit: "fill" }).removeAlpha().toColourspace("srgb").raw().toBuffer();
+    const mean = [0.485, 0.456, 0.406];
+    const std = [0.229, 0.224, 0.225];
+    const plane = W * H;
+    const tensor = new Float32Array(3 * plane);
+    for (let i = 0; i < plane; i++) {
+      for (let c = 0; c < 3; c++) {
+        const v = raw[i * 3 + (2 - c)] / 255; // kênh c của tensor = B,G,R
+        tensor[c * plane + i] = (v - mean[c]) / std[c];
+      }
+    }
+    const session = (await getOnnxSession(models.detPath)) as {
+      inputNames: string[];
+      outputNames: string[];
+      run: (feeds: Record<string, unknown>) => Promise<Record<string, { data: Float32Array; dims: number[] }>>;
+    };
+    const feeds = { [session.inputNames[0]]: new (ort as any).Tensor("float32", tensor, [1, 3, H, W]) };
+    let out: Record<string, { data: Float32Array; dims: number[] }>;
+    try {
+      const { gpuSessionSemaphore } = await import("../aiInferenceEngine");
+      out = await gpuSessionSemaphore.run(() => session.run(feeds));
+    } catch {
+      out = await session.run(feeds);
+    }
+    const o = out[session.outputNames[0]];
+    if (!o) return null;
+    const oH = o.dims[o.dims.length - 2];
+    const oW = o.dims[o.dims.length - 1];
+    const sx = srcW / oW;
+    const sy = srcH / oH;
+    const hops = dbTimHop(o.data, oW, oH).map((b) => {
+      const x = Math.max(0, Math.floor(b.x * sx));
+      const y = Math.max(0, Math.floor(b.y * sy));
+      return {
+        x,
+        y,
+        w: Math.min(srcW - x, Math.ceil(b.w * sx)),
+        h: Math.min(srcH - y, Math.ceil(b.h * sy)),
+        score: b.score,
+      };
+    });
+    return { hops: hops.filter((b) => b.w >= 4 && b.h >= 4), srcW, srcH };
+  } catch (err) {
+    if (isVramRefusal(err)) {
+      console.warn(
+        `[ocrService] cổng SỔ TỪ CHỐI giấy phép VRAM cho session DET (mức production) ⇒ trang này trả RỖNG: ` +
+          `${(err as Error)?.message ?? String(err)}`,
+      );
+    }
+    return null;
+  }
+}
+
+/**
+ * ★ R4 (2026-09-23) — OCR MỘT TRANG TÀI LIỆU (nhiều dòng). `runOcr` chỉ nhận dạng MỘT dòng trên cả ảnh (đúng
+ * cho tem/serial đã cắt ROI); đưa nguyên trang A4 vào đó thì rec ép cả trang về cao 48 px ⇒ trả "" — đo sống
+ * 2026-09-23: OCR PDF quét "chạy" mà 0 chữ. Ở đây: DET tìm từng dòng → cắt → REC từng dòng → ghép theo thứ tự
+ * đọc (hàng cách nhau `\n`, hộp cùng hàng cách nhau dấu cách). Dòng rec < `OCR_REC_MIN_SCORE` bị bỏ.
+ * Không có model DET ⇒ lùi về `runOcr` (một dòng) — trung thực, vì với ảnh đã là một dòng thì đó là đúng.
+ * Never throws.
+ */
+export async function runOcrTrang(
+  image: Buffer,
+  opts: { language?: "en" | "vi" | "auto" } = {},
+): Promise<OcrResult> {
+  const models = ocrModelsAvailable() ? ocrModelPaths() : null;
+  if (!models || !models.detPath) return runOcr(image, opts);
+  const det = await timHopChu(image, models);
+  if (!det) {
+    return { ok: false, engine: "none", text: "", lines: [], confidence: 0, degraded: true, reason: "OCR_DET_FAILED" };
+  }
+  const sharp = (await import("sharp")).default as typeof sharpNs;
+  const diemMin = recDiemMin();
+  const hang: OcrLine[][] = [];
+  for (const r of xepThuTuDoc(det.hops)) {
+    const dong: OcrLine[] = [];
+    for (const b of r) {
+      let cat: Buffer;
+      try {
+        cat = await sharp(image).extract({ left: b.x, top: b.y, width: b.w, height: b.h }).png().toBuffer();
+      } catch {
+        continue;
+      }
+      const line = await recognizeSingleLine(cat, models);
+      if (line && line.text.trim() && line.score >= diemMin) {
+        dong.push({ text: line.text.trim(), score: line.score, box: { x: b.x, y: b.y, w: b.w, h: b.h } });
+      }
+    }
+    if (dong.length) hang.push(dong);
+  }
+  const lines = hang.flat();
+  const confidence = lines.length ? Number((lines.reduce((s, l) => s + l.score, 0) / lines.length).toFixed(4)) : 0;
+  return {
+    ok: true,
+    engine: "onnx",
+    text: hang.map((d) => d.map((l) => l.text).join(" ")).join("\n"),
+    lines,
+    confidence,
     degraded: false,
   };
 }
