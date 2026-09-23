@@ -36,6 +36,7 @@ import path from "path";
 import { isVramRefusal } from "../vram/vramRefusalSignal";
 import { sessionCacheMax } from "../vram/vramCaps";
 import type sharpNs from "sharp";
+import { cheDoNhanDang } from "./ocrVietOcr"; // module LÁ (chỉ fs/path) — dùng được trong hàm đồng bộ
 
 // ─── Flags ────────────────────────────────────────────────────────────────────
 
@@ -397,6 +398,9 @@ export function loadCharset(dictPath: string, blankIndex = 0): string[] {
 export function boChuThieuDauViet(): boolean | null {
   try {
     if (!ocrModelsAvailable()) return null;
+    // ★ OCR trang đọc dòng bằng VietOCR (đủ 178 chữ) ở chế độ vietocr/tu-dong ⇒ bộ chữ paddle không còn quyết định
+    //   việc mất dấu của tài liệu nạp. Cảnh báo `ocr-mat-dau` chỉ còn đúng khi paddle là bộ đọc dòng.
+    if (cheDoNhanDang() !== "paddle") return false;
     const { dictPath, blankIndex } = ocrModelPaths();
     const bo = new Set(getCharset(dictPath, blankIndex));
     return !["ư", "ơ", "ă", "ạ", "ả", "ế", "ộ", "ữ", "ỳ"].every((c) => bo.has(c));
@@ -560,7 +564,23 @@ async function preprocessRec(
 }
 
 /** Run a single-line recognition on the whole (already-ROI) image. Never throws → degrade. */
-async function recognizeSingleLine(image: Buffer, models: OcrModelPaths): Promise<OcrLine | null> {
+async function recognizeSingleLine(image: Buffer, models: OcrModelPaths, choPhepViet = false): Promise<OcrLine | null> {
+  // ★ Tiếng Việt (2026-09-23): chọn bộ đọc dòng theo `cheDoNhanDang()` — paddle | vietocr | tu-dong (mặc định khi đủ
+  //   tệp VietOCR: chạy cả hai, lấy VietOCR chỉ khi dòng mang chữ Việt). Lý do và số đo: `ocrVietOcr.ts`.
+  //   DET (tìm dòng) KHÔNG đổi — chỉ bộ đọc từng dòng.
+  const { cheDoNhanDang, nhanDangDongViet, chonDong } = await import("./ocrVietOcr");
+  // ⚠ CHỈ OCR TRANG (nạp tài liệu, ngoại tuyến) được dùng VietOCR: `runOcr` một dòng là đường đọc NHÃN trên dây chuyền,
+  //   nơi +~5 s/dòng là không chấp nhận được và nhãn là mã/số Latin (paddle 0,992 > vietocr 0,958).
+  const cheDo = choPhepViet ? cheDoNhanDang() : "paddle";
+  if (cheDo === "vietocr") return nhanDangDongViet(image);
+  if (cheDo === "tu-dong") {
+    const [paddle, viet] = [await nhanDangDongPaddle(image, models), await nhanDangDongViet(image)];
+    return chonDong(paddle, viet);
+  }
+  return nhanDangDongPaddle(image, models);
+}
+
+async function nhanDangDongPaddle(image: Buffer, models: OcrModelPaths): Promise<OcrLine | null> {
   try {
     const ort = await import("onnxruntime-node");
     const session = (await getOnnxSession(models.recPath)) as {
@@ -820,7 +840,7 @@ export async function runOcrTrang(
       } catch {
         continue;
       }
-      const line = await recognizeSingleLine(cat, models);
+      const line = await recognizeSingleLine(cat, models, true);
       if (line && line.text.trim() && line.score >= diemMin) {
         dong.push({ text: line.text.trim(), score: line.score, box: { x: b.x, y: b.y, w: b.w, h: b.h } });
       }

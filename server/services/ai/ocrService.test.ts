@@ -201,6 +201,8 @@ describe("xepThuTuDoc — thứ tự đọc (thuần)", () => {
 describe("boChuThieuDauViet — chỉ bộ chữ báo được mất dấu, điểm rec thì không", () => {
   it("bộ chữ không có ư/ơ/ạ… ⇒ true; có đủ ⇒ false; không có model ⇒ null", () => {
     const thu = fs.mkdtempSync(path.join(os.tmpdir(), "ocr-dict-"));
+    const cuEngine = process.env.OCR_REC_ENGINE;
+    process.env.OCR_REC_ENGINE = "paddle"; // ca này đo BỘ CHỮ paddle; chế độ VietOCR có ca riêng bên dưới
     try {
       fs.writeFileSync(path.join(thu, "rec.onnx"), "x");
       fs.writeFileSync(path.join(thu, "ppocr_keys.txt"), ["a", "b", "á", "à", "đ"].join("\n"));
@@ -214,6 +216,25 @@ describe("boChuThieuDauViet — chỉ bộ chữ báo được mất dấu, đi�
       expect(boChuThieuDauViet()).toBeNull();
     } finally {
       fs.rmSync(thu, { recursive: true, force: true });
+      if (cuEngine === undefined) delete process.env.OCR_REC_ENGINE; else process.env.OCR_REC_ENGINE = cuEngine;
+    }
+  });
+  it("★ bộ đọc dòng là VietOCR (tu-dong/vietocr, đủ tệp) ⇒ KHÔNG báo mất dấu dù bộ chữ paddle thiếu", async () => {
+    const { coVietOcr } = await import("./ocrVietOcr");
+    if (!coVietOcr()) return;
+    const cuEngine = process.env.OCR_REC_ENGINE;
+    const cuDir = process.env.OCR_MODEL_DIR;
+    delete process.env.OCR_MODEL_DIR;
+    process.env.OCR_REC_ENGINE = "tu-dong";
+    _resetOcrCachesForTests();
+    try {
+      expect(boChuThieuDauViet()).toBe(false);
+      process.env.OCR_REC_ENGINE = "paddle";
+      expect(boChuThieuDauViet(), "paddle latin thật thiếu ư/ơ ⇒ true").toBe(true);
+    } finally {
+      if (cuEngine === undefined) delete process.env.OCR_REC_ENGINE; else process.env.OCR_REC_ENGINE = cuEngine;
+      if (cuDir !== undefined) process.env.OCR_MODEL_DIR = cuDir;
+      _resetOcrCachesForTests();
     }
   });
 });
@@ -257,4 +278,19 @@ describe.skipIf(!coModelThat)("runOcrTrang — model THẬT trên trang dựng s
     expect(r.text).toBe("");
     expect(r.confidence).toBe(0);
   }, 60_000);
+});
+
+describe.skipIf(!coModelThat)("runOcrTrang — tiếng Việt có dấu (VietOCR, chế độ tu-dong)", () => {
+  const DONG = ["Mã lỗi E082: áp suất khí nén thấp.", "Kỹ thuật viên ghi nhận kết quả vào sổ theo dõi.", "Error code E082: low air pressure."];
+  it("★★ dòng Việt giữ ĐỦ dấu (paddle latin rơi dấu ⇒ ~0,85); dòng Anh vẫn do paddle đọc", async () => {
+    const { coVietOcr } = await import("./ocrVietOcr");
+    if (!coVietOcr()) return; // máy không có tệp VietOCR ⇒ chế độ paddle, ca này không áp
+    const sharp = (await import("sharp")).default;
+    const chu = DONG.map((d, i) => `<text x="80" y="${120 + i * 80}" font-family="Arial" font-size="32">${d}</text>`).join("");
+    const anh = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1654" height="440"><rect width="100%" height="100%" fill="#fff"/>${chu}</svg>`)).png().toBuffer();
+    const r = await runOcrTrang(anh);
+    const doc = r.text.split("\n");
+    expect(doc).toHaveLength(3);
+    DONG.forEach((d, i) => expect(similarityRatio(doc[i], d), `dòng ${i}: "${doc[i]}"`).toBeGreaterThanOrEqual(0.95));
+  }, 120_000);
 });
