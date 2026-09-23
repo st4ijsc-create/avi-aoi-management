@@ -254,9 +254,12 @@ describe("§6 — LƯỢT TÌM KHÔNG RA GÌ ⇒ KHÔNG mở đường (0 lượ
    */
   it("★★★ grep KHÔNG khớp gì (note NO_MATCH) ⇒ 1 vòng, bộ chọn vòng ≥2 KHÔNG được gọi", async () => {
     h.keTiep = [{ tool: "read_file", args: { path: "server/services/aiLocalTools/toolRegistry.ts" }, reason: "KHONG_DUOC_DUNG" }];
-    // Mẫu chắc chắn không có trong repo.
+    // Mẫu chắc chắn không có trong repo. ⚠ GHÉP LÚC CHẠY: viết liền trong mã nguồn thì CHÍNH tệp test này
+    //   chứa mẫu ⇒ grep_repo khớp nó. Ca từng xanh chỉ vì lượt quét chạm trần 9.000 tệp TRƯỚC khi tới thư mục
+    //   này; thêm tệp mới vào repo đổi thứ tự quét ⇒ đỏ (2026-09-23). Đỏ/xanh không được phụ thuộc thứ tự quét.
+    const mau = ["ZZQQXX", "KHONG", "TON", "TAI", "DOC81", "ZZQQXX"].join("_");
     const r = await tryExecuteCodingToolLoop(
-      "tìm ZZQQXX_KHONG_TON_TAI_DOC81_ZZQQXX trong repo",
+      `tìm ${mau} trong repo`,
       undefined,
       ADMIN,
     );

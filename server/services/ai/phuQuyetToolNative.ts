@@ -15,6 +15,7 @@
  * `AI_CODING_TOOL_VETO=0` tắt hẳn lớp này (không gọi model).
  */
 import { z } from "zod";
+import { stripThinking } from "../ai/thinkingStrip"; // đường "ai/thinkingStrip" để census AST nhận bộ cắt
 import { CODING_TOOL_NAMES } from "../aiLocalTools/intentClassifier";
 import type { ToolDecision } from "../aiLocalTools/intentClassifier";
 import { getTool } from "../aiLocalTools/toolRegistry";
@@ -81,7 +82,10 @@ export async function hoiModelChonTool(question: string, hanGioMs = HAN_GIO_PHU_
     if (kq === null) return undefined; // quá hạn
     const ten = (kq as { toolCalls?: Array<{ function?: { name?: string } }> }).toolCalls?.[0]?.function?.name;
     if (ten) return (CODING_TOOL_NAMES as readonly string[]).includes(ten) ? ten : undefined;
-    const text = String((kq as { text?: string }).text ?? "").trim();
+    // Cắt khối nghĩ TRƯỚC khi hỏi "rỗng?": một chuỗi chỉ gồm `<think>…` bị cắt vì length là LƯỢT CỤT, không
+    // phải lời "không dùng tool" (đúng lớp lỗi 8.4k: 9/12 "không tool" từng là rỗng bị cắt). Chữ này không
+    // bao giờ tới người dùng — chỉ dùng để phân loại.
+    const text = stripThinking(String((kq as { text?: string }).text ?? "")).answer.trim();
     const finish = (kq as { finishReason?: string }).finishReason;
     if (text === "" && finish === "length") return undefined; // bị cắt ⇒ không phải một lời từ chối
     return null;

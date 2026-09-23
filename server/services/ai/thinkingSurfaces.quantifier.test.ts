@@ -331,6 +331,12 @@ interface BeMat {
 }
 
 const SO_KHAI: readonly BeMat[] = [
+  // ─── B6 phủ quyết chọn tool lập trình (2026-09-23) ───
+  {
+    tep: "server/services/ai/phuQuyetToolNative.ts", ham: "hoiModelChonTool", goi: "chatCompletion",
+    hienThi: false, noi: "tai_cho",
+    ghiChu: "Đọc `toolCalls[0].function.name`; chữ chỉ dùng để phân loại rỗng/cụt — `stripThinking` trước phép thử rỗng (khối nghĩ bị cắt = lượt CỤT, không phải \"không tool\"). Không tới người dùng.",
+  },
   // ─── ĐÃ NỐI TẠI CHỖ trong lượt G5-C (7) ───
   {
     tep: "server/routes/aiStreamingApi.ts", ham: "post /api/ai/stream/generate", goi: "generateTextStream",
