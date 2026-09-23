@@ -191,7 +191,12 @@ Tải `Qwen3.6-35B-A3B-MTP` UD‑Q4_K_XL (21,3 GB), `--spec-type draft-mtp --spe
 > | cặp đối kháng | 1/4 | **3/4** (D01b: vẫn đọc `package.json` cho "giải thích npm run check") |
 > | trượt riêng | C05 (`tests/` nuốt lệnh) · N01 (`IEnumerable` → grep) · D03b · D04b | C05/C06 (KHÔNG chạy lệnh khi câu nói "chạy … và cho biết lỗi") |
 >
-> ⇒ Cổng ra "≥ nền ở cả bốn số" **KHÔNG đạt** ⇒ không thay bộ chọn. Native mạnh đúng chỗ heuristic yếu (từ chối/đối kháng — lớp G11/G13)
+> **⚠ ĐÍNH CHÍNH 2026-09-23 — bảng trên SAI:** cột native bị cắt (nghĩ bật, trần 320 ⇒ 9/12 "không tool" là content rỗng) và cột
+> nền đo sai lớp (chỉ vế heuristic, không phải `chonToolLapTrinh`). Số đúng và quyết định: audit Phụ lục 8.4k. **Chủ dự án duyệt
+> hybrid phủ quyết (2026-09-23)** ⇒ đã làm: `ai/phuQuyetTool.ts` (vị từ thuần, 11 lưới) + `ai/phuQuyetToolNative.ts` (lời gọi model,
+> 7 lưới) nối vào cuối `chonToolLapTrinh`; đo hàm sản phẩm đầu‑cuối trên 3 bộ ca: **không số nào tụt, từ chối 0,5 → 1,0 ở hai held‑out,
+> cặp đối kháng 1/4 → 4/4**. Nghiệm thu sống: bật agentic 6/6 · H 28/36; ablation tắt 5/6 · 26/36 ⇒ giữ bật (8.4k).
+> ~~⇒ Cổng ra "≥ nền ở cả bốn số" **KHÔNG đạt** ⇒ không thay bộ chọn.~~ Native mạnh đúng chỗ heuristic yếu (từ chối/đối kháng — lớp G11/G13)
 > và yếu chỗ heuristic mạnh (lệnh, args). **Thiết kế đo tiếp (phiên sau): HYBRID "phủ quyết"** — heuristic đề xuất; khi đề xuất đến từ tín
 > hiệu YẾU (câu dạng hỏi/viết mới mà chỉ NHẮC lệnh/tệp/thư mục), hỏi native làm ý kiến thứ hai; native nói "không tool" ⇒ không gọi.
 > Đo trên cùng 38 ca bằng `--hybrid`; chỉ nối dây khi ≥ nền ở cả bốn số. Chi phí dự kiến: +1,2 s chỉ ở ca mơ hồ.
@@ -399,6 +404,10 @@ có đo) → 7. **R1, R2** (training có vòng đo thật) → 8. **B6** (native
 > trên card 32,6 GiB — quá mép). Chọn: **(a) 1 × 64k** (đúng cấu hình đã đo; một người dùng tại một thời điểm — hai yêu cầu song song
 > sẽ xếp hàng) hay **(b) 2 × 32k** (song song, nhưng mất +11 điểm H). Đề nghị (a) cho máy trạm một người; đặt qua `.env`
 > `LLAMA_SERVER_SLOTS=1` + `LLAMA_SERVER_CTX_TOTAL=65536`, không đổi mặc định launcher cho tới khi chủ dự án chốt.
+>
+> **CHỐT 2026-09-23 (chủ dự án): (a).** `start-llama-server.ps1` mặc định nay `-np 1 -c 65536` và **từ chối khởi động** khi
+> ctx/slot < `GGUF_MAX_CTX` (thông báo nói rõ ba khoá cần sửa) — cấu hình lệch từng lặng lẽ đẩy mã lùi in‑process. Training
+> R1–R5: chủ dự án đồng ý làm ở **phiên riêng**.
 
 1. Tải GGUF‑MTP 21,3 GB (B5) — đồng ý tải để đo?
 2. Chấp nhận ctx 64k làm mặc định nếu H tăng và VRAM còn ≥ 3 GB (B3)?

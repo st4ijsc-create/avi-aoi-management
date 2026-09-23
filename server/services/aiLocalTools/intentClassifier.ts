@@ -1822,10 +1822,15 @@ export async function decideNextToolLLM(
 export const CODING_TOOL_NAMES = ["read_file", "list_files", "grep_repo", "run_command", "apply_diff"] as const;
 const CODING_TOOL_SET: ReadonlySet<string> = new Set(CODING_TOOL_NAMES);
 
-/** Ý định LIỆT KÊ thư mục. */
-const CODING_LIST_VERB = /(liet ke|cay thu muc|co nhung file|thu muc|list|directory|ls|列出|目录|文件夹)/i;
-/** Ý định TÌM/GREP. */
-const CODING_GREP_VERB = /(grep|tim|search|find|goi o dau|dung o dau|o dau|khai bao|dinh nghia|where|查找|搜索|在哪)/i;
+/**
+ * Ý định LIỆT KÊ thư mục.
+ * ★ B6 (2026-09-23) — động từ ASCII phải đứng thành TỪ: bản cũ khớp chuỗi con, nên `ls` ăn vào "too**ls**"/"ca**ll**s"-kiểu và
+ *   `tim` ăn vào "date**tim**e" (đo được: đề sinh mã `Gom(IEnumerable<DateTime> …)` ⇒ `grep_repo IEnumerable`, bộ ca N01).
+ *   Chữ Hán không có ranh giới từ ASCII ⇒ để ngoài nhóm có biên.
+ */
+const CODING_LIST_VERB = /(^|[^a-z0-9])(liet ke|cay thu muc|co nhung file|thu muc|list|lists|directory|ls)([^a-z0-9]|$)|列出|目录|文件夹/i;
+/** Ý định TÌM/GREP (cùng luật ranh giới từ như trên). */
+const CODING_GREP_VERB = /(^|[^a-z0-9])(grep|tim|search|find|goi o dau|dung o dau|o dau|khai bao|dinh nghia|where)([^a-z0-9]|$)|查找|搜索|在哪/i;
 
 /** Từ dừng — KHÔNG được coi là một mẫu grep khi rơi vào nhánh "định danh dài nhất". */
 const CODING_STOPWORDS: ReadonlySet<string> = new Set([
@@ -1883,6 +1888,12 @@ function extractRunCommand(question: string): string | undefined {
   // npx vitest run <đường>
   m = q.match(/\bnpx\s+vitest\s+run\s+([^\s"'`,;]+)/i);
   if (m) return laTokenVanXuoi(m[1]!) ? "npx vitest run" : `npx vitest run ${m[1]}`;
+  // ★ B6 (2026-09-23) — python -m pytest|unittest <đường>: CÓ trong danh sách trắng (`repoCommandSandbox`) nhưng bộ trích
+  //   chưa từng nhận ⇒ "Run python -m pytest tests/ …" rơi xuống nhánh THƯ MỤC (`list_files tests`) — đo được ở bộ ca C05/HC3.
+  m = q.match(/\bpython\s+-m\s+(pytest|unittest)\s+([^\s"'`,;]+)/i);
+  if (m) return laTokenVanXuoi(m[2]!) ? `python -m ${m[1]!.toLowerCase()}` : `python -m ${m[1]!.toLowerCase()} ${m[2]}`;
+  m = q.match(/\bpython\s+-m\s+(pytest|unittest)\b/i);
+  if (m) return `python -m ${m[1]!.toLowerCase()}`;
   if (/\bnpm\s+run\s+check:tests\b/i.test(q)) return "npm run check:tests";
   if (/\bnpm\s+run\s+check\b/i.test(q)) return "npm run check";
   if (/\bgit\s+status\b/i.test(q)) return "git status";

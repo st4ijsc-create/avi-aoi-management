@@ -1,0 +1,25 @@
+{
+  "_doc": "★ B6 (2026-09-23) — bộ ca GIỮ LẠI (held-out) cho bộ chọn tool chế độ lập trình. Viết TRƯỚC khi sửa heuristic và TRƯỚC khi dựng vị từ 'tín hiệu yếu' của hybrid — để con số hybrid không phải là con số của một bộ quy tắc được nắn theo 38 ca đã nhìn thấy. KHÔNG được sửa ca trong tệp này sau khi đã đo (muốn thêm ca thì thêm tệp khác). Chấm: `npx tsx scripts/ai-eval/eval-toolcall.mjs --coding [--native] [--hybrid] --cases scripts/ai-eval/toolcall-coding-heldout.json`.",
+  "cases": [
+    { "id": "HR1", "group": "select", "question": "Show me client/src/pages/AICodingWorkspace.tsx", "expectTool": "read_file", "expectArgs": { "path": "client/src/pages/AICodingWorkspace.tsx" } },
+    { "id": "HR2", "group": "select", "question": "In nội dung tệp drizzle/schema/ai.ts", "expectTool": "read_file", "expectArgs": { "path": "drizzle/schema/ai.ts" } },
+    { "id": "HR3", "group": "select", "question": "Tệp server/services/ai/loaiLuot.ts định nghĩa những lớp lượt nào?", "expectTool": "read_file", "expectArgs": { "path": "server/services/ai/loaiLuot.ts" }, "note": "Câu có cả đường tệp lẫn động từ 'định nghĩa' (một động từ grep) — đích đúng là ĐỌC tệp đã nêu." },
+    { "id": "HG1", "group": "select", "question": "Where is hoSoSamplingCho defined?", "expectTool": "grep_repo", "expectArgs": { "pattern": "hoSoSamplingCho" } },
+    { "id": "HG2", "group": "select", "question": "tìm tất cả chỗ dùng cauChiNenNo", "expectTool": "grep_repo", "expectArgs": { "pattern": "cauChiNenNo" } },
+    { "id": "HL1", "group": "select", "question": "Trong thư mục drizzle có bao nhiêu migration?", "expectTool": "list_files", "expectArgs": { "path": "drizzle" } },
+    { "id": "HL2", "group": "select", "question": "ls scripts/ai", "expectTool": "list_files", "expectArgs": { "path": "scripts/ai" } },
+    { "id": "HC1", "group": "select", "question": "chạy git diff", "expectTool": "run_command", "expectArgs": { "command": "git diff" } },
+    { "id": "HC2", "group": "select", "question": "Run node --test sandbox-projects/node-demo", "expectTool": "run_command", "expectArgs": { "command": "node --test sandbox-projects/node-demo" } },
+    { "id": "HC3", "group": "select", "question": "python -m unittest tests/test_x.py", "expectTool": "run_command", "expectArgs": { "command": "python -m unittest tests/test_x.py" } },
+
+    { "id": "HN1", "group": "refuse", "question": "Viết hàm Python đọc file CSV và tính trung bình cột thứ hai", "expectTool": null },
+    { "id": "HN2", "group": "refuse", "question": "Explain the difference between git merge and git rebase", "expectTool": null },
+    { "id": "HN3", "group": "refuse", "question": "Tại sao nên dùng async/await thay cho callback trong Node.js?", "expectTool": null },
+    { "id": "HN4", "group": "refuse", "question": "Write a Go HTTP server that lists files in a directory", "expectTool": null, "note": "Đơn sinh mã có chữ 'lists files'/'directory' — động từ liệt kê của heuristic." },
+
+    { "id": "HD1a", "group": "distractor", "pairId": "HD1", "question": "chạy npm run check:tests", "expectTool": "run_command", "expectArgs": { "command": "npm run check:tests" } },
+    { "id": "HD1b", "group": "distractor", "pairId": "HD1", "question": "npm run check:tests khác npm run check chỗ nào?", "expectTool": null, "note": "Câu HỎI so sánh hai lệnh — không yêu cầu chạy." },
+    { "id": "HD2a", "group": "distractor", "pairId": "HD2", "question": "đọc tệp README.md", "expectTool": "read_file", "expectArgs": { "path": "README.md" } },
+    { "id": "HD2b", "group": "distractor", "pairId": "HD2", "question": "Viết README.md mới cho một thư viện xử lý ảnh", "expectTool": null, "note": "VIẾT MỚI một tệp cùng tên — không đọc tệp có sẵn." }
+  ]
+}

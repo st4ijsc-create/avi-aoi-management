@@ -75,6 +75,7 @@ export { classifyToolIntent, classifyToolIntentLLM, listTools };
  * gọi `.handler(`** để một điểm gọi mới không lặng lẽ bỏ qua nó.
  */
 import { argsWithAuthCtx } from "./toolRegistry";
+import { phuQuyetToolLapTrinh } from "../ai/phuQuyetToolNative";
 
 /**
  * Try to execute a tool for the given question. Returns null when no tool
@@ -133,8 +134,12 @@ async function chonToolVong1(question: string, context?: ToolContext) {
  * ★★★ doc 79 · TRỤC 1 (B) — CHỌN TOOL cho **CHẾ ĐỘ LẬP TRÌNH**. Heuristic trước (TẤT ĐỊNH, gánh cổng
  * ra "đọc server/routers.ts"), rồi LLM giới hạn 5 tool lập trình (lớp nới tầm, fail-safe). Tách hẳn
  * khỏi `chonToolVong1` (đường vận hành) — hai đường không dùng chung một dòng nào ⇒ A/B sạch.
+ *
+ * ★ B6 (2026-09-23) — EXPORT để thước (`eval-toolcall.mjs --coding`) đo ĐÚNG bộ chọn sản phẩm. Lượt đo đầu chấm riêng
+ *   `classifyCodingToolIntent` (chỉ vế heuristic) ⇒ bỏ sót cả vế LLM dự phòng lẫn `chanLenhKhiCauHoi` — tức "nền" hôm ấy
+ *   là nền của một bộ phận, không phải của đường ống (đúng bẫy "đo lớp trong mà khai lớp ngoài").
  */
-async function chonToolLapTrinh(question: string, context?: ToolContext) {
+export async function chonToolLapTrinh(question: string, context?: ToolContext) {
   let decision = classifyCodingToolIntent(question, context);
   if (!decision.tool) {
     const llm = await classifyCodingToolIntentLLM(question);
@@ -145,8 +150,12 @@ async function chonToolLapTrinh(question: string, context?: ToolContext) {
    * ĐIỂM HẸP duy nhất này nên phủ CẢ heuristic ("vì sao dotnet test X đỏ?" — lệnh nằm trong câu
    * hỏi) LẪN bộ chọn LLM đoán mò ("xanh chưa?" ⇒ nó từng đề xuất chạy tiếp, 3 lần liền, đo live).
    * Mệnh lệnh tường minh ("Chạy dotnet test X…") KHÔNG bị đụng — xem `chanLenhKhiCauHoi`.
+   *
+   * ★ B6 (2026-09-23) — lớp PHỦ QUYẾT đứng SAU cùng: câu mang tín hiệu yếu (dạng hỏi / viết mới) ⇒ model (tool-calling gốc,
+   *   nghĩ tắt) phải XÁC NHẬN đúng tool đã chọn, nếu không ⇒ không gọi tool. Model KHÔNG thêm/đổi tool, KHÔNG đổi tham số;
+   *   lỗi/quá hạn ⇒ giữ nguyên quyết định trên. Công tắc `AI_CODING_TOOL_VETO=0`. Số đo: `ai/phuQuyetToolNative.ts`.
    */
-  return chanLenhKhiCauHoi(question, decision);
+  return phuQuyetToolLapTrinh(question, chanLenhKhiCauHoi(question, decision));
 }
 
 /**

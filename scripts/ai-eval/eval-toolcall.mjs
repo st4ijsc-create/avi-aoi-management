@@ -351,6 +351,13 @@ async function hoiNative(question, wire) {
         tool_choice: "auto",
         max_tokens: 320,
         temperature: 0.1,
+        /**
+         * ★★ 2026-09-23 — lượt CHỌN TOOL là lớp PHỤ (`loaiLuot` "phan-loai") ⇒ TẮT nghĩ. Lượt đo đầu (coding-native-1) để
+         * template tự bật nghĩ với trần 320 token: **9/12 kết cục "không gọi tool" có content RỖNG** — model nghĩ hết trần
+         * rồi bị cắt (G5-D), KHÔNG phải model từ chối. Con số "từ chối 1,000 · đối kháng 3/4" của lượt ấy là HIỆN VẬT của
+         * thước. `--native-nghi` giữ hành vi cũ chỉ để tái hiện lỗi đo.
+         */
+        ...(has("--native-nghi") ? {} : { chat_template_kwargs: { enable_thinking: false } }),
       }),
       signal: AbortSignal.timeout(180_000),
     });
@@ -361,8 +368,17 @@ async function hoiNative(question, wire) {
     const j = await res.json();
     const tc = j?.choices?.[0]?.message?.tool_calls?.[0];
     const content = j?.choices?.[0]?.message?.content ?? "";
+    const finish = j?.choices?.[0]?.finish_reason ?? "?";
     if (!tc?.function?.name) {
-      return { tool: null, args: {}, reason: `native:không gọi tool (${String(content).slice(0, 60)})`, loi: false, content };
+      // ★ Rỗng + finish=length = BỊ CẮT, không phải từ chối ⇒ đánh dấu LỖI ĐO (loi:true) để thước không đếm nó là "từ chối đúng".
+      const biCat = String(content).trim() === "" && finish === "length";
+      return {
+        tool: null,
+        args: {},
+        reason: biCat ? `NATIVE_CUT:finish=length, content rỗng` : `native:không gọi tool [${finish}] (${String(content).slice(0, 60)})`,
+        loi: biCat,
+        content,
+      };
     }
     let args = {};
     try {
@@ -486,7 +502,20 @@ async function main() {
   const classifyToolIntent = DO_CODING
     ? (toolsMod.classifyCodingToolIntent ?? (await import("../../server/services/aiLocalTools/intentClassifier")).classifyCodingToolIntent)
     : classifyVanHanh;
-  if (DO_CODING) log("[toolcall] ★ chế độ --coding: chấm classifyCodingToolIntent (5 tool lập trình)");
+  /**
+   * ★ B6 (2026-09-23) — `--coding` chấm BỘ CHỌN SẢN PHẨM `chonToolLapTrinh` (heuristic → LLM dự phòng 5 tool khi heuristic
+   * trả null → `chanLenhKhiCauHoi`), KHÔNG chỉ vế heuristic. `--coding-thuan` giữ phép đo vế heuristic trần để so.
+   * Vế LLM gọi model ⇒ cần `:8091` sống.
+   */
+  const CODING_THUAN = has("--coding-thuan");
+  const chonSanPham = DO_CODING && !CODING_THUAN ? toolsMod.chonToolLapTrinh : null;
+  if (DO_CODING) {
+    log(
+      chonSanPham
+        ? "[toolcall] ★ chế độ --coding: chấm chonToolLapTrinh (bộ chọn SẢN PHẨM: heuristic → LLM dự phòng → chặn lệnh khi câu hỏi)"
+        : "[toolcall] ★ chế độ --coding --coding-thuan: chấm classifyCodingToolIntent (vế heuristic TRẦN)",
+    );
+  }
   const tools = listTools();
   const registryNames = new Set(tools.map((t) => t.name));
   const kinds = tools.reduce((a, t) => {
@@ -541,8 +570,13 @@ async function main() {
 
   // ── 3. Nhánh REGEX (không cần model) ──
   const t0 = Date.now();
+  // ★ B6 — bộ chọn sản phẩm là ASYNC (vế LLM) ⇒ tính trước, tuần tự (một khe llama-server).
+  const quyetDinhSanPham = new Map();
+  if (chonSanPham) {
+    for (const c of cases) quyetDinhSanPham.set(c.id, await chonSanPham(c.question, c.context));
+  }
   const regexRecords = cases.map((c) => {
-    const d = classifyToolIntent(c.question, c.context);
+    const d = chonSanPham ? quyetDinhSanPham.get(c.id) : classifyToolIntent(c.question, c.context);
     const argsChk = c.expectArgs || c.forbidArgKeys ? checkArgs(c.expectArgs, c.forbidArgKeys, d.args) : null;
     return {
       id: c.id,
@@ -672,6 +706,28 @@ async function main() {
     }
   }
 
+  // ── 4c. ★ B6 HYBRID "phủ quyết" (--hybrid, cần --native): heuristic đề xuất; tín hiệu YẾU ⇒ model phải XÁC NHẬN đúng tool ──
+  // Dùng CHÍNH vị từ sản phẩm (`ai/phuQuyetTool.ts`) — thước không có bản sao luật riêng. Lượt native lỗi/bị cắt ⇒ `undefined`
+  // (không hỏi được) ⇒ giữ heuristic, đúng như đường ống.
+  let hybridRecords = null;
+  let hybridScore = null;
+  let hybridHoiModel = 0;
+  if (has("--hybrid") && nativeRecords) {
+    const { tinHieuYeu, ketHopPhuQuyet } = await import("../../server/services/ai/phuQuyetTool");
+    const theoId = new Map(nativeRecords.map((r) => [r.id, r]));
+    hybridRecords = regexRecords.map((r) => {
+      const lyDo = tinHieuYeu(r.question);
+      const nat = theoId.get(r.id);
+      const ykien = nat && !String(nat.reason).startsWith("NATIVE_") ? nat.tool : undefined;
+      if (r.tool !== null && lyDo !== null) hybridHoiModel++;
+      const d = ketHopPhuQuyet({ tool: r.tool, args: r.args, reason: r.reason }, ykien, lyDo);
+      const c = cases.find((x) => x.id === r.id);
+      const argsChk = c.expectArgs || c.forbidArgKeys ? checkArgs(c.expectArgs, c.forbidArgKeys, d.args) : null;
+      return { ...r, tool: d.tool, args: d.args, reason: d.reason, lyDoYeu: lyDo, argsOk: argsChk ? argsChk.ok : null, argsDiffs: argsChk ? argsChk.diffs : [], path: "hybrid" };
+    });
+    hybridScore = scoreRun(hybridRecords);
+  }
+
   // ── 5. In kết quả ──
   log("\n[toolcall] ── từng ca (nhánh REGEX) ──");
   /**
@@ -747,6 +803,19 @@ async function main() {
   }
 
   // ── ★★★ G2-B — BẢNG SO SÁNH BA NHÁNH, MỖI TỈ LỆ KÈM MẪU SỐ ──
+  if (hybridScore) {
+    printBlock(
+      `KẾT QUẢ — ★ HYBRID PHỦ QUYẾT (heuristic + model chỉ ở ${hybridHoiModel}/${cases.length} ca tín hiệu yếu)`,
+      hybridScore,
+      null,
+    );
+    for (const r of hybridRecords) {
+      const ok = r.tool === r.expectTool && r.argsOk !== false;
+      if (!ok || String(r.reason).startsWith("CODING_VETO")) {
+        log(`  ${ok ? "✓" : "✗"} ${r.id.padEnd(6)} muốn=${String(r.expectTool)} được=${String(r.tool)} [yếu=${r.lyDoYeu ?? "-"}] ${String(r.reason).slice(0, 70)}`);
+      }
+    }
+  }
   if (DO_NATIVE && nativeScore) {
     printBlock(`KẾT QUẢ — TOOL-CALLING GỐC (${cases.length} lượt gọi model, ${nativeErrors} lỗi vận chuyển)`, nativeScore, nativeMs);
 
@@ -846,6 +915,11 @@ async function main() {
     // (các tỉ lệ tổng) và để `records` mang bản ghi của nhánh llm ⇒ **không ai kiểm lại được ca
     // nào native sai**: một truy vấn `records.filter(path==="native")` trả 0 và trông y hệt
     // "native không sai ca nào". Thước đo tự khai một con số mà không cho ai lần lại được nó.
+    // ★ B6 — bản ghi hybrid TỪNG CA (cùng lý lẽ: con số tổng phải lần lại được).
+    hybrid: hybridScore ? { ...hybridScore, _pairDetail: undefined, hoiModel: hybridHoiModel } : null,
+    hybridRecords: hybridRecords
+      ? hybridRecords.map((r) => ({ id: r.id, group: r.group, expectTool: r.expectTool, tool: r.tool, reason: r.reason, lyDoYeu: r.lyDoYeu, args: r.args, argsOk: r.argsOk }))
+      : null,
     nativeRecords: nativeRecords
       ? nativeRecords.map((r) => ({
           id: r.id, group: r.group, pairId: r.pairId, question: r.question,

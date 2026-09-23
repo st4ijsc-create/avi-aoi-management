@@ -1,0 +1,23 @@
+{
+  "_doc": "★ B6 (2026-09-23) — bộ ca GIỮ LẠI thứ HAI. Viết SAU khi đã thấy kết quả held-out 1 và SAU khi chốt vị từ 'tín hiệu yếu' của hybrid (ai/phuQuyetTool.ts), nhưng TRƯỚC khi đo hybrid trên bất kỳ bộ nào — held-out 1 đã bị nhiễm (người viết vị từ đã thấy nó). Đây là phép kiểm trung thực duy nhất cho vị từ. KHÔNG sửa ca sau khi đã đo.",
+  "cases": [
+    { "id": "Q1", "group": "select", "question": "mở giúp tôi tệp server/services/aiGateway.ts", "expectTool": "read_file", "expectArgs": { "path": "server/services/aiGateway.ts" } },
+    { "id": "Q2", "group": "select", "question": "What's inside vite.config.ts?", "expectTool": "read_file", "expectArgs": { "path": "vite.config.ts" } },
+    { "id": "Q3", "group": "select", "question": "chỗ nào gọi thuThapNguCanhMa?", "expectTool": "grep_repo", "expectArgs": { "pattern": "thuThapNguCanhMa" } },
+    { "id": "Q4", "group": "select", "question": "search for LoiTokenCanKietVaoSuyLuan", "expectTool": "grep_repo", "expectArgs": { "pattern": "LoiTokenCanKietVaoSuyLuan" } },
+    { "id": "Q5", "group": "select", "question": "liệt kê scripts/ai-eval", "expectTool": "list_files", "expectArgs": { "path": "scripts/ai-eval" } },
+    { "id": "Q6", "group": "select", "question": "what files are in client/src/hooks?", "expectTool": "list_files", "expectArgs": { "path": "client/src/hooks" } },
+    { "id": "Q7", "group": "select", "question": "chạy lại npm run check giúp tôi", "expectTool": "run_command", "expectArgs": { "command": "npm run check" } },
+    { "id": "Q8", "group": "select", "question": "dotnet build sandbox-projects/csharp-demo rồi báo lỗi", "expectTool": "run_command", "expectArgs": { "command": "dotnet build sandbox-projects/csharp-demo" } },
+
+    { "id": "Q9", "group": "refuse", "question": "Làm sao để debounce một input trong React?", "expectTool": null },
+    { "id": "Q10", "group": "refuse", "question": "Viết class LRU cache bằng C++ với list và unordered_map", "expectTool": null, "note": "Đơn sinh mã có chữ 'list' (động từ liệt kê của heuristic)." },
+    { "id": "Q11", "group": "refuse", "question": "So sánh hiệu năng của map và object trong JavaScript", "expectTool": null },
+    { "id": "Q12", "group": "refuse", "question": "Generate a Python script that walks a directory tree and prints file sizes", "expectTool": null },
+
+    { "id": "Q13a", "group": "distractor", "pairId": "Q13", "question": "git status", "expectTool": "run_command", "expectArgs": { "command": "git status" } },
+    { "id": "Q13b", "group": "distractor", "pairId": "Q13", "question": "git status cho biết những gì?", "expectTool": null, "note": "Câu HỎI về một lệnh, không yêu cầu chạy." },
+    { "id": "Q14a", "group": "distractor", "pairId": "Q14", "question": "đọc tệp .env.example", "expectTool": "read_file", "expectArgs": { "path": ".env.example" } },
+    { "id": "Q14b", "group": "distractor", "pairId": "Q14", "question": "Tạo tệp .env.example mới cho một dự án Express", "expectTool": null, "note": "TẠO MỚI tệp cùng tên — không đọc tệp có sẵn." }
+  ]
+}

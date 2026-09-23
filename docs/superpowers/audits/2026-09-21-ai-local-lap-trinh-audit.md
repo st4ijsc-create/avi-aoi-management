@@ -1000,7 +1000,48 @@ khi KHÔNG khớp thực tế (nói có mà không có) nó **phá** — Python 
 vận hành: giữ persona đổi theo khối như hiện nay (đúng thực tế là điều kiện đủ), không có đường tiết kiệm token bằng cách bỏ khối.
 Agentic dưới hai nhánh (6/6 và 3/6, n=1) là dòng sửa dùng persona khác — không kết luận.
 
-### 8.4j B6 — chọn tool chế độ lập trình: heuristic vs native, cùng 38 ca, không bên nào trội
+### 8.4k ⚠ ĐÍNH CHÍNH 8.4j (2026-09-23) — hai lỗi đo của chính tôi, và kết quả sau khi sửa thước
+
+Bảng 8.4j dưới đây **sai ở cả hai cột**, vì hai lỗi thước:
+1. **Cột native bị cắt:** lượt native để template tự bật nghĩ với trần 320 token ⇒ **9/12 kết cục "không gọi tool" có content
+   RỖNG** (nghĩ hết trần, G5‑D) — không phải từ chối. Lượt chọn tool là lớp PHỤ (`loaiLuot` "phan-loai") ⇒ phải tắt nghĩ. Sau sửa
+   (native nghĩ tắt, rỗng + `finish=length` ⇒ đánh LỖI ĐO): native strict 0,852 → **0,926**, args 0,875 → **1,000**, 0,7 s/ca.
+2. **Cột "nền" đo sai lớp:** thước chấm `classifyCodingToolIntent` (chỉ vế heuristic), trong khi bộ chọn sản phẩm là
+   `chonToolLapTrinh` = heuristic → **LLM dự phòng 5 tool** (khi heuristic null) → **`chanLenhKhiCauHoi`** (chặn `run_command` cho câu
+   hỏi/đơn sinh mã). Nay `chonToolLapTrinh` được export và `--coding` chấm nó; `--coding-thuan` giữ vế heuristic trần để so.
+
+Kèm hai lỗi heuristic tìm được nhờ thước (vá, 98 lưới cũ xanh): `tim` khớp CHUỖI CON trong "date**tim**e" (đề `Gom(IEnumerable<DateTime>…)`
+⇒ `grep_repo IEnumerable`) và `ls` trong từ khác — động từ ASCII nay phải đứng thành từ; `python -m pytest|unittest` có trong danh sách
+trắng mà bộ trích chưa từng nhận (⇒ rơi xuống `list_files tests`).
+
+**Thước sau sửa, đo HÀM SẢN PHẨM đầu‑cuối** (chính `chonToolLapTrinh`, gồm lời gọi model của nó), ba bộ ca — bộ chính 38, held‑out 18,
+held‑out‑2 16 (viết SAU khi chốt vị từ, TRƯỚC khi đo — phép kiểm trung thực duy nhất vì held‑out 1 đã bị người viết vị từ nhìn thấy):
+
+| (strict · args · từ chối · cặp đối kháng) | bộ chính | held‑out 1 | held‑out 2 |
+|---|---|---|---|
+| Bộ chọn sản phẩm, KHÔNG phủ quyết | 0,926 · 1,000 · 1,000 · 1/4 | 0,917 · 0,833 · **0,500** · 1/2 | 0,900 · 0,900 · **0,500** · 1/2 |
+| **+ phủ quyết B6** (`AI_CODING_TOOL_VETO` mặc định) | 0,926 · 1,000 · 1,000 · **4/4** | 0,917 · 0,833 · **1,000** · **2/2** | 0,900 · 0,900 · **1,000** · 1/2 |
+| Model hỏi ở | 7/38 ca | 6/18 | 5/16 |
+
+Phủ quyết **không làm tụt số nào ở bộ nào**; lợi đúng ở lớp G11/G13 (đơn VIẾT MỚI / câu HỎI chỉ nhắc tên lệnh‑tệp‑thư mục). Chi phí
+0,3–2 s chỉ ở ca tín hiệu yếu ("không tool" chậm hơn vì model viết văn xuôi trong trần 320). Cổng ra B6 (≥ nền ở cả bốn số, 0 tool
+ngoài 5 tên — model không thêm/đổi được tool) **ĐẠT** ⇒ nối dây vào `chonToolLapTrinh`. Trượt còn lại có tên: HR3 (câu có đường tệp
++ động từ "định nghĩa" ⇒ heuristic grep, model read_file ⇒ phủ quyết ra *không tool* — vẫn sai, nhưng an toàn hơn), Q14 (`.env.example`
+— cả hai bên không đọc), E01/E02 (sửa ⇒ read_file, chấp nhận vì dòng sửa đi đường riêng).
+
+**Nghiệm thu sống + ablation trên CÙNG bản build (2026-09-23):**
+
+| (ctx 64k, budget 12k, 12 bài × 3) | Agentic | Trục H | s/bài | Bài qua vòng tool |
+|---|---|---|---|---|
+| Phủ quyết BẬT (mặc định) | **6/6** | **28/36 = 78 %** | 28,7 | 0 (8 lần phủ quyết "viết mới" cắt list/grep) |
+| Phủ quyết TẮT (`AI_CODING_TOOL_VETO=0`) | 5/6 | 26/36 = 72 % | 36,7 | ts2 · py3 · cs3 (cs3 vẫn 1/3) |
+
+Lượt BẬT đầu tiên thấp hơn nền 64k hôm trước (31/36) làm nghi phủ quyết cắt mất lượt đọc repo có ích (cs3 2/3 → 0/3). Ablation
+bác nghi vấn: TẮT phủ quyết, vòng tool quay lại mà H **thấp hơn** (26) và chậm hơn 8 s/bài ⇒ phủ quyết **không** gây tụt. Ba lượt
+gần như cùng cấu hình cho 31 · 28 · 26 ⇒ **nhiễu của trục H ở 3 lượt là ± 3 bài**, rộng hơn mức ± 2 tôi vẫn dùng — ghi lại cho mọi
+cổng ra sau: chênh ≤ 3 bài ở 12 × 3 KHÔNG phải tín hiệu. Quyết định: **giữ phủ quyết bật mặc định**.
+
+### 8.4j B6 — chọn tool chế độ lập trình: heuristic vs native, cùng 38 ca, không bên nào trội *(đã đính chính ở 8.4k)*
 
 Thước dựng trước (`toolcall-coding-cases.json`: 23 chọn · 7 từ chối · 4 cặp đối kháng; `eval-toolcall.mjs --coding [--native]`), rồi đo:
 

@@ -113,10 +113,19 @@ $srvPort = if ($u.IsDefaultPort -and $urlRaw -notmatch ':\d+') { 8091 } else { $
 $healthUrl = "$($u.Scheme)://$srvHost`:$srvPort/health"
 
 # ── Tham số đã NGHIỆM THU ở G1-A (khớp tiến trình đang chạy) ────────────────────────────────────
-# -c là TỔNG, llama-server chia cho -np ⇒ 65536/2 = 32.768/slot ≥ GGUF_MAX_CTX=32768 (bắt buộc:
-# ctx/slot < GGUF_MAX_CTX ⇒ request 32k bị từ chối ⇒ mã lùi in-process ⇒ nạp BẢN THỨ HAI model 30B).
+# -c là TỔNG, llama-server chia cho -np ⇒ ctx/slot = CTX_TOTAL / SLOTS, và ctx/slot PHẢI ≥ GGUF_MAX_CTX (bắt buộc:
+# ctx/slot < GGUF_MAX_CTX ⇒ request lớn bị từ chối ⇒ mã lùi in-process ⇒ nạp BẢN THỨ HAI model).
+# ★ B3 (2026-09-22, ĐO ĐƯỢC, chủ dự án CHỐT 2026-09-23): mặc định **1 slot × 65.536** — đúng cấu hình đã đo trục H 86 %
+#   (so 75 % ở 2 × 32k, cùng model Qwen3.6-35B-A3B, cùng bộ 12 bài × 3); GGUF_MAX_CTX_DEFAULT = 65536 khớp. Đổi lại 2 slot
+#   (song song hai người dùng) thì PHẢI kèm LLAMA_SERVER_CTX_TOTAL=131072 (+~5 GiB KV) hoặc hạ GGUF_MAX_CTX=32768 — nếu không,
+#   ctx/slot < GGUF_MAX_CTX và mã lùi in-process (xem cảnh báo ngay dưới).
 $ctxTotal = if ($cfg['LLAMA_SERVER_CTX_TOTAL']) { $cfg['LLAMA_SERVER_CTX_TOTAL'] } else { '65536' }
-$slots = if ($cfg['LLAMA_SERVER_SLOTS']) { $cfg['LLAMA_SERVER_SLOTS'] } else { '2' }
+$slots = if ($cfg['LLAMA_SERVER_SLOTS']) { $cfg['LLAMA_SERVER_SLOTS'] } else { '1' }
+$maxCtxApp = if ($cfg['GGUF_MAX_CTX']) { [int]$cfg['GGUF_MAX_CTX'] } else { 65536 }
+if (([int]$ctxTotal / [int]$slots) -lt $maxCtxApp) {
+    Write-Bad "ctx/slot = $([int]$ctxTotal / [int]$slots) < GGUF_MAX_CTX = $maxCtxApp — request ngữ cảnh lớn sẽ bị từ chối và mã lùi in-process (nạp bản thứ hai model). Sửa LLAMA_SERVER_CTX_TOTAL / LLAMA_SERVER_SLOTS / GGUF_MAX_CTX trong .env."
+    exit 2
+}
 
 $srvArgs = @(
     '-m', $modelPath,
