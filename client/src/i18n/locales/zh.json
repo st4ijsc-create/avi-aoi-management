@@ -19315,7 +19315,7 @@
     "nghiSinh": "思考/输出",
     "raGop": "{{ra}} tok（合计）",
     "nghiSinhGiaTri": "思考 {{nghi}} · 输出 {{sinh}}",
-    "tipNghiSinh": "在 {{model}} 上的“{{luot}}”轮 · 采样配置 {{hoSo}} · 思考：{{nghi}}。输入 {{vao}} token → 输出 {{ra}} token（{{tocDo}}），耗时 {{ms}} ms。速度为思考+输出的合计值——服务器未拆分两个阶段的时间。",
+    "tipNghiSinh": "在 {{model}} 上的“{{luot}}”轮 · 采样配置 {{hoSo}} · 思考：{{nghi}}。输入 {{vao}} token → 输出 {{ra}} token（合计 {{tocDo}}），耗时 {{ms}} ms。分阶段（浏览器端测量，含网络延迟）：思考 {{tokNghi}} · 输出 {{tokSinh}}。",
     "nghiTat": "关闭",
     "nghiBat": "有，{{n}} token",
     "nghiKhongBiet": "无法测量",

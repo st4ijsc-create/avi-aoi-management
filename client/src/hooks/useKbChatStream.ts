@@ -22,6 +22,7 @@
  */
 
 import { useState, useRef, useCallback } from "react";
+import { chotLuot, ghiChu, ghiNghi, taoDongHo } from "./dongHoHaiPha";
 import type { ToolResultPayload } from "@/components/AIToolResultCard";
 import { thongDiepLoiRest } from "@/lib/restAuthError";
 import { mapTrpcError } from "@/lib/trpcErrors";
@@ -281,6 +282,9 @@ export interface KbUsageLuot {
   latencyMs: number;
   /** Trần ngữ cảnh (token) lượt này được cấp; vắng = không biết. */
   ctxMax?: number;
+  /** ★ F2 — thời gian pha NGHĨ / SINH của lượt, đo TẠI TRÌNH DUYỆT (`dongHoHaiPha.ts`); vắng = không đo được. */
+  msNghi?: number;
+  msSinh?: number;
 }
 
 /**
@@ -388,6 +392,8 @@ export function useKbChatStream() {
       let accumulated = "";
       // ★ F1 — suy luận tích luỹ của lượt (tách hẳn khỏi `accumulated` = câu trả lời).
       let suyLuanTichLuy = "";
+      // ★ F2 — đồng hồ hai pha (nghĩ / sinh) của lượt model hiện tại, đóng ở mỗi sự kiện `usage`. Xem `dongHoHaiPha.ts`.
+      const dongHo = taoDongHo();
 
       try {
         const res = await fetch("/api/ai/local-kb/stream", {
@@ -511,14 +517,18 @@ export function useKbChatStream() {
               } else if (payload.type === "reasoning" && typeof payload.token === "string" && payload.token) {
                 // ★ F1 — suy luận sống: tích luỹ riêng, KHÔNG chạm `accumulated` (câu trả lời).
                 suyLuanTichLuy += payload.token;
+                ghiNghi(dongHo, Date.now());
                 const snapshotNghi = suyLuanTichLuy;
                 setStreamingReasoning(snapshotNghi);
                 callbacks?.onReasoning?.(snapshotNghi);
               } else if (payload.type === "usage") {
                 // ★ F2 — số đo lượt model; gói hỏng ⇒ bỏ qua, không dựng ô 0.
                 const u = bocUsage(payload as Record<string, unknown>);
-                if (u) callbacks?.onUsage?.(u);
+                // Đóng đồng hồ CẢ KHI gói hỏng: mảnh của lượt hỏng không được lẫn vào lượt kế.
+                const haiPha = chotLuot(dongHo);
+                if (u) callbacks?.onUsage?.({ ...u, ...haiPha });
               } else if (payload.type === "token" && payload.token) {
+                ghiChu(dongHo, Date.now());
                 accumulated += payload.token;
                 const snapshot = accumulated;
                 setStreamingText(snapshot);

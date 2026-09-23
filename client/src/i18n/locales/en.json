@@ -19307,7 +19307,7 @@
     "nghiSinh": "think/emit",
     "raGop": "{{ra}} tok (combined)",
     "nghiSinhGiaTri": "{{nghi}} think · {{sinh}} emit",
-    "tipNghiSinh": "Turn \"{{luot}}\" on {{model}} · sampling profile {{hoSo}} · thinking: {{nghi}}. {{vao}} tokens in → {{ra}} tokens out ({{tocDo}}) in {{ms}} ms. Speed is the COMBINED think+emit figure — the server does not split the two phases' time.",
+    "tipNghiSinh": "Turn \"{{luot}}\" on {{model}} · sampling profile {{hoSo}} · thinking: {{nghi}}. {{vao}} tokens in → {{ra}} tokens out ({{tocDo}} combined) in {{ms}} ms. Per phase (measured in the browser, includes network delay): thinking {{tokNghi}} · emitting {{tokSinh}}.",
     "nghiTat": "OFF",
     "nghiBat": "yes, {{n}} tokens",
     "nghiKhongBiet": "not measurable",

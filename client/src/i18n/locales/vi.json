@@ -19287,7 +19287,7 @@
     "nghiSinh": "nghĩ/sinh",
     "raGop": "{{ra}} tok (gộp)",
     "nghiSinhGiaTri": "{{nghi}} nghĩ · {{sinh}} sinh",
-    "tipNghiSinh": "Lượt \"{{luot}}\" trên {{model}} · hồ sơ sampling {{hoSo}} · nghĩ: {{nghi}}. {{vao}} token vào → {{ra}} token ra ({{tocDo}}) trong {{ms}} ms. Tốc độ là số GỘP nghĩ+sinh — server chưa tách thời gian hai pha.",
+    "tipNghiSinh": "Lượt \"{{luot}}\" trên {{model}} · hồ sơ sampling {{hoSo}} · nghĩ: {{nghi}}. {{vao}} token vào → {{ra}} token ra ({{tocDo}} gộp) trong {{ms}} ms. Tách pha (đo tại trình duyệt, gồm trễ mạng): nghĩ {{tokNghi}} · sinh {{tokSinh}}.",
     "nghiTat": "TẮT",
     "nghiBat": "có, {{n}} token",
     "nghiKhongBiet": "không đo được",

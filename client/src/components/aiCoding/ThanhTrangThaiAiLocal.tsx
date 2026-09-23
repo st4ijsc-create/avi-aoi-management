@@ -39,6 +39,7 @@ import { Activity, AlertTriangle, Brain, Check, Copy, Cpu, Gauge, HardDrive, Lay
 import { trpc } from "@/lib/trpc";
 import type { KbUsageLuot } from "@/hooks/useKbChatStream";
 import { xuatThongKeJson, type ThongKePhien } from "./thongKePhien";
+import { tocDoHaiPha } from "@/hooks/dongHoHaiPha";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const GiB = 1024 ** 3;
@@ -165,6 +166,7 @@ export function ThanhTrangThaiAiLocal({
   /** ★ F6 phần 2 — trạng thái nút chép JSON: "ok" | "loi" hiện 2 s rồi về null. */
   const [chep, setChep] = useState<"ok" | "loi" | null>(null);
   const nghiSinh = useMemo(() => (dungLuot ? tachNghiSinh(dungLuot) : null), [dungLuot]);
+  const haiPha = useMemo(() => (dungLuot ? tocDoHaiPha(dungLuot) : { tokNghi: null, tokSinh: null }), [dungLuot]);
   /**
    * 10 giây: đủ nhanh để bắt được lúc `llama-server` chết giữa một phiên làm việc, đủ chậm để
    * không tự biến mình thành tải. Thủ tục phía server CHỈ ĐỌC và không tiêu ngân sách hộp cát.
@@ -288,7 +290,7 @@ export function ThanhTrangThaiAiLocal({
           dungLuot && nghiSinh
             ? t(
                 "ttAiLocal.tipNghiSinh",
-                "Lượt \"{{luot}}\" trên {{model}} · hồ sơ sampling {{hoSo}} · nghĩ: {{nghi}}. {{vao}} token vào → {{ra}} token ra ({{tocDo}}) trong {{ms}} ms. Tốc độ là số GỘP nghĩ+sinh — server chưa tách thời gian hai pha.",
+                "Lượt \"{{luot}}\" trên {{model}} · hồ sơ sampling {{hoSo}} · nghĩ: {{nghi}}. {{vao}} token vào → {{ra}} token ra ({{tocDo}} gộp) trong {{ms}} ms. Tách pha (đo tại trình duyệt, gồm trễ mạng): nghĩ {{tokNghi}} · sinh {{tokSinh}}.",
                 {
                   luot: dungLuot.luot,
                   model: dungLuot.modelId,
@@ -302,6 +304,9 @@ export function ThanhTrangThaiAiLocal({
                   vao: dungLuot.tokensIn,
                   ra: dungLuot.tokensOut,
                   tocDo: nghiSinh.tokMoiGiay != null ? `${nghiSinh.tokMoiGiay} tok/s` : KHONG_BIET,
+                  // ★ F2 — tách pha bằng đồng hồ phía trình duyệt (`dongHoHaiPha.ts`); không đo được ⇒ "—", không 0.
+                  tokNghi: haiPha.tokNghi != null ? `${haiPha.tokNghi} tok/s` : KHONG_BIET,
+                  tokSinh: haiPha.tokSinh != null ? `${haiPha.tokSinh} tok/s` : KHONG_BIET,
                   ms: dungLuot.latencyMs,
                 },
               )
