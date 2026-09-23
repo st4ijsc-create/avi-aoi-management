@@ -1,0 +1,22 @@
+{
+  "_doc": "Tập GIỮ LẠI thứ ba (2026-09-23) — viết TRƯỚC khi sửa heuristic cho HR3/Q14 và TRƯỚC khi đo bất kỳ gì trên nó. Held-out 1 và 2 đã bị nhìn thấy khi sửa (HR3 ở held-out 1, Q14 ở held-out 2) nên từ nay là tập HUẤN LUYỆN; số sạch duy nhất sau bản sửa là tập này. Nhóm: select (chọn đúng tool + args), refuse (không tool), distractor (cặp: cùng chữ, khác ý). Lớp bị nhắm: (a) đường tệp + động từ tìm/định nghĩa mà ĐÍCH là chính tệp ⇒ đọc; (b) đường tệp + một KÝ HIỆU khác tên tệp ⇒ vẫn là tìm; (c) tệp dấu chấm (.gitignore, .env.example…).",
+  "cases": [
+    {"id":"K1","group":"select","question":"Trong server/services/ai/nghiSau.ts có khai báo những hằng nào?","expectTool":"read_file","expectArgs":{"path":"server/services/ai/nghiSau.ts"},"note":"Đường tệp + động từ 'khai báo'; đích là nội dung CHÍNH tệp."},
+    {"id":"K2","group":"select","question":"client/src/components/aiCoding/lyDoDuyetLogic.ts định nghĩa hàm gì?","expectTool":"read_file","expectArgs":{"path":"client/src/components/aiCoding/lyDoDuyetLogic.ts"}},
+    {"id":"K3","group":"select","question":"xem nội dung .gitignore","expectTool":"read_file","expectArgs":{"path":".gitignore"},"note":"Tệp dấu chấm, không đuôi trong bảng."},
+    {"id":"K4","group":"select","question":"open .gitattributes","expectTool":"read_file","expectArgs":{"path":".gitattributes"}},
+    {"id":"K5","group":"select","question":"hàm chupLyDoDuyet được định nghĩa ở đâu?","expectTool":"grep_repo","expectArgs":{"pattern":"chupLyDoDuyet"},"note":"Không có đường tệp ⇒ tìm."},
+    {"id":"K6","group":"select","question":"tìm nganSachNghiChoLuot trong server/services","expectTool":"grep_repo","expectArgs":{"pattern":"nganSachNghiChoLuot","path":"server/services"}},
+    {"id":"K7","group":"select","question":"liệt kê client/src/components/aiCoding","expectTool":"list_files","expectArgs":{"path":"client/src/components/aiCoding"}},
+    {"id":"K8","group":"select","question":"chạy npm test","expectTool":"run_command","expectArgs":{"command":"npm test"}},
+    {"id":"K9","group":"refuse","question":"Giải thích sự khác nhau giữa .gitignore và .gitattributes","expectTool":null,"note":"Câu HỎI khái niệm có nhắc tên tệp dấu chấm."},
+    {"id":"K10","group":"refuse","question":"Viết hàm TypeScript định nghĩa một kiểu Result<T, E> và hai hàm ok/err","expectTool":null,"note":"Đơn VIẾT MỚI chứa động từ 'định nghĩa'."},
+    {"id":"K11","group":"refuse","question":"Tạo tệp .gitignore cho dự án Python","expectTool":null},
+    {"id":"K12a","group":"distractor","pairId":"K12","question":"server/services/ai/phuQuyetTool.ts định nghĩa những gì?","expectTool":"read_file","expectArgs":{"path":"server/services/ai/phuQuyetTool.ts"}},
+    {"id":"K12b","group":"distractor","pairId":"K12","question":"ketHopPhuQuyet được định nghĩa ở đâu?","expectTool":"grep_repo","expectArgs":{"pattern":"ketHopPhuQuyet"}},
+    {"id":"K13a","group":"distractor","pairId":"K13","question":"đọc .gitattributes","expectTool":"read_file","expectArgs":{"path":".gitattributes"}},
+    {"id":"K13b","group":"distractor","pairId":"K13","question":".gitattributes dùng để làm gì trong git?","expectTool":null},
+    {"id":"K14a","group":"distractor","pairId":"K14","question":"tìm TRAN_SINH_NGHI_SAU trong server/services/ai/nghiSau.ts","expectTool":"grep_repo","expectArgs":{"pattern":"TRAN_SINH_NGHI_SAU"},"note":"Đường tệp + KÝ HIỆU khác tên tệp ⇒ vẫn là tìm."},
+    {"id":"K14b","group":"distractor","pairId":"K14","question":"server/services/ai/nghiSau.ts khai báo gì?","expectTool":"read_file","expectArgs":{"path":"server/services/ai/nghiSau.ts"}}
+  ]
+}
