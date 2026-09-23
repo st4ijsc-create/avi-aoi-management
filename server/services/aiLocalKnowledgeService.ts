@@ -2850,6 +2850,64 @@ export async function retrieveKnowledge(
     return { emb, chunk, semantic, keyword, score };
   });
 
+  // ★★★ Sau R1 (eval Training Studio, 2026-09-23) — tài liệu người dùng nạp (kho Studio) nay vào
+  // CÙNG MỘT thang điểm và CÙNG MỘT đường xếp hạng với kho hệ thống, TRƯỚC sort/dedupe/rerank.
+  //
+  // VÌ SAO (đo, không suy): bản cũ chấm Studio bằng cosine THUẦN rồi nối vào SAU khi kho hệ thống đã
+  // xếp hạng xong bằng HYBRID (0,72·ngữ nghĩa + 0,28·từ khoá × trọng số nguồn), rồi sort chung hai con
+  // số không cùng đơn vị. Eval R1 (`kb_eval_runs` #5, corpus st4i-may-aoi, 30 câu vàng): đoạn Studio
+  // ĐÚNG nằm top‑5 corpus ở 97 % câu nhưng chỉ tới trích dẫn cuối ở **20 %** — ví dụ T06, đoạn đúng
+  // cosine 0,582 thua năm đoạn `alerts.md` lạc đề hybrid 0,64–0,71; 9/30 câu không kho nào đưa đúng
+  // nguồn. Hai thang không có phép quy đổi nào đã đo ⇒ sửa bằng cách cho Studio đi QUA CÙNG công thức
+  // (cùng qVec, cùng `keywordScore`, cùng trọng số ngôn ngữ/loại/nhật ký/route), chứ không dựng một
+  // hệ số quy đổi bịa. Hệ quả: dedupe theo nguồn, reranker (nếu bật) và luật MIN_CITATION_SCORE áp
+  // cho Studio Y HỆT kho hệ thống — không còn khối "trộn sau" với sort/trim/tính-lại-confidence riêng.
+  //
+  // `semantic` của Studio = điểm `searchCorpus` — cosine của CHÍNH qVec này với vector đã nạp bằng
+  // `generateEmbeddings` (cùng `GGUF_EMBED_MODEL` với `embedQuestion`), tức cùng không gian với
+  // `semantic` hệ thống khi `embedModelMatches` (điều kiện đã có: qVec null ⇒ nhánh này không chạy).
+  // Loại nguồn "studio" chưa có trong SOURCE_TYPE_WEIGHTS ⇒ DEFAULT_TYPE_WEIGHT 1,0 — không tự đặt
+  // ưu tiên chưa đo.
+  //
+  // Cổng AN NINH giữ nguyên chỗ cũ (Task 6 · doc 79 TRỤC 1 D): `canAccessStudioCorpus` fail-closed và
+  // `khoHepLai` ⇒ không lấy Studio; mọi lỗi nhánh Studio ⇒ kết quả hệ thống nguyên vẹn.
+  if (qVec && !khoHepLai && canAccessStudioCorpus(context?.callerRole)) {
+    try {
+      const { gatherStudioHits } = await import("./aiLocalKnowledgeStudio");
+      const studioHits = await gatherStudioHits(qVec, topK);
+      for (const h of studioHits) {
+        const chunk: KbChunk = {
+          id: `studio:${h.corpus}:${h.id}`,
+          sourceType: "studio",
+          sourcePath: h.sourceRef,
+          title: h.sourceRef,
+          text: h.text,
+        };
+        const semantic = Number.isFinite(h.score) ? h.score : 0;
+        const keyword = Math.tanh(keywordScore(chunk, tokens, entities) / 15);
+        const routeWeight =
+          routeFeatures.length > 0 && routeFeatures.some((f) => chunk.sourcePath.toLowerCase().includes(f)) ? 1.12 : 1.0;
+        const score =
+          (semantic * 0.72 + keyword * 0.28) *
+          sourceLanguageWeight(chunk.sourcePath, language) *
+          sourceTypeWeight(chunk.sourceType) *
+          devJournalWeight(chunk.sourcePath) *
+          routeWeight;
+        const emb = {
+          id: chunk.id,
+          sourceType: chunk.sourceType,
+          sourcePath: chunk.sourcePath,
+          title: chunk.title,
+          textLength: chunk.text.length,
+          embedding: [] as number[],
+        } as unknown as (typeof khoXet)[number];
+        scored.push({ emb, chunk, semantic, keyword, score });
+      }
+    } catch {
+      // Nhánh Studio hỏng KHÔNG được làm hỏng trợ lý — xếp hạng chỉ còn kho hệ thống.
+    }
+  }
+
   // Drop low-relevance noise citations (kept the top-1 even if weak so the UI
   // never shows an empty list, but the LLM prompt only sees the strong ones).
   const MIN_CITATION_SCORE = 0.18;
@@ -2975,117 +3033,22 @@ export async function retrieveKnowledge(
     // (doc/feature/domain sources have no client viewer route today — the FE
     // renders those as plain, non-clickable text, honest about what's real).
     route: resolveCitationRoute({ sourceType: r.emb.sourceType, sourcePath: r.emb.sourcePath }),
+    ...(r.emb.sourceType === "studio" ? { origin: "studio" as const } : {}),
   }));
 
   const contexts = ranked.map((r) => (r.chunk ? r.chunk.text : ""));
-  // `let`, not `const` — final-fix round (I-1, IMPORTANT) recomputes these below when the
-  // Studio merge block actually changes `citations`' order/contents. See that block for why.
-  let top1 = ranked[0]?.score ?? 0.25;
-  let top2 = ranked[Math.min(1, ranked.length - 1)]?.score ?? 0.2;
-  let confidence = clamp01((top1 + top2) / 1.6);
-
-  // Wave 2 đường B — bổ sung nguồn "tài liệu người dùng nạp" (kho Training Studio).
-  // Kho này ĐÃ có searchCorpus() (server/services/kbVectorStore.ts:180) nhưng chưa
-  // từng có caller ⇒ tài liệu nạp vào không bao giờ tới được trợ lý. Bổ sung, KHÔNG
-  // thay thế: mọi lỗi ⇒ giữ nguyên kết quả corpus file (citations/contexts ở trên).
-  // Chỉ chạy khi qVec khác null — nếu embed-model của corpus lệch (guard
-  // computeEmbedModelMatches ở trên đã từ chối vector), không có cách so khớp hợp lệ
-  // với kho Studio nên bỏ qua nhánh này, KHÔNG nhúng lại (embedQuestion) lần hai.
-  //
-  // Final-fix round, Task 6 (SECURITY) — gate ĐẶT NGAY TẠI CHỖ MỘT (retrieveKnowledge là
-  // choke-point DUY NHẤT gọi gatherStudioHits — xem kbStudioAccess.ts's header), thay vì lặp
-  // lại kiểm quyền ở từng caller (answerQuestion/streamAnswer/API endpoint/RCA copilot/
-  // repoContextService…). `canAccessStudioCorpus` fail-closed: role thiếu/không nhận diện được
-  // ⇒ điều kiện `if` dưới đây SAI ⇒ toàn bộ khối trộn bị bỏ qua HỆT như khi kho Studio rỗng —
-  // citations/contexts/confidence giữ nguyên kết quả nguồn hệ thống, không có cách nào phân
-  // biệt "bị chặn quyền" với "kho rỗng" từ output (KHÔNG rò rỉ sự tồn tại — yêu cầu sản phẩm).
-  // ★ doc 79 · TRỤC 1 (D) — `khoHepLai` PHẢI chặn cả nhánh này. Kho Studio là tài liệu người dùng
-  // NẠP LÊN (`h.sourceRef` không phải đường dẫn trong repo), nên trộn nó vào một lượt truy hồi đã
-  // xin ĐÚNG vùng mã nguồn là phá chính điều kiện vừa được cấp — và phá NGẦM, vì citation Studio
-  // đứng lẫn trong cùng một mảng. Kho hẹp ⇒ bỏ qua, y như khi kho Studio rỗng.
-  if (qVec && !khoHepLai && canAccessStudioCorpus(context?.callerRole)) {
-    try {
-      const { gatherStudioHits } = await import("./aiLocalKnowledgeStudio");
-      const studioHits = await gatherStudioHits(qVec, topK);
-      // Vòng sửa 1 (review) — cùng ngưỡng lọc nhiễu MIN_CITATION_SCORE áp dụng cho nguồn
-      // hệ thống (khai báo ở trên, KHÔNG khai hằng số thứ hai) cũng phải áp cho nguồn
-      // Studio: nếu không, chỉ cần kho có BẤT KỲ tài liệu nào, cái khớp-nhất-trong-đám-tệ
-      // vẫn được nêu như trích dẫn hợp lệ (nhãn "Tài liệu bạn nạp") và nhồi vào prompt LLM
-      // — nhiễu trình bày như nguồn tin, đúng kiểu suy-giảm-không-trung-thực wave này sinh
-      // ra để chữa. Không áp luật "giữ top-1 dù yếu" cho Studio: nguồn hệ thống đã đảm bảo
-      // câu trả lời không bao giờ trống trích dẫn, Studio chỉ nên góp mặt khi thật sự đạt.
-      let mergedStudioCount = 0;
-      for (const h of studioHits) {
-        if (!(h.score >= MIN_CITATION_SCORE)) continue;
-        citations.push({
-          id: `studio:${h.corpus}:${h.id}`,
-          sourcePath: h.sourceRef,
-          title: h.sourceRef,
-          sourceType: "studio",
-          score: h.score,
-          origin: "studio",
-        });
-        contexts.push(h.text);
-        mergedStudioCount++;
-      }
-      // Vòng sửa 1 (review) — LUÔN sắp lại theo điểm giảm dần khi có ít nhất 1 hit Studio
-      // được trộn vào, KHÔNG CHỈ khi tổng số vượt finalK. Bug trước đó: nối-đuôi Studio sau
-      // nguồn hệ thống khi KHÔNG vượt finalK (trường hợp phổ biến nhất) phá bất biến
-      // "citations đã sắp best-first" (aiOperationalGrounding.ts:117) và khiến
-      // buildExtractiveAnswer(:773) — vốn chỉ đọc citations[0]?.score để so
-      // STRONG_MATCH_FLOOR — không bao giờ thấy một tài liệu Studio điểm cao nằm phía sau,
-      // nên câu trả lời bị từ chối oan "không tìm thấy thông tin".
-      // GIỮ ĐÚNG CẶP citations[i]<->contexts[i]: ghép (zip) citation với context CÙNG INDEX
-      // thành 1 cặp TRƯỚC khi sort, sort nguyên cặp theo score, rồi tách (unzip) lại theo
-      // ĐÚNG THỨ TỰ sau sort — không bao giờ sort 2 mảng song song một cách rời rạc.
-      if (mergedStudioCount > 0) {
-        const paired = citations.map((c, i) => ({ c, ctx: contexts[i] ?? "" }));
-        paired.sort((a, b) => b.c.score - a.c.score);
-        const trimmed = paired.slice(0, finalK);
-        citations.length = 0;
-        contexts.length = 0;
-        for (const p of trimmed) {
-          citations.push(p.c);
-          contexts.push(p.ctx);
-        }
-        // Final-fix round (I-1, IMPORTANT) — `top1`/`top2`/`confidence` were computed ABOVE
-        // from `ranked` (system sources only, BEFORE this merge) and never recomputed here, so
-        // a strong Studio hit that reorders `citations` to the front never showed up in
-        // `confidence` — the field kept scoring the pre-merge system-only world. Reviewer's
-        // real probe: citations[0] = studio hit score 0.9, yet confidence stayed 0. Measured
-        // consequences: (1) answerQuestion()'s `shouldUseLlm = retrieve.confidence >= 0.30`
-        // (:2187) never fires the LLM for a question ONLY a user-uploaded doc can answer: (2)
-        // buildExtractiveAnswer's STRONG_MATCH_FLOOR (:772) can refuse "no info" even though the
-        // relevant paragraph is sitting right there in `contexts`; (3) the UI shows the lowest
-        // confidence badge on an answer whose #1 citation is the user's own 0.9-scoring doc.
-        // Recompute from `citations`/`trimmed` (already merged AND already sorted best-first —
-        // see the comment above) using the EXACT SAME formula as above, so this is a pure
-        // "read the right array" fix, not a new confidence model. Placed INSIDE this
-        // `mergedStudioCount > 0` guard so the untouched (`else`) path — Studio corpus empty —
-        // keeps computing confidence from `ranked` exactly as before, preserving the
-        // system-only invariant verified by this file's own "kho Studio rỗng ⇒ kết quả y hệt
-        // trước Task 4" test below.
-        top1 = citations[0]?.score ?? top1;
-        top2 = citations[Math.min(1, citations.length - 1)]?.score ?? top2;
-        // Chốt cuối (post-Task-6 re-review), mục 1 — trộn thêm một nguồn KHÔNG ĐƯỢC làm
-        // confidence TỆ ĐI. Bug: khi CHỈ 1 citation hệ thống sống sót, công thức TRƯỚC khi
-        // trộn nhân đôi nó làm top2 (`ranked[Math.min(1,0)] === ranked[0]` ở :1786-1787 phía
-        // trên). Sau khi trộn, top2 ở đây đổi thành điểm Studio THẬT — thường THẤP HƠN điểm hệ
-        // thống duy nhất đó (nếu cao hơn, nó đã chiếm vị trí top1) — nên công thức tính lại
-        // một mình cho ra số THẤP HƠN giá trị nhân-đôi cũ dù vừa có THÊM một nguồn hợp lệ.
-        // Đo được: 1 citation hệ thống 0.25 (không trộn: (0.25+0.25)/1.6=0.3125 ≥ 0.30) + hit
-        // Studio 0.18 (không trộn công thức lại: (0.25+0.18)/1.6=0.26875 < 0.30) — bổ sung
-        // MỘT NGUỒN HỢP LỆ lại tắt luôn LLM. `Math.max` với confidence TRƯỚC khi trộn (biến
-        // `confidence` đã có sẵn từ dòng 1786-1788) đảm bảo chỉ NÂNG, không bao giờ HẠ — khi
-        // Studio thực sự tốt hơn (điểm cao hơn công thức nhân-đôi cũ), giá trị THẬT vẫn thắng
-        // (Math.max chọn số lớn hơn, không phải "giữ nguyên số cũ vô điều kiện").
-        confidence = Math.max(confidence, clamp01((top1 + top2) / 1.6));
-      }
-    } catch {
-      // Nhánh Studio hỏng KHÔNG được làm hỏng trợ lý đang chạy — citations/contexts
-      // giữ nguyên kết quả corpus file đã tính ở trên.
-    }
-  }
+  // Studio đã nằm TRONG `ranked` (xếp hạng chung ở trên) ⇒ confidence đọc đúng mảng cuối (I-1: một hit
+  // Studio mạnh đứng đầu phải NÂNG confidence). Bất biến "chốt cuối, mục 1" giữ nguyên: thêm một nguồn
+  // KHÔNG được làm confidence TỤT — công thức nhân đôi top1 khi chỉ còn 1 mục nên một hit Studio yếu
+  // chen vào vị trí 2 sẽ kéo số xuống ⇒ lấy max với confidence của riêng phần hệ thống trong `ranked`
+  // (Studio chỉ đẩy ra những mục hệ thống YẾU NHẤT, nên phần đó không bao giờ thấp hơn trước khi trộn).
+  const confidenceCua = (ds: typeof ranked) =>
+    clamp01(((ds[0]?.score ?? 0.25) + (ds[Math.min(1, ds.length - 1)]?.score ?? 0.2)) / 1.6);
+  const heThongTrongRanked = ranked.filter((r) => r.emb.sourceType !== "studio");
+  const confidence =
+    heThongTrongRanked.length === ranked.length
+      ? confidenceCua(ranked)
+      : Math.max(confidenceCua(ranked), heThongTrongRanked.length > 0 ? confidenceCua(heThongTrongRanked) : 0);
 
   return {
     question,

@@ -317,6 +317,13 @@ Frontend: bảng câu hỏi × đúng/sai × nguồn, biểu đồ trước/sau.
 >    `retrieveKnowledge` sort chung điểm cosine THUẦN của Studio với điểm HYBRID (0,72·ngữ nghĩa + 0,28·từ khoá) của kho hệ thống —
 >    hai thang không cùng đơn vị. Ví dụ T06: đoạn Studio đúng 0,582 thua 5 đoạn `alerts.md` lạc đề 0,64–0,71. 15/30 câu bản sao cùng
 >    tên trong kho hệ thống thắng chỗ; **9/30 không kho nào đưa đúng nguồn**.
+>    **→ VÁ 2026-09-23 (xếp hạng CHUNG):** Studio nay đi qua CÙNG công thức hybrid + trọng số với kho hệ thống, chèn vào
+>    danh sách TRƯỚC sort/dedupe/rerank (bỏ khối "trộn sau"; bất biến confidence-chỉ-nâng giữ bằng max với phần hệ thống).
+>    Đo lại (lượt #8 · #9 · #10, giống hệt nhau): **tới trợ lý 20 % → 40 %** (6 → 12/30); đoạn qua ngưỡng tới được trợ lý
+>    5/15 → 10/15; "mọi kho" 70 % không đổi; `fake-bad` #11 vẫn 0 %. Lưới phía hệ thống — 151 câu vàng kho vận hành qua
+>    `/api/ai/local-kb/retrieve` (`tmp/audit-ai/r1b-he-thong.mjs`): **hit@5 151/151 trước và sau**; số câu hệ thống bị
+>    Studio chen vào giảm 15 → 9 (17 → 11 citation). Còn lại 9/30 câu "không kho nào đúng" là lỗi truy hồi của KHO HỆ THỐNG
+>    (vd T06: năm đoạn `alerts.md` 0,64–0,71 thắng) — không phải lỗi trộn Studio; việc riêng.
 > 2. **Ngưỡng 0,5 cắt nửa số đoạn đúng.** Điểm đoạn đúng: min 0,277 · trung vị 0,510 · max 0,638; nhiễu câu ngoài max 0,340 ⇒ hai
 >    cụm CHỒNG LẤN (đoạn đúng thấp nhất < nhiễu cao nhất). Đây là mẫu 30 câu thay cho N=1 mà docblock B2 ghi "CÒN MỞ".
 > 3. **Ô "mọi kho" 70 % là của kho hệ thống, không phải của corpus** — `fake-bad` vẫn ra 70 %. UI tách hai ô vì thế; không được đọc

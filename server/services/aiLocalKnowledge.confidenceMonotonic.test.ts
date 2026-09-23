@@ -129,7 +129,9 @@ describe("retrieveKnowledge — confidence chỉ NÂNG, không bao giờ HẠ kh
     expect(withoutStudio.confidence).toBeCloseTo(0.3125, 4);
 
     gatherStudioHitsMock.mockResolvedValue([
-      { id: 901, text: "STUDIO_JUST_ABOVE_FLOOR", sourceRef: "studio-floor.pdf", score: 0.18, corpus: "manuals" },
+      // Sau R1 Studio đi qua CÙNG thang hybrid (0,72·cosine, keyword 0 ở đây) ⇒ cosine 0,25 ⇒ điểm 0,18,
+      // vừa qua sàn MIN_CITATION_SCORE — đúng kịch bản của reviewer trên thang mới.
+      { id: 901, text: "STUDIO_JUST_ABOVE_FLOOR", sourceRef: "studio-floor.pdf", score: 0.25, corpus: "manuals" },
     ]);
     const withStudio = await retrieveKnowledge(UNRELATED_QUESTION, 5, { callerRole: "engineer" });
 
@@ -155,8 +157,8 @@ describe("retrieveKnowledge — confidence chỉ NÂNG, không bao giờ HẠ kh
     const res = await retrieveKnowledge(UNRELATED_QUESTION, 5, { callerRole: "engineer" });
 
     expect(res.citations[0]?.id).toBe("studio:manuals:902");
-    // (0.95+0.25)/1.6 = 0.75 — cao hơn hẳn 0.3125 (giá trị nhân-đôi cũ) — Math.max phải chọn
-    // giá trị THẬT này, không giữ nguyên 0.3125.
-    expect(res.confidence).toBeCloseTo(0.75, 4);
+    // Sau R1 Studio cùng thang hybrid: 0,95 × 0,72 = 0,684 ⇒ (0,684 + 0,25)/1,6 ≈ 0,584 — vẫn cao hơn
+    // hẳn 0,3125 (giá trị nhân-đôi cũ); max phải chọn giá trị THẬT này, không giữ nguyên 0,3125.
+    expect(res.confidence).toBeCloseTo((0.95 * 0.72 + 0.25) / 1.6, 4);
   });
 });

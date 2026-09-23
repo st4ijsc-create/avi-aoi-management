@@ -109,24 +109,48 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
     expect(ids).toContain("c2");
   });
 
-  it("(c) citations sắp theo điểm giảm dần sau khi trộn — kể cả khi KHÔNG vượt finalK", async () => {
-    // 2 nguồn hệ thống + 1 hit Studio = 3 mục, finalK mặc định (topK=5) KHÔNG vượt ⇒
-    // đây chính xác là nhánh mà code trước Vòng sửa 1 bỏ qua bước sắp-lại (chỉ sort khi
-    // citations.length > finalK).
+  it("(c) citations sắp theo điểm giảm dần sau khi trộn — Studio MẠNH HƠN theo cùng thang điểm thì đứng đầu", async () => {
+    // Sau R1 (xếp hạng chung): Studio và hệ thống cùng qua hybrid 0,72·ngữ nghĩa + 0,28·từ khoá × trọng
+    // số. Query trực giao c1/c2 (semantic 0, chỉ còn từ khoá "aoi") ⇒ hit Studio cosine 0,99 thắng THẬT
+    // theo cùng thước — không còn nhờ so cosine thô với hybrid.
+    generateEmbedding.mockResolvedValue({ embedding: unit(777), dimensions: DIM, modelId: "mxbai-embed-large-v1-f16" });
     gatherStudioHitsMock.mockResolvedValue([
       { id: 301, text: "STUDIO_TOP", sourceRef: "studio-top.pdf", score: 0.99, corpus: "manuals" },
     ]);
-    const res = await retrieveKnowledge("hỏi về AOI", 5, { callerRole: "engineer" });
+    // Câu hỏi KHÁC các ca khác: `embedQuestion` có cache theo văn bản câu hỏi — cùng câu sẽ trả lại
+    // vector unit(0) của ca trước, không phải unit(777) vừa mock.
+    const res = await retrieveKnowledge("một câu hỏi AOI khác hẳn", 5, { callerRole: "engineer" });
 
     expect(res.citations.length).toBeLessThanOrEqual(5);
     const scores = res.citations.map((c) => c.score);
     for (let i = 1; i < scores.length; i++) {
       expect(scores[i - 1]).toBeGreaterThanOrEqual(scores[i]);
     }
-    // Hit Studio điểm cao nhất PHẢI đứng đầu — chứng minh không còn bị "nối đuôi" sau
-    // nguồn hệ thống (bug đã sửa: buildExtractiveAnswer chỉ đọc citations[0]?.score).
     expect(res.citations[0].id).toBe("studio:manuals:301");
     expect(res.citations[0].origin).toBe("studio");
+  });
+
+  it("(c2) ★ R1 — CÙNG thang điểm: hệ thống khớp tuyệt đối (semantic 1 + từ khoá) KHÔNG bị một cosine Studio 0,99 thô vượt mặt", async () => {
+    // Bản cũ sort cosine THÔ 0,99 của Studio với hybrid hệ thống ⇒ Studio luôn đứng đầu dù hệ thống
+    // khớp tuyệt đối. Nay 0,99 × 0,72 ≈ 0,713 < c1 (1 × 0,72 + từ khoá, × 1,18 feature).
+    gatherStudioHitsMock.mockResolvedValue([
+      { id: 302, text: "STUDIO_TOP", sourceRef: "studio-top.pdf", score: 0.99, corpus: "manuals" },
+    ]);
+    const res = await retrieveKnowledge("hỏi về AOI", 5, { callerRole: "engineer" });
+    expect(res.citations[0].id).toBe("c1");
+    const st = res.citations.find((c) => c.id === "studio:manuals:302");
+    expect(st?.score).toBeCloseTo(0.99 * 0.72, 3);
+  });
+
+  it("(c3) ★ R1 — tín hiệu TỪ KHOÁ nay áp cho Studio như hệ thống: văn bản Studio chứa từ của câu hỏi ⇒ điểm > 0,72·cosine", async () => {
+    generateEmbedding.mockResolvedValue({ embedding: unit(777), dimensions: DIM, modelId: "mxbai-embed-large-v1-f16" });
+    gatherStudioHitsMock.mockResolvedValue([
+      { id: 303, text: "Ngưỡng NG rate dừng line khi vượt 2 %", sourceRef: "aoi-thresholds.md", score: 0.58, corpus: "st4i" },
+    ]);
+    const res = await retrieveKnowledge("ngưỡng NG rate dừng line", 5, { callerRole: "engineer" });
+    const st = res.citations.find((c) => c.id === "studio:st4i:303");
+    expect(st).toBeDefined();
+    expect(st!.score).toBeGreaterThan(0.58 * 0.72 + 0.01);
   });
 
   it("(d) gatherStudioHits ném lỗi ⇒ vẫn trả về đủ kết quả hệ thống, không hỏng cả lượt", async () => {
@@ -162,7 +186,8 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
 
     // Citations đã trộn+sắp đúng (Task 4 / vòng sửa 1, KHÔNG phải phần hỏng ở đây).
     expect(res.citations[0]?.id).toBe("studio:manuals:101");
-    expect(res.citations[0]?.score).toBe(0.9);
+    // Sau R1: điểm Studio là điểm CÙNG THANG (0,72·cosine + 0,28·từ khoá), không phải cosine thô.
+    expect(res.citations[0]?.score).toBeCloseTo(0.9 * 0.72, 3);
     // confidence PHẢI phản ánh trích dẫn số 1 thật (0.9), không phải điểm hệ thống cũ (0).
     // Đây chính là mục 1 trong "Ba hậu quả đo được": shouldUseLlm = confidence >= 0.30 ở
     // answerQuestion() (:2187) — confidence=0 ⇒ LLM không bao giờ được gọi cho câu hỏi mà
