@@ -14813,7 +14813,7 @@
       "jobs": "Jobs",
       "corpus": "Corpus",
       "eval": "Eval",
-      "modelBuilder": "Model Builder"
+      "modelBuilder": "Model profile"
     },
     "source": {
       "corpusLabel": "Corpus",
@@ -15077,6 +15077,71 @@
         "diem": "Source hit {{trung}} · reaches assistant {{toi}}.",
         "diemCu": "{{trung}} · {{toi}} — STALE: the corpus changed after this run, re-run."
       }
+    },
+    "hoSo": {
+      "title": "Model profile",
+      "desc": "The model ACTUALLY serving, the configuration in effect, and everything measured about it — each tile states its source.",
+      "loadError": "Could not load the model profile.",
+      "dangPhucVu": "Serving now",
+      "nguonProps": "Source: llama-server /props (read when the tab opens)",
+      "modelFile": "Loaded model file",
+      "ctxSlot": "Context per slot × slots",
+      "banDung": "llama.cpp build",
+      "trangThai": {
+        "khong-lien-lac": "Cannot reach llama-server ({{lyDo}}) — the serving model is unknown.",
+        "tat": "llama-server is disabled (LLAMA_SERVER_ENABLED) — inference runs in-process."
+      },
+      "cauHinh": "Configuration in effect",
+      "nguonEnv": "Source: the server's .env",
+      "modelKhai": "Declared model (GGUF_DEFAULT_MODEL)",
+      "tranCtx": "Context cap (GGUF_MAX_CTX)",
+      "nganSachNghi": "Reasoning budget (--reasoning-budget)",
+      "sampling": "Sampling profile",
+      "modelNhung": "Embedding model",
+      "router": "Routing profile",
+      "nguonRouter": "Source: ROUTER_MODEL_PROFILES + AI_ROUTER_* overrides",
+      "hoSoKhop": "Matched profile",
+      "nguonNguong": "Thresholds from",
+      "thuaKe": "INHERITED from {{tu}} (not measured for this model)",
+      "provenance": {
+        "measured-here": "measured here",
+        "third-party": "third-party figures",
+        "none": "no measurement"
+      },
+      "doNgay": "Measured",
+      "nguong": "Easy / hard / latency pin",
+      "canDoTaiCho": "The thresholds in use are NOT from a measurement of the running model — re-measure and set AI_ROUTER_* (all three).",
+      "soDo": "Turn log, last 24 h",
+      "nguonSoDo": "Source: ai_gateway_metrics (B7) — real turns, not benchmarks",
+      "luot": "Turns",
+      "loi": "{{n}} errors",
+      "coDoNghi": "Turns with measured reasoning",
+      "nghiTra": "Mean reasoning / output",
+      "tre": "Median latency",
+      "theoModel": "By model",
+      "khongCoSoDo": "Could not read the turn log (no DB or table not migrated).",
+      "baoCao": "Latest benchmark runs",
+      "nguonBaoCao": "Source: scripts/ai-eval/codegen-chay-duoc/reports — M = raw model · H = product pipeline · projects = three real orders",
+      "khongCoBaoCao": "No benchmark report folder on this machine (only dev machines have one) — not \"0 %\".",
+      "cot": {
+        "truc": "Axis",
+        "nhan": "Label",
+        "luot": "Runs",
+        "dat": "Passed",
+        "luc": "When"
+      },
+      "truc": {
+        "M": "M · raw model",
+        "H": "H · pipeline",
+        "du-an": "real projects"
+      },
+      "lech": {
+        "chua-khai-model": "GGUF_DEFAULT_MODEL is not set — the router does not know the deep model.",
+        "llama-server-model-lech": "LLAMA_SERVER_MODEL differs from the file llama-server has loaded — code generation may silently fall back in-process.",
+        "model-khai-lech": "GGUF_DEFAULT_MODEL differs from the serving file — routing profile and turn log refer to another model.",
+        "ctx-slot-nho-hon-tran": "llama-server's per-slot context is SMALLER than GGUF_MAX_CTX — long requests will be rejected by the server."
+      },
+      "lora": "LoRA fine-tuning: deferred. The 2026-09-21 audit (G9) measured it — the model's remaining errors are REASONING errors that LoRA does not fix; the common C# error is a missing `using`, now fixed deterministically (R2). Reopen only when a REPO-CONVENTION error class is measured that docs + context cannot fix."
     }
   },
   "batch": {

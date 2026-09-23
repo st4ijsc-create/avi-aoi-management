@@ -395,6 +395,14 @@ Hiện model đang phục vụ, hồ sơ router (đo tại chỗ / thừa kế),
 án) — đọc từ B7 + reports. Finetune (LoRA) **để sau**: G9 đã kết luận bằng số LoRA không chữa lỗi suy luận; khi bật
 lại, eval của sidecar phải đi qua llama‑server + `disableThinking` (K5).
 
+> **R3 — XONG 2026-09-23.** Tab "Xây dựng mô hình" (nút tinh chỉnh bị khoá) → **"Hồ sơ model"**: `kbStudio.hoSoModel` →
+> `ai/hoSoModelStudio.ts`, mỗi ô ghi nguồn: llama-server `/props` (model thật, ctx/slot × slot, bản dựng) · `.env` đang hiệu lực
+> (model khai, trần ctx, ngân sách nghĩ, sampling, model nhúng) · **lệch** giữa khai và chạy (`LLAMA_SERVER_MODEL`/`GGUF_DEFAULT_MODEL`
+> khác tệp đang nạp · ctx/slot < `GGUF_MAX_CTX`) · hồ sơ router (đo tại chỗ / THỪA KẾ + cảnh báo cần đo) · sổ đo B7 24 giờ (lượt, lỗi,
+> nghĩ/trả TB, trễ trung vị, theo model) · báo cáo đo M/H/dự án gom theo nhãn (vắng thư mục ⇒ nói rõ "không phải 0 %"). Sống: Qwen3.6
+> 35B‑A3B · 65.536 × 1 · b9814 · 0 lệch · router đo tại chỗ · 1.265 lượt/24 h (620 đo được nghĩ, TB 3.882 nghĩ / 2.490 trả, trễ trung
+> vị 6,3 s) · 12 nhóm báo cáo. LoRA còn lại là GHI CHÚ có lý do (G9), không phải nút vô hiệu.
+
 ### R4 — Jobs: tiến độ ingest thật (chunk/đoạn/ảnh) + cảnh báo "PDF quét ảnh ra 0 đoạn" thành cảnh báo **máy**
 Chuyển lời dặn trong hướng dẫn thành kiểm tự động sau ingest (0 chunk ⇒ badge đỏ + lý do).
 

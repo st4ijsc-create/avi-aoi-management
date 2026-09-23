@@ -15371,7 +15371,7 @@
       "jobs": "任务",
       "corpus": "语料库",
       "eval": "评估",
-      "modelBuilder": "模型构建"
+      "modelBuilder": "模型档案"
     },
     "source": {
       "corpusLabel": "语料库",
@@ -15635,6 +15635,71 @@
         "diem": "来源命中 {{trung}} · 到达助手 {{toi}}。",
         "diemCu": "{{trung}} · {{toi}}——已过期：本轮之后语料有变，请重新运行。"
       }
+    },
+    "hoSo": {
+      "title": "模型档案",
+      "desc": "实际在服务的模型、生效的配置，以及对它的所有测量——每一项都注明来源。",
+      "loadError": "无法加载模型档案。",
+      "dangPhucVu": "当前服务",
+      "nguonProps": "来源：llama-server /props（打开页面时读取）",
+      "modelFile": "已加载模型文件",
+      "ctxSlot": "每槽上下文 × 槽数",
+      "banDung": "llama.cpp 版本",
+      "trangThai": {
+        "khong-lien-lac": "无法连接 llama-server（{{lyDo}}）——不清楚正在服务的模型。",
+        "tat": "llama-server 已关闭（LLAMA_SERVER_ENABLED）——推理在进程内运行。"
+      },
+      "cauHinh": "生效配置",
+      "nguonEnv": "来源：服务器 .env",
+      "modelKhai": "声明模型（GGUF_DEFAULT_MODEL）",
+      "tranCtx": "上下文上限（GGUF_MAX_CTX）",
+      "nganSachNghi": "思考预算（--reasoning-budget）",
+      "sampling": "采样配置",
+      "modelNhung": "嵌入模型",
+      "router": "路由配置",
+      "nguonRouter": "来源：ROUTER_MODEL_PROFILES + AI_ROUTER_* 覆盖",
+      "hoSoKhop": "匹配配置",
+      "nguonNguong": "阈值来源",
+      "thuaKe": "继承自 {{tu}}（未针对此模型测量）",
+      "provenance": {
+        "measured-here": "本地测量",
+        "third-party": "第三方数据",
+        "none": "无测量"
+      },
+      "doNgay": "测量",
+      "nguong": "简单 / 困难 / 延迟钉",
+      "canDoTaiCho": "当前阈值并非来自对运行模型的测量——请重新测量并设置 AI_ROUTER_*（三项）。",
+      "soDo": "近 24 小时轮次记录",
+      "nguonSoDo": "来源：ai_gateway_metrics（B7）——真实轮次，非基准",
+      "luot": "轮次",
+      "loi": "{{n}} 个错误",
+      "coDoNghi": "测得思考 token 的轮次",
+      "nghiTra": "平均思考 / 输出",
+      "tre": "延迟中位数",
+      "theoModel": "按模型",
+      "khongCoSoDo": "无法读取轮次记录（无数据库或表未迁移）。",
+      "baoCao": "最近的基准测试",
+      "nguonBaoCao": "来源：scripts/ai-eval/codegen-chay-duoc/reports——M = 纯模型 · H = 产品管线 · 项目 = 三个真实订单",
+      "khongCoBaoCao": "此机器上没有基准报告目录（仅开发机有）——不代表“0 %”。",
+      "cot": {
+        "truc": "轴",
+        "nhan": "标签",
+        "luot": "轮数",
+        "dat": "通过",
+        "luc": "时间"
+      },
+      "truc": {
+        "M": "M · 纯模型",
+        "H": "H · 产品管线",
+        "du-an": "真实项目"
+      },
+      "lech": {
+        "chua-khai-model": "未设置 GGUF_DEFAULT_MODEL——路由器不知道深度模型是什么。",
+        "llama-server-model-lech": "LLAMA_SERVER_MODEL 与 llama-server 已加载的文件不同——代码生成可能静默回退到进程内。",
+        "model-khai-lech": "GGUF_DEFAULT_MODEL 与正在服务的文件不同——路由配置与轮次记录指向另一个模型。",
+        "ctx-slot-nho-hon-tran": "llama-server 每槽上下文小于 GGUF_MAX_CTX——长请求会被服务器拒绝。"
+      },
+      "lora": "LoRA 微调：暂缓。2026-09-21 审计（G9）已测量——模型剩余错误属推理错误，LoRA 无法修复；常见的 C# 错误是缺少 `using`，已由确定性补全（R2）修复。仅当测得文档与上下文都无法修复的仓库约定类错误时再开启。"
     }
   },
   "batch": {

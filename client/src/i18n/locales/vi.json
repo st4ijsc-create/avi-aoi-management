@@ -14793,7 +14793,7 @@
       "jobs": "Tác vụ",
       "corpus": "Corpus",
       "eval": "Đánh giá",
-      "modelBuilder": "Xây dựng mô hình"
+      "modelBuilder": "Hồ sơ model"
     },
     "source": {
       "corpusLabel": "Corpus",
@@ -15057,6 +15057,71 @@
         "diem": "Trúng nguồn {{trung}} · tới trợ lý {{toi}}.",
         "diemCu": "{{trung}} · {{toi}} — CŨ: corpus đã nạp thêm sau lượt này, chạy lại."
       }
+    },
+    "hoSo": {
+      "title": "Hồ sơ model",
+      "desc": "Model THẬT đang phục vụ, cấu hình đang hiệu lực, và mọi thứ đã đo về nó — mỗi ô ghi rõ nguồn.",
+      "loadError": "Không tải được hồ sơ model.",
+      "dangPhucVu": "Đang phục vụ",
+      "nguonProps": "Nguồn: llama-server /props (đọc lúc mở tab)",
+      "modelFile": "Tệp model đang nạp",
+      "ctxSlot": "Ngữ cảnh / slot × số slot",
+      "banDung": "Bản dựng llama.cpp",
+      "trangThai": {
+        "khong-lien-lac": "Không liên lạc được llama-server ({{lyDo}}) — không biết model nào đang phục vụ.",
+        "tat": "llama-server đang tắt (LLAMA_SERVER_ENABLED) — suy luận chạy trong tiến trình."
+      },
+      "cauHinh": "Cấu hình đang hiệu lực",
+      "nguonEnv": "Nguồn: .env của server",
+      "modelKhai": "Model khai (GGUF_DEFAULT_MODEL)",
+      "tranCtx": "Trần ngữ cảnh (GGUF_MAX_CTX)",
+      "nganSachNghi": "Ngân sách nghĩ (--reasoning-budget)",
+      "sampling": "Hồ sơ sampling",
+      "modelNhung": "Model nhúng",
+      "router": "Hồ sơ định tuyến",
+      "nguonRouter": "Nguồn: ROUTER_MODEL_PROFILES + khai đè AI_ROUTER_*",
+      "hoSoKhop": "Hồ sơ khớp",
+      "nguonNguong": "Ngưỡng lấy từ",
+      "thuaKe": "THỪA KẾ từ {{tu}} (chưa đo cho model này)",
+      "provenance": {
+        "measured-here": "đo tại chỗ",
+        "third-party": "số của bên thứ ba",
+        "none": "không có phép đo"
+      },
+      "doNgay": "Đo",
+      "nguong": "Dễ / khó / ghim độ trễ",
+      "canDoTaiCho": "Ngưỡng đang lái KHÔNG rút từ phép đo của model đang chạy — đo lại rồi khai AI_ROUTER_* (cả ba).",
+      "soDo": "Sổ đo lượt 24 giờ",
+      "nguonSoDo": "Nguồn: ai_gateway_metrics (B7) — lượt thật, không phải bài đo",
+      "luot": "Lượt",
+      "loi": "{{n}} lỗi",
+      "coDoNghi": "Lượt đo được token nghĩ",
+      "nghiTra": "Nghĩ / trả trung bình",
+      "tre": "Độ trễ trung vị",
+      "theoModel": "Theo model",
+      "khongCoSoDo": "Không đọc được sổ đo (DB vắng hoặc bảng chưa migrate).",
+      "baoCao": "Báo cáo đo gần nhất",
+      "nguonBaoCao": "Nguồn: scripts/ai-eval/codegen-chay-duoc/reports — M = model thuần · H = đường sản phẩm · dự án = ba đơn hàng thật",
+      "khongCoBaoCao": "Không có thư mục báo cáo đo trên máy này (chỉ máy phát triển có) — không phải \"0 %\".",
+      "cot": {
+        "truc": "Trục",
+        "nhan": "Nhãn",
+        "luot": "Số lượt",
+        "dat": "Đạt",
+        "luc": "Lúc"
+      },
+      "truc": {
+        "M": "M · model thuần",
+        "H": "H · đường sản phẩm",
+        "du-an": "dự án thật"
+      },
+      "lech": {
+        "chua-khai-model": "Chưa khai GGUF_DEFAULT_MODEL — bộ định tuyến không biết model sâu là gì.",
+        "llama-server-model-lech": "LLAMA_SERVER_MODEL khác tệp llama-server đang nạp — đường sinh mã có thể lặng lẽ rơi về chạy trong tiến trình.",
+        "model-khai-lech": "GGUF_DEFAULT_MODEL khác tệp đang phục vụ — hồ sơ định tuyến và sổ đo đang ghi cho một model khác.",
+        "ctx-slot-nho-hon-tran": "Ngữ cảnh mỗi slot của llama-server NHỎ hơn GGUF_MAX_CTX — yêu cầu dài sẽ bị server từ chối."
+      },
+      "lora": "Tinh chỉnh LoRA: để sau. Audit 2026-09-21 (G9) đã đo — lỗi còn lại của model là lỗi SUY LUẬN, LoRA không chữa; lỗi C# hay gặp là thiếu `using` và đã có bộ bổ sung tất định (R2). Chỉ mở lại khi đo được một lớp lỗi QUY ƯỚC REPO mà tài liệu + ngữ cảnh không chữa nổi."
     }
   },
   "batch": {

@@ -441,6 +441,13 @@ export const kbStudioRouter = router({
     .input(z.object({ id: z.number().int().positive(), corpus: z.string().trim().min(1).max(120) }))
     .query(({ input }) => kbStudioEval.getEvalRun(input.id, input.corpus)),
 
+  // ─── Hồ sơ model (R3) ───────────────────────────────────────────────────
+  /** Hồ sơ model THẬT (llama-server /props · .env · router · sổ đo B7 · báo cáo đo) — xem `ai/hoSoModelStudio.ts`. */
+  hoSoModel: kbStudioProcedure.query(async () => {
+    const { layHoSoModel } = await import("../services/ai/hoSoModelStudio");
+    return layHoSoModel();
+  }),
+
   // ─── Model Builder — LoRA fine-tune (doc69 E3-6) ─────────────────────────
   /**
    * Gated entry point for `server/services/aiLlmFinetuneSidecar.ts`'s `startLoraFinetune` — the

@@ -531,3 +531,9 @@ describe("kbStudioRouter — R4 kiểm máy sau nạp (ketQuaMay)", () => {
     expect(markJobFailedMock.mock.calls.at(-1)?.[2]).toBeNull();
   });
 });
+
+describe("kbStudioRouter — hoSoModel (R3)", () => {
+  it.each(["operator", "viewer"])("%s không đọc được hồ sơ model", async (role) => {
+    await expect(callerFor(role).hoSoModel()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
