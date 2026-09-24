@@ -1,0 +1,44 @@
+{"id":"Q01","lop":"quy-tac","cauHoi":"Bao nhiêu điểm liên tiếp nằm cùng một phía đường tâm thì biểu đồ kiểm soát phải cảnh báo?"}
+{"id":"Q02","lop":"quy-tac","cauHoi":"Cỡ nhóm con mặc định khi vẽ biểu đồ SPC là bao nhiêu?"}
+{"id":"Q03","lop":"quy-tac","cauHoi":"Bao nhiêu bảng NG liên tiếp cùng một loại lỗi thì phát cảnh báo mức Major?"}
+{"id":"Q04","lop":"quy-tac","cauHoi":"Phân tích Pareto lỗi thì nên tập trung điều tra mấy lỗi đầu tiên?"}
+{"id":"Q05","lop":"quy-tac","cauHoi":"Giới hạn kiểm soát trên và dưới của biểu đồ SPC được tính thế nào?"}
+{"id":"Q06","lop":"quy-tac","cauHoi":"Khi vi phạm quy tắc SPC, hệ thống gửi thông báo cho vai trò nào?"}
+{"id":"Q07","lop":"quy-tac","cauHoi":"Sản phẩm NG chưa được gán mã lỗi thì có được tính vào báo cáo Pareto không?"}
+{"id":"Q08","lop":"quy-tac","cauHoi":"Thời gian chu kỳ (cycle time) của một lô tính thế nào?"}
+{"id":"Q09","lop":"quy-tac","cauHoi":"OEE được tính từ những thành phần nào?"}
+{"id":"Q10","lop":"quy-tac","cauHoi":"Tỷ lệ NG vượt bao nhiêu thì phải dừng line để điều tra?"}
+{"id":"Q11","lop":"quy-tac","cauHoi":"Chỉ số Cpk bao nhiêu thì được coi là đạt?"}
+{"id":"Q12","lop":"quy-tac","cauHoi":"Downtime được định nghĩa như thế nào trong hệ thống?"}
+{"id":"Q13","lop":"quy-tac","cauHoi":"Cảnh báo NG rate mặc định được đặt ở ngưỡng nào?"}
+{"id":"Q14","lop":"quy-tac","cauHoi":"Quy tắc Western Electric số 1 là gì?"}
+{"id":"Q15","lop":"quy-tac","cauHoi":"Ai có quyền duyệt thay đổi ngưỡng cảnh báo?"}
+{"id":"Q16","lop":"quy-tac","cauHoi":"Muốn xem biểu đồ Pareto lỗi thì vào menu nào?"}
+{"id":"Q17","lop":"quy-tac","cauHoi":"FPY khác yield thế nào?"}
+{"id":"Q18","lop":"quy-tac","cauHoi":"Lô sản xuất có những trạng thái nào?"}
+{"id":"Q19","lop":"quy-tac","cauHoi":"Khi máy báo mất kết nối thì quy trình xử lý là gì?"}
+{"id":"Q20","lop":"quy-tac","cauHoi":"Cycle time mục tiêu được cấu hình ở đâu?"}
+{"id":"Q21","lop":"quy-tac","cauHoi":"Vì sao phải tính lại UCL/LCL sau khi đổi quy trình?"}
+{"id":"Q22","lop":"quy-tac","cauHoi":"MTBF là viết tắt của gì và dùng để làm gì?"}
+{"id":"S01","lop":"song","cauHoi":"hôm nay có lỗi NG nào không"}
+{"id":"S02","lop":"song","cauHoi":"top lỗi tuần này?"}
+{"id":"S03","lop":"song","cauHoi":"cycle time hôm nay bao nhiêu?"}
+{"id":"S04","lop":"song","cauHoi":"SPC line 2 thế nào?"}
+{"id":"S05","lop":"song","cauHoi":"OEE của line 1 hiện tại là bao nhiêu?"}
+{"id":"S06","lop":"song","cauHoi":"Pareto lỗi 7 ngày qua"}
+{"id":"S07","lop":"song","cauHoi":"máy nào đang lỗi?"}
+{"id":"S08","lop":"song","cauHoi":"lô L20260505-001 chạy tới đâu rồi?"}
+{"id":"S09","lop":"song","cauHoi":"tỷ lệ NG ca này bao nhiêu?"}
+{"id":"S10","lop":"song","cauHoi":"downtime hôm qua của máy AOI-03"}
+{"id":"S11","lop":"song","cauHoi":"Cpk của điểm đo #12 tháng này?"}
+{"id":"S12","lop":"song","cauHoi":"sản lượng hôm nay đạt bao nhiêu?"}
+{"id":"S13","lop":"song","cauHoi":"có cảnh báo nào đang mở không?"}
+{"id":"S14","lop":"song","cauHoi":"xu hướng NG rate 14 ngày gần đây"}
+{"id":"S15","lop":"song","cauHoi":"lỗi nào xuất hiện nhiều nhất ở line 3?"}
+{"id":"S16","lop":"song","cauHoi":"MTBF của máy AOI-01 là bao nhiêu?"}
+{"id":"S17","lop":"song","cauHoi":"cho tôi xem biểu đồ SPC yield"}
+{"id":"S18","lop":"song","cauHoi":"bao nhiêu máy đang offline?"}
+{"id":"S19","lop":"song","cauHoi":"thời gian chu kỳ trung bình của lô đang chạy"}
+{"id":"S20","lop":"song","cauHoi":"FPY hôm nay thế nào"}
+{"id":"S21","lop":"song","cauHoi":"lô nào đang bị tạm dừng?"}
+{"id":"S22","lop":"song","cauHoi":"số bảng NG liên tiếp hiện tại trên line 2"}
