@@ -2410,7 +2410,11 @@ export function detectProgrammingVendors(question: string): string[] {
  *   ⇒ Hai cụm CHỒNG nhau ở 0,34–0,415 — KHÔNG ngưỡng nào tách sạch. 0,5 cũ: 29/38 đúng, 0/51 nhiễu — bỏ
  *     oan 9 nguồn đúng (0,44–0,50) mà không chặn thêm nhiễu nào. 0,44: 34/38 đúng, 0/51 nhiễu, cách đỉnh
  *     nhiễu 0,025. Bốn câu còn trượt (0,340–0,429) nằm TRONG cụm nhiễu — ngưỡng không cứu được, cần xếp
- *     hạng/nhúng tốt hơn. ⚠ Chỉ áp cho route vscode; đường web (`retrieveKnowledge` mặc định) không đọc hằng này. */
+ *     hạng/nhúng tốt hơn. ⚠ Chỉ áp cho route vscode; đường web (`retrieveKnowledge` mặc định) không đọc hằng này.
+ * ⚠⚠ ĐÍNH CHÍNH 2026-09-24 (`6919087c6`): "0/51 nhiễu" chỉ là nhiễu CHÉO miền (dễ). 8 câu ngoài corpus CÙNG MIỀN (N05–N12,
+ *     eval #30) ⇒ **3/12 lọt 0,44** (0,460 · 0,533 · 0,572; 0,5 vẫn lọt 2/12). Hằng này KHÔNG chặn được câu lạc đề cùng miền —
+ *     không ngưỡng cosine nào làm được; reranker (bge‑v2‑m3, Qwen3‑Reranker‑0.6B) cũng không tách rõ hơn
+ *     (`scripts/ai-eval/rerank-tach.ts`). Giữ 0,44 cho tới khi có bộ vàng lớn hơn; đừng đọc số trên như bằng chứng "sạch". */
 export const MIN_STUDIO_CITATION_SCORE = 0.44;
 
 /**
