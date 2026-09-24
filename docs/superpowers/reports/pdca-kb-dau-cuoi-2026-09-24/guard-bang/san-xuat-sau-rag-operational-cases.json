@@ -1,0 +1,542 @@
+{
+ "OP01": {
+  "hang": 1,
+  "top": [
+   "domain/aoi-troubleshooting.md",
+   "aoi-troubleshooting.md",
+   "domain/aoi-troubleshooting.md",
+   "aoi-troubleshooting.md",
+   "inspection/aoi-packages.md"
+  ]
+ },
+ "OP02": {
+  "hang": 1,
+  "top": [
+   "domain/howto-lot-management.md[bảng]",
+   "domain/howto-lot-management.md[bảng]",
+   "production/production-orders.md",
+   "production/production-orders.md",
+   "operational/product-onboarding.md"
+  ]
+ },
+ "OP03": {
+  "hang": 1,
+  "top": [
+   "monitoring/ng-rate-threshold.md",
+   "monitoring/ng-rate-threshold.md",
+   "domain/howto-ng-handling-sop.md[bảng]",
+   "howto-ng-handling-sop.md",
+   "operational/threshold-approvals.md"
+  ]
+ },
+ "OP04": {
+  "hang": 1,
+  "top": [
+   "operational/oee-dashboard.md",
+   "monitoring/oee-dashboard.md",
+   "operational/realtime-report.md",
+   "monitoring/oee-dashboard.md",
+   "alerts/oee-targets.md"
+  ]
+ },
+ "OP05": {
+  "hang": 2,
+  "top": [
+   "workflows/ng-handling.playbook.yaml",
+   "domain/howto-ng-handling-sop.md",
+   "domain/howto-ng-handling-sop.md[bảng]",
+   "workflows/ng-handling.playbook.yaml",
+   "howto-ng-handling-sop.md"
+  ]
+ },
+ "OP06": {
+  "hang": 1,
+  "top": [
+   "domain/howto-change-password.md",
+   "operational/change-password.md",
+   "operational-approved/users.md",
+   "admin/user-management.md",
+   "operational-approved/users.md"
+  ]
+ },
+ "OP07": {
+  "hang": 1,
+  "top": [
+   "domain/howto-export-pdf-report.md",
+   "domain/howto-export-pdf-report.md",
+   "operational/pdf-reports.md",
+   "analytics/reports.md",
+   "analytics/scheduled-reports.md"
+  ]
+ },
+ "OP08": {
+  "hang": 1,
+  "top": [
+   "analytics/pareto-analysis.md",
+   "domain/howto-pareto-defects.md",
+   "analytics/pareto-analysis.md",
+   "domain/aoi-reports.md",
+   "analytics/category-analytics.md"
+  ]
+ },
+ "OP09": {
+  "hang": 1,
+  "top": [
+   "domain/howto-spc-control.md",
+   "howto-spc-control.md",
+   "domain/howto-spc-control.md",
+   "workflows/spc-critical-review.playbook.yaml",
+   "so-do-man-hinh-duyet-nguong.png"
+  ]
+ },
+ "OP10": {
+  "hang": 1,
+  "top": [
+   "settings/shift-config.md",
+   "settings/shift-config.md",
+   "domain/howto-shift-change.md",
+   "operational/datasettings.md",
+   "corporate/corporate-layout.md"
+  ]
+ },
+ "OP11": {
+  "hang": 1,
+  "top": [
+   "domain/howto-backup-restore.md",
+   "domain/howto-backup-restore.md",
+   "operational/backup-restore.md",
+   "operational-approved/master-data.md",
+   "admin/backup-restore.md"
+  ]
+ },
+ "OP12": {
+  "hang": 1,
+  "top": [
+   "admin/user-management.md",
+   "admin/user-management.md",
+   "admin/role-management.md",
+   "admin/role-management.md",
+   "operational-approved/users.md"
+  ]
+ },
+ "OP13": {
+  "hang": 1,
+  "top": [
+   "domain/howto-sso-oauth.md",
+   "domain/howto-sso-oauth.md",
+   "operational/sessions.md",
+   "operational/about-system.md",
+   "settings/shift-config.md"
+  ]
+ },
+ "OP14": {
+  "hang": 1,
+  "top": [
+   "monitoring/machine-registration.md",
+   "monitoring/machine-registration.md",
+   "ai/ai-local-knowledge-base.md",
+   "operational-approved/machine-registration.md",
+   "workflows/install-new-machine.playbook.yaml"
+  ]
+ },
+ "OP15": {
+  "hang": 1,
+  "top": [
+   "inspection/history.md",
+   "inspection/history.md",
+   "inspection/inspection-detail.md",
+   "inspection/inspection-detail.md",
+   "inspection/inspection-submit.md"
+  ]
+ },
+ "OP16": {
+  "hang": 2,
+  "top": [
+   "workflows/create-measurement-point.playbook.yaml",
+   "products/measurement-point-setup.md",
+   "products/product-management.md",
+   "domain/howto-measurement-point-shapes.md",
+   "workflows/create-measurement-point.playbook.yaml"
+  ]
+ },
+ "OP17": {
+  "hang": 1,
+  "top": [
+   "domain/commission-a-new-pcb.md",
+   "domain/commission-a-new-pcb.md[bảng]",
+   "commission-a-new-pcb.md",
+   "domain/aoi-workflow.md",
+   "commission-a-new-pcb.md"
+  ]
+ },
+ "OP18": {
+  "hang": 1,
+  "top": [
+   "domain/howto-edge-model-deploy.md",
+   "domain/howto-edge-model-deploy.md",
+   "operational/ai-models.md",
+   "docs/AI_USAGE_GUIDE.md",
+   "operational/model-versions.md"
+  ]
+ },
+ "OP19": {
+  "hang": 1,
+  "top": [
+   "analytics/defect-heatmap.md",
+   "operational/defect-heatmap.md",
+   "analytics/defect-heatmap.md",
+   "products/measurement-point-setup.md",
+   "operational/defect-catalog.md"
+  ]
+ },
+ "OP20": {
+  "hang": 1,
+  "top": [
+   "analytics/root-cause-analysis.md",
+   "operational/root-cause-analysis.md",
+   "analytics/root-cause-analysis.md",
+   "domain/aoi-reports.md",
+   "analytics/spc-analysis.md"
+  ]
+ },
+ "OP21": {
+  "hang": 1,
+  "top": [
+   "alerts/predictive-alerts.md",
+   "alerts/predictive-alerts.md",
+   "alerts/alerts-list.md",
+   "analytics/defect-prediction.md",
+   "operational/ops-console.md"
+  ]
+ },
+ "OP22": {
+  "hang": 1,
+  "top": [
+   "alerts/oee-targets.md",
+   "operational/oee-target-settings.md",
+   "alerts/oee-targets.md",
+   "monitoring/oee-dashboard.md",
+   "operational/oee-dashboard.md"
+  ]
+ },
+ "OP23": {
+  "hang": 1,
+  "top": [
+   "operational/alerts.md",
+   "alerts/alerts-list.md",
+   "operational-approved/alerts.md",
+   "alerts/alerts-list.md",
+   "operational-approved/alerts.md"
+  ]
+ },
+ "OP24": {
+  "hang": 1,
+  "top": [
+   "alerts/mqtt-alert-rules.md",
+   "alerts/mqtt-alert-rules.md",
+   "monitoring/mqtt-bulletin.md",
+   "alerts/alerts-list.md",
+   "monitoring/mqtt-dashboard.md"
+  ]
+ },
+ "OP25": {
+  "hang": 1,
+  "top": [
+   "domain/aoi-defect-types.md",
+   "domain/aoi-defect-types.md",
+   "aoi-defect-types.md",
+   "domain/aoi-troubleshooting.md",
+   "domain/aoi-troubleshooting.md"
+  ]
+ },
+ "OP26": {
+  "hang": 1,
+  "top": [
+   "domain/aoi-workflow.md",
+   "domain/aoi-workflow.md",
+   "aoi-workflow.md",
+   "domain/howto-ng-handling-sop.md",
+   "howto-ng-handling-sop.md"
+  ]
+ },
+ "OP27": {
+  "hang": 1,
+  "top": [
+   "domain/aoi-reports.md",
+   "domain/howto-export-pdf-report.md[bảng]",
+   "domain/howto-export-pdf-report.md",
+   "aoi-reports.md",
+   "docs/USER_GUIDE.md"
+  ]
+ },
+ "OP28": {
+  "hang": 1,
+  "top": [
+   "operational/production-scheduling.md",
+   "production/production-scheduling.md",
+   "production/production-scheduling.md",
+   "production/production-dashboard.md",
+   "operational/history-export-scheduling.md"
+  ]
+ },
+ "OP29": {
+  "hang": 1,
+  "top": [
+   "products/product-machine-mapping.md",
+   "inspection/inspection-submit.md",
+   "products/product-machine-mapping.md",
+   "inspection/history.md",
+   "inspection/history.md"
+  ]
+ },
+ "OP30": {
+  "hang": 1,
+  "top": [
+   "products/process-management.md",
+   "operational/process-management.md",
+   "operational/routing-master.md",
+   "products/process-management.md",
+   "operational/product-workspace.md"
+  ]
+ },
+ "OP31": {
+  "hang": 3,
+  "top": [
+   "operational/master-data-audit.md",
+   "operational-approved/audit-logs.md",
+   "admin/audit-logs.md",
+   "operational-approved/defect-catalog.md",
+   "operational/about-system.md"
+  ]
+ },
+ "OP32": {
+  "hang": 1,
+  "top": [
+   "operational/api-keys.md",
+   "operational-approved/api-keys.md",
+   "admin/api-docs.md",
+   "apidocs/AUTHENTICATION.md",
+   "admin/user-management.md"
+  ]
+ },
+ "OP33": {
+  "hang": 1,
+  "top": [
+   "admin/import-export.md",
+   "inspection/history-export-scheduling.md",
+   "operational/history-export-scheduling.md",
+   "inspection/history-export-scheduling.md",
+   "operational/ai-data-processing.md"
+  ]
+ },
+ "OP34": {
+  "hang": 1,
+  "top": [
+   "operational/license.md",
+   "admin/license-mgmt.md",
+   "admin/license-mgmt.md",
+   "domain/howto-license-bypass-dev.md",
+   "admin/permission-mgmt.md"
+  ]
+ },
+ "OP35": {
+  "hang": 1,
+  "top": [
+   "operational/andon.md",
+   "operational-approved/andon.md",
+   "operational-approved/andon.md",
+   "schema/andon.ts",
+   "production/production-dashboard.md"
+  ]
+ },
+ "OP36": {
+  "hang": 1,
+  "top": [
+   "ai/ai-hub.md",
+   "docs/AI_USAGE_GUIDE.md",
+   "operational/data-management.md",
+   "operational/engineering-home.md",
+   "operational/maintenance-hub.md"
+  ]
+ },
+ "OP37": {
+  "hang": 1,
+  "top": [
+   "ai/ai-model-management.md",
+   "operational/ai-models.md",
+   "operational/model-versions.md",
+   "apidocs/AI_MODEL_API.md",
+   "ai/ai-model-management.md"
+  ]
+ },
+ "OP38": {
+  "hang": 1,
+  "top": [
+   "ai/ai-quality-gate.md",
+   "analytics/quality-gates.md",
+   "analytics/quality-gates.md",
+   "operational/ai-quality-gate.md",
+   "ai/ai-quality-gate.md"
+  ]
+ },
+ "OP39": {
+  "hang": 1,
+  "top": [
+   "ai/ai-image-search.md",
+   "operational/ai-image-search.md",
+   "ai/ai-image-search.md",
+   "docs/UPGRADE_REPORT_AI_FEATURES.md",
+   "upgrade-2026/WS3-vector-search.md"
+  ]
+ },
+ "OP40": {
+  "hang": 1,
+  "top": [
+   "ai/ai-performance.md",
+   "operational/ai-monitoring.md",
+   "operational/ai-models.md",
+   "operational/ai-performance.md",
+   "operational/model-versions.md"
+  ]
+ },
+ "OP41": {
+  "hang": 1,
+  "top": [
+   "monitoring/machine-health.md",
+   "monitoring/machine-health.md",
+   "operational/system-health.md",
+   "operational/device-monitor.md",
+   "monitoring/machine-status-monitor.md"
+  ]
+ },
+ "OP42": {
+  "hang": 1,
+  "top": [
+   "analytics/correlation-analysis.md",
+   "workflows/spc-critical-review.playbook.yaml",
+   "analytics/spc-analysis.md",
+   "operational/correlation-analysis.md",
+   "analytics/pareto-analysis.md"
+  ]
+ },
+ "OP43": {
+  "hang": 1,
+  "top": [
+   "monitoring/mqtt-profiles.md",
+   "monitoring/mqtt-client-mgmt.md",
+   "monitoring/mqtt-profiles.md",
+   "monitoring/mqtt-topics.md",
+   "monitoring/mqtt-client-mgmt.md"
+  ]
+ },
+ "OP44": {
+  "hang": 1,
+  "top": [
+   "production/production-dashboard.md",
+   "production/production-dashboard.md",
+   "dashboard/dashboard-view.md",
+   "operational/production-dashboard.md",
+   "operational/mes-control-tower.md"
+  ]
+ },
+ "OP45": {
+  "hang": 1,
+  "top": [
+   "analytics/scheduled-reports.md",
+   "analytics/scheduled-reports.md",
+   "operational/scheduled-reports.md",
+   "inspection/history-export-scheduling.md",
+   "inspection/history-export-scheduling.md"
+  ]
+ },
+ "OP46": {
+  "hang": 1,
+  "top": [
+   "admin/session-mgmt.md",
+   "operational-approved/users.md",
+   "operational/sessions.md",
+   "admin/user-management.md",
+   "admin/user-management.md"
+  ]
+ },
+ "OP47": {
+  "hang": 1,
+  "top": [
+   "domain/howto-license-bypass-dev.md",
+   "domain/howto-license-bypass-dev.md",
+   "admin/license-mgmt.md",
+   "admin/license-mgmt.md",
+   "ECOSYSTEM/33_SYNAPSE_ALIGNMENT_AUDIT_UNIFIED_DESIGN_AND_UPGRADE_PLAN_2026-07.md"
+  ]
+ },
+ "OP48": {
+  "hang": 1,
+  "top": [
+   "operational/traceability.md",
+   "operational-approved/traceability.md",
+   "domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+   "operational/product-mapping.md",
+   "operational/product-workspace.md"
+  ]
+ },
+ "OP49": {
+  "hang": 1,
+  "top": [
+   "domain/aoi-troubleshooting.md",
+   "domain/aoi-troubleshooting.md[bảng]",
+   "aoi-troubleshooting.md",
+   "aoi-troubleshooting.md",
+   "workflows/ng-handling.playbook.yaml"
+  ]
+ },
+ "OP50": {
+  "hang": 1,
+  "top": [
+   "domain/howto-shift-change.md[bảng]",
+   "domain/howto-shift-change.md",
+   "operational/war-room.md",
+   "operational-approved/carbon-dashboard.md",
+   "settings/shift-config.md"
+  ]
+ },
+ "OP51": {
+  "hang": 2,
+  "top": [
+   "operational-approved/defect-catalog.md",
+   "domain/howto-ng-handling-sop.md[bảng]",
+   "workflows/ng-handling.playbook.yaml",
+   "workflows/change-recipe-line-start.playbook.yaml",
+   "operational-approved/defect-catalog.md"
+  ]
+ },
+ "OP52": {
+  "hang": 4,
+  "top": [
+   "operational-approved/production-orders.md",
+   "production/production-orders.md",
+   "production/production-orders.md",
+   "domain/howto-lot-management.md",
+   "domain/howto-lot-management.md"
+  ]
+ },
+ "OP53": {
+  "hang": 1,
+  "top": [
+   "domain/howto-pareto-defects.md",
+   "domain/aoi-reports.md",
+   "analytics/pareto-analysis.md",
+   "workflows/ng-burst-response.playbook.yaml",
+   "domain/howto-ng-handling-sop.md"
+  ]
+ },
+ "OP54": {
+  "hang": 1,
+  "top": [
+   "domain/commission-a-new-pcb.md",
+   "domain/commission-a-new-pcb.md",
+   "commission-a-new-pcb.md",
+   "domain/aoi-workflow.md",
+   "workflows/change-recipe-line-start.playbook.yaml"
+  ]
+ }
+}

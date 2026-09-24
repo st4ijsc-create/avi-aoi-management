@@ -100,8 +100,13 @@ thì nối câu hỏi lại vào sau.
 - 16/22 câu còn trượt là trượt truy hồi; ca điển hình: một dòng E082 trong đoạn 1.708 ký tự chứa cả bảng.
 - Thêm (không thay) đoạn theo nhóm 4 dòng cho bảng ≥ 5 dòng ở tài liệu miền: +111 đoạn, 0 đoạn cũ đổi.
 - Ablation: trả kho cũ ⇒ 8 câu vừa lên còn 1/8.
-- **Giá phải trả, đo được:** hai ca ở BIÊN hạng 5 tụt xuống hạng 6 vì một nhóm dòng khác chen vào — T42 (đầu–cuối) và PB07
-  (bộ playbook, hit@5 7/8 → 6/8). Bộ vận hành MRR 0,918 → 0,940; thẻ duyệt, kiến trúc, 151 câu vàng giữ.
+- **Giá phải trả, đo được:** T42 (đầu–cuối) — nguồn đúng tụt hạng 5 → 6 vì một nhóm dòng của tài liệu khác chen vào.
+- **Bộ giữ lại — ĐÍNH CHÍNH lớp đo:** bản đầu của mục này đọc khối `baseline` (cosine thuần) của `eval-rag-operational` và báo
+  "PB07 hit@5 7/8 → 6/8". Khối `parity` (bản sao ngoại tuyến của xếp hạng sản phẩm) lại báo thẻ duyệt 0,85 → 0,80 — và ngay ở nền
+  nó đã lệch sản phẩm (17/20 vs 16/20). Đo lại bằng CHÍNH endpoint sản phẩm `/api/ai/local-kb/retrieve`, kho cũ vs kho mới:
+  vận hành 54/54 → 54/54 · thẻ duyệt 16/20 → 16/20 · playbook 8/8 → 8/8 · kiến trúc 10/10 → 10/10; chỉ đổi HẠNG: OP51 5 → 2
+  (tốt lên), PB07 2 → 3 (vẫn trúng). ⇒ **không bộ giữ lại nào tụt trên đường sản phẩm.** Tệp thô: `guard-bang/san-xuat-*.json`.
+  151 câu vàng (`eval-rag --ci`) PASS.
 
 ### 8.4 Tổng (bộ chấm thống nhất `dapAn ∪ dapAnTraLoi`, bỏ `**`)
 
