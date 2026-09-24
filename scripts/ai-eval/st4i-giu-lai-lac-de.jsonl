@@ -1,7 +1,7 @@
 {"id":"HT01","cauHoi":"Xuất báo cáo thủ công thì chọn được những định dạng nào?","nguon":["aoi-reports.md"],"dapAnTraLoi":{"regex":"PDF[\\s\\S]{0,80}Excel[\\s\\S]{0,80}CSV|CSV[\\s\\S]{0,80}Excel"}}
 {"id":"HT02","cauHoi":"Cấu hình tích hợp tự động với MES nằm ở mục nào?","nguon":["aoi-reports.md"],"dapAnTraLoi":{"regex":"Settings[\\s\\S]{0,15}Integration"}}
 {"id":"HT03","cauHoi":"Muốn lấy kết quả kiểm tra theo serial number qua API thì xem tài liệu nào?","nguon":["aoi-reports.md"],"dapAnTraLoi":{"regex":"EXTERNAL_INSPECTION_API"}}
-{"id":"HT04","cauHoi":"Biểu đồ Pareto lỗi mặc định lọc theo khoảng thời gian bao lâu?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"(?<![\\d.,])7 ngày"}}
+{"id":"HT04","cauHoi":"Biểu đồ Pareto lỗi mặc định lọc theo khoảng thời gian bao lâu?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"30 ngày"},"ghiChu":"Đính chính 2026-09-24: đáp án gốc '7 ngày' chép từ tài liệu SAI — mã (ParetoAnalysis.tsx getDefaultDateRange, QualityCockpit) mặc định 30 ngày; tài liệu đã sửa."}
 {"id":"HT05","cauHoi":"Vạch đỏ trên biểu đồ Pareto đánh dấu mức phần trăm tích lũy nào?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"80\\s*%"}}
 {"id":"HT06","cauHoi":"Một mã lỗi chiếm hơn bao nhiêu phần trăm thì phải mở phân tích nguyên nhân gốc ngay?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"40\\s*%"}}
 {"id":"HT07","cauHoi":"Dữ liệu biểu đồ Pareto lỗi được cache trong bao lâu?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"(?<![\\d.,])5 phút"}}

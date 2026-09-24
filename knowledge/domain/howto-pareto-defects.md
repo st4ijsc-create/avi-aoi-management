@@ -16,7 +16,7 @@ Hoặc trực tiếp từ AI Assistant: hỏi *"top lỗi 7 ngày qua"* (gọi t
 
 | Bộ lọc | Mặc định | Ghi chú |
 |--------|----------|---------|
-| Khoảng thời gian | 7 ngày | 1, 7, 30, hoặc tùy chọn. |
+| Khoảng thời gian | 30 ngày | 1, 7, 30, hoặc tùy chọn. (Hỏi AI Assistant *"top lỗi"* không nêu khoảng thì tool dùng 7 ngày.) |
 | Line / máy | Tất cả | Chọn line cụ thể để zoom. |
 | Sản phẩm | Tất cả | Lọc theo SKU. |
 | Mức độ (severity) | Tất cả | `critical`, `major`, `minor`. |
