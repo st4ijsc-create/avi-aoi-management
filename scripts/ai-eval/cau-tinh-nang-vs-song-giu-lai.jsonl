@@ -1,0 +1,24 @@
+{"id":"TQ01","lop":"tinh-nang","cauHoi":"Biểu đồ SPC có những đường giới hạn nào?","nguon":["howto-spc-control.md"],"dapAnTraLoi":{"regex":"UCL[\\s\\S]{0,120}LCL|LCL[\\s\\S]{0,120}UCL"}}
+{"id":"TQ02","lop":"tinh-nang","cauHoi":"Biểu đồ kiểm soát SPC tự làm mới sau bao lâu?","nguon":["howto-spc-control.md"],"dapAnTraLoi":{"regex":"(?<![\\d.,])1 phút"}}
+{"id":"TQ03","lop":"tinh-nang","cauHoi":"Cpk cập nhật lại sau bao nhiêu mẫu mới?","nguon":["howto-spc-control.md"],"dapAnTraLoi":{"regex":"(?<![\\d.,])100 mẫu"}}
+{"id":"TQ04","lop":"tinh-nang","cauHoi":"Một lô sản xuất có thể ở các trạng thái gì?","nguon":["howto-lot-management.md"],"dapAnTraLoi":{"regex":"planned[\\s\\S]{0,120}running|paused[\\s\\S]{0,120}completed|tạm dừng[\\s\\S]{0,120}(?:hoàn thành|kết thúc)"}}
+{"id":"TQ05","lop":"tinh-nang","cauHoi":"FPY của lô tính bằng cách nào?","nguon":["howto-lot-management.md"],"dapAnTraLoi":{"regex":"okQty\\s*/\\s*actualQty|Pass lần đầu\\s*/\\s*Tổng"}}
+{"id":"TQ06","lop":"tinh-nang","cauHoi":"Một line chạy được mấy lô cùng lúc?","nguon":["howto-lot-management.md"],"dapAnTraLoi":{"regex":"(?:chỉ|duy nhất)[^\\n.]{0,20}(?:1|một) lô|(?:1|một) lô (?:tại|ở) một thời điểm"}}
+{"id":"TQ07","lop":"tinh-nang","cauHoi":"Hủy lô sản xuất cần quyền gì?","nguon":["howto-lot-management.md"],"dapAnTraLoi":{"regex":"production_manager"}}
+{"id":"TQ08","lop":"tinh-nang","cauHoi":"Màn bàn giao ca tự liệt kê những gì?","nguon":["howto-shift-change.md"],"dapAnTraLoi":{"regex":"máy offline|alert chưa xử lý|cảnh báo chưa xử lý"}}
+{"id":"TQ09","lop":"tinh-nang","cauHoi":"Trưởng ca đến trước giờ giao ca bao nhiêu phút?","nguon":["howto-shift-change.md"],"dapAnTraLoi":{"regex":"(?<![\\d.,])10 phút"}}
+{"id":"TQ10","lop":"tinh-nang","cauHoi":"Server sai timezone làm cột giờ lệch bao nhiêu tiếng?","nguon":["howto-shift-change.md"],"dapAnTraLoi":{"regex":"(?<![\\d.,])7\\s*(?:h|giờ|tiếng)"}}
+{"id":"TQ11","lop":"tinh-nang","cauHoi":"Báo cáo xu hướng theo dõi những chỉ số gì?","nguon":["aoi-reports.md"],"dapAnTraLoi":{"regex":"false alarm|báo động giả"}}
+{"id":"TQ12","lop":"tinh-nang","cauHoi":"Báo cáo lot hiển thị những nội dung gì?","nguon":["aoi-reports.md"],"dapAnTraLoi":{"regex":"Final Yield|Traceability|truy xuất"}}
+{"id":"TL01","lop":"song","cauHoi":"lỗi nào nhiều nhất?","nguon":[]}
+{"id":"TL02","lop":"song","cauHoi":"OEE bao nhiêu?","nguon":[]}
+{"id":"TL03","lop":"song","cauHoi":"tỷ lệ NG thế nào?","nguon":[]}
+{"id":"TL04","lop":"song","cauHoi":"yield ra sao?","nguon":[]}
+{"id":"TL05","lop":"song","cauHoi":"sản lượng được bao nhiêu rồi?","nguon":[]}
+{"id":"TL06","lop":"song","cauHoi":"có máy nào offline không?","nguon":[]}
+{"id":"TL07","lop":"song","cauHoi":"NG nhiều không?","nguon":[]}
+{"id":"TL08","lop":"song","cauHoi":"lô nào bị NG cao nhất?","nguon":[]}
+{"id":"TL09","lop":"song","cauHoi":"điểm đo nào hay lỗi nhất?","nguon":[]}
+{"id":"TL10","lop":"song","cauHoi":"so sánh NG giữa các line","nguon":[]}
+{"id":"TL11","lop":"song","cauHoi":"Cpk của sản phẩm ra sao?","nguon":[]}
+{"id":"TL12","lop":"song","cauHoi":"máy AOI có báo lỗi gì không?","nguon":[]}
