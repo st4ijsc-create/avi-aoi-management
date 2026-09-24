@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { nhuongChoTaiLieu, phanHoiLaiSauTuChoi } from "./ai/hoiLaiSauTaiLieu";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import {
@@ -3049,8 +3050,17 @@ export async function answerQuestion(
   // Short-circuit: if intent classifier asked for clarification, return it
   // immediately without invoking the LLM. This avoids hallucinated answers
   // for questions like "lô của tôi sao rồi?" that lack a concrete identifier.
+  // ★ PDCA 2026-09-24 — câu hỏi lại NHƯỜNG tài liệu khi truy hồi đủ tin cậy (xem `ai/hoiLaiSauTaiLieu.ts`): 18/79 câu có
+  //   đáp án trong tài liệu từng bị chặn ở đây. Dưới ngưỡng ⇒ hỏi lại như cũ.
+  let retrieveSanNS: KbRetrieveResult | null = null;
+  let retrieveHoiLaiNS: KbRetrieveResult | null = null;
   if (!toolResult && clarifyMessage) {
-    const retrieve = await retrieveKnowledge(question, topK, kbContext);
+    const r0 = await retrieveKnowledge(question, topK, kbContext);
+    if (nhuongChoTaiLieu(r0.confidence)) retrieveSanNS = r0;
+    else retrieveHoiLaiNS = r0;
+  }
+  if (clarifyMessage && retrieveHoiLaiNS) {
+    const retrieve = retrieveHoiLaiNS;
     const followUpSuggestions = buildFollowUpSuggestions(retrieve.intent, retrieve.language);
     return {
       ...retrieve,
@@ -3072,7 +3082,7 @@ export async function answerQuestion(
     }
   }
 
-  const retrieve = await retrieveKnowledge(question, topK, kbContext);
+  const retrieve = retrieveSanNS ?? (await retrieveKnowledge(question, topK, kbContext));
 
   let provider: "ollama" | "extractive" | "tool" = "extractive";
   let answer = buildExtractiveAnswer(question, retrieve);
@@ -3208,6 +3218,8 @@ export async function answerQuestion(
   // hoặc khi tool trả kèm `note` — cửa fail-closed chống rò RBAC.
   const dataCitation = buildDataCitation(toolExec.decision.tool, toolResult, toolExec.decision.args);
   answer = themChanNguonSoLieu(answer, dataCitation, retrieve.language);
+  // ★ PDCA 2026-09-24 — đã nhường tài liệu mà model TỪ CHỐI ⇒ vẫn đưa câu hỏi lại (mã máy/lô) như trước.
+  if (retrieveSanNS) answer += phanHoiLaiSauTuChoi(answer, clarifyMessage);
   // Phép đo, KHÔNG phải cổng: đánh dấu số không tìm được nguồn để báo cáo/quan sát.
   const numberCheck = toolResult ? reconcileAnswerNumbers(answer, toolResult) : null;
 
@@ -3446,8 +3458,16 @@ export async function* streamAnswer(
   }
 
   // Short-circuit clarification (mirrors answerQuestion).
+  // ★ PDCA 2026-09-24 — nhường tài liệu khi truy hồi đủ tin cậy (`ai/hoiLaiSauTaiLieu.ts`); truy hồi đã làm được TÁI DÙNG.
+  let retrieveSan: KbRetrieveResult | null = null;
+  let retrieveHoiLai: KbRetrieveResult | null = null;
   if (!toolResult && clarifyMessage) {
-    const retrieve = await retrieveKnowledge(cauHoiTruyVan, topK, kbContext);
+    const r0 = await retrieveKnowledge(cauHoiTruyVan, topK, kbContext);
+    if (nhuongChoTaiLieu(r0.confidence)) retrieveSan = r0;
+    else retrieveHoiLai = r0;
+  }
+  if (clarifyMessage && retrieveHoiLai) {
+    const retrieve = retrieveHoiLai;
     yield {
       type: "meta",
       intent: retrieve.intent,
@@ -3506,7 +3526,7 @@ export async function* streamAnswer(
     }
   }
 
-  const retrieve = await retrieveKnowledge(cauHoiTruyVan, topK, kbContext);
+  const retrieve = retrieveSan ?? (await retrieveKnowledge(cauHoiTruyVan, topK, kbContext));
 
   yield {
     type: "meta",
@@ -3711,6 +3731,14 @@ export async function* streamAnswer(
     const delta = withNguon.slice(accumulated.length);
     accumulated = withNguon;
     yield { type: "token", token: delta };
+  }
+  // ★ PDCA 2026-09-24 — đã nhường tài liệu mà model TỪ CHỐI ⇒ vẫn đưa câu hỏi lại (mã máy/lô) như trước.
+  if (retrieveSan) {
+    const them = phanHoiLaiSauTuChoi(accumulated, clarifyMessage);
+    if (them) {
+      accumulated += them;
+      yield { type: "token", token: them };
+    }
   }
   const numberCheck = toolResult ? reconcileAnswerNumbers(accumulated, toolResult) : null;
 

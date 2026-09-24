@@ -1,0 +1,23 @@
+{
+  "_doc": "Chấm TAY các câu TRONG corpus mà regex đáp án (khớp định dạng bảng nguồn) chấm 'sai' dù nội dung đúng, hoặc ngược lại. Mỗi dòng: id · phán quyết · vì sao. Phán quyết: dung | sai | tu-choi-trung-thuc | khong-ro.",
+  "nen-0924": {
+    "T05": ["dung", "nói 'hàng tuần' — regex đòi dạng bảng 'Camera calibration | Hàng tuần'"],
+    "T21": ["dung", "limit 25 %"], "T31": ["dung", "0,5–1,0 %"], "T34": ["dung", "±0,05 mm"],
+    "T35": ["dung", "30°–75°"], "T38": ["dung", "vệ sinh lens, kiểm tra LED ring"], "T40": ["dung", "Missing Component"],
+    "T53": ["dung", "tối thiểu 2 fiducial"], "T68": ["dung", "khay đỏ Chờ phân loại"], "T69": ["dung", "có thể qua nửa đêm"],
+    "T71": ["dung", "admin hoặc production_manager — khớp howto-shift-change.md:24"], "T75": ["dung", "9 bước"],
+    "T44": ["khong-ro", "đúng phần stencil/paste; bản lưu 400 ký tự cắt trước phần pre-heat"],
+    "T17": ["sai", "không nêu 2 lần rework"], "T36": ["sai", "nói không tự phát hiện; tài liệu: >10 phút"],
+    "T52": ["sai", "boardIndex; tài liệu: [ProductCode]-[SerialNumber]-[DateCode]"], "T54": ["sai", "nói < 30 %; tài liệu < 5 %"],
+    "T57": ["sai", "công thức okQty/actualQty từ thẻ khác; tài liệu: Pass lần đầu / Tổng bảng"],
+    "T76": ["sai", "không nêu audit-only"], "T78": ["sai", "BỊA: 'session trình duyệt'; tài liệu: product_onboarding_drafts"],
+    "T79": ["sai", "không nêu unmatched_defect_codes"]
+  },
+  "sau-hoilai": {
+    "T22": ["dung", "đúng nội dung; model gõ 'portabale' nên regex 'portable' trượt"],
+    "T39": ["dung", "'lượng paste quá nhiều' — regex đòi 'paste hàn'"],
+    "T32": ["dung", "hàng tháng, kỹ sư AOI"], "T45": ["dung", "E021 = board jam"], "T49": ["dung", "hỏng database"],
+    "T50": ["dung", "kiểm/tái xác minh bảng cuối"], "T51": ["dung", "IT Department hoặc nhà cung cấp"], "T72": ["dung", "1 lô tại một thời điểm"],
+    "T46": ["tu-choi-trung-thuc", "nói tài liệu không có E050 — truy hồi trượt, không bịa"]
+  }
+}
