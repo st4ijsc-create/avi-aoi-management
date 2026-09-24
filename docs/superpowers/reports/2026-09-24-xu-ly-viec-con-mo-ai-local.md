@@ -120,6 +120,8 @@ Nhánh `feat/ai-local-L7-hang-rao`, chưa push. Số liệu thô nằm ở `tmp/
 
 ## 8. Còn mở — vòng sau
 
+> **Cập nhật cùng ngày (phiên lập trình, `d22b376af`, vá `965dcc5f4`):** đo ĐẦU–CUỐI trên 111 câu cho thấy nguyên nhân số 1 không phải truy hồi mà là câu hỏi lại cứng "máy nào/lô nào" nuốt 18/79 câu có tài liệu. Vá (hỏi lại chỉ khi tin cậy < 0,30): trong corpus 35 → 50/79, từ chối đúng 21 → 30/32, 0 bịa ở 6 câu đối chứng số liệu sống, ablation quay lại. Hai mục dưới vẫn là số đo phía TRUY HỒI; đọc cùng báo cáo đó.
+
 - **5 câu ST4I thua thẻ phần mềm cùng chủ đề:** cần tín hiệu theo câu hỏi (máy hay màn hình) hoặc đa dạng hoá nguồn trong top‑5. Trọng số toàn cục đã bị bác bỏ (§3).
 - **Câu lạc đề cùng miền lọt 13/32 ở 0,44:** không cổng điểm nào tách được. Cần tín hiệu khác điểm số, ví dụ tự kiểm câu trả lời có dựa vào đoạn trích hay không.
 - **`testTimeout` 30 s:** chưa có ablation dương tính; nếu nhiều lượt gộp sau này đều xanh khi bỏ dòng này thì có thể gỡ.
