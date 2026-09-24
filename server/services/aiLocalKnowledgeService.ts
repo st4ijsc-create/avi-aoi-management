@@ -1133,15 +1133,16 @@ async function laCauHoiTaiLieuMoHo(question: string, userId?: number): Promise<b
 }
 
 /**
- * ★ PDCA vòng 7 (2026-09-24) — MODEL SINH CÂU TRẢ LỜI KB. Planner xếp câu ngắn vào Tier 1 ⇒ `GGUF_FAST_MODEL` (Qwen3-4B,
- * chạy in-process). A/B đầu–cuối 3×/nhánh: model MẶC ĐỊNH (llama-server) ngang hoặc hơn về đúng và NHANH hơn (trung vị
- * ~1,8 s so với ~3,2 s) — xem báo cáo PDCA §12. Chỉ đổi khi llama-server ĐANG GIỮ model mặc định (không bao giờ nạp bản
- * 35B thứ hai in-process); id TƯỜNG MINH (undefined có thể rơi về embedder đang nạp — doc 48 R1).
- * `AI_KB_MODEL_TRA_LOI=planner` ⇒ như cũ. Lượt TỰ KIỂM của cổng lạc đề vẫn dùng model của planner (đo được: model mặc
- * định tự kiểm chặn nhầm câu quy tắc có tài liệu — Q11 Q22 GQ03 T35).
+ * ★ PDCA vòng 7 (2026-09-24) — MODEL SINH CÂU TRẢ LỜI KB. Mặc định: model của planner (câu ngắn ⇒ Tier 1 ⇒
+ * `GGUF_FAST_MODEL`, Qwen3-4B in-process). `AI_KB_MODEL_TRA_LOI=mac-dinh` ⇒ model MẶC ĐỊNH, CHỈ khi llama-server đang giữ
+ * nó (không bao giờ nạp bản 35B thứ hai in-process); id TƯỜNG MINH (undefined có thể rơi về embedder — doc 48 R1).
+ * Vì sao KHÔNG bật mặc định (báo cáo PDCA §12): A/B lặp 3× — đúng hơn +1–2/79, chậm ~0,3 s khi rảnh; NHƯNG llama-server
+ * chạy MỘT slot (`total_slots 1`, chủ dự án chọn 1×64k cho màn lập trình) ⇒ khi màn lập trình đang sinh, câu trả lời
+ * vận hành XẾP HÀNG sau cả lượt đó: đo 20–24 s (lượt dài 8.000 token) so với 2–3 s ở model planner. Bật là quyết định
+ * của chủ dự án. Lượt TỰ KIỂM cổng lạc đề luôn dùng model planner (model mặc định tự kiểm chặn nhầm Q11 Q22 GQ03 T35).
  */
 async function modelTraLoiKb(planModelId: string | undefined): Promise<string | undefined> {
-  if (process.env.AI_KB_MODEL_TRA_LOI === "planner") return planModelId;
+  if (process.env.AI_KB_MODEL_TRA_LOI !== "mac-dinh") return planModelId;
   const macDinh = resolveTaskModel("default");
   if (!macDinh) return planModelId;
   const { laModelServerDangGiu } = await import("./aiLlamaServerClient");

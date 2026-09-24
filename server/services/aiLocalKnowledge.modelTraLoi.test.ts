@@ -1,5 +1,6 @@
 /**
- * ★ PDCA vòng 7 — MODEL SINH CÂU TRẢ LỜI KB: model MẶC ĐỊNH khi llama-server đang giữ nó; ngược lại model của planner.
+ * ★ PDCA vòng 7 — MODEL SINH CÂU TRẢ LỜI KB: mặc định model của planner; `AI_KB_MODEL_TRA_LOI=mac-dinh` ⇒ model MẶC ĐỊNH
+ * khi llama-server đang giữ nó (một slot ⇒ xếp hàng sau lượt lập trình — vì thế không bật mặc định).
  * Khuôn mock của `aiLocalKnowledge.congLacDe.test.ts` (pipeline THẬT). Planner thật: câu ngắn ⇒ Tier 1 ⇒ GGUF_FAST_MODEL.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -112,21 +113,28 @@ afterEach(() => {
 });
 
 describe("model sinh câu trả lời KB", () => {
-  it("★★★ server giữ model mặc định ⇒ answerQuestion sinh bằng model MẶC ĐỊNH, không phải model nhanh của planner", async () => {
+  it("★★★ MẶC ĐỊNH (không đặt công tắc) ⇒ model của planner — không xếp hàng sau lượt lập trình trên slot duy nhất", async () => {
+    await answerQuestion("Lỗi NG theo defectType nằm ở menu nào? (m0)", 3);
+    expect(modelTraLoi()).toBe("nhanh");
+  });
+  it("★★★ mac-dinh + server giữ model mặc định ⇒ answerQuestion sinh bằng model MẶC ĐỊNH", async () => {
+    process.env.AI_KB_MODEL_TRA_LOI = "mac-dinh";
     const r = await answerQuestion("Lỗi NG theo defectType nằm ở menu nào? (m1)", 3);
     expect(r.answer).toContain(TRA_LOI);
     expect(modelTraLoi()).toBe("mac-dinh");
   });
   it("★★★ streamAnswer cũng vậy", async () => {
+    process.env.AI_KB_MODEL_TRA_LOI = "mac-dinh";
     await gom(streamAnswer("Lỗi NG theo defectType nằm ở menu nào? (m2)", 3));
     expect(generateTextStream.mock.calls[0]?.[1]).toBe("mac-dinh");
   });
-  it("★★★ server KHÔNG giữ model mặc định ⇒ model của planner (không bao giờ nạp bản mặc định in-process)", async () => {
+  it("★★★ mac-dinh nhưng server KHÔNG giữ model mặc định ⇒ model của planner (không bao giờ nạp bản mặc định in-process)", async () => {
+    process.env.AI_KB_MODEL_TRA_LOI = "mac-dinh";
     process.env.LLAMA_SERVER_ENABLED = "false";
     await answerQuestion("Lỗi NG theo defectType nằm ở menu nào? (m3)", 3);
     expect(modelTraLoi()).toBe("nhanh");
   });
-  it("★ AI_KB_MODEL_TRA_LOI=planner ⇒ như cũ", async () => {
+  it("★ AI_KB_MODEL_TRA_LOI=planner ⇒ model của planner", async () => {
     process.env.AI_KB_MODEL_TRA_LOI = "planner";
     await gom(streamAnswer("Lỗi NG theo defectType nằm ở menu nào? (m4)", 3));
     expect(generateTextStream.mock.calls[0]?.[1]).toBe("nhanh");
