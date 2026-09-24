@@ -4,7 +4,10 @@
  * được CÁCH CHẤM độc lập với đường ống (đường ống ở `kbStudioEval.ts`).
  *
  * Bộ vàng: `knowledge/studio-golden/<tên>.jsonl`, mỗi dòng một câu:
- *   { "id", "cauHoi", "nguon": ["tệp.md", …], "dapAn"?: { "regex", "flags"? } }
+ *   { "id", "cauHoi", "nguon": ["tệp.md", …], "dapAn"?: { "regex", "flags"? }, "dapAnTraLoi"?: { "regex", "flags"? } }
+ *   · `dapAnTraLoi` — mẫu theo cách NGƯỜI trả lời, dùng cho bộ chấm ĐẦU–CUỐI (`scripts/ai-eval/kb-dau-cuoi.mjs`) trên
+ *     câu trả lời của trợ lý. Bộ chấm TRUY HỒI ở đây không dùng nó, nhưng phải ĐỌC được dòng có nó (e6d06cb1a thêm trường
+ *     này mà schema `.strict()` từ chối ⇒ EvalTab đọc ra 0 câu — lưới `kbStudioEvalCham` bắt được, vá 2026-09-24).
  *   · `nguon` KHÁC rỗng = câu TRONG corpus: trúng khi một chunk của tệp kỳ vọng nằm trong top‑K.
  *   · `nguon` RỖNG     = câu NGOÀI corpus: đúng khi KHÔNG chunk nào qua ngưỡng trích dẫn — đo
  *     chính cái ngưỡng, thứ quyết định nhiễu có lọt vào prompt hay không.
@@ -21,18 +24,20 @@
  */
 import { z } from "zod";
 
+const MauRegex = z
+  .object({
+    regex: z.string().min(1).max(500),
+    flags: z.string().regex(/^[imsu]*$/).optional(),
+  })
+  .strict();
+
 export const CauVangSchema = z
   .object({
     id: z.string().trim().min(1).max(40),
     cauHoi: z.string().trim().min(3).max(1000),
     nguon: z.array(z.string().trim().min(1).max(500)).max(20),
-    dapAn: z
-      .object({
-        regex: z.string().min(1).max(500),
-        flags: z.string().regex(/^[imsu]*$/).optional(),
-      })
-      .strict()
-      .optional(),
+    dapAn: MauRegex.optional(),
+    dapAnTraLoi: MauRegex.optional(),
   })
   .strict();
 
@@ -74,9 +79,17 @@ export function phanTichBoVang(noiDung: string): BoVangDaDoc {
       loi.push({ dong: i + 1, lyDo: `id trùng "${c.id}"` });
       continue;
     }
-    if (c.nguon.length === 0 && c.dapAn) {
-      loi.push({ dong: i + 1, lyDo: "câu ngoài corpus (nguon rỗng) không được có dapAn" });
+    if (c.nguon.length === 0 && (c.dapAn || c.dapAnTraLoi)) {
+      loi.push({ dong: i + 1, lyDo: "câu ngoài corpus (nguon rỗng) không được có dapAn/dapAnTraLoi" });
       continue;
+    }
+    if (c.dapAnTraLoi) {
+      try {
+        new RegExp(c.dapAnTraLoi.regex, c.dapAnTraLoi.flags ?? "i");
+      } catch (e) {
+        loi.push({ dong: i + 1, lyDo: `dapAnTraLoi: regex không biên dịch được: ${(e as Error).message}` });
+        continue;
+      }
     }
     if (c.dapAn) {
       try {

@@ -45,6 +45,20 @@ describe("phanTichBoVang", () => {
     expect(r.loi[2].lyDo).toMatch(/trùng/);
     expect(r.loi[3].lyDo).toMatch(/regex/);
   });
+
+  it("★ `dapAnTraLoi` (bộ chấm đầu–cuối) được ĐỌC ở câu trong corpus; regex hỏng / đặt ở câu ngoài corpus ⇒ lỗi dòng", () => {
+    const r = phanTichBoVang(
+      [
+        JSON.stringify({ ...cauT, dapAnTraLoi: { regex: "2\\s*%" } }),
+        JSON.stringify({ ...cauT, id: "B", dapAnTraLoi: { regex: "(" } }),
+        JSON.stringify({ id: "C", cauHoi: "hỏi gì đó", nguon: [], dapAnTraLoi: { regex: "x" } }),
+      ].join("\n"),
+    );
+    expect(r.cau.map((c) => c.id)).toEqual(["T1"]);
+    expect(r.loi.map((l) => l.dong)).toEqual([2, 3]);
+    expect(r.loi[0].lyDo).toMatch(/dapAnTraLoi: regex/);
+    expect(r.loi[1].lyDo).toMatch(/ngoài corpus/);
+  });
 });
 
 describe("khopNguon", () => {
