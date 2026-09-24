@@ -299,11 +299,27 @@ Nhánh A: `v6b`, `v7a2`, `v7a3`; B: `v7b`, `v7b2`, `v7b3`; C: `v7c`, `v7c2` (t�
 - Câu sống: C từ chối kèm lý do rõ hơn (S11 "Chưa đủ dữ liệu yield … không thể cung cấp Cpk") nơi A trả dòng tool; 0 bịa số.
 - **Tốc độ:** lượt đầu của A (3,2 s) là nhiễu — hai lượt lặp của A ra 1,45 s. C chậm hơn A ~0,3 s trung vị. Lợi về ĐÚNG
   nhỏ (+1–2/79, nhất quán qua lượt lặp; 35B gần tất định, 4B dao động ±1).
-- **Quyết định:** áp dụng C theo tiêu chí ĐÚNG hơn NHANH — không bộ nào tụt về đúng, giá là ~0,3 s và câu trả lời vận hành
-  nay chia 2 slot của llama-server với màn lập trình. Quay lại: `AI_KB_MODEL_TRA_LOI=planner`.
+- ~~**Quyết định:** áp dụng C … chia 2 slot của llama-server với màn lập trình.~~ **SAI — xem 12.4.**
 - Đột biến 5/5 ĐỎ (luôn model planner · bỏ cổng "server giữ model" · bỏ công tắc · gỡ ở stream · gỡ ở non-stream).
 
+### 12.4 ĐÍNH CHÍNH — llama-server chạy MỘT slot; C đã được gỡ khỏi mặc định (`874134149`)
+Phiên 1f chỉ ra `:8091 /props` báo `total_slots 1` (chủ dự án chọn 1×64k cho màn lập trình, 2026-09-23) — không phải 2 slot
+như 12.2 ghi. Đo nhánh chưa đo: một lượt DÀI 8.000 token trên :8091 (~21–25 s, giả một lượt lập trình) + câu hỏi vận hành
+gửi sau 2 s (`tranh-chap-v7.sh`, `luot-dai.json` trong thư mục tệp thô):
+
+| Câu (tập giữ lại vòng 6) | C — model mặc định | A — model planner (4B) |
+|---|---|---|
+| TQ04 · TQ06 · TQ09 | 20,3 s · 23,6 s · 24,2 s | 2,9 s · 3,0 s · 2,1 s |
+| không tranh chấp (TQ03 · TQ05) | 2,0 s · 3,2 s | — |
+
+C xếp hàng sau TRỌN lượt kia; lượt lập trình thật dài 30–120 s ⇒ trợ lý vận hành đứng chờ ngần ấy. Lợi +1–2/79 không bù được.
+(Hai mẫu A đầu tiên 36 s / 25 s là lượt ĐẦU sau restart — nạp nguội 4B; ba mẫu sau khi ấm: 2–3 s. Bộ đếm `:8091` không
+tăng khi A trả lời ⇒ A không dùng slot.) Chú thích mã ở `6ac570ba1` ghi "NHANH hơn 1,8 vs 3,2 s" cũng SAI (lượt lặp A: 1,45 s)
+— đã sửa. **Nay: mặc định = model planner; `AI_KB_MODEL_TRA_LOI=mac-dinh` để bật.** Bật là quyết định của chủ dự án, đi kèm
+một trong hai: `-np 2` (mỗi slot 32k — màn lập trình đo được tụt khi ctx hẹp, B3) hoặc một llama-server thứ hai cho vận hành
+(VRAM). Kiểm lại sau restart: câu trả lời không làm tăng `tokens_predicted_total` của :8091.
+
 ### 12.3 Còn mở
-1. Tranh chấp slot llama-server giữa trợ lý vận hành và màn lập trình — chưa đo dưới tải đồng thời.
+1. Quyết định của chủ dự án về 12.4 (giữ 4B · hay bật 35B kèm `-np 2` / server thứ hai).
 2. Bộ chấm từ chối chỉ nhận câu từ chối chuẩn — câu "tài liệu không nêu…" của 35B bị đếm là trả lời (N21/N31).
 3. TQ02, C01/C03, lệch thuật ngữ Việt ↔ Anh, kho Studio — như 10.6/11.5.

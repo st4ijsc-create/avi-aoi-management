@@ -1,0 +1,35 @@
+{
+  "corpus": "scripts/ai-eval/st4i-giu-lai-lac-de.jsonl",
+  "label": "v7c-tc1",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "HT02",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 23193,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/operational/mes-control-tower.md",
+        "knowledge/operational/equipment-integration.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/features/settings/shift-config.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nCấu hình tích hợp tự động với MES được đặt tại **Settings → Integration → MES** [1]. Hệ thống sẽ tự động gửi kết quả qua API sau mỗi bảng để MES nhận dữ liệu real-time [1].\n\n(2) Các bước thực hiện\n1. **Mở mục cài đặt tích hợp**: Điều hướng đến menu **Settings** (Cài đặt), chọn mục **Integration** (Tích hợp), sau đó chọn tab/con-menu **MES**. Đây là vị trí duy nhất được tài liệu chỉ định để cấu hình kết nối này [1].\n2. **Kiểm tra/Thiết lập API**: Tại đây, bạn có thể cấu hình endpoint hoặc thông tin kết nối để hệ thống tự động gửi kết quả kiểm tra qua API sau khi hoàn thành mỗi bảng PCB [1].\n3. **Xác nhận kết quả**: Sau khi lưu, hệ thống sẽ bắt đầu gửi dữ liệu real-time đến MES [1]. Bạn có thể kiểm tra tính năng này bằng cách quan sát luồng dữ liệu trong màn hình **MES Control",
+      "loi": null
+    }
+  ]
+}

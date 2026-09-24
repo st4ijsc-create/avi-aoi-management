@@ -1,0 +1,35 @@
+{
+  "corpus": "scripts/ai-eval/st4i-giu-lai-lac-de.jsonl",
+  "label": "v7a-tc3",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "HT10",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2804,
+      "nguon": [
+        "knowledge/domain/howto-license-bypass-dev.md",
+        "knowledge/domain/howto-license-bypass-dev.md",
+        "knowledge/features/admin/license-mgmt.md",
+        "knowledge/domain/howto-backup-restore.md",
+        "knowledge/domain/howto-backup-restore.md"
+      ],
+      "traLoi": "(1) Không được đưa tệp `.env` và `license.lic` lên Git khi sao lưu cấu hình, do chứa thông tin nhạy cảm như biến môi trường và khóa license gắn với máy chủ cụ thể.  \n(2) Trong quá trình sao lưu (backup), chỉ nên copy các file cấu hình quan trọng như `.env`, `license.lic` qua kênh bảo mật, không đưa lên Git [4]. Cụ thể: khi thực hiện backup, cần sao chép tệp `.env` và `license.lic` từ máy chủ gốc sang thiết bị lưu trữ an toàn (ví dụ: USB hoặc NAS), nhưng **không** dùng lệnh như `git add .env license.lic`. Việc commit file này vào Git sẽ vi phạm quy tắc bảo mật vì `license.lic` chứa khóa được gắn với MAC address của máy, và `.env` có thể tiết lộ biến môi trường nhạy cảm [1]. Nếu cần phục hồi cấu hình sau sao lưu, chỉ nên dùng bản sao lưu đã kiểm\n\nMàn hình liên quan: `/admin/license`\nBiến cấu hình: `NODE_ENV=development`, `LICENSE_BYPASS=true`, `LICENSE_BYPASS_FEATURES=all`\n\nVí dụ:\n```ini\nNODE_ENV=development\nLICENSE_BYPASS=true            # bỏ qua kiểm tra license\nLICENSE_BYPASS_FEATURES=all    # bật toàn bộ feature flag\n```",
+      "loi": null
+    }
+  ]
+}

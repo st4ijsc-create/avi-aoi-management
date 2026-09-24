@@ -1,0 +1,35 @@
+{
+  "corpus": "scripts/ai-eval/cau-tinh-nang-vs-song-giu-lai.jsonl",
+  "label": "v7a-tc-TQ06",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "TQ06",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2991,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "howto-lot-management.md"
+      ],
+      "traLoi": "(1) Một line chỉ chạy 1 lô tại một thời điểm.  \n(2) Bước 1: Tại giao diện `Menu › Sản xuất › AOI Inspection`, chọn line cần vận hành → nếu đang ở trạng thái `idle`, hệ thống hiển thị danh sách các lô `planned`. Bước 2: Nhấn **\"Bắt đầu\"** để chuyển sang trạng thái `running` và bắt đầu scan sản phẩm, mỗi sản phẩm sẽ được gắn `lotId` của lô hiện tại. Khi muốn chạy lô mới, phải tạm dừng hoặc kết thúc lô đang thực thi trước đó — không thể đồng thời xử lý nhiều lô [1].  \n(3) Lỗi thường gặp: cố gắng bắt đầu một lô mới khi line vẫn ở trạng thái `running` sẽ gây lỗi hệ thống; nếu không kiểm tra trạng thái, có thể dẫn đến sai sót dữ liệu sản xuất. Ngoài ra, việc sửa số lượng cho lô đã hoàn thành cần phải được quản lý bởi người có quyền `production\n\nAPI liên quan: `/api/lots/:orderCode`\n\nVí dụ:\n```\nplanned → running → (paused ⇄ running) → completed\n                                       ↘ cancelled\n```",
+      "loi": null
+    }
+  ]
+}

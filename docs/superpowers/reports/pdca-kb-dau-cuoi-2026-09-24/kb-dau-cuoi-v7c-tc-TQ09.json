@@ -1,0 +1,35 @@
+{
+  "corpus": "scripts/ai-eval/cau-tinh-nang-vs-song-giu-lai.jsonl",
+  "label": "v7c-tc-TQ09",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "TQ09",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 24206,
+      "nguon": [
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/operational/war-room.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   Trưởng ca đến trước giờ giao **10 phút** [1].\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có:\n*   \"Trưởng ca đến trước giờ giao 10 phút\" [1].\n\n(4) Nguồn gốc (file/đường dẫn):\n*   `knowledge/domain/howto-shift-change.md` [1].",
+      "loi": null
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "corpus": "scripts/ai-eval/cau-tinh-nang-vs-song-giu-lai.jsonl",
+  "label": "v7c-khong-tc",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "TQ05",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3191,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/aoi-reports.md",
+        "howto-lot-management.md",
+        "knowledge/features/production/production-dashboard.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nChỉ số FPY (First Pass Yield) của một lô sản xuất được tính bằng tỷ lệ giữa số lượng sản phẩm đạt chuẩn ở lần kiểm tra đầu tiên so với tổng số lượng sản phẩm thực tế đã qua kiểm tra, nhân với 100%.\n\n(2) Các bước thực hiện và tính toán\n1. **Xác định dữ liệu đầu vào**: Truy cập trang chi tiết của lô sản xuất (Production Lot) hoặc sử dụng API `GET /api/lots/:orderCode` để lấy tiến độ, số lượng OK/NG và các chỉ số KPI liên quan [4].\n2. **Áp dụng công thức FPY**:\n   - Theo quản lý lô sản xuất: `FPY = okQty / actualQty × 100 %` [1].\n   - Theo báo cáo AOI: `FPY = (Pass lần đầu / Tổng bảng kiểm tra) × 100%` [3].\n   - Lưu ý: Công thức này chỉ tính kết quả của lần kiểm\n\n_Nguồn số liệu: `product_inspections` · interval=day · 14d · 2 hàng_",
+      "loi": null
+    }
+  ]
+}

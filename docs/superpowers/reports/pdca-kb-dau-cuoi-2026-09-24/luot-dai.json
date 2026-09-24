@@ -1,0 +1,1 @@
+{"messages":[{"role":"user","content":"Write a complete C# class for an inventory manager with CRUD, validation, and explain every method in detail."}],"max_tokens":8000,"temperature":0.6}
