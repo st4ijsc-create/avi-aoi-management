@@ -1,8 +1,13 @@
 //   npx tsx scripts/ai-eval/rerank-tach.ts [corpus]   (đổi model: GGUF_RERANKER_MODEL=…; cửa sổ: RAG_RERANKER_DOC_CHARS=…)
 // Thí nghiệm mục 3/4 (training): điểm reranker bge THÔ có tách "đoạn đúng" khỏi "câu ngoài corpus cùng miền" không,
 // khi cosine (embedding) KHÔNG tách được (đúng 0,340–0,429 < ngưỡng 0,44 < nhiễu 0,46–0,57).
+// ⚠ 2026-09-24: `rerank()` trả điểm TRỘN `BLEND·rr + (1−BLEND)·cosine` (`.env` RAG_RERANKER_BLEND=0.20 ⇒ 80 % là cosine).
+// Muốn điểm reranker THÔ phải ép BLEND=1 TRƯỚC khi nạp aiReranker (hằng đọc lúc nạp module). Mặc định nay = 1;
+// truyền RAG_RERANKER_BLEND=… trên dòng lệnh để đo điểm trộn như sản xuất.
+process.env.RAG_RERANKER_BLEND = process.argv.includes("--tron") ? (process.env.RAG_RERANKER_BLEND ?? "0.20") : "1";
 import "dotenv/config";
 import fs from "node:fs";
+console.error(`[rerank-tach] RAG_RERANKER_BLEND=${process.env.RAG_RERANKER_BLEND} (${process.env.RAG_RERANKER_BLEND === "1" ? "điểm THÔ" : "điểm TRỘN"})`);
 const corpus = process.argv[2] ?? "st4i-may-aoi";
 const bo = fs.readFileSync(`knowledge/studio-golden/${corpus}.jsonl`, "utf8").trim().split(/\r?\n/).map((l) => JSON.parse(l));
 const { embedQuestion } = await import("../../server/services/aiLocalKnowledgeService");

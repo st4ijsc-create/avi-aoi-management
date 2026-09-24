@@ -2414,7 +2414,13 @@ export function detectProgrammingVendors(question: string): string[] {
  * ⚠⚠ ĐÍNH CHÍNH 2026-09-24 (`6919087c6`): "0/51 nhiễu" chỉ là nhiễu CHÉO miền (dễ). 8 câu ngoài corpus CÙNG MIỀN (N05–N12,
  *     eval #30) ⇒ **3/12 lọt 0,44** (0,460 · 0,533 · 0,572; 0,5 vẫn lọt 2/12). Hằng này KHÔNG chặn được câu lạc đề cùng miền —
  *     không ngưỡng cosine nào làm được; reranker (bge‑v2‑m3, Qwen3‑Reranker‑0.6B) cũng không tách rõ hơn
- *     (`scripts/ai-eval/rerank-tach.ts`). Giữ 0,44 cho tới khi có bộ vàng lớn hơn; đừng đọc số trên như bằng chứng "sạch". */
+ *     (`scripts/ai-eval/rerank-tach.ts`). Giữ 0,44 cho tới khi có bộ vàng lớn hơn; đừng đọc số trên như bằng chứng "sạch".
+ * ★★ 2026-09-24 — BỘ VÀNG LỚN (111 câu: 79 trong · 32 ngoài cùng miền; 69 câu mới viết TRƯỚC khi đo = tập giữ lại):
+ *     eval #40, `scripts/ai-eval/rerank-tach-quet.mjs`. Theo TỔNG LỖI (nguồn đúng bị loại + câu ngoài lọt): cosine tốt
+ *     nhất 23 (@0,359: mất 1 + lọt 22) · **0,44: mất 10 + lọt 13 = 23** · bge thô tốt nhất 21 · Qwen3‑Reranker thô 22 —
+ *     chênh ±2/107 = nhiễu. Không cổng điểm nào tách được; 0,44 ngang mức tốt nhất mà lọt ÍT hơn (13 vs 22) ⇒ GIỮ.
+ *     Reranker THÔ còn làm top‑1 TỆ hơn cosine (49 · 52 vs 58/79) ⇒ không đổi reranker, không nâng BLEND. Câu lạc đề
+ *     cùng miền phải chặn bằng tín hiệu khác điểm (vd tự kiểm câu trả lời) — việc vòng sau. */
 export const MIN_STUDIO_CITATION_SCORE = 0.44;
 
 /**

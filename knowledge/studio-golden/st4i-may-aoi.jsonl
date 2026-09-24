@@ -40,3 +40,72 @@
 {"id":"N10","cauHoi":"Tốc độ băng tải của lò reflow thường đặt bao nhiêu cm/phút?","nguon":[]}
 {"id":"N11","cauHoi":"Lò reflow dùng khí nitơ cần hàm lượng oxy dưới bao nhiêu ppm?","nguon":[]}
 {"id":"N12","cauHoi":"Máy AOI của hãng Koh Young dùng phần mềm lập trình tên gì?","nguon":[]}
+{"id":"T31","cauHoi":"Tỷ lệ NG trong khoảng nào thì máy chỉ cảnh báo vàng và theo dõi tăng cường?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"Warning\\s*\\|\\s*0[.,]5\\s*%\\s*[–-]\\s*1[.,]0\\s*%"}}
+{"id":"T32","cauHoi":"Hiệu chỉnh toàn bộ máy AOI làm bao lâu một lần và do ai thực hiện?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"Full calibration\\s*\\|\\s*Hàng tháng\\s*\\|\\s*Kỹ sư AOI"}}
+{"id":"T33","cauHoi":"Linh kiện chip cỡ 0603 được phép xoay lệch tối đa bao nhiêu độ?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"0603[^\\n]*±\\s*10°"}}
+{"id":"T34","cauHoi":"IC QFP bước chân 0,5 mm cho phép chân lệch tối đa bao nhiêu?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"0[.,]5\\s*mm\\s*\\|\\s*±\\s*0[.,]05\\s*mm"}}
+{"id":"T35","cauHoi":"Góc thấm ướt của mối hàn đạt yêu cầu phải nằm trong khoảng nào?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"Wetting angle\\s*\\|\\s*30°\\s*\\|\\s*75°"}}
+{"id":"T36","cauHoi":"Máy AOI mất kết nối bao lâu thì hệ thống cảnh báo nhà máy?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"Machine offline\\s*>\\s*10 phút"}}
+{"id":"T37","cauHoi":"Bao nhiêu bảng NG liên tiếp cùng một loại lỗi thì phát cảnh báo mức Major?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"Liên tiếp 5 bảng NG"}}
+{"id":"T38","cauHoi":"Kiểm tra ánh sáng thấy lệch quá mức cho phép thì phải làm gì?","nguon":["aoi-thresholds.md"],"dapAn":{"regex":"vệ sinh lens, kiểm tra LED ring"}}
+{"id":"T39","cauHoi":"Lỗi cầu hàn giữa các chân thường do nguyên nhân gì?","nguon":["aoi-defect-types.md"],"dapAn":{"regex":"Lượng paste hàn quá nhiều"}}
+{"id":"T40","cauHoi":"Mã lỗi MIS trên máy AOI là lỗi gì?","nguon":["aoi-defect-types.md"],"dapAn":{"regex":"MIS, MC \\(Missing Component\\)"}}
+{"id":"T41","cauHoi":"Thiếc hàn không đủ được nhận biết khi góc wetting nhỏ hơn bao nhiêu?","nguon":["aoi-defect-types.md"],"dapAn":{"regex":"Góc wetting\\s*<\\s*45°"}}
+{"id":"T42","cauHoi":"Pad bị bong tróc thì có sửa (rework) tại chỗ được không?","nguon":["aoi-defect-types.md"],"dapAn":{"regex":"không thể rework tại chỗ"}}
+{"id":"T43","cauHoi":"Lỗi mức độ Minor thì xử lý thế nào?","nguon":["aoi-defect-types.md"],"dapAn":{"regex":"Minor\\s*\\|\\s*MI\\s*\\|\\s*Ghi nhận, không cần rework ngay"}}
+{"id":"T44","cauHoi":"Cầu hàn hay xảy ra ở IC chân nhỏ 0,4–0,5 mm thì khắc phục bằng cách nào?","nguon":["aoi-defect-types.md"],"dapAn":{"regex":"tăng nhiệt độ pre-heat"}}
+{"id":"T45","cauHoi":"Máy báo mã E021 là bị sự cố gì?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"E021\\s*\\|\\s*Board jam"}}
+{"id":"T46","cauHoi":"Lỗi E050 trên máy AOI thì xử lý thế nào?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"E050\\s*\\|\\s*License error\\s*\\|\\s*Kiểm tra dongle"}}
+{"id":"T47","cauHoi":"Ổ cứng máy AOI sắp đầy thì máy hiện mã lỗi nào?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"E090"}}
+{"id":"T48","cauHoi":"Bảng bị kẹt trong máy thì việc đầu tiên phải làm là gì?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"Nhấn \\*\\*Emergency Stop\\*\\* ngay lập tức"}}
+{"id":"T49","cauHoi":"Vì sao không được ngắt điện máy AOI đột ngột?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"có thể hỏng database"}}
+{"id":"T50","cauHoi":"Sau sự cố mất điện thì xử lý bảng cuối cùng đã qua máy ra sao?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"re-inspect nếu cần"}}
+{"id":"T51","cauHoi":"Máy AOI bị lỗi phần mềm thì liên hệ bộ phận nào?","nguon":["aoi-troubleshooting.md"],"dapAn":{"regex":"Lỗi phần mềm\\s*\\|\\s*IT Department hoặc nhà cung cấp AOI"}}
+{"id":"T52","cauHoi":"Mã định danh bảng (Board ID) thường theo định dạng nào?","nguon":["aoi-workflow.md"],"dapAn":{"regex":"\\[ProductCode\\]-\\[SerialNumber\\]-\\[DateCode\\]"}}
+{"id":"T53","cauHoi":"Tạo chương trình kiểm tra mới phải dạy ít nhất bao nhiêu điểm fiducial?","nguon":["aoi-workflow.md"],"dapAn":{"regex":"ít nhất 2 fiducial"}}
+{"id":"T54","cauHoi":"Khi thẩm định chương trình mới, tỷ lệ báo sai phải dưới bao nhiêu?","nguon":["aoi-workflow.md"],"dapAn":{"regex":"false alarm < 5%"}}
+{"id":"T55","cauHoi":"Sau khi chạy bảng mẫu đầu tiên, khi nào mới được bắt đầu sản xuất?","nguon":["aoi-workflow.md"],"dapAn":{"regex":"Chỉ bắt đầu sản xuất khi first article PASS"}}
+{"id":"T56","cauHoi":"Khi cầm bảng mạch cần đeo thiết bị gì?","nguon":["aoi-workflow.md"],"dapAn":{"regex":"ESD wrist strap"}}
+{"id":"T57","cauHoi":"Tỷ lệ đạt ngay lần đầu (FPY) được tính theo công thức nào?","nguon":["aoi-reports.md"],"dapAn":{"regex":"FPY = \\(Pass lần đầu / Tổng bảng kiểm tra\\)"}}
+{"id":"T58","cauHoi":"Tỷ lệ phế phẩm (scrap) mục tiêu của line là bao nhiêu?","nguon":["aoi-reports.md"],"dapAn":{"regex":"Scrap Rate[^\\n]*<\\s*0[.,]1\\s*%"}}
+{"id":"T59","cauHoi":"Phân tích Pareto lỗi thì nên tập trung điều tra mấy lỗi đầu tiên?","nguon":["aoi-reports.md"],"dapAn":{"regex":"top 3 lỗi"}}
+{"id":"T60","cauHoi":"Khi NG tăng đột biến thì kiểm tra nguyên nhân theo mô hình nào?","nguon":["aoi-reports.md"],"dapAn":{"regex":"5M1E"}}
+{"id":"T61","cauHoi":"Tỷ lệ bảng phải sửa lại (rework) mục tiêu là bao nhiêu?","nguon":["aoi-reports.md"],"dapAn":{"regex":"Rework Rate[^\\n]*<\\s*5\\s*%"}}
+{"id":"T62","cauHoi":"Giới hạn kiểm soát trên và dưới của biểu đồ SPC được tính thế nào?","nguon":["howto-spc-control.md"],"dapAn":{"regex":"mean ± 3·σ"}}
+{"id":"T63","cauHoi":"Tự tính UCL/LCL từ dữ liệu thì mặc định lấy bao nhiêu mẫu gần nhất?","nguon":["howto-spc-control.md"],"dapAn":{"regex":"mặc định N=30"}}
+{"id":"T64","cauHoi":"Chỉ số Cpk được tính lại sau bao nhiêu mẫu mới?","nguon":["howto-spc-control.md"],"dapAn":{"regex":"Cpk được tính lại mỗi 100 mẫu"}}
+{"id":"T65","cauHoi":"Khi vi phạm quy tắc SPC, hệ thống gửi thông báo cho vai trò nào?","nguon":["howto-spc-control.md"],"dapAn":{"regex":"quality_engineer"}}
+{"id":"T66","cauHoi":"Ngưỡng cảnh báo NG mặc định khi quản lý lô là bao nhiêu?","nguon":["howto-ng-handling-sop.md"],"dapAn":{"regex":"≥ 5 % trong 30 phút"}}
+{"id":"T67","cauHoi":"Sản phẩm NG chưa được gán mã lỗi thì có được tính vào báo cáo Pareto không?","nguon":["howto-ng-handling-sop.md"],"dapAn":{"regex":"KHÔNG được tính vào báo cáo Pareto"}}
+{"id":"T68","cauHoi":"Công nhân lấy sản phẩm NG ra khỏi băng tải thì đặt vào đâu?","nguon":["howto-ng-handling-sop.md"],"dapAn":{"regex":"khay đỏ \"Chờ phân loại\""}}
+{"id":"T69","cauHoi":"Ca làm việc có được cấu hình kéo dài qua nửa đêm không?","nguon":["howto-shift-change.md"],"dapAn":{"regex":"Có thể qua nửa đêm"}}
+{"id":"T70","cauHoi":"Trưởng ca quên bấm nhận ca thì bổ sung bằng cách nào?","nguon":["howto-shift-change.md"],"dapAn":{"regex":"Bổ sung bàn giao"}}
+{"id":"T71","cauHoi":"Ai được phép sửa cấu hình ca làm việc?","nguon":["howto-shift-change.md"],"dapAn":{"regex":"được sửa cấu hình ca"}}
+{"id":"T72","cauHoi":"Một line có chạy được hai lô sản xuất cùng lúc không?","nguon":["howto-lot-management.md"],"dapAn":{"regex":"chỉ chạy 1 lô tại một thời điểm"}}
+{"id":"T73","cauHoi":"Tạm dừng một lô sản xuất có bắt buộc ghi lý do không?","nguon":["howto-lot-management.md"],"dapAn":{"regex":"ghi lý do bắt buộc"}}
+{"id":"T74","cauHoi":"Thời gian chu kỳ (cycle time) của một lô tính thế nào?","nguon":["howto-lot-management.md"],"dapAn":{"regex":"endedAt − startedAt\\) / actualQty"}}
+{"id":"T75","cauHoi":"Quy trình đưa board mới vào vận hành gồm bao nhiêu bước?","nguon":["commission-a-new-pcb.md"],"dapAn":{"regex":"Chín bước|nine-step"}}
+{"id":"T76","cauHoi":"Phát hành chương trình kiểm tra có tự chặn máy chạy chương trình cũ không?","nguon":["commission-a-new-pcb.md"],"dapAn":{"regex":"audit-only"}}
+{"id":"T77","cauHoi":"Board có khoảng 200 linh kiện thì nhập điểm đo nhanh nhất bằng cách nào?","nguon":["commission-a-new-pcb.md"],"dapAn":{"regex":"centroid"}}
+{"id":"T78","cauHoi":"Làm dở phần onboarding sản phẩm thì nháp được lưu ở đâu?","nguon":["commission-a-new-pcb.md"],"dapAn":{"regex":"product_onboarding_drafts"}}
+{"id":"T79","cauHoi":"Mã lỗi máy gửi lên không khớp danh mục lỗi thì hệ thống xử lý thế nào?","nguon":["commission-a-new-pcb.md"],"dapAn":{"regex":"unmatched_defect_codes"}}
+{"id":"N13","cauHoi":"Kem hàn lấy từ tủ lạnh phải để ở nhiệt độ phòng bao lâu trước khi dùng?","nguon":[]}
+{"id":"N14","cauHoi":"Kem hàn sau khi mở hộp dùng được trong bao lâu?","nguon":[]}
+{"id":"N15","cauHoi":"Kem hàn phải bảo quản trong tủ lạnh ở nhiệt độ bao nhiêu?","nguon":[]}
+{"id":"N16","cauHoi":"Máy SPI đo thể tích kem hàn với dung sai bao nhiêu phần trăm?","nguon":[]}
+{"id":"N17","cauHoi":"Độ ẩm tương đối trong xưởng SMT phải giữ trong khoảng nào?","nguon":[]}
+{"id":"N18","cauHoi":"Máy in kem hàn phải lau mặt dưới stencil sau bao nhiêu lần in?","nguon":[]}
+{"id":"N19","cauHoi":"Máy gắp đặt linh kiện báo lỗi nozzle hút không lên thì xử lý thế nào?","nguon":[]}
+{"id":"N20","cauHoi":"Tủ khô bảo quản linh kiện phải giữ độ ẩm dưới bao nhiêu phần trăm?","nguon":[]}
+{"id":"N21","cauHoi":"Những sản phẩm nào bắt buộc phải kiểm tra X-ray mối hàn BGA?","nguon":[]}
+{"id":"N22","cauHoi":"Chuẩn IPC-A-610 Class 3 khác Class 2 thế nào về tiêu chí mối hàn?","nguon":[]}
+{"id":"N23","cauHoi":"Nhiệt độ mũi hàn tay khi rework linh kiện hàn không chì là bao nhiêu?","nguon":[]}
+{"id":"N24","cauHoi":"Máy hàn sóng cần đặt chiều cao sóng thiếc bao nhiêu mm?","nguon":[]}
+{"id":"N25","cauHoi":"Bảng mạch sau khi hàn rửa flux bằng dung dịch gì?","nguon":[]}
+{"id":"N26","cauHoi":"Lớp phủ bảo vệ conformal coating trên bảng mạch dày bao nhiêu micromet?","nguon":[]}
+{"id":"N27","cauHoi":"Thử lực kéo (pull test) mối hàn dây được thực hiện như thế nào?","nguon":[]}
+{"id":"N28","cauHoi":"Bộ lọc khí của máy nén khí trong xưởng phải thay bao lâu một lần?","nguon":[]}
+{"id":"N29","cauHoi":"Camera của máy AOI có độ phân giải bao nhiêu micromet trên một điểm ảnh?","nguon":[]}
+{"id":"N30","cauHoi":"Đèn LED ring của máy AOI có tuổi thọ bao nhiêu giờ?","nguon":[]}
+{"id":"N31","cauHoi":"Hệ thống MES gửi lệnh sản xuất xuống máy AOI qua giao thức nào?","nguon":[]}
+{"id":"N32","cauHoi":"Mật khẩu tài khoản operator trên máy AOI phải đổi bao lâu một lần?","nguon":[]}
