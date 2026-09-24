@@ -1,0 +1,110 @@
+{
+  "corpus": "scripts/ai-eval/kb-doi-chung-song.jsonl",
+  "label": "v6b-song",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 6,
+      "tuChoi": 2,
+      "traLoi": 4
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "C01",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1271,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/aoi-workflow.md",
+        "howto-lot-management.md",
+        "knowledge/operational-approved/defect-catalog.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/lots/:orderCode`\n\nVí dụ:\n```\nplanned → running → (paused ⇄ running) → completed\n                                       ↘ cancelled\n```\n\nBạn muốn tra cứu lô sản xuất nào? Vui lòng cung cấp **mã lệnh sản xuất** (ví dụ `L20260505-001` hoặc `PO12345`).\nBạn cũng có thể vào *Menu › Sản xuất › Lệnh sản xuất* để chọn trực tiếp từ danh sách.",
+      "loi": null
+    },
+    {
+      "id": "C02",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 3509,
+      "nguon": [
+        "knowledge/operational/machine-registration.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/factory-command.md"
+      ],
+      "traLoi": "(1) Hiện trạng máy: 0 máy hoạt động, 1699 máy bị mất kết nối (offline), trong đó có 129 lỗi được ghi nhận. Các thiết bị offline bao gồm ESP32-ENV-01 và các máy FUYU-F-T1-L1-Mx [1].  \n\n(2)  \n* Bước 1: Truy cập màn hình `/machine-status` (Thiết bị & Giám sát › Trạng thái máy). Tại đây, hiển thị danh sách toàn bộ thiết bị với cột Status. → Kết quả: tất cả các máy đều ở trạng thái offline hoặc lỗi.  \n* Bước 2: Xác minh dữ liệu từ hệ thống giám sát — thông tin cho thấy tổng số máy là 1699, trong đó không có máy online (0/1699). Các thiết bị như ESP32-ENV-01 và FUYU-F-T1-L1-Mx được ghi nhận lỗi cụ thể. → Kết quả: hệ thống báo\n\n_Nguồn số liệu: `machines` · onlyOffline=false · 1699 hàng_",
+      "loi": null
+    },
+    {
+      "id": "C03",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1301,
+      "nguon": [
+        "knowledge/operational/device-monitor.md",
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational/equipment-standards.md",
+        "knowledge/operational/equipment-integration.md",
+        "knowledge/operational/device-onboarding.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "C04",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 6691,
+      "nguon": [
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/today.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/feeder-verify.md"
+      ],
+      "traLoi": "(1) Line hôm nay đang hoạt động ổn định với tỷ lệ sản phẩm không đạt chuẩn (NG) là 0%.  \n(2) Bước 1: Truy cập Dashboard → thẻ **NG hôm nay** để xem tổng số sản phẩm NG. Kết quả hiện tại là 0 NG, nghĩa là chưa có lỗi phát sinh [1]. Bước 2: Nhấn vào số lượng NG (0), hệ thống sẽ mở danh sách chi tiết nếu cần — tuy nhiên trong trường hợp này không có dữ liệu bất thường nào được ghi nhận. Hiện trạng sản phẩm kiểm tra hôm nay đã hoàn tất, với OK=0, NG=0, NTF=0 [DU_LIEU_KHONG_TIN_CAY].  \n(3) Lưu ý: Nếu phát hiện số lượng NG tăng lên trong tương lai, cần kiểm tra ngay tại tab \"Sản phẩm NG\" hoặc truy cập `/today` để xác minh tình trạng sản xuất. Lỗi thường gặp là thiếu đối chiếu recipe trước khi chạy line\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "C05",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 4203,
+      "nguon": [
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) 129 máy đang gặp lỗi, trong đó có các thiết bị như ESP32-ENV-01 và FUYU-F-T1-L1-M1 đến M12.  \n(2) Bước 1: Truy cập bảng tổng quan trạng thái máy (UI: Thiết bị & Giám sát → Tổng quan). Tại đây, xem danh sách các thiết bị có nhãn \"offline\" hoặc lỗi — ví dụ như ESP32-ENV-01 và FUYU-F-T1-L1-M1. Kết quả hiển thị rõ ràng số lượng offline là 1699 (tất cả đều không online), trong đó 129 ghi nhận lỗi [1]. Bước 2: Kiểm tra cột `registrationStatus` trong bảng DB `machines`, nếu có trạng thái \"failed\" hoặc \"error\", xác minh nguyên nhân như firmware lỗi hay request bị từ chối. Kết quả sẽ cho thấy các máy cụ thể đang gặp vấn đề và cần xử lý [1].  \n\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`, `/api/machines/:id/allowed-products`\nMàn hình liên quan: `/machines/5`\n\n_Nguồn số liệu: `machines` · onlyOffline=false · 1699 hàng_",
+      "loi": null
+    },
+    {
+      "id": "C06",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 3132,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/aoi-workflow.md",
+        "howto-lot-management.md"
+      ],
+      "traLoi": "(1) Để biết lô sản xuất bao giờ xong, cần tra cứu trạng thái và thời gian kết thúc hiện tại trong hệ thống.  \n(2) Bước 1: Truy cập **UI → Menu › Sản xuất › Lệnh sản xuất**, nhập mã lô (ví dụ `L20260505-001`) vào ô tìm kiếm để xem trạng thái và thời gian dự kiến kết thúc. Kết quả hiển thị sẽ bao gồm: tiến độ %, số bảng đạt/loại lỗi, ETA (dự kiến hoàn thành). Bước 2: Dùng API `GET /api/lots/:orderCode` với tham số mã lô để lấy dữ liệu chi tiết về thời gian kết thúc. Ví dụ lệnh:  \n```bash\ncurl -X GET \"https://your-system/api/lots/L20260505-001\"\n```\nKết quả trả về bao gồm `endedAt` (nếu đã hoàn thành)",
+      "loi": null
+    }
+  ]
+}

@@ -220,3 +220,50 @@ bật ⇒ câu trả lời là dòng tool. Cùng lớp nguyên nhân #4, lỗ �
 3. T58 và lớp lệch ngôn ngữ Việt ↔ Anh (T17 T79 cũng thế: "sửa lại/loại bỏ" ↔ "rework/scrap", "danh mục lỗi" ↔ "defect
    catalog") — một bảng thuật ngữ mở rộng truy vấn sẽ chạm cả truy hồi lẫn độ phủ của cổng.
 4. Kho Studio chưa có đoạn bảng/đoạn con; bản Studio của tài liệu Pareto (nếu đã nạp) còn ghi 7 ngày — cần nạp lại.
+
+## 11. Vòng 6 — tool rỗng cướp câu hỏi TÍNH NĂNG (`7be30e23d`)
+
+### 11.1 Bước 0
+- Tập GIỮ LẠI mới `scripts/ai-eval/cau-tinh-nang-vs-song-giu-lai.jsonl` commit TRƯỚC thiết kế (`107f555d8`): 12 câu tính năng
+  KHÔNG mang dấu hiệu quy tắc + 12 câu SỐNG KHÔNG mang dấu hiệu sống ("OEE bao nhiêu?", "lỗi nào nhiều nhất?") — lớp khó mà
+  hai tập cũ không có (mọi câu sống cũ đều có mốc thời gian/mã máy/"đang").
+- Nền trên tập mới (server thường): tính năng 10/12 — TQ01 TQ02 nhận nguyên dòng tool SPC rỗng; sống 0 bịa số.
+
+### 11.2 Thiết kế
+Chỉ trong VÙNG MƠ HỒ (không dấu hiệu sống, không dấu hiệu quy tắc), tool RỖNG, tài liệu tin cậy: hỏi model một từ
+SONG/TAILIEU (tắt nghĩ, 8 token). Chỉ TAILIEU rõ ràng mới rẽ sang nhánh tài liệu của `4488df827` (LLM không thấy khối tool,
+dòng tool giữ làm ghi chú); mọi lỗi/chữ lạ ⇒ đường tool như cũ. Thí nghiệm ngoại tuyến (model mặc định, 95 câu nhãn): câu
+tài liệu → TAILIEU 49/49; câu sống TRONG vùng → TAILIEU 3/13 (TL03 TL10 TL11) — chúng chỉ đi nhánh tài liệu nếu tool của
+chúng cũng rỗng.
+
+### 11.3 Phát hiện: câu ngắn của trợ lý vận hành chạy trên model NHANH (Qwen3-4B), không phải model mặc định
+Bản đầu đo đầu–cuối KHÔNG sửa được câu nào (HT05/07/12 vẫn là dòng tool). Log gỡ lỗi: lượt phân loại chạy trên
+`Qwen3-4B-Instruct` — `planInference({task:"chat"})` xếp câu ngắn vào độ khó trivial/easy ⇒ Tier 1 ⇒ `GGUF_FAST_MODEL`
+(`aiModelRouter.ts` nhánh `trivial`/`easy`). Model 4B nói SONG cho 3/3 câu tính năng mà model mặc định nói TAILIEU. Sửa:
+lượt phân loại xin model MẶC ĐỊNH mà llama-server đang giữ (`modelId` undefined); server không giữ ⇒ không nạp gì in-process.
+- ⚠ **Hệ quả rộng hơn vòng này:** cùng quyết định planner ấy chọn model cho CÂU TRẢ LỜI (`generateWithOllama` dùng
+  `plan.decision.modelId`) ⇒ phần lớn câu của trợ lý vận hành — mọi con số 70/79 ở các vòng trước — được SINH bởi Qwen3-4B.
+  Và lượt tự kiểm của cổng lạc đề vòng 5 cũng chạy trên 4B, trong khi thiết kế của nó đo ngoại tuyến trên model mặc định
+  (số đầu–cuối vòng 5 vẫn đúng — chúng đo đường thật). Tiêu chí chủ dự án là ĐÚNG hơn NHANH ⇒ một phép A/B 4B vs model mặc
+  định cho câu trả lời trên 111 câu là việc đầu của vòng sau.
+
+### 11.4 Kết quả (cache tắt; ablation = `AI_KB_PHAN_LOAI_TAI_LIEU=0`)
+
+| Bộ | Trước (vòng 5 / nền) | Vòng 6 |
+|---|---|---|
+| Giữ lại vòng 6 — tính năng đạt | 10/12 | **11/12** (TQ01 lên; TQ02 nay đi nhánh tài liệu nhưng model trả lời sai "không định nghĩa") |
+| Giữ lại vòng 5 — HT05 HT07 HT12 | 0/3 | **3/3** (tổng trong corpus 8 → 11/12) |
+| Câu SỐNG đi nhánh tài liệu (22 + 12 + 12 + 6) | 0/52 | **0/52** |
+| 111 câu | 71/79 · 32/32 | 70/79 · 32/32 |
+| Ablation (tắt công tắc) trên 5 câu vừa lên | — | 0/5 |
+
+- 111 câu: T54 T76 xuống, T22 lên — cả ba KHÔNG đi nhánh này (log: 5 lượt TAILIEU trong toàn bộ đợt đo, đều là câu tính
+  năng; 8 câu st4i đi nhánh tài liệu + ghi chú tool đều đạt). T54 T76 là hai câu "lên" vì nhiễu ở vòng 5 (v5tat: T54 sai).
+- Đột biến 7/7 ĐỎ: đọc phân loại luôn TAILIEU · bỏ công tắc · vùng bỏ qua dấu hiệu sống · gỡ phân loại non-stream · gỡ phân
+  loại stream · bỏ cổng "server giữ model mặc định" · dùng model của planner.
+- `dist/BUILD-INFO.txt` ghi lại SAU commit (`7be30e23d`), `npm run kiem:lai-lich` ĐẠT.
+
+### 11.5 Còn mở
+1. **A/B model sinh câu trả lời** (4B hiện tại vs model mặc định) trên 111 câu + bộ giữ lại — 11.3.
+2. TQ02: nhánh tài liệu đúng nhưng câu trả lời sai (truy hồi đứng đầu là playbook, "Refresh: 1 phút" ở đoạn khác).
+3. Các mục 10.6 còn nguyên: C01/C03 hỏi lại thay vì từ chối; lệch thuật ngữ Việt ↔ Anh; kho Studio.
