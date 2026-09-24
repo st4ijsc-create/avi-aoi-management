@@ -127,3 +127,42 @@ thật, câu lô ra hướng dẫn tra cứu có nguồn).
 2. **9 câu nguồn đúng vẫn ngoài top‑20** (T43 T56 T66 T17 T79 …): không phải bảng; cần xem cách chunk văn xuôi/danh sách.
 3. **Kho Studio** (`st4i-may-aoi`) có bộ chunk RIÊNG — bản vá bảng chỉ áp cho kho hệ thống.
 4. T65 trả lời sai vai trò dù đi đúng nhánh tài liệu — lỗi sinh chữ, chưa phân tích.
+
+---
+
+## 9. Vòng 4 — đoạn con văn xuôi (`a7d830405`) và một đính chính
+
+### 9.1 Đính chính: `126908389` KHÔNG gỡ tệp KB nào khỏi git
+`git commit -- <paths>` lấy nội dung cây làm việc; tệp còn trên đĩa nên 181 lệnh xoá trong index bị bỏ — commit chỉ ghi
+`.gitignore`, `Dockerfile` và lưới. Lưới xanh giả vì `git check-ignore` chỉ hỏi QUY TẮC. Gỡ thật ở `f1ca5a079` (181 D, kiểm
+bằng `git show --name-status`); lưới thêm ca `git ls-files` — đỏ trước, xanh sau.
+
+### 9.2 Đoạn con
+- 5 câu nguồn đúng vẫn ngoài top‑20 sau vòng 3; hai câu là "cây kim" trong đoạn lớn.
+- Bổ sung đoạn con ≤ 600 ký tự theo mục (bỏ bảng lớn — đã có nhóm dòng): +328 đoạn, 0 đoạn cũ đổi.
+- Hạng: T43 T66 T06 T52 T65 T42 lên hạng 1; T56 T55 T54 hạng 4. Bộ giữ lại trên endpoint sản phẩm: hit@5 không đổi ở cả bốn
+  bộ; OP52 hạng 4 → 1.
+- Đầu–cuối: **70/79** (lên 7, xuống 0). Ablation (kho vòng 3): 0/7 câu vừa lên.
+- **Giá, đo lặp 3×/kho:** N19 ("nozzle máy gắp đặt hút không lên" — tài liệu không có) bị TRẢ LỜI 3/3 thay vì từ chối 3/3. Mã
+  lỗi trích có thật trong tài liệu AOI, nhưng lời khuyên về nozzle là suy diễn sang máy khác. Ngoài corpus 30 → 29/32.
+- Đối chứng số liệu sống: 0/28 đi nhánh tài liệu.
+
+### 9.3 Tổng
+
+| Lượt | Trong corpus đạt | Ngoài corpus từ chối đúng |
+|---|---|---|
+| Nền | 38/79* | 21/32 |
+| + câu hỏi lại nhường tài liệu | 50/79* | 30/32 |
+| + câu quy tắc khi tool rỗng | 57/79 | 30/32 |
+| + đoạn nhóm dòng bảng | 63/79 | 30/32 |
+| + đoạn con văn xuôi | **70/79** | **29/32** |
+
+### 9.4 Cần chủ dự án quyết
+Giữ đoạn con (7 câu đúng thêm) với giá 1 câu lạc đề cùng miền bị trả lời suy diễn (N19), hay tắt (`KB_CHUNK_DOAN_CON=0`)?
+Đề nghị GIỮ: lợi đo được lớn hơn giá, và lỗi còn lại cùng lớp với mục mở "chặn câu lạc đề bằng tín hiệu khác điểm số".
+
+### 9.5 Còn mở
+1. **Câu lạc đề cùng miền** (N19 và 2 câu còn lọt): cần tín hiệu tự kiểm "câu trả lời có dựa vào đoạn trích không" — điểm
+   truy hồi không tách được (vòng 1–2).
+2. T17 và T79 vẫn ngoài top‑20 (T79 chỉ có ở tài liệu schema/audit, không ở tài liệu miền).
+3. Kho Studio chưa có đoạn bảng/đoạn con.
