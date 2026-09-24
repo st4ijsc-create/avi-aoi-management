@@ -1,0 +1,12 @@
+{"id":"LN01","cauHoi":"Ảnh chụp của máy AOI bị nhòe thì xử lý ra sao?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"vệ sinh lens|focus|lấy nét|ống kính"}}
+{"id":"LN02","cauHoi":"Máy báo quá nhiều lỗi báo nhầm thì cần chỉnh gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"threshold|ngưỡng"}}
+{"id":"LN03","cauHoi":"Hạt thiếc rải rác trên bảng mạch thuộc mức độ lỗi nào?","nguon":["aoi-defect-types.md"],"dapAnTraLoi":{"regex":"Major"}}
+{"id":"LN04","cauHoi":"Chân linh kiện bị nổi lên không chạm pad có mã lỗi gì?","nguon":["aoi-defect-types.md"],"dapAnTraLoi":{"regex":"OPN|(?<![A-Za-z])LL(?![A-Za-z])|Lifted"}}
+{"id":"LN05","cauHoi":"Máy không nhận ra có bảng đi vào thì kiểm tra gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"sensor|cảm biến"}}
+{"id":"LN06","cauHoi":"Cơ cấu kẹp bảng báo lỗi thì kiểm tra gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"air pressure|áp suất khí|áp lực khí|khí nén"}}
+{"id":"LN07","cauHoi":"Đầu đọc mã vạch báo lỗi thì xử lý thế nào?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"USB|thay (?:barcode reader|đầu đọc)"}}
+{"id":"LN08","cauHoi":"Tệp cấu hình của máy bị hỏng thì làm gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"backup|sao lưu|restore|khôi phục"}}
+{"id":"LN09","cauHoi":"Mối hàn thiếu thiếc được nhận biết khi góc thấm ướt nhỏ hơn bao nhiêu độ?","nguon":["aoi-defect-types.md"],"dapAnTraLoi":{"regex":"45\\s*(?:°|độ)"},"ghiChu":"diễn đạt VIỆT của T41 (T41 dùng chữ Anh wetting)"}
+{"id":"LN10","cauHoi":"Máy báo hết thời gian kiểm tra thì nên giảm gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"inspection region|vùng kiểm tra|CPU"}}
+{"id":"LN11","cauHoi":"Nút tự tính giới hạn kiểm soát từ dữ liệu cũ dùng mặc định bao nhiêu mẫu gần nhất?","nguon":["howto-spc-control.md"],"dapAnTraLoi":{"regex":"(?<![\\d.,])30(?![\\d.,%])"},"ghiChu":"diễn đạt VIỆT của T63 (T63 dùng UCL/LCL)"}
+{"id":"LN12","cauHoi":"Phân bố kết quả đo bị trải rộng cho thấy vấn đề gì?","nguon":["aoi-reports.md"],"dapAnTraLoi":{"regex":"instability|không ổn định|bất ổn"}}
