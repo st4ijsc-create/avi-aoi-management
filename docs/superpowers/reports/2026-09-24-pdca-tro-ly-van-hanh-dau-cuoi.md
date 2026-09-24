@@ -320,6 +320,6 @@ một trong hai: `-np 2` (mỗi slot 32k — màn lập trình đo được tụ
 (VRAM). Kiểm lại sau restart: câu trả lời không làm tăng `tokens_predicted_total` của :8091.
 
 ### 12.3 Còn mở
-1. Quyết định của chủ dự án về 12.4 (giữ 4B · hay bật 35B kèm `-np 2` / server thứ hai).
+1. ~~Quyết định của chủ dự án về 12.4~~ — **2026-09-24: chủ dự án ĐỒNG Ý giữ model planner (4B)** cho câu trả lời vận hành; `AI_KB_MODEL_TRA_LOI=mac-dinh` để ngỏ, không bật.
 2. Bộ chấm từ chối chỉ nhận câu từ chối chuẩn — câu "tài liệu không nêu…" của 35B bị đếm là trả lời (N21/N31).
 3. TQ02, C01/C03, lệch thuật ngữ Việt ↔ Anh, kho Studio — như 10.6/11.5.
