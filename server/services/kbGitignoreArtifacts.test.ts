@@ -32,6 +32,15 @@ describe("KB sinh ra ⇔ .gitignore", () => {
     const lot = DS.filter((f) => !biBoQua(`knowledge/${f}`));
     expect(lot, `tệp sinh ra còn theo dõi trong git: ${lot.join(", ")}`).toEqual([]);
   });
+  it("★★★ và KHÔNG còn được git THEO DÕI (quy tắc ignore không có tác dụng với tệp đã tracked)", () => {
+    // Bài học 2026-09-24: `126908389` thêm .gitignore nhưng KHÔNG gỡ tệp nào — `git commit -- <paths>` lấy nội dung CÂY
+    // LÀM VIỆC của các đường ấy, tệp còn trên đĩa nên lệnh xoá trong index bị bỏ. Ca `check-ignore` ở trên vẫn xanh vì nó chỉ
+    // hỏi QUY TẮC. Ca này hỏi đúng thứ cần: git còn theo dõi tệp không.
+    const conTheoDoi = execFileSync("git", ["ls-files", "--", "knowledge/"], { cwd: ROOT, encoding: "utf8" })
+      .split(String.fromCharCode(10)).map((f) => f.trim())
+      .filter((f) => DS.some((d) => f === `knowledge/${d}`) || f === "knowledge/rag-eval-results.json" || f.startsWith("knowledge/operational/"));
+    expect(conTheoDoi, `còn theo dõi: ${conTheoDoi.slice(0, 5).join(", ")}…`).toEqual([]);
+  });
   it("★ thẻ sinh operational/*.md và kết quả eval bị bỏ qua", () => {
     expect(biBoQua("knowledge/operational/andon.md")).toBe(true);
     expect(biBoQua("knowledge/rag-eval-results.json")).toBe(true);
