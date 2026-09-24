@@ -1,0 +1,1685 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "v7c-st4i",
+  "tom": {
+    "trong": {
+      "n": 79,
+      "dung": 71,
+      "tuChoi": 4,
+      "sai": 4
+    },
+    "ngoai": {
+      "n": 32,
+      "tuChoi": 31,
+      "traLoi": 1
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "T01",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1793,
+      "nguon": [
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml"
+      ],
+      "traLoi": "(1) 1\n\n(2)\n*   **Ngưỡng Critical (> 2.0%)**: Theo tài liệu [2] và [3], khi tỷ lệ NG Rate vượt quá 2.0%, hành động bắt buộc là \"Dừng line, điều tra nguyên nhân gốc rễ\".\n\n(3)\n> | Critical | > 2.0% | Dừng line, điều tra nguyên nhân gốc rễ |\n\n(4)\n*   [2] AOI Thresholds & Calibration (Ngưỡng và Hiệu Chỉnh AOI) (part 1) | knowledge/domain/aoi-thresholds.md\n*   [3] AOI Thresholds & Calibration (Ngưỡng và Hiệu Chỉnh AOI) (đoạn con 1) | knowledge/domain/aoi-thresholds.md\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "T02",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1855,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Kỹ sư phải xem xét thủ công các phán đoán của máy AOI khi độ tin cậy (confidence score) dưới 70%.\n\n(2) Các bước thực hiện:\n1. **Kiểm tra ngưỡng**: Trong giao diện giám sát hoặc báo cáo kết quả kiểm tra, xác định các điểm kiểm tra có `confidence score` < 70%. Theo tài liệu, mức này được phân loại là \"Không chắc\" [1].\n2. **Xác định vị trí**: Truy cập vào danh sách các lỗi nghi ngờ (suspect defects) hoặc bảng điều khiển hiệu chuẩn. Các lỗi này thường được đánh dấu riêng biệt so với các lỗi có độ tin cậy cao (> 90% tự động pass/fail) hoặc trung bình (70% – 90% chờ operator confirm) [2].\n3. **Thực hiện xem xét**: Kỹ sư AOI tiến hành phân tích thủ công hình ảnh hoặc dữ liệu của các điểm có score thấp này để xác định chính xác nguyên nhân lỗi thực tế, tránh",
+      "loi": null
+    },
+    {
+      "id": "T03",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1244,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md"
+      ],
+      "traLoi": "(1) 1\n\n(2) \n- Tụ chip 0402 được phép lệch trục X tối đa là **±0.10mm** (hoặc ±0.1mm).\n\n(3) \"±0.10mm\" [1], [2], [3]\n\n(4) [1] knowledge/domain/aoi-thresholds.md, [2] knowledge/domain/aoi-thresholds.md, [3] aoi-thresholds.md",
+      "loi": null
+    },
+    {
+      "id": "T04",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1399,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/commission-a-new-pcb.md"
+      ],
+      "traLoi": "(1) 1\n\n(2)\n*   Ngưỡng lỗ rỗng (Void) cho BGA: tối đa **25%** diện tích pad.\n\n(3)\n`Void (BGA) | 0% | 25% | % of pad area`\n\n(4)\n[1] knowledge/domain/aoi-thresholds.md",
+      "loi": null
+    },
+    {
+      "id": "T05",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1672,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nTheo tài liệu hiện có, việc hiệu chỉnh camera (Camera calibration) cần được thực hiện hàng tuần bởi Kỹ thuật viên (Technician) [1]. Ngoài ra, còn có lịch bảo trì hiệu chỉnh chi tiết hơn như kiểm tra board tham chiếu hàng ngày và hiệu chỉnh toàn bộ hàng tháng [1].\n\n(2) Các bước thực hiện\n1. **Xác định lịch trình**:\n   - **Hàng tuần**: Kỹ thuật viên (Technician) thực hiện `Camera calibration` [1].\n   - **Hàng ngày**: Operator thực hiện `Reference board check` [1].\n   - **Hàng tháng**: Kỹ sư AOI thực hiện `Full calibration` [1].\n2. **Xử lý khi có lỗi E005**:\n   - Nếu gặp lỗi `E005 – Camera calibration fail`, cần chạy lại sequence hiệu chỉnh [3].\n   - Nếu gặp lỗi `E011 – FOV mismatch`, kiểm tra độ cao camera và thực hiện lại hiệu chỉnh [4",
+      "loi": null
+    },
+    {
+      "id": "T06",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1268,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/alerts/alerts-list.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n- False alarm ≤ 2 trên toàn bộ board.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n\"False alarm ≤ 2 trên toàn bộ board.\"\n\n(4) Nguồn gốc (file/đường dẫn):\n[1] knowledge/domain/aoi-thresholds.md",
+      "loi": null
+    },
+    {
+      "id": "T07",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1186,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-detail.md"
+      ],
+      "traLoi": "(1) 1\n\n(2)\n- Sai lệch cho phép: ±5% so với giá trị chuẩn.\n\n(3) \"Sai lệch cho phép: ±5% so với giá trị chuẩn.\"\n\n(4) [1] knowledge/domain/aoi-thresholds.md",
+      "loi": null
+    },
+    {
+      "id": "T08",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2430,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-defect-types.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/defect-catalog.md"
+      ],
+      "traLoi": "(1) **Định nghĩa**\nHiện tượng linh kiện SMD bị kéo lên một đầu, dựng thẳng đứng được gọi là lỗi **Tombstone** (Linh Kiện Dựng Đứng). Đây là lỗi nghiêm trọng (Critical) do mất cân bằng nhiệt hoặc paste hàn không đều, khiến một đầu không kết nối.\n\n(2) **Thành phần/Đặc điểm chính**\n*   **Tên lỗi:** Tombstone (Linh Kiện Dựng Đứng) [1]\n*   **Mã lỗi:** `TBT`, `TS` (Tombstone) [1]\n*   **Mức độ:** Critical [1]\n*   **Nguyên nhân:** Mất cân bằng nhiệt giữa hai đầu pad, paste hàn không đều [1]\n*   **Ảnh hưởng:** Một đầu không kết nối [1]\n\n(3) **Ví dụ cụ thể**\nTrong hệ thống ghi nhận lỗi AOI, khi phát hiện linh kiện dựng đứng, kỹ sư cần chọn mã lỗi tương ứng để phân loại:\n*   Mã lỗi: `TBT` hoặc `TS`\n*   Hành động bắt buộc: Dừng dây chuyền, rework bắt buộc (theo bảng phân loại mức độ lỗi) [2]\n\n(4) **Chủ đề liên quan**\n*   **Open Circuit / Lifted Lead (Mạch Hở / Chân Nổi):** Lỗi chân linh kiện không tiếp xúc với pad, cũng có mức độ Critical và mã lỗi `OPN`, `LL` [2].\n*   **Quy trình xử lý lỗi Critical:** Bao gồm dừng dây chuyền, operator xem hình ảnh",
+      "loi": null
+    },
+    {
+      "id": "T09",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2405,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "aoi-troubleshooting.md",
+        "knowledge/features/inspection/aoi-packages.md"
+      ],
+      "traLoi": "(1) **Định nghĩa**\nMã lỗi **POL** (viết tắt của **Polarity Error**) trên máy AOI chỉ lỗi **Sai Chiều Cực**, xảy ra khi các linh kiện có cực tính (như diode, tụ điện phân cực, hoặc IC) được đặt ngược chiều so với thiết kế trên bảng mạch in (PCB) [1]. Đây là lỗi thuộc mức độ **Critical** vì có thể gây ra hậu quả nghiêm trọng như cháy nổ, đặc biệt là với tụ điện phân cực [1].\n\n(2) **Thành phần/Đặc điểm chính**\n*   **Tên lỗi:** Polarity Error (Sai Chiều Cực) [1].\n*   **Mã lỗi:** POL hoặc PE [1].\n*   **Linh kiện liên quan:** Các linh kiện có cực tính, bao gồm diode, tụ điện phân cực (electrolytic capacitor), và IC [1].\n*   **Mức độ nghiêm trọng:** Critical (Nghiêm trọng) [1].\n*   **Hậu quả:** Gây cháy nổ nếu là tụ phân cực [1].\n*   **Quy trình xử lý:** Theo quy trình chung, lỗi Critical yêu cầu dừng dây chuyền và rework bắt buộc [1].\n\n(3) **Ví dụ cụ thể**\n*   **Ngữ cảnh:** Một tụ điện phân cực 100µF/16V được đặt ngược chiều (+ vào - và - vào +) trên board.\n*   **Mã lỗi hiển thị:** `POL` hoặc `PE` [1].\n*   **Hành động kỹ sư:**\n",
+      "loi": null
+    },
+    {
+      "id": "T10",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2104,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-defect-types.md",
+        "knowledge/operational/component-library.md",
+        "aoi-defect-types.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nLỗi Tombstone (linh kiện dựng đứng) thường gặp nhất ở các linh kiện SMD kích thước nhỏ, cụ thể là chip 0201 và 0402 [1], [2].\n\n(2) Các bước đánh số\n1. **Xác định vị trí lỗi**: Trong giao diện AOI, tìm các cảnh báo có mã lỗi `TBT` hoặc `TS` (Tombstone) [1].\n2. **Kiểm tra loại linh kiện**: Xác định xem linh kiện đó có thuộc cỡ 0201 hoặc 0402 không, vì đây là hai cỡ dễ xảy ra lỗi nhất do tỷ lệ diện tích pad không cân bằng [2].\n3. **Cân bằng thiết kế Pad**: Kiểm tra lại thiết kế footprint trên PCB. Đảm bảo diện tích pad hai đầu linh kiện tương đương nhau để tránh mất cân bằng nhiệt khi hàn [2].\n4. **Kiểm tra quy trình Re-flow**: Xem lại profile nhiệt độ (reflow profile) trong hệ thống. Cần đảm bảo nhiệt độ pre-heat tăng đều để paste hàn chảy đồng đều, tránh hiện tượng một đầu khô nhanh hơn đầu kia [1], [2].\n5. **Điều chỉnh lượng Paste**: Nếu dùng stencil, kiểm tra xem có bị mòn hoặc hở không. Có thể cần giảm lượng paste hoặc tăng nhiệt độ pre-heat để cải thiện độ chảy đều [2",
+      "loi": null
+    },
+    {
+      "id": "T11",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 4065,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/oee-dashboard.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/defect-catalog.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nLỗi E061 (Fiducial mark not found) thuộc nhóm lỗi Inspection/Algorithm. Nguyên nhân chính là hệ thống không nhận diện được điểm chuẩn (fiducial mark) do bẩn hoặc chương trình sai lệch. Cần làm sạch và kiểm tra lại quy trình dạy điểm.\n\n(2) Các bước xử lý\n1. **Kiểm tra trực quan**: Tại khu vực lắp đặt camera/quang học, kiểm tra bề mặt board mạch hoặc điểm fiducial. Nếu có bụi, dầu hoặc vết bẩn, thực hiện làm sạch bằng dung môi phù hợp và vải không xơ.\n2. **Kiểm tra chương trình**: Truy cập giao diện cấu hình chương trình kiểm tra (thường nằm trong menu **Chương trình › Inspection** hoặc tương đương). Xác nhận tọa độ fiducial đã được dạy chính xác và không bị lệch so với thực tế.\n3. **Chạy thử**: Khởi động lại chu trình kiểm tra. Quan sát màn hình để xác nhận lỗi E061 đã biến mất và hệ thống\n\n_Nguồn số liệu: `action_result` (lookup_error_code) · code=E061_",
+      "loi": null
+    },
+    {
+      "id": "T12",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2118,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/machine-registration.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nTheo tài liệu hướng dẫn xử lý sự cố AOI, khi áp suất khí nén thấp, hệ thống sẽ hiển thị mã lỗi **E082** [1].\n\n(2) Các bước đánh số\n1. **Xác nhận lỗi**: Quan sát màn hình HMI hoặc dashboard giám sát máy. Nếu xuất hiện thông báo \"Air pressure low\" hoặc mã **E082**, đây là dấu hiệu xác nhận nguyên nhân [1].\n2. **Kiểm tra phần cứng**: Di chuyển đến khu vực máy nén khí và hệ thống đường ống khí của máy AOI. Kiểm tra đồng hồ đo áp suất thực tế để xác nhận mức áp suất hiện tại có thấp hơn ngưỡng quy định hay không [1].\n3. **Kiểm tra van điều áp**: Tại vị trí van điều áp (pressure regulating valve) trên máy, kiểm tra xem van có bị kẹt, hở hoặc cài đặt sai vị trí không. Đảm bảo van hoạt động cơ học bình thường [1].\n4. **Kiểm tra máy nén khí**: Xác nhận máy nén khí (air compressor) có đang chạy ổn định, không có báo lỗi nhiệt độ hoặc quá tải. Nếu máy nén dừng, hệ thống sẽ mất áp suất [1].\n5. **Reset lỗi**: Sau khi đã khắc phục nguyên nhân (sửa van, khởi động lại máy nén hoặc điều chỉnh áp suất), thực hiện thao tác reset lỗi trên giao diện máy để\n\nAPI liên quan: `/api/machines/:id/allowed-products`, `/api/machine/submit-inspection`, `/api/machine/upload-image`\nMàn hình liên quan: `/machines/5`",
+      "loi": null
+    },
+    {
+      "id": "T13",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1997,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/aoi-workflow.md",
+        "aoi-workflow.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nSau khi bật nguồn máy AOI, bạn phải chờ ít nhất 15 phút để máy làm nóng (warm-up) trước khi thực hiện các bước tiếp theo như tự kiểm tra hoặc chạy sản phẩm.\n\n(2) Các bước thực hiện\n1. **Bật nguồn**: Thực hiện theo thứ tự: UPS → Server → Monitor → Máy AOI [1].\n2. **Chờ làm nóng**: Đợi ít nhất 15 phút sau khi máy đã bật hoàn toàn [1]. Đây là bước bắt buộc để ổn định nhiệt độ và cảm biến.\n3. **Tự kiểm tra (Self-test)**: Sau khi hết thời gian chờ, chạy routine tự kiểm tra của máy [1].\n4. **Kiểm tra hiệu chuẩn**: Chạy reference board để xác nhận độ chính xác [1].\n5. **Kiểm tra đầu ca**: Đảm bảo checklist đầu ca đã hoàn tất, bao gồm việc máy không có board sót và đã đăng nhập hệ thống [3].\n\n(3) Lưu ý/lỗi",
+      "loi": null
+    },
+    {
+      "id": "T14",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2317,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md"
+      ],
+      "traLoi": "(1) Thứ tự bật nguồn các thiết bị của hệ thống AOI là: UPS → Server → Monitor → Máy AOI.\n\n(2) Thành phần và đặc điểm chính của quy trình khởi động:\n*   **Thứ tự ưu tiên:** Đảm bảo nguồn điện ổn định (UPS) trước khi kích hoạt các thiết bị xử lý và cơ khí.\n*   **Thời gian chờ (Warm-up):** Bắt buộc chờ ít nhất 15 phút sau khi bật nguồn để hệ thống ổn định nhiệt độ và điện áp.\n*   **Kiểm tra tự động (Self-test):** Chạy routine tự kiểm tra phần cứng và phần mềm ngay sau khi warm-up.\n*   **Hiệu chuẩn (Calibration check):** Chạy reference board để xác nhận độ chính xác của camera và ánh sáng.\n*   **Xác nhận đầu tiên (First board verify):** Kiểm tra thủ công board đầu tiên sau khi load chương trình sản phẩm.\n\n(3) Ví dụ cụ thể về cấu hình/thứ tự:\n*   **Thứ tự bật nguồn:** `UPS` -> `Server` -> `Monitor` -> `Máy AOI` [1].\n*   **Thời gian Warm-up:** `>= 15 phút` [1].\n\n(4) Chủ đề liên quan:\n*   Quy trình tắt máy (Shutdown Procedure) và các bước an toàn khi ngắt điện.\n*   Xử lý sự cố mất điện và quy trình khôi phục (Recovery) sau sự cố.",
+      "loi": null
+    },
+    {
+      "id": "T15",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1528,
+      "nguon": [
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/operational-approved/andon.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   Khi điều chỉnh độ rộng băng tải (Conveyor Width), cần chừa thêm **2mm mỗi bên**.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n*   \"Nhập giá trị + clearance 2mm mỗi bên.\"\n\n(4) Nguồn gốc:\n*   [1] AOI Workflow & SOP (Quy Trình Vận Hành Chuẩn) (đoạn con 3) | knowledge/domain/aoi-workflow.md",
+      "loi": null
+    },
+    {
+      "id": "T16",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1057,
+      "nguon": [
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/domain/commission-a-new-pcb.md"
+      ],
+      "traLoi": "(1) 1\n\n(2) \n*   30 bảng\n\n(3) \"Validation: Chạy 30 bảng → false alarm < 5%, detect rate 100%.\"\n\n(4) [2]",
+      "loi": null
+    },
+    {
+      "id": "T17",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 600,
+      "nguon": [
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational-approved/oee-dashboard.md",
+        "knowledge/operational-approved/maintenance-hub.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/operational-approved/master-data.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "T18",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2622,
+      "nguon": [
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/operational/oee-target-settings.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\nTài liệu cung cấp các thông tin sau nhưng không nêu rõ chỉ tiêu FPY mục tiêu cụ thể cho một \"line\" chung chung:\n1.  **Mục tiêu OEE Targets**: Tài liệu [1], [4], [5] mô tả cách cấu hình mục tiêu OEE (Availability, Performance, Quality, OEE tổng) theo từng máy, line hoặc nhà máy, nhưng không đưa ra một giá trị FPY mặc định hay bắt buộc cho tất cả các line.\n2.  **KPI AOI**: Bảng trong tài liệu [3] liệt kê chỉ số FPY với công thức \"Pass lần đầu / Total\" và Target là **> 98%**, nhưng đây là chỉ số chung cho báo cáo AOI, không phải là cấu hình mục tiêu OEE cụ thể cho một line sản xuất.\n3.  **Production Dashboard**: Tài liệu [2] mô tả cách hiển thị FPY (xanh ≥90%, vàng 70-89%, đỏ <70%) nhưng đây là ngưỡng cảnh báo hiển thị, không phải là \"chỉ tiêu mục tiêu\" đã được thiết lập.\n\nĐể biết chỉ tiêu FPY mục tiêu cụ thể của một line, bạn cần kiểm tra cấu hình trong mục **Mục tiêu OEE** (`/oee-target-settings`) hoặc xem xét các mục tiêu Quality đã được thiết lập riêng cho line đó, vì giá trị này có thể thay đổi tùy theo cấu hình của từng line (như ví dụ trong [4] với Quality = 99%).\n\n_Nguồn số liệu: `product_inspections` · interval=day · 14d · 2 hàng_",
+      "loi": null
+    },
+    {
+      "id": "T19",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1161,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/ai/ai-time-series.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "(1) 1\n\n(2)\n*   MTBF > 500h\n\n(3) \"MTBF | Thời gian hoạt động / Số lần hỏng | > 500h\"\n\n(4) [1] AOI Reports & Analytics (Báo Cáo và Phân Tích) (bảng, nhóm 2) | knowledge/domain/aoi-reports.md",
+      "loi": null
+    },
+    {
+      "id": "T20",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2210,
+      "nguon": [
+        "aoi-reports.md",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/analytics/quality-gates.md",
+        "knowledge/features/analytics/quality-gates.md"
+      ],
+      "traLoi": "Dựa trên tài liệu cung cấp, dưới đây là thông tin về chỉ số năng lực quá trình Cpk:\n\n(1) Tổng số mục được liệt kê: 3 mức đánh giá.\n\n(2) Danh sách đầy đủ các mức đánh giá Cpk:\n*   **Cpk > 1.33**: Excellent (Tuyệt vời)\n*   **1.0 < Cpk ≤ 1.33**: OK\n*   **Cpk < 1.0**: Cần cải thiện ngay\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n> **Cpk (Process Capability Index):**\n> - Cpk > 1.33: Excellent\n> - 1.0 < Cpk ≤ 1.33: OK\n> - Cpk < 1.0: Cần cải thiện ngay\n\nNgoài ra, tài liệu cũng nêu rõ yêu cầu thường gặp:\n> Cpk ≥ 1.33 là yêu cầu thường gặp.\n\n(4) Nguồn gốc:\n*   [1] `aoi-reports.md`\n*   [2] `knowledge/domain/howto-spc-control.md`\n*   [3] `knowledge/domain/howto-spc-control.md`",
+      "loi": null
+    },
+    {
+      "id": "T21",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1761,
+      "nguon": [
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/features/corporate/corporate-dashboard.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/features/production/production-dashboard.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nTrong quy trình onboarding board PCB mới, hạng mục **limit** (ngưỡng kiểm tra) có trọng số lớn nhất, chiếm **25 điểm** trong cơ chế tính toán điểm hoàn thiện (readiness).\n\n(2) Các bước đánh số\n1. **Kiểm tra tiến độ onboarding**: Truy cập màn hình `/product-onboarding` (thuộc module Products & Programs). Tại đây, hệ thống hiển thị badge tiến độ ví dụ: `62% • còn 40 điểm thiếu limit`.\n2. **Xác định hạng mục trọng số**: Dựa trên tài liệu [1], điểm hoàn thiện được tính có trọng số, trong đó `limit` chiếm nhiều nhất (25 điểm), tiếp theo là `image/points`, `component`, `fiducial`, `golden`, `release`, và `mapping`.\n3. **Lưu ý về VISUAL point**: Các điểm kiểm tra loại VISUAL KHÔNG bị tính vào phần trăm limit. Do đó, một board AOI toàn VISUAL sẽ không bị hiển",
+      "loi": null
+    },
+    {
+      "id": "T22",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1797,
+      "nguon": [
+        "knowledge/features/products/product-management.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "commission-a-new-pcb.md",
+        "knowledge/features/products/product-management.md",
+        "knowledge/operational/product-mapping.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nKích thước ảnh mẫu (golden image) là bắt buộc để hệ thống có thể chuyển đổi chính xác tọa độ điểm đo từ pixel thô sang đơn vị thực tế, đảm bảo tính di động của cấu hình giữa các máy AOI có độ phân giải khác nhau.\n\n(2) Các bước thực hiện\n1. **Tạo/Sửa mô hình sản phẩm**: Tại menu `Sản phẩm` › `Mô hình sản phẩm` (URL `/products`), chọn `+ New Product Model` hoặc chỉnh sửa sản phẩm hiện có.\n2. **Upload ảnh chuẩn**: Tải lên file `golden.png` hoặc ảnh tương ứng. Hệ thống yêu cầu bắt buộc phải xác định được kích thước ảnh (chiều rộng/cao pixel) trong metadata hoặc cấu hình.\n3. **Định nghĩa điểm đo**: Sau khi ảnh được chấp nhận, tiến hành định nghĩa Measurement Points (MP) hoặc import CSV. Tọa độ X/Y trong file dữ liệu sẽ được hệ thống sử dụng kích thước ảnh đã khai báo để tính toán tỷ lệ chuyển đổi\n\nAPI liên quan: `/api/public/products`, `/api/public/products/by-code/:code`",
+      "loi": null
+    },
+    {
+      "id": "T23",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1387,
+      "nguon": [
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "howto-ng-handling-sop.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   **Ngưỡng kiểm tra lại điểm đo:** Khi tỷ lệ false call (báo lỗi giả) vượt quá **10 %**, cần kiểm tra lại điểm đo và ngưỡng AI [1].\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n*   \"nếu false-call rate > 10 % cần kiểm tra lại điểm đo / ngưỡng AI\" [1]\n\n(4) Nguồn gốc:\n*   `knowledge/domain/howto-ng-handling-sop.md` [1]",
+      "loi": null
+    },
+    {
+      "id": "T24",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1739,
+      "nguon": [
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/operational-approved/alerts.md",
+        "howto-ng-handling-sop.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nTham số `ngRate` được hệ thống tự động làm mới (refresh) mỗi 60 giây để đảm bảo tính thời thực của chỉ số lỗi.\n\n(2) Các bước đánh số\n1. **Kiểm tra tham số kỹ thuật** — Truy cập tài liệu hướng dẫn xử lý sản phẩm NG tại line AOI. Tại mục \"Tham số kỹ thuật\", hệ thống định nghĩa công thức tính và tần suất cập nhật. Kết quả: Xác nhận `ngRate` = `ngCount / inspectedCount × 100 %` và được refresh mỗi 60 giây [1].\n2. **Theo dõi trên giao diện Monitoring** — Vào menu `Monitoring` › `MQTT` › `NG Rate Threshold` (URL: `/mqtt/ng-rate-threshold`) để xem các rule cấu hình. Tại đây, bạn có thể thấy các rule đang áp dụng ngưỡng cảnh báo dựa trên dữ liệu đã được làm mới [2].\n3. **Xác nhận qua cảnh báo** — Khi `ngRate`",
+      "loi": null
+    },
+    {
+      "id": "T25",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2595,
+      "nguon": [
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/operational/war-room.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/andon.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nTrưởng ca cần có mặt trước giờ bàn giao 10 phút để thực hiện quy trình bàn giao ca làm việc, đảm bảo hệ thống liệt kê đầy đủ trạng thái sản xuất và ghi chú cần thiết [1].\n\n(2) Các bước thực hiện\n1. **Chuẩn bị thời gian**: Trưởng ca phải có mặt tại khu vực sản xuất hoặc trước màn hình điều khiển **10 phút trước giờ bàn giao** [1].\n2. **Truy cập giao diện**: Mở menu `Menu › Sản xuất › Bàn giao ca` trong hệ thống SYNAPSE on-prem [1].\n3. **Kiểm tra dữ liệu hệ thống**: Hệ thống sẽ tự động liệt kê các thông tin quan trọng bao gồm: lô đang chạy, sản lượng tích lũy, số lượng sản phẩm lỗi (NG count), danh sách máy offline và các cảnh báo (alert) chưa được xử lý [1].\n4. **Nhập ghi chú**: Trưởng ca cũ điền **ghi chú bàn giao** vào trường tương ứng. Ví dụ",
+      "loi": null
+    },
+    {
+      "id": "T26",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1744,
+      "nguon": [
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/domain/aoi-thresholds.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nKhông được khởi động lại máy AOI ngay lúc đổi ca. Tài liệu khuyến cáo tránh thao tác này trong khoảng 5 phút trước và sau giờ chuyển ca để đảm bảo tính toàn vẹn của dữ liệu sự kiện (event) và tránh mất mát thông tin sản xuất [1].\n\n(2) Các bước thực hiện và xử lý\n1. **Chuẩn bị trước giờ đổi ca**: Trưởng ca đến sớm 10 phút, truy cập `Menu › Sản xuất › Bàn giao ca` để xem trạng thái lô đang chạy và alert [4].\n2. **Thực hiện bàn giao**: Điền ghi chú bàn giao (ví dụ: tình trạng máy, ngưỡng AOI) và bấm **\"Hoàn tất bàn giao\"**. Hệ thống sẽ chốt ca, gán `shiftEndedAt` và tạo bản ghi `ShiftHandover` [4].\n3. **Tránh khởi động lại**: Trong vòng 5 phút trước và sau khi chốt ca, **tuyệt đối không reboot máy AOI**. Nếu cần khởi động lại do sự cố",
+      "loi": null
+    },
+    {
+      "id": "T27",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1826,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "howto-lot-management.md",
+        "knowledge/features/production/production-orders.md",
+        "knowledge/features/production/production-orders.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nMã lệnh sản xuất (orderCode) của lô được hệ thống tự động gợi ý theo định dạng `L{YYYYMMDD}-NNN`, đảm bảo tính duy nhất và không trùng lặp trong cơ sở dữ liệu.\n\n(2) Các bước thực hiện\n1. **Truy cập giao diện tạo**: Điều hướng đến `Menu › Sản xuất › Lệnh sản xuất` và chọn nút **\"Tạo lệnh\"** hoặc **\"Tạo đơn hàng\"** (tùy ngữ cảnh truy cập cụ thể).\n2. **Nhập mã lệnh**: Tại trường `orderCode`, hệ thống sẽ **auto-suggest** (gợi ý tự động) mã theo định dạng `L{YYYYMMDD}-NNN` (ví dụ: `L20260505-001`). Bạn có thể giữ nguyên mã gợi ý hoặc chỉnh sửa nếu cần, nhưng phải đảm bảo không trùng với mã đã tồn tại.\n3. **Hoàn tất tạo**: Điền các trường bắt buộc còn lại như `productCode` (\n\nAPI liên quan: `/api/lots/:orderCode`\n\nVí dụ:\n```\nplanned → running → (paused ⇄ running) → completed\n                                       ↘ cancelled\n```",
+      "loi": null
+    },
+    {
+      "id": "T28",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1801,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/features/production/production-orders.md",
+        "knowledge/operational-approved/production-orders.md",
+        "knowledge/features/production/production-orders.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nChỉ người có vai trò **production_manager** trở lên mới có quyền hủy lô sản xuất. Thao tác này yêu cầu xác nhận hai bước để đảm bảo an toàn dữ liệu.\n\n(2) Các bước thực hiện\n1. **Truy cập danh sách lô**: Tại giao diện người dùng (UI), điều hướng đến `Menu › Sản xuất › Lệnh sản xuất`. Sử dụng ô tìm kiếm để nhập mã lô cần xử lý hoặc lọc theo trạng thái.\n2. **Kiểm tra quyền và trạng thái**: Đảm bảo bạn đang đăng nhập với vai trò `production_manager` hoặc cao hơn. Lô cần hủy không được ở trạng thái `completed` hoặc `cancelled` (vòng đời: `planned → running → (paused ⇄ running) → completed ↘ cancelled`).\n3. **Thực hiện hủy**: Chọn lô mục tiêu và bấm nút **\"Hủy\"**. Hệ thống sẽ yêu cầu nhập lý do và xác nhận hai bước (two-step confirmation) để hoàn tất việc chuyển trạng thái sang `cancelled`.\n\n(\n\nAPI liên quan: `/api/lots/:orderCode`\n\nVí dụ:\n```\nplanned → running → (paused ⇄ running) → completed\n                                       ↘ cancelled\n```",
+      "loi": null
+    },
+    {
+      "id": "T29",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2989,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/analytics/spc-rules.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/analytics/spc-rules.md",
+        "knowledge/features/inspection/history.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 2\n\n(2) Danh sách đầy đủ các trường hợp cảnh báo dựa trên số điểm liên tiếp cùng phía đường tâm (mean/CL):\n\n*   **8 điểm liên tiếp cùng phía đường tâm (CL):** Đây là quy tắc Western Electric số 4 (`WE_4`). Mức độ cảnh báo là `warn`.\n    *   *Mô tả chi tiết:* \"8 consecutive points on same side of mean (WE Rule 4)\" [4].\n    *   *Code tham chiếu:* `WE_4: \"8 consecutive points on same side of mean (WE Rule 4)\"` [2].\n*   **9 điểm liên tiếp cùng phía đường tâm:** Đây là luật Nelson số 2 (`NELSON_2`). Mức độ cảnh báo là `warn`.\n    *   *Mô tả chi tiết:* \"9 points in a row on same side of mean (Nelson 2)\" [4].\n    *   *Code tham chiếu:* `NELSON_2: \"9 points in a row on same side of mean (Nelson 2)\"` [2].\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n```ts\nconst RULES: Record<string, string> = {\n  // ...\n  WE_4: \"8 consecutive points on same side of mean (WE Rule 4)\",\n  // ...\n  NELSON_2: \"9 points in a row on same side of mean (Nelson 2)\",\n  // ...\n};\n```\n\n(4) Nguồn gốc:\n*   [2] `server/utils/spcRules.ts` (Code tham chiếu)\n*   [4] `knowledge/features/analytics/spc-rules.md` (Chi tiết từng luật)\n\n_Dữ liệu sống: Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "T30",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1674,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/analytics/spc-rules.md",
+        "knowledge/features/analytics/spc-rules.md",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/features/analytics/spc-analysis.md"
+      ],
+      "traLoi": "(1) 1\n\n(2)\n*   Cỡ nhóm con (Subgroup size) mặc định là **5**.\n\n(3)\n> \"Subgroup size mặc định = 5.\"\n\n(4)\n[1] SPC — Đường UCL / LCL / Cpk (đoạn con 6) | knowledge/domain/howto-spc-control.md\n\n_Dữ liệu sống: Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "N01",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 561,
+      "nguon": [
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/operational/datasettings.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/domain/howto-measurement-point-shapes.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/machines/:id/refresh-config`, `/api/public/products/:productCode/measurement-points`\nMàn hình liên quan: `/settings/shifts`, `/products/:productModelId`, `/products/PCB-A7-V2`\nBiến cấu hình: `SYSTEM_TZ=Asia/Ho_Chi_Minh`",
+      "loi": null
+    },
+    {
+      "id": "N02",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 494,
+      "nguon": [
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/workflows/create-measurement-point.playbook.yaml"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N03",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1239,
+      "nguon": [
+        "knowledge/operational/today.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/domain/aoi-reports.md",
+        "docs/ECOSYSTEM/33_SYNAPSE_ALIGNMENT_AUDIT_UNIFIED_DESIGN_AND_UPGRADE_PLAN_2026-07.md",
+        "knowledge/operational/ai-home.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "N04",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 532,
+      "nguon": [
+        "knowledge/features/production/production-scheduling.md",
+        "knowledge/operational/programming-copilot.md",
+        "docs/ECOSYSTEM/79_AI_CODING_WORKSPACE_NANG_CAP_2026-08-19.md",
+        "docs/ECOSYSTEM/79_AI_CODING_WORKSPACE_NANG_CAP_2026-08-19.md",
+        "knowledge/operational/ai-coding-workspace.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/ai/coding/stream`\nBiến cấu hình: `AI_NATIVE_TOOLCALLS_ENABLED=true`",
+      "loi": null
+    },
+    {
+      "id": "N05",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 513,
+      "nguon": [
+        "knowledge/features/analytics/defect-prediction.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/features/analytics/root-cause-analysis.md",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/features/analytics/defect-heatmap.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N06",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 522,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-thresholds.md",
+        "knowledge/operational/component-library.md",
+        "knowledge/domain/aoi-thresholds.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N07",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 537,
+      "nguon": [
+        "knowledge/features/production/production-dashboard.md",
+        "docs/ECOSYSTEM/38_POST_IMPROVEMENT_REAUDIT_BACKEND_DB_OPTIMIZATION_AND_CONTROL_COMPLETION_PLAN_2026-07.md",
+        "knowledge/operational/equipment-standards.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/features/alerts/oee-targets.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N08",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 535,
+      "nguon": [
+        "knowledge/operational/component-library.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/alerts/mqtt-alert-rules.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/workflows/create-measurement-point.playbook.yaml"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N09",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 528,
+      "nguon": [
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "commission-a-new-pcb.md",
+        "commission-a-new-pcb.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N10",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 490,
+      "nguon": [
+        "knowledge/features/analytics/data-comparison.md",
+        "knowledge/features/analytics/defect-prediction.md",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/operational/feeder-verify.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N11",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 552,
+      "nguon": [
+        "knowledge/features/analytics/defect-prediction.md",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N12",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 558,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "T31",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2444,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/howto-ng-handling-sop.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nTheo tài liệu kỹ thuật, tỷ lệ NG (Not Good) nằm trong khoảng **0.5% – 1.0%** được phân loại là mức **Warning** (Cảnh báo vàng), yêu cầu kỹ sư thực hiện theo dõi tăng cường [1].\n\n(2) Các bước đánh số\n1. **Mở trang cấu hình** — Truy cập menu `Monitoring` › `MQTT` › `NG Rate Threshold` hoặc URL `/mqtt/ng-rate-threshold` [2].\n2. **Kiểm tra quy tắc hiện có** — Xem bảng danh sách các rule đã thiết lập, bao gồm các cột: `station`, `threshold %`, `window`, `minSamples`, `enabled` [2].\n3. **Thêm hoặc chỉnh sửa rule** — Nhấn nút `+ Add Rule` để tạo quy tắc mới hoặc chỉnh sửa rule hiện tại [2].\n   - Nhập `Station/Machine` từ dropdown.\n   - Đặt `Threshold` ở mức **1.0%** (để kích hoạt cảnh\n\n<sub>Đa bước: 2 lượt gọi tool (get_today_stats → list_thresholds), 608 ms.</sub>\n\n_Nguồn số liệu: `product_inspections`_",
+      "loi": null
+    },
+    {
+      "id": "T32",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1864,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nHiệu chỉnh toàn bộ (Full calibration) máy AOI được thực hiện hàng tháng bởi Kỹ sư AOI, đảm bảo độ chính xác tối ưu cho hệ thống kiểm tra tự động.\n\n(2) Các bước thực hiện\n1. **Chuẩn bị lịch trình**: Xác định lịch bảo trì hàng tháng trong bảng lịch hiệu chỉnh.\n   - *Ở đâu*: Trong tài liệu cấu hình bảo trì `aoi-thresholds.md`.\n   - *Kết quả*: Lên lịch cho Kỹ sư AOI thực hiện.\n2. **Thực hiện Full Calibration**: Kỹ sư AOI tiến hành quy trình hiệu chỉnh toàn diện.\n   - *Ở đâu*: Giao diện quản lý máy hoặc quy trình kỹ thuật nội bộ.\n   - *Kết quả*: Máy được căn chỉnh lại toàn bộ thông số quang học và cơ khí.\n3. **Kiểm tra sau hiệu chỉnh**: Chạy reference board để xác nhận kết quả.\n   - *Ở đâu*: Màn hình điều khiển chính.\n   - *Kết quả*: Đảm",
+      "loi": null
+    },
+    {
+      "id": "T33",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1594,
+      "nguon": [
+        "aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/operational/component-library.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   **Linh kiện chip 0603:** Cho phép xoay lệch tối đa **±10°** [1], [2], [3].\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n*   Từ bảng \"Chip Resistor / Capacitor\" trong `aoi-thresholds.md`:\n    ```markdown\n    | 0603 | ±0.15mm | ±0.15mm | ±10° |\n    ```\n\n(4) Nguồn gốc (file/đường dẫn):\n*   `aoi-thresholds.md` [1], [2], [3]",
+      "loi": null
+    },
+    {
+      "id": "T34",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1765,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md",
+        "knowledge/features/analytics/defect-prediction.md",
+        "knowledge/domain/commission-a-new-pcb.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   **IC QFP/QFN (Pitch 0.5mm):** Lead offset tối đa là **±0.05mm** [1], [2], [3].\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n*   Từ bảng \"IC QFP/QFN\" trong [1], [2], [3]:\n    ```markdown\n    | 0.5mm | ±0.05mm | ±1.5° |\n    ```\n\n(4) Nguồn gốc (file/đường dẫn):\n*   [1] `knowledge/domain/aoi-thresholds.md` (đoạn con 6)\n*   [2] `knowledge/domain/aoi-thresholds.md` (part 2)\n*   [3] `aoi-thresholds.md`",
+      "loi": null
+    },
+    {
+      "id": "T35",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1957,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/features/analytics/quality-gates.md",
+        "knowledge/workflows/create-measurement-point.playbook.yaml",
+        "knowledge/features/analytics/defect-heatmap.md"
+      ],
+      "traLoi": "(1) Góc thấm ướt (Wetting angle) của mối hàn đạt yêu cầu phải nằm trong khoảng từ **30° đến 75°**.\n\n(2) Để xác nhận và quản lý ngưỡng này, kỹ sư thực hiện các bước sau:\n1. **Kiểm tra thông số kỹ thuật**: Truy cập tài liệu cấu hình AOI hoặc bảng tiêu chuẩn chất lượng hàn. Tại đây, thông số `Wetting angle` được quy định rõ ràng với giá trị Min là 30° và Max là 75° [1].\n2. **Đánh giá qua Quality Gates**: Nếu hệ thống sử dụng cổng kiểm soát chất lượng, hãy truy cập menu `Analytics` › `Quality Gates` hoặc URL `/analytics/quality-gates` để xem các tiêu chí đánh giá [3]. Các gate này có thể tích hợp các chỉ số liên quan đến chất lượng mối hàn, mặc dù góc thấm ướt cụ thể thường được kiểm tra trực tiếp tại bước AOI hoặc SPI.\n3. **Xử lý nếu vượt ngưỡng**: Nếu góc thấm",
+      "loi": null
+    },
+    {
+      "id": "T36",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2247,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nHệ thống tự động kích hoạt cảnh báo cấp độ **Alert** khi máy AOI bị ngoại tuyến (offline) liên tục trong khoảng thời gian **lớn hơn 10 phút**.\n\n(2) Các bước đánh số\n1. **Kiểm tra ngưỡng cấu hình**: Truy cập vào tài liệu cấu hình ngưỡng [1]. Tại bảng `Factory Alert Thresholds`, xác nhận điều kiện `Machine offline > 10 phút` tương ứng với cấp độ `Alert`. Đây là quy tắc cốt lõi để hệ thống phân loại sự cố.\n2. **Theo dõi trạng thái thực tế**: Vào giao diện **Danh sách cảnh báo** (`/alerts`) [4]. Sử dụng bộ lọc để tìm các cảnh báo có trạng thái `offline` hoặc `Alert` cho máy cụ thể.\n3. **Xác minh thời gian**: Kiểm tra lịch sử cảnh báo (`history`) [5] để xác định chính xác thời điểm máy bắt đầu mất kết nối. Nếu thời gian trôi qua từ lúc mất kết nối vượt quá 10\n\n_Nguồn số liệu: `daily_statistics` · 1d · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "T37",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1601,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   Liên tiếp 5 bảng NG cùng loại lỗi → Mức cảnh báo: Major\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n*   \"Liên tiếp 5 bảng NG cùng loại lỗi\"\n*   \"Major\"\n\n(4) Nguồn gốc:\n*   [1] knowledge/domain/aoi-thresholds.md\n*   [2] aoi-thresholds.md\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "T38",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1840,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-detail.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Khi kiểm tra độ đồng đều ánh sáng phát hiện sai lệch vượt quá ±5% so với giá trị chuẩn, cần thực hiện vệ sinh lens và kiểm tra LED ring để khắc phục ngay lập tức [1].\n\n(2) Các bước thực hiện:\n1. **Chuẩn bị và Đo lường**: Đặt white calibration board vào vị trí kiểm tra tiêu chuẩn. Sử dụng hệ thống để đo giá trị ánh sáng hiện tại và so sánh với giá trị chuẩn đã lưu trong cấu hình sản phẩm.\n2. **Đánh giá Sai lệch**: Kiểm tra kết quả đo. Nếu độ lệch nằm trong khoảng `±5%`, hệ thống coi là đạt chuẩn. Nếu lệch `> 5%`, tiến hành bước tiếp theo [1].\n3. **Vệ sinh Lens**: Mở panel bảo vệ camera/lens. Sử dụng khăn chuyên dụng và dung dịch làm sạch quang học để vệ sinh bề mặt lens, loại bỏ bụi hoặc vết bẩn gây tán xạ ánh sáng.\n4. **Kiểm tra LED Ring**: Kiểm tra vật lý\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/inspection/:id/images`, `/api/measurement-point/:pointDefId/reference-image`",
+      "loi": null
+    },
+    {
+      "id": "T39",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2217,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-defect-types.md",
+        "knowledge/operational/root-cause-analysis.md",
+        "knowledge/features/analytics/root-cause-analysis.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nLỗi cầu hàn (Bridging) xảy ra khi thiếc hàn kết nối sai các chân linh kiện, thường do lượng paste quá nhiều, nhiệt độ reflow sai hoặc stencil hỏng. Đây là lỗi Critical gây ngắn mạch, cần khắc phục ngay bằng rework.\n\n(2) Các bước đánh số\n1. **Xác định lỗi**: Trong giao diện inspection, tìm mã lỗi `BRG` hoặc `SB` (Solder Bridge) tại các vị trí chân linh kiện.\n2. **Phân tích nguyên nhân**: Truy cập menu `Analytics` › `Root Cause Analysis` tại URL `/analytics/root-cause` để chạy phân tích tự động.\n3. **Chạy phân tích**: Nhấn nút `Analyze` trên giao diện. Hệ thống sẽ thu thập dữ liệu từ máy móc, cảm biến (nhiệt độ) và vật liệu.\n4. **Xem kết quả**: Kiểm tra cây Ishikawa-like và danh sách nguyên nhân được xếp hạng theo độ tin cậy (confidence %).\n5. **Khắc phục**: Nếu nguyên nhân là stencil hoặc paste, điều chỉnh quy trình. Nếu lỗi đã xảy ra, thực hiện rework bằng tay, dùng hút thiếc hoặc wick.\n\n(3) Lưu ý/lỗi thường gặp\n- **Mức độ nghiêm trọng**: Lỗi Bridging là Critical vì gây ngắn mạch, ảnh hưởng trực tiếp đến chức năng board.\n",
+      "loi": null
+    },
+    {
+      "id": "T40",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2103,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/features/inspection/aoi-packages.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nMã lỗi **MIS** (viết tắt của **Missing Component**) trên máy AOI chỉ định lỗi **Thiếu Linh Kiện**, được phân loại là mức độ **Critical** (Nghiêm trọng). Lỗi này xảy ra khi vị trí linh kiện trên bản vẽ thiết kế không có linh kiện thực tế được lắp đặt.\n\n(2) Các bước đánh số\n1. **Xác định lỗi:** Trong giao diện giám sát máy AOI hoặc báo cáo kiểm tra, tìm mã lỗi `MIS` hoặc `MC` (Missing Component). Kết quả: Xác nhận đây là lỗi thiếu linh kiện tại vị trí cụ thể.\n2. **Kiểm tra nguyên nhân:** Đối chiếu với các nguyên nhân phổ biến như Feeder hết linh kiện, hút chân không yếu, hoặc linh kiện bị thổi bay trong quá trình vận chuyển. Kết quả: Xác định nguyên nhân gốc rễ (ví dụ: kiểm tra mức nguyên liệu trong Feeder).\n3. **Khắc phục:** Thực hiện đặt linh kiện bằng tay tại vị trí thiếu hoặc sử dụng máy **rework BGA** để lắp lại. Kết quả: Sửa lỗi vật lý trên bảng mạch.\n4. **Kiểm tra lại:** Chạy lại quy trình kiểm tra hoặc quét lại khu vực vừa sửa. Kết quả: Xác nhận lỗi `MIS` đã được giải quyết và bảng mạch đạt chuẩn.\n\n(3) Lưu ý/lỗi thường gặp",
+      "loi": null
+    },
+    {
+      "id": "T41",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1183,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-defect-types.md"
+      ],
+      "traLoi": "(1) 1\n\n(2) Góc wetting < 45°\n\n(3) \"Kiểm tra: Góc wetting < 45°\"\n\n(4) [1] knowledge/domain/aoi-defect-types.md, [4] knowledge/domain/aoi-defect-types.md",
+      "loi": null
+    },
+    {
+      "id": "T42",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1699,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational/repair-station.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/operational-approved/edge-nodes.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Pad bị bong tróc (Pad Damage) thuộc loại lỗi Critical, do đó **không thể** thực hiện sửa chữa (rework) tại chỗ.\n\n(2) Các bước đánh số:\n1. **Xác định lỗi**: Tại màn hình kiểm tra AOI, hệ thống tự động ghi nhận lỗi với mã `PAD` hoặc `PD` (Pad Damage) khi phát hiện pad bị bong tróc, ăn mòn hoặc bám vật liệu lạ [1].\n2. **Quyết định xử lý**: Kỹ sư QA inline (vai trò `history_view` hoặc quyền tương đương) cần truy cập vào tab **Trạm sửa chữa** (`/repair-station`) hoặc giao diện kiểm soát dòng để quyết định hướng xử lý cho sản phẩm NG (Not Good) [3], [4].\n3. **Thực thi lệnh**: Bấm nút **Scrap** (loại bỏ) trên giao diện. Hệ thống sẽ tự động cập nhật lô: tăng biến `ngCount`, tính lại `ngRate` và ghi log audit",
+      "loi": null
+    },
+    {
+      "id": "T43",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1999,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational-approved/anomaly-banks.md",
+        "knowledge/domain/aoi-defect-types.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Lỗi mức độ Minor (ký hiệu MI) chỉ yêu cầu ghi nhận, không cần thực hiện rework ngay lập tức.\n\n(2) Các bước thực hiện:\n1. **Xác định mức độ lỗi**: Tại màn hình phân loại lỗi AOI hoặc danh mục lỗi (`/defect-catalog`), kiểm tra bảng phân loại mức độ lỗi [1]. Xác nhận lỗi thuộc nhóm **Minor** với ký hiệu **MI**.\n2. **Ghi nhận dữ liệu**: Thực hiện ghi nhận lỗi vào hệ thống. Tại UI, truy cập menu **Chất lượng › Danh mục lỗi** (`/defect-catalog`) để đảm bảo mã lỗi đã được định nghĩa đúng [2]. Nếu lỗi chưa có trong danh sách, cần kiểm tra kỹ để tránh tạo bản trùng lặp (triệu chứng: cùng lỗi có hai tên khác nhau) [2].\n3. **Tiếp tục quy trình**: Sau khi ghi nhận, linh kiện/vị trí lỗi được phép chuyển tiếp mà không cần dừng dây chuyền hay sửa chữa ngay (khác với Critical/MA) [1].\n\n(3) Lưu ý/lỗi thường gặp:\n- **Trùng mã lỗi**: Nếu cùng một lỗi Minor bị ghi bằng hai tên/mã khác nhau, báo cáo Pareto sẽ bị chia đôi, gây khó khăn cho việc phân tích nguyên nhân gốc rễ [2]. Cần thống nhất một mã chuẩn duy nhất.\n- **Quy",
+      "loi": null
+    },
+    {
+      "id": "T44",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2361,
+      "nguon": [
+        "aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "aoi-defect-types.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nĐể khắc phục lỗi cầu hàn (Bridging) trên IC có pitch nhỏ (0.4–0.5 mm), cần kiểm tra stencil, giảm lượng paste và tăng nhiệt độ pre-heat để đảm bảo paste chảy đều [1].\n\n(2) Các bước thực hiện\n1. **Kiểm tra Stencil**: Xác định xem stencil có bị mòn hoặc hở không. Nếu có, cần thay thế hoặc làm sạch stencil để đảm bảo độ chính xác của khe hở [1].\n2. **Điều chỉnh lượng paste**: Giảm lượng paste hàn được in lên bảng mạch. Lượng paste quá nhiều là nguyên nhân chính gây ra cầu hàn [1].\n3. **Tăng nhiệt độ Pre-heat**: Tăng nhiệt độ giai đoạn pre-heat trong quy trình reflow. Điều này giúp paste chảy đều hơn trước khi vào giai đoạn reflow chính, giảm nguy cơ cầu hàn [1].\n4. **Rework (nếu lỗi đã xảy ra)**: Sử dụng phương pháp hàn tay, hút thiếc hoặc dùng wick để loại bỏ thiếc thừa giữa các chân IC [2].\n\n(3) Lưu ý/lỗi thường gặp\n- **Mã lỗi**: BRG, SB (Solder Bridge) [2].\n- **Mức độ**: Critical – lỗi gây ngắn mạch [2].\n- **Lỗi thường gặp**: Stencil bị mòn hoặc hở, lượng paste quá nhiều, nhiệt độ reflow không đúng [2].\n\n(4) Liên quan\n- **Tombstone (Linh Kiện Dựng Đứng)**: Thường gặp ở chip 0201, 0402, cần cân bằng thiết kế pad",
+      "loi": null
+    },
+    {
+      "id": "T45",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1789,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nMã lỗi **E021** trên máy AOI chỉ định trạng thái **Board jam** (kẹt bảng) tại hệ thống vận chuyển. Nguyên nhân chính là bảng PCB bị mắc kẹt, đòi hỏi phải dừng máy và xử lý thủ công ngay lập tức để tránh hư hỏng linh kiện hoặc cơ khí.\n\n(2) Các bước xử lý\n1. **Xác nhận lỗi**: Kiểm tra màn hình cảnh báo tại `/alerts` (Menu: Thiết bị & Giám sát › Danh sách cảnh báo) để xác nhận mã **E021** đang active [5].\n2. **Dừng máy an toàn**: Nhấn nút dừng khẩn cấp hoặc dừng quy trình qua UI để đảm bảo an toàn cho kỹ sư.\n3. **Xử lý vật lý**: Mở nắp bảo vệ khu vực vận chuyển, lấy bảng PCB bị kẹt ra bằng tay một cách nhẹ nhàng để tránh làm cong hoặc gãy board [1].\n4. **Kiểm tra cơ khí**: Kiểm tra kỹ **conveyor belt** (dây chuyền\n\nAPI liên quan: `/api/machines/:id/allowed-products`\nMàn hình liên quan: `/machines/5`",
+      "loi": null
+    },
+    {
+      "id": "T46",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 532,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-troubleshooting.md",
+        "knowledge/domain/howto-ng-handling-sop.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "T47",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 544,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "aoi-troubleshooting.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "T48",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2337,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "aoi-troubleshooting.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/machine-registration.md"
+      ],
+      "traLoi": "(1) Định nghĩa\nKhi bảng (board) bị kẹt trong máy AOI, hành động ưu tiên hàng đầu và bắt buộc ngay lập tức là nhấn nút **Emergency Stop** (Dừng khẩn cấp) để đảm bảo an toàn và ngăn ngừa hư hỏng thêm.\n\n(2) Thành phần/Đặc điểm chính\n*   **Hành động tức thì:** Nhấn **Emergency Stop**.\n*   **Trạng thái chờ:** Đợi tất cả chuyển động của máy dừng hoàn toàn.\n*   **Quy trình an toàn:** Mở nắp an toàn theo đúng quy trình đã định.\n*   **Xử lý vật lý:** Lấy bảng ra nhẹ nhàng bằng tay.\n*   **Kiểm tra hậu sự cố:** Kiểm tra xem bảng có bị hỏng không và tìm nguyên nhân gốc rễ (bụi, mảnh linh kiện, board bị cong warping).\n*   **Khôi phục:** Reset nút E-stop và chạy lại máy.\n\n(3) Ví dụ cụ thể\nTheo quy trình xử lý Board Kẹt (Board Jam) trong tài liệu kỹ thuật:\n1.  **Bước 1:** Nhấn **Emergency Stop** ngay lập tức [1].\n2.  **Bước 2:** Đợi tất cả chuyển động dừng hoàn toàn [1].\n3.  **Bước 3:** Mở nắp an toàn theo đúng quy trình [1].\n4.  **Bước 4:** Lấy bảng ra nhẹ nhàng bằng tay [1].\n5.  **Bước 5:** Kiểm tra bảng có bị hỏng không [1].\n6.  **Bước 6:** Kiểm tra nguyên nhân kẹt (ví",
+      "loi": null
+    },
+    {
+      "id": "T49",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1762,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "aoi-troubleshooting.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nKhông được ngắt điện máy AOI đột ngột vì hành động này có thể gây hỏng cơ sở dữ liệu (database) do quá trình ghi dữ liệu sản xuất chưa được đồng bộ hoặc đóng gói an toàn [1].\n\n(2) Các bước đánh số\n1. **Làm gì:** Hoàn thành batch kiểm tra hiện tại và đảm bảo không còn board nào đang trong quá trình xử lý.\n   **Ở đâu trong UI:** Màn hình chính của phần mềm AOI, kiểm tra trạng thái `Status` của batch.\n   **Kết quả:** Hệ thống sẵn sàng cho quy trình tắt máy an toàn.\n\n2. **Làm gì:** Lưu dữ liệu sản xuất và tắt chương trình theo menu.\n   **Ở đâu trong UI:** Menu `File` hoặc `System` -> Chọn `Save Data` và `Exit Application`.\n   **Kết quả:** Dữ liệu tạm thời được ghi vào bộ nhớ đệm và chuẩn bị ghi vào database.\n\n3. **Làm gì:** Tắt hệ điều hành Windows.\n   **Ở đâu",
+      "loi": null
+    },
+    {
+      "id": "T50",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1777,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/andon.md",
+        "knowledge/operational-approved/oee-dashboard.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/andon.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Sau sự cố mất điện, cần xem xét board cuối cùng đã qua máy trước khi mất điện để quyết định có cần **re-inspect** (kiểm tra lại) hay không, nhằm đảm bảo không bỏ sót lỗi sản xuất.\n\n(2) Các bước thực hiện:\n1. **Kiểm tra trạng thái máy**: Xác định xem có board nào đang kẹt hoặc nằm trong máy không [1].\n2. **Khôi phục hệ thống**: Chạy lại quy trình khởi động đầy đủ (startup procedure), bao gồm bật nguồn theo thứ tự (UPS → Server → Monitor → Máy AOI), chờ warm-up ít nhất 15 phút, chạy self-test và calibration check [4].\n3. **Kiểm tra dữ liệu**: Thực hiện kiểm tra tính toàn vẹn của database (`database integrity`) để đảm bảo không có dữ liệu bị hỏng do ngắt điện đột ngột [1].\n4. **Xử lý board cuối cùng**: Xác định board cuối cùng đã đi qua máy trước thời điểm mất điện. Nếu nghi ngờ chất",
+      "loi": null
+    },
+    {
+      "id": "T51",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2088,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Khi máy AOI gặp lỗi phần mềm, bộ phận chịu trách nhiệm liên hệ là **IT Department** hoặc **nhà cung cấp AOI** [1], [2].\n\n(2) Các bước thực hiện:\n1. **Xác nhận lỗi**: Tại giao diện máy hoặc hệ thống giám sát, kiểm tra mã lỗi hoặc thông báo trạng thái. Nếu là lỗi liên quan đến `Database connection fail` (E042) hoặc `Network connection lost` (E041), đây thường là vấn đề hạ tầng phần mềm/mạng [4].\n2. **Liên hệ bộ phận hỗ trợ**:\n   - Nếu lỗi thuộc về kết nối cơ sở dữ liệu, mạng nội bộ hoặc dịch vụ hệ thống: Liên hệ **IT Department** [1], [2], [4].\n   - Nếu lỗi thuộc về ứng dụng AOI, firmware hoặc logic chương trình: Liên hệ **nhà cung cấp AOI** hoặc **Kỹ sư AOI** nội bộ [1], [2].\n3. **Cung cấp thông tin**: Khi liên hệ, cần cung cấp mã lỗi cụ thể (ví dụ: `E042`), thời gian xảy ra, và mô tả chi tiết (ví dụ: \"SQL Server service không phản hồi\") để bộ phận hỗ trợ xử lý nhanh [4].\n4. **Theo dõi và xác nhận**: Sau khi bộ phận hỗ trợ xử lý, kiểm tra",
+      "loi": null
+    },
+    {
+      "id": "T52",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1906,
+      "nguon": [
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "docs/ECOSYSTEM/29_COMPONENT_PANEL_OPERATOR_MASTER_DESIGN.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nMã định danh bảng (Board ID) thường tuân theo định dạng `[ProductCode]-[SerialNumber]-[DateCode]` [1].\n\n(2) Các bước thực hiện\n1. **Truy cập cấu hình**: Vào mục **Settings → Board ID** trong giao diện người dùng [1].\n2. **Cấu hình nhập liệu**: Thiết lập chế độ quét barcode scanner hoặc cho phép nhập thủ công (manual) [1].\n3. **Kiểm tra định dạng**: Đảm bảo dữ liệu đầu vào khớp với cấu trúc chuẩn `[ProductCode]-[SerialNumber]-[DateCode]` [1].\n4. **Xác nhận kết quả**: Hệ thống sẽ nhận diện Board ID để liên kết với báo cáo kiểm tra, nơi hiển thị rõ ràng trường `Board ID: [Serial Number]` trong phần chi tiết board [3].\n\n(3) Lưu ý/lỗi thường gặp\n- **Định dạng sai**: Nếu không tuân thủ cấu trúc `[ProductCode]-[SerialNumber]-[DateCode]",
+      "loi": null
+    },
+    {
+      "id": "T53",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2002,
+      "nguon": [
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/howto-measurement-point-shapes.md",
+        "knowledge/domain/howto-measurement-point-shapes.md",
+        "knowledge/workflows/create-measurement-point.playbook.yaml",
+        "knowledge/domain/commission-a-new-pcb.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   **Tối thiểu 2 fiducial** trên 1 sản phẩm để thực hiện align xoay/dịch.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n*   \"Tối thiểu **2 fiducial** trên 1 sản phẩm để align xoay/dịch.\" [2]\n*   \"**Fiducial Teaching:** Chọn ít nhất 2 fiducial marks.\" [1]\n\n(4) Nguồn gốc (file/đường dẫn):\n*   [1] `knowledge/domain/aoi-workflow.md` (SOP-07: Tạo Chương Trình Mới)\n*   [2] `knowledge/domain/howto-measurement-point-shapes.md` (Quy tắc fiducial)",
+      "loi": null
+    },
+    {
+      "id": "T54",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1808,
+      "nguon": [
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/features/alerts/mqtt-alert-rules.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   Tỷ lệ báo sai (false alarm) phải **< 5%** khi chạy thử nghiệm 30 bảng mẫu trong giai đoạn Validation.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n*   \"Validation: Chạy 30 bảng → false alarm < 5%, detect rate 100%.\"\n\n(4) Nguồn gốc:\n*   [4] AOI Workflow & SOP (Quy Trình Vận Hành Chuẩn) (đoạn con 12) | knowledge/domain/aoi-workflow.md",
+      "loi": null
+    },
+    {
+      "id": "T55",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1874,
+      "nguon": [
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/features/production/production-orders.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/howto-lot-management.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Việc bắt đầu sản xuất hàng loạt chỉ được phép thực hiện sau khi quy trình \"first article\" (kiểm tra mẫu đầu tiên) hoàn tất và đạt kết quả PASS.\n\n(2) Các bước đánh số:\n1. **Chuẩn bị mẫu**: Lấy 1 board mẫu đã được xác nhận là OK (không lỗi) [4].\n2. **Chạy kiểm tra**: Đưa board mẫu qua máy AOI để thu thập dữ liệu kiểm tra [4].\n3. **Đánh giá kết quả**: Kiểm tra xem có lỗi giả (false alarm) hay không, và đảm bảo máy phát hiện đúng tất cả vị trí linh kiện [4].\n4. **Xử lý lỗi (nếu có)**: Nếu phát hiện false alarm, kỹ sư phải điều chỉnh chương trình AOI ngay lập tức [4].\n5. **Ghi nhận**: Ghi lại kết quả first article vào form quy trình [4].\n6. **Khởi động sản xuất**: Chỉ khi kết quả first article là **PASS** (",
+      "loi": null
+    },
+    {
+      "id": "T56",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1848,
+      "nguon": [
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational-approved/andon.md",
+        "knowledge/operational/equipment-standards.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/operational/device-adapters.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Khi cầm bảng mạch, bắt buộc phải đeo dây đeo cổ tay chống tĩnh điện (ESD wrist strap) để bảo vệ linh kiện.\n\n(2) Các bước thực hiện:\n1. **Chuẩn bị thiết bị**: Lấy dây đeo cổ tay chống tĩnh điện (ESD wrist strap) và đảm bảo dây nối đất hoạt động tốt.\n2. **Đeo thiết bị**: Đeo dây vào cổ tay, điều chỉnh sao cho tiếp xúc da tốt.\n3. **Nối đất**: Kết nối đầu còn lại của dây vào điểm nối đất chung (common ground point) tại khu vực làm việc.\n4. **Kiểm tra**: Xác nhận đèn báo trên dây đeo (nếu có) sáng hoặc kiểm tra điện trở tiếp đất theo tiêu chuẩn an toàn.\n5. **Tiến hành cầm bảng**: Sau khi hoàn tất, mới được phép cầm bảng mạch để thao tác.\n\n(3) Lưu ý/lỗi thường gặp:\n- **Lỗi phổ biến**: Quên đeo dây hoặc đeo lỏng lẻo khiến",
+      "loi": null
+    },
+    {
+      "id": "T57",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2215,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/features/production/production-dashboard.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nTỷ lệ đạt ngay lần đầu (FPY) là chỉ số quan trọng để đo lường chất lượng quy trình sản xuất, được tính dựa trên tỷ lệ giữa số lượng sản phẩm đạt chuẩn ở lần kiểm tra đầu tiên so với tổng số lượng sản phẩm đã qua kiểm tra.\n\n(2) Các bước đánh số\n1. **Xác định công thức tính toán**:\n   - **Làm gì**: Áp dụng công thức chuẩn để tính FPY cho lô sản xuất hoặc báo cáo AOI.\n   - **Ở đâu trong UI**: Thông tin này thường hiển thị trên **Bảng điều khiển sản xuất (Production Dashboard)** tại phần Strip KPI hoặc trong **Báo cáo Lot (Lot Report)** khi xem chi tiết một lô cụ thể.\n   - **Kết quả**: Bạn sẽ nhận được giá trị phần trăm FPY, giúp đánh giá hiệu suất trạm hoặc lô. Công thức cụ thể như sau:\n   ```\n   FPY = (Pass lần đầu / Tổng bảng kiểm tra) × 100%\n\n_Nguồn số liệu: `product_inspections` · interval=day · 14d · 2 hàng_",
+      "loi": null
+    },
+    {
+      "id": "T58",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 539,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/operational/feeder-verify.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/workflows/ng-handling.playbook.yaml"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "T59",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2627,
+      "nguon": [
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/aoi-reports.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Theo nguyên tắc Pareto, bạn nên tập trung điều tra nguyên nhân gốc rễ (RCA) vào **top 3 lỗi** hoặc nhóm lỗi đầu tiên chiếm khoảng 80% tổng số lỗi (Vital Few), vì đây là nhóm gây ảnh hưởng lớn nhất đến chất lượng sản phẩm.\n\n(2) Các bước thực hiện:\n1. **Truy cập giao diện**: Vào menu `Analytics → Pareto Analysis` tại URL `/pareto-analysis` hoặc `Menu › Báo cáo chất lượng › Pareto NG` [1], [3].\n2. **Cấu hình bộ lọc**: Chọn khoảng thời gian (mặc định 30 ngày hoặc 7 ngày nếu dùng AI Assistant) và áp dụng bộ lọc theo `Factory`, `Line`, hoặc `Machine` cụ thể để thu hẹp phạm vi phân tích [1], [3].\n3. **Chọn nhóm dữ liệu**: Chuyển sang tab `By Type` để xem xếp hạng lỗi theo loại, hoặc `By Machine`/`By Line` nếu cần xác định vị trí phát sinh lỗi [1].\n4. **Xác định nhóm mục tiêu**: Quan sát biểu đồ cột và đường tích lũy %. Tập trung vào các lỗi nằm trước vạch đỏ 80% (thường là top 3-5 lỗi) [3]. Ví dụ dữ liệu mẫu:\n```\nDefect Type     | Count | %      | Cumulative%\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "T60",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2050,
+      "nguon": [
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/features/dashboard/dashboard-drilldown.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nKhi tỷ lệ lỗi (NG Rate) tăng đột biến, kỹ sư cần áp dụng mô hình **5M1E** (Machine, Material, Method, Man, Measurement, Environment) để kiểm tra các yếu tố ảnh hưởng, kết hợp với quy trình **5-Why** để tìm nguyên nhân gốc rễ (RCA) [3], [4].\n\n(2) Các bước thực hiện\n1. **Xác nhận hiện trạng và cô lập**: Tại màn hình `/mqtt-alerts`, xem cảnh báo NG burst. Tạm dừng nguồn cấp nếu có thể và cô lập sản phẩm NG vào khay đỏ 'Chờ phân loại' [1].\n2. **Kiểm tra mô hình 5M1E**: Tại màn hình `/root-cause-analysis` hoặc `/ai-inspection-analytics`, rà soát 6 yếu tố:\n   - **Machine**: Thay đổi cài đặt hay Calibration?\n   - **Material**: Batch nguyên liệu mới?\n   - **Method**: SOP có thay đổi?\n   - **Man**: Operator\n\nMàn hình liên quan: `/mqtt/ng-rate-threshold`\n\nVí dụ:\n```\nBoard ID: [Serial Number]\nModel: [Part Number]\nInspection Time: [Timestamp]\nResult: NG / PASS\n─────────────────────────────\nDefect List:\n  #1  Component: R12\n      Defect: Missing Component\n      Position: X=45.2mm Y=32.1mm\n      Image: [link]\n      Status: Confirmed NG\n─────────\n…\n```",
+      "loi": null
+    },
+    {
+      "id": "T61",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1608,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/operational/oee-target-settings.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   **Rework Rate**: Target là **< 5%** [1], [4].\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n> | Rework Rate | Rework / Total | < 5% |\n\n(4) Nguồn gốc:\n*   [1] `knowledge/domain/aoi-reports.md` (Bảng Chỉ Số KPI Chính)\n*   [4] `knowledge/domain/aoi-reports.md` (Bảng Chỉ Số KPI Chính)",
+      "loi": null
+    },
+    {
+      "id": "T62",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2288,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/howto-spc-control.md",
+        "howto-spc-control.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/analytics/spc-rules.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nGiới hạn kiểm soát trên (UCL) và dưới (LCL) trong hệ thống được tính dựa trên công thức thống kê `mean ± 3·σ` (trung bình cộng trừ/nhân 3 lần độ lệch chuẩn). Hệ thống không tự động sinh các giá trị này từ dữ liệu lịch sử mặc định; kỹ sư phải nhập thủ công hoặc kích hoạt tính năng tính toán tự động từ một số lượng mẫu cụ thể.\n\n(2) Các bước thực hiện\n1. **Truy cập cấu hình điểm đo**: Điều hướng đến `Menu › Sản phẩm › chọn SKU › tab \"Điểm đo\"`. Tại đây, bạn sẽ thấy các cột cấu hình cho **UCL**, **LCL**, **USL** (giới hạn kỹ thuật trên), và **LSL** (giới hạn kỹ thuật dưới).\n2. **Nhập giá trị thủ công hoặc tính tự động**:\n   - Nếu nhập tay: Điền trực tiếp giá trị UCL/LCL đã xác định vào các ô tương ứng\n\n_Dữ liệu sống: Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "T63",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1274,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "howto-spc-control.md",
+        "knowledge/features/analytics/data-comparison.md"
+      ],
+      "traLoi": "(1) 1\n\n(2)\n*   Mặc định lấy **30** mẫu gần nhất.\n\n(3)\n> \"hoặc bấm **\"Tính từ N mẫu gần nhất\"** (mặc định N=30).\"\n\n(4)\n[1] SPC — Đường UCL / LCL / Cpk (đoạn con 4) | knowledge/domain/howto-spc-control.md",
+      "loi": null
+    },
+    {
+      "id": "T64",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1179,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml"
+      ],
+      "traLoi": "(1) 1\n(2)\n*   Cpk được tính lại mỗi 100 mẫu mới.\n\n(3) \"Cpk được tính lại mỗi 100 mẫu mới.\"\n\n(4) [1] SPC — Đường UCL / LCL / Cpk (đoạn con 6) | knowledge/domain/howto-spc-control.md",
+      "loi": null
+    },
+    {
+      "id": "T65",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2183,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/analytics/spc-rules.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/alerts/alerts-list.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Khi vi phạm quy tắc SPC, hệ thống tự động gửi thông báo (push notification) đến vai trò `quality_engineer` [1].\n\n(2) Các bước thực hiện:\n1. **Xác định cơ chế kích hoạt**: Hệ thống sử dụng engine `server/utils/spcRules.ts` để chạy các luật (Western Electric, Nelson, EWMA) [2]. Khi phát hiện vi phạm, hàm `detectSpcViolations` hoặc `detectEwmaOoc` sẽ kích hoạt quy trình cảnh báo [2].\n2. **Kiểm tra hành động hệ thống**: Tại thời điểm vi phạm, hệ thống thực hiện 3 hành động đồng thời:\n    - Tô đỏ điểm vi phạm trên biểu đồ.\n    - Ghi log vào bảng `spc_violations`.\n    - Gửi push notification [1].\n3. **Xác định người nhận**: Theo tài liệu, push notification được gửi cụ thể đến vai trò `quality_engineer` [1].\n4. **Theo dõi\n\n_Dữ liệu sống: Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "T66",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1296,
+      "nguon": [
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "(1) 1\n\n(2)\n- Ngưỡng cảnh báo mặc định là **5 %**.\n\n(3)\n- \"Ngưỡng cảnh báo mặc định 5 % (cấu hình tại `Cài đặt › Cảnh báo NG`).\" [1]\n- \"Quản lý lô báo NG-rate vượt ngưỡng cảnh báo (mặc định ≥ 5 % trong 30 phút).\" [2]\n\n(4)\n- [1] `knowledge/domain/howto-ng-handling-sop.md`\n- [2] `knowledge/domain/howto-ng-handling-sop.md`",
+      "loi": null
+    },
+    {
+      "id": "T67",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2478,
+      "nguon": [
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "howto-ng-handling-sop.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/operational-approved/defect-catalog.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nSản phẩm NG chưa gán mã lỗi sẽ **không** được tính vào báo cáo Pareto và SPC. Việc bỏ qua bước chọn mã lỗi là nguyên nhân chính khiến dữ liệu chất lượng bị thiếu hụt hoặc sai lệch trong phân tích.\n\n(2) Các bước thực hiện\n1. **Xác nhận trạng thái tại Line AOI**: Khi máy phát hiện sản phẩm NG, kỹ sư hoặc operator phải thực hiện thao tác chọn mã lỗi tương ứng trên giao diện. Nếu bỏ qua, hệ thống sẽ không gán `defect_code`.\n2. **Kiểm tra cơ chế ghi log**: Hệ thống vẫn ghi nhận sự kiện này vào log audit và tăng `ngCount` (theo [2]), nhưng do thiếu mã lỗi cụ thể, nó không thể nhóm vào các nhóm lỗi để vẽ biểu đồ Pareto.\n3. **Xử lý khi DB không khả dụng**: Nếu gặp badge ⚠️ `DB_UNAVAILABLE`, thao tác ghi log vẫn được lưu vào hàng đợi local và đồng bộ sau khi DB phục hồi, nhưng việc gán mã lỗi vẫn cần được thực hiện đầy đủ để đảm bảo tính chính xác của báo cáo sau khi đồng bộ [1].\n4. **Kiểm tra báo cáo**: Truy cập `Menu › Báo cáo chất lượng › Pareto NG` để xác nhận. Nếu thấy sự chênh lệch giữa tổng số NG thực tế và số lượng hiển thị trên biểu đồ, hãy kiểm tra\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "T68",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1809,
+      "nguon": [
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nCông nhân cần đặt sản phẩm NG vào khay đỏ \"Chờ phân loại\" (hoặc khay NG riêng biệt) để tránh lẫn với sản phẩm OK [1][2][5].\n\n(2) Các bước thực hiện\n1. **Lấy và đặt sản phẩm**: Lấy sản phẩm NG khỏi băng tải và đặt ngay vào khay đỏ \"Chờ phân loại\" [1][2].\n   - *Ở đâu*: Tại khu vực line AOI, ngay cạnh băng tải.\n   - *Kết quả*: Sản phẩm được tách biệt, không lẫn với hàng OK [5].\n2. **Quét mã lại**: Quét lại mã QR/barcode của sản phẩm vừa lấy [1][2].\n   - *Ở đâu*: Trên màn hình AOI hoặc thiết bị quét tại chỗ.\n   - *Kết quả*: Hệ thống nhận diện sản phẩm để xử lý tiếp.\n3. **Xác nhận lỗi**: Chọn sản phẩm NG trên màn hình AOI, bấm **\"Xem ảnh defect\"** để xác nhận là lỗi thật",
+      "loi": null
+    },
+    {
+      "id": "T69",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1854,
+      "nguon": [
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/domain/howto-shift-change.md",
+        "howto-shift-change.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nCó, hệ thống hỗ trợ cấu hình ca làm việc kéo dài qua nửa đêm (cross-midnight). Điều này được thực hiện bằng cách thiết lập giờ kết thúc nhỏ hơn giờ bắt đầu và kích hoạt cờ `crossMidnight=true` trong cấu hình ca đêm [1].\n\n(2) Các bước thực hiện\n1. **Truy cập cấu hình**: Vào `Menu › Cài đặt › Quản lý ca làm việc` (URL: `/settings/shifts`) [2].\n2. **Tạo/Sửa ca**: Nhập `startTime` (vd. `22:00`) và `endTime` (vd. `06:00`) [2].\n3. **Bật tính năng qua đêm**: Đối với ca đêm, phải bật flag `crossMidnight=true` để logic hệ thống tính toán đúng, tránh lỗi không nhận diện ca [1].\n4. **Kiểm tra (Preview)**: Sử dụng nút `Preview` trên giao diện, nhập timestamp ví dụ `2026-",
+      "loi": null
+    },
+    {
+      "id": "T70",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2395,
+      "nguon": [
+        "knowledge/domain/howto-shift-change.md",
+        "howto-shift-change.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/operational-approved/carbon-dashboard.md",
+        "knowledge/features/alerts/alerts-list.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nKhi trưởng ca quên bấm \"Nhận ca\", hệ thống vẫn ghi nhận sản phẩm vào ca cũ theo giờ chấm nhưng không tạo bản ghi `ShiftHandover`. Để khắc phục, người dùng cần sử dụng nút **\"Bổ sung bàn giao\"** để tạo lại dữ liệu báo cáo.\n\n(2) Các bước thực hiện\n1. **Xác định vị trí**: Truy cập vào giao diện quản lý ca làm việc hoặc báo cáo sản lượng tại `Menu › Báo cáo › Sản lượng theo ca` [2].\n2. **Thực hiện thao tác**: Tìm và bấm nút **\"Bổ sung bàn giao\"** [1]. Thao tác này sẽ bù đắp việc thiếu bản ghi `ShiftHandover` record, giúp báo cáo bàn giao không còn trống [1].\n3. **Kết quả**: Hệ thống sẽ ghi nhận lại quá trình bàn giao giữa hai ca, đảm bảo tính liên tục của dữ liệu sản xuất dù `shiftId` mới đã được áp dụng cho các lần quét tiếp theo [3].\n\n(3) Lưu ý và lỗi thường gặp\n- **Thiếu bản ghi bàn giao**: Nếu không bấm \"Nhận ca\", sẽ không có `ShiftHandover` record, dẫn đến báo cáo bàn giao bị trống [1].\n- **Lệch giờ (Timezone)**: Cần kiểm tra biến môi trường `TZ` trên server (mặc định `Asia/Ho_Chi_Minh`) [1]. Nếu cấu hình sai, mọi cột giờ trong báo cáo sẽ bị lệch 7 giờ, gây khó khăn cho việc đối chiếu ca làm việc [1].\n- **Phân bổ sản lượng**: Các lô chưa kết thúc sẽ không bị split giữa hai\n\nAPI liên quan: `/api/external/alerts`, `/api/external/alerts/:alertId/acknowledge`, `/api/external/alerts/:alertId/resolve`, `/api/sse/alerts`",
+      "loi": null
+    },
+    {
+      "id": "T71",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1777,
+      "nguon": [
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/operational/ai-settings.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nChỉ người dùng có vai trò `admin` hoặc `production_manager` mới được phép sửa đổi cấu hình ca làm việc (Shift Configuration) trong hệ thống SYNAPSE on-prem.\n\n(2) Các bước thực hiện\n1. **Xác minh quyền hạn**: Đảm bảo tài khoản đăng nhập có role `admin` hoặc `production_manager`. Nếu không, hệ thống sẽ từ chối truy cập vào phần cấu hình.\n2. **Truy cập giao diện**: Điều hướng đến `Menu › Cài đặt › Quản lý ca làm việc` hoặc truy cập trực tiếp URL `/settings/shifts` [1], [2].\n3. **Thực hiện sửa đổi**: Tại màn hình `/settings/shifts`, chọn ca cần chỉnh sửa. Các trường có thể thay đổi bao gồm `name`, `startTime`, `endTime`, và `isActive` [1].\n4. **Lưu cấu hình**: Nhấn nút Save để cập nhật vào bảng `shift_configs`. Hệ thống sẽ kiểm tra trùng lặp giờ (overlap) và timezone.\n",
+      "loi": null
+    },
+    {
+      "id": "T72",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1794,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/operational-approved/production-orders.md",
+        "knowledge/operational-approved/production-orders.md",
+        "knowledge/features/production/production-orders.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nKhông, một line chỉ được phép chạy 1 lô sản xuất tại một thời điểm. Để chuyển sang lô khác, bắt buộc phải tạm dừng hoặc kết thúc lô hiện tại trước.\n\n(2) Các bước thực hiện\n1. **Kiểm tra trạng thái line**: Tại giao diện line, mở `Menu › Sản xuất › AOI Inspection › chọn line`. Nếu line đang `idle`, hệ thống sẽ hiển thị danh sách các lô có trạng thái `planned` tương ứng với line đó [2].\n2. **Bắt đầu lô**: Chọn một lô `planned` và bấm **\"Bắt đầu\"**. Hệ thống sẽ cập nhật trạng thái lô thành `running` và thiết lập `startedAt = now()` [2].\n3. **Quản lý chuyển đổi lô**: Khi muốn chuyển sang lô khác, bạn không thể vừa chạy hai lô. Phải thực hiện một trong hai thao tác:\n    - **Kết thúc lô hiện tại**: Chờ đủ `plannedQty` hoặc bấm **\"Kết thúc lô\"**.",
+      "loi": null
+    },
+    {
+      "id": "T73",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1764,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "howto-lot-management.md",
+        "knowledge/operational-approved/production-orders.md",
+        "knowledge/operational-approved/production-orders.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nCó, việc tạm dừng lô sản xuất (`paused`) bắt buộc phải ghi lý do. Thao tác này thường dùng khi đổi ca hoặc gặp sự cố máy, và hệ thống yêu cầu nhập lý do trước khi xác nhận.\n\n(2) Các bước thực hiện\n1. **Mở trang chi tiết lô**: Điều hướng đến `Menu › Sản xuất › Đơn hàng sản xuất` (`/production-orders`) hoặc trang chi tiết lô tương ứng.\n2. **Chọn lô cần xử lý**: Tìm lô đang ở trạng thái `running` hoặc `planned` (nếu chưa bắt đầu chính thức).\n3. **Thực hiện tạm dừng**: Bấm nút **\"Tạm dừng\"**.\n4. **Nhập lý do**: Hệ thống sẽ hiển thị trường nhập liệu bắt buộc. Bạn phải điền lý do (ví dụ: \"đổi ca\", \"hỏng máy\") rồi xác nhận.\n5. **Kết quả**: Trạng thái lô chuyển sang `paused`. Bạn có thể kiểm tra tiến độ, OK/NG count qua API\n\nAPI liên quan: `/api/lots/:orderCode`",
+      "loi": null
+    },
+    {
+      "id": "T74",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2072,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/features/ai/ai-time-series.md",
+        "knowledge/operational/ai-time-series.md",
+        "knowledge/features/analytics/station-analysis.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Thời gian chu kỳ (Cycle time) của một lô được tính bằng công thức: `(endedAt − startedAt) / actualQty` [1].\n\n(2) Các bước thực hiện:\n1. **Xác định dữ liệu đầu vào**: Truy cập trang chi tiết lô (Lot Detail) hoặc báo cáo sản lượng. Cần lấy giá trị `endedAt` (thời gian kết thúc), `startedAt` (thời gian bắt đầu) và `actualQty` (số lượng thực tế) [1].\n2. **Áp dụng công thức**: Tính toán theo công thức `Cycle time = (endedAt − startedAt) / actualQty` [1].\n3. **Kiểm tra trạng thái**: Đảm bảo lô đã kết thúc (`completed`) hoặc đang trong quá trình chạy để có giá trị `endedAt` chính xác. Lưu ý rằng một line chỉ chạy 1 lô tại một thời điểm, nên việc chuyển lô phải qua trạng thái tạm dừng hoặc kết thúc [2].\n4. **Xem\n\n_Dữ liệu sống: Chưa đủ dữ liệu cycleTimeMs cho toàn line trong 7 ngày qua để phân tích xu hướng._",
+      "loi": null
+    },
+    {
+      "id": "T75",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3201,
+      "nguon": [
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "commission-a-new-pcb.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 9\n\n(2) Danh sách đầy đủ các bước của hành trình đưa board PCB mới vào vận hành (commission a new PCB):\n\n| # | Bước (`key`) | Bắt buộc | Việc cần làm | Nơi thực hiện |\n|---|---|:---:|---|---|\n| 0 | `product` | ✅ | Tạo mới hoặc chọn sản phẩm; upload ảnh mẫu (**bắt buộc có kích thước ảnh** để toạ độ điểm đo portable giữa các máy) | Nhúng form tạo/sửa sản phẩm |\n| 1 | `fiducials` | ✅ | Khai báo fiducial mark để align board trước khi soi (tab này trước đây **mồ côi — không truy cập được**, WD-1 mount lại) | Nhúng `ProductFiducialsTab` |\n| 2 | `points` | ✅ | Vẽ/nhập điểm đo (ROI). Nhanh nhất: **import centroid/pick-place CSV** (WC-1) thay vì click từng điểm | Deep-link sang trang chuyên biệt |\n\n*Lưu ý: Tài liệu hiện tại chỉ liệt kê chi tiết 3 bước đầu tiên trong bảng tổng quan 9 bước [3], [4]. Các bước từ 3 đến 8 không được cung cấp chi tiết trong ngữ cảnh.*\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n*   \"Trước đây, để cấu hình đầy đủ một board mới, kỹ sư phải tự đi qua 9–10 trang nằm rải rác ở 3 nhóm menu... Trang **Onboarding sản phẩm** (`/product-onboarding`) gom tất cả vào một wizard\" [1]\n*   \"Có thể vào bằng deep-link `/product-onboarding?product=<id>&step=<key>`.\" [2]\n*   \"Wizard KHÔNG viết lại tính năng nào — nó chỉ khâu lại.\" [3]\n\n(4) Nguồn gốc (file/đường dẫn):\n*   `knowledge/domain/commission-a-new-pcb.md` [1], [2], [3], [4]\n\n_Nguồn số liệu: `routing_steps` (get_routing) · limit=20_",
+      "loi": null
+    },
+    {
+      "id": "T76",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 4374,
+      "nguon": [
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Việc phát hành chương trình kiểm tra hiện tại là **audit-only** (chỉ ghi nhận lịch sử/xác minh), không tự động chặn máy chạy chương trình cũ.\n\n(2) Các bước đánh số:\n1. **Kiểm tra trạng thái phát hành**: Trong quy trình `commission-a-new-pcb`, bước `release` (phát hành) được thực hiện thông qua `ProgramReleasePanel`. Tại đây, hệ thống ghi nhận provenance/checksum để đảm bảo tính toàn vẹn, nhưng **không tự gate máy** [3].\n2. **Xác nhận cơ chế chặn**: Tài liệu kỹ thuật xác nhận rõ ràng rằng \"release hiện là audit-only... không tự gate máy\" [3]. Do đó, máy vẫn có thể tiếp tục chạy chương trình cũ nếu không có can thiệp thủ công hoặc cấu hình bổ sung.\n3. **Hành động kỹ sư**: Kỹ sư cần tự động hóa việc chặn máy (ví dụ: qua API `rolloutStatus` hoặc logic nghiệp vụ riêng) nếu muốn ngăn chặn\n\n<sub>Đa bước: 2 lượt gọi tool (get_machine_status → retrieve_programming_kb), 2446 ms.</sub>\n\n_Nguồn số liệu: `machines` · onlyOffline=false_",
+      "loi": null
+    },
+    {
+      "id": "T77",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2436,
+      "nguon": [
+        "commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/features/production/production-dashboard.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nĐể nhập điểm đo nhanh cho board ~200 linh kiện, kỹ sư nên sử dụng tính năng **import centroid CSV** thay vì click thủ công từng điểm. Phương pháp này yêu cầu file CSV có các cột chuẩn như `refdes`, `x`, `y`, `rotation`, `side`, `package` để hệ thống tự động ánh xạ và tạo ROI.\n\n(2) Các bước thực hiện\n1. **Chuẩn bị file CSV**: Tạo file dữ liệu điểm đo với các cột bắt buộc: `refdes` (tham chiếu linh kiện), `x`, `y` (tọa độ), `rotation`, `side`, `package`. Đảm bảo ảnh tham chiếu đã upload và có kích thước xác định để tọa độ pixel được chuyển đổi chính xác giữa các máy [1].\n2. **Truy cập giao diện cấu hình**: Mở trình duyệt và điều hướng đến trang chi tiết mô hình sản phẩm tại URL `/products/:productModelId` [3]. Chọn tab `Measurement Points` để vào chế độ cấu hình điểm đo [3].\n3. **Thực hiện Import**: Tại giao diện canvas điểm đo, tìm và kích hoạt chức năng **Centroid Import** (thường nằm trong toolbar hoặc menu con của tab điểm đo) [4]. Tải file CSV đã chuẩn bị lên. Hệ thống sẽ map các cột dữ liệu và tạo các điểm đo (ROI) tự động [4].\n4. **Xác nhận và Lưu**: Kiểm tra lại vị trí các điểm đo trên hình ảnh board. Nếu đúng, lưu lại cấu hình. Lưu ý rằng dữ liệu nháp được lưu ở `product_onboarding_drafts`, cho phép quay lại",
+      "loi": null
+    },
+    {
+      "id": "T78",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1771,
+      "nguon": [
+        "knowledge/operational/product-onboarding.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/operational-approved/products.md",
+        "knowledge/features/products/product-management.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nNháp của quy trình onboarding sản phẩm được lưu trữ cục bộ trong trình duyệt (browser local storage) của kỹ sư, cho phép khôi phục tiến trình khi quay lại trang `/product-onboarding`.\n\n(2) Các bước thực hiện\n1. **Bắt đầu quy trình**: Truy cập menu `Quản lý dữ liệu › Tạo sản phẩm mới` hoặc URL `/product-onboarding` [1]. Hệ thống sẽ hiển thị wizard với 9 bước cấu hình [2].\n2. **Lưu nháp tự động**: Khi kỹ sư thực hiện các thao tác (ví dụ: chọn fiducials, thiết lập limits), dữ liệu tạm thời được lưu vào `localStorage` của trình duyệt. Không cần nhấn nút \"Save\" riêng biệt cho từng bước trung gian.\n3. **Tiếp tục sau khi gián đoạn**: Nếu đóng tab hoặc đăng xuất, khi mở lại `/product-onboarding`, hệ thống sẽ kiểm tra `localStorage` và khôi phục lại bước cuối cùng kỹ sư đã tương tác [2].\n4. **Ho",
+      "loi": null
+    },
+    {
+      "id": "T79",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 2178,
+      "nguon": [
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational/defect-catalog.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/products/product-machine-mapping.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nHệ thống hiện tại ghi nhận triệu chứng \"Loại lỗi cần dùng không có trong danh sách\" và \"unmatched-code\" nhưng **CHƯA GHI LẠI** quy trình xử lý dữ liệu lịch sử hoặc cơ chế tự động gán lỗi chưa khớp. Người dùng cần thống nhất mã chuẩn thủ công.\n\n(2) Các bước đánh số\n1. **Kiểm tra danh mục lỗi**: Truy cập menu `Chất lượng › Danh mục lỗi` tại URL `/defect-catalog` [1]. Tìm kiếm mã lỗi tiếng Việt và tiếng Anh để xác nhận xem mã máy gửi lên đã tồn tại chưa [1].\n2. **Xử lý lỗi chưa có mã**: Nếu mã không tồn tại, không tạo mới ngay. Cần thống nhất một mã chuẩn với QA, sau đó ghi lại mã bị loại để tránh trùng lặp báo cáo Pareto [1].\n3. **Kiểm tra mapping sản phẩm-máy**: Đảm bảo máy đang hoạt động đúng sản phẩm. Truy cập `/machines/5` (hoặc máy tương ứng) để kiểm tra tab `Allowed Products` [5]. Nếu mapping sai, inspection có thể bị reject hoặc dữ liệu không khớp [5].\n4. **Xác nhận quyền truy cập**: Người vận hành cần có quyền `history_view` để xem và chỉnh sửa danh mục lỗi [1].\n\n(3) Lưu ý/lỗi thường gặp\n- **Thiếu tài liệu xử\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`, `/api/machines/:id/allowed-products`",
+      "loi": null
+    },
+    {
+      "id": "N13",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 543,
+      "nguon": [
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/workflows/ng-burst-response.playbook.yaml"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N14",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 510,
+      "nguon": [
+        "knowledge/operational-approved/andon.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N15",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 509,
+      "nguon": [
+        "knowledge/features/alerts/mqtt-alert-rules.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational/cmms.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/operational/maintenance-hub.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N16",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 541,
+      "nguon": [
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/features/ai/ai-inspection-analytics.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/ai/ai-inspection-analytics.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "N17",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 540,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N18",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 598,
+      "nguon": [
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/commission-a-new-pcb.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "N19",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 657,
+      "nguon": [
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N20",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 551,
+      "nguon": [
+        "knowledge/operational/component-library.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/analytics/station-analysis.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N21",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 2358,
+      "nguon": [
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\nTài liệu cung cấp (bao gồm quy trình kiểm tra chi tiết, ánh xạ sản phẩm-máy và hướng dẫn đưa board PCB mới vào vận hành) không liệt kê danh sách các sản phẩm cụ thể bắt buộc phải kiểm tra X-ray cho mối hàn BGA. Các tài liệu chỉ đề cập đến việc định nghĩa các điểm đo (measurement points), ngưỡng giới hạn (thresholds) và quy trình xác nhận kết quả NTF, nhưng không quy định chính sách bắt buộc kiểm tra X-ray cho loại linh kiện hay sản phẩm nào.\n\nĐể có câu trả lời chính xác, vui lòng cung cấp thêm thông tin về:\n1. Danh sách sản phẩm hoặc model cụ thể cần kiểm tra.\n2. Chính sách chất lượng hoặc quy trình nội bộ yêu cầu kiểm tra X-ray cho BGA.\n3. Tài liệu kỹ thuật chi tiết về yêu cầu kiểm tra cho từng loại linh kiện.\n\n_Nguồn số liệu: `product_inspections` · limit=5 · 7d · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "N22",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1163,
+      "nguon": [
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/operational/equipment-standards.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N23",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1367,
+      "nguon": [
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/workflows/ng-handling.playbook.yaml"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\nTài liệu cung cấp thông tin về các loại lỗi AOI (như Bridging, Missing Component) và các bước xử lý lỗi (rework bằng hàn tay, dùng hút thiếc) [2], [3], nhưng không đề cập đến thông số kỹ thuật cụ thể như nhiệt độ mũi hàn tay cho linh kiện hàn không chì.",
+      "loi": null
+    },
+    {
+      "id": "N24",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1288,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Tài liệu cung cấp các ngưỡng chất lượng hàn (Solder Quality) dưới dạng phần trăm chiều cao chân linh kiện (ví dụ: Min 50%, Max 150% of lead height) [2], nhưng không nêu giá trị tuyệt đối cụ thể bằng milimét (mm) cho chiều cao sóng thiếc.\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "N25",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 519,
+      "nguon": [
+        "knowledge/operational-approved/andon.md",
+        "knowledge/operational-approved/andon.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N26",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 571,
+      "nguon": [
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/monitoring/machine-sync.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-thresholds.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N27",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 535,
+      "nguon": [
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/workflows/create-measurement-point.playbook.yaml",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/features/analytics/correlation-analysis.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "N28",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1416,
+      "nguon": [
+        "knowledge/operational-approved/alerts.md",
+        "quy-trinh-thay-vòi-hút.txt",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/workflows/install-new-machine.playbook.yaml",
+        "knowledge/features/monitoring/machine-sync.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\nTài liệu cung cấp chỉ đề cập đến quy trình thay vòi hút máy gắn linh kiện (mã ST4I-NZ-7731) [2], quy trình lắp đặt máy mới [4], và các hướng dẫn vận hành bảng điều khiển sản xuất [3] cũng như xử lý cảnh báo [1]. Không có dữ liệu nào về chu kỳ bảo trì hoặc thay thế bộ lọc khí cho máy nén khí.\n\nĐể có thông tin chính xác, vui lòng kiểm tra tài liệu bảo trì thiết bị nén khí cụ thể hoặc tham khảo phòng Kỹ thuật.\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "N29",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1246,
+      "nguon": [
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\nTài liệu cung cấp các hướng dẫn xử lý sự cố liên quan đến độ phân giải (ví dụ: mã lỗi E020 gợi ý giảm độ phân giải để xử lý lỗi buffer overflow [2]), nhưng không nêu rõ thông số kỹ thuật cụ thể về độ phân giải của camera (số pixel hoặc kích thước micromet trên một điểm ảnh).\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "N30",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 506,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/operational/aoi-packages.md",
+        "knowledge/features/inspection/aoi-packages.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "N31",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1870,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "docs/SYSTEM_EVALUATION_REPORT.md",
+        "docs/USER_GUIDE.md",
+        "docs/USER_GUIDE.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Tài liệu hiện tại không mô tả cơ chế MES gửi *lệnh sản xuất* (command) xuống máy AOI, mà chỉ nêu rõ việc máy AOI tự động *gửi kết quả* (data) lên MES qua API.\n\n(2) Các bước liên quan:\n1. **Xác nhận luồng dữ liệu**: Theo tài liệu, hệ thống tự động gửi kết quả qua API sau mỗi bảng [1].\n2. **Kiểm tra cấu hình tích hợp**: Vào **Settings → Integration → MES** để xem cấu hình kết nối [1].\n3. **Theo dõi quy trình vận hành**: Quy trình tổng quát là `Nhận lệnh sản xuất → Setup máy → Chạy thử → Sản xuất → Kết thúc lot → Báo cáo` [5]. Lưu ý, bước \"Nhận lệnh\" thường là đầu vào của hệ thống, không phải cơ chế gửi lệnh xuống máy trong ngữ cảnh tích hợp API được mô tả.\n\n(3) Lưu ý/lỗi thường gặp:\n- **Nhầm lẫn hướng dữ liệu**:",
+      "loi": null
+    },
+    {
+      "id": "N32",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 493,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/operational/aoi-packages.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    }
+  ]
+}

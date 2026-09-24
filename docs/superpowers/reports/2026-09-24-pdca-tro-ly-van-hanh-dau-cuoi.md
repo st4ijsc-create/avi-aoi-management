@@ -267,3 +267,43 @@ lượt phân loại xin model MẶC ĐỊNH mà llama-server đang giữ (`mode
 1. **A/B model sinh câu trả lời** (4B hiện tại vs model mặc định) trên 111 câu + bộ giữ lại — 11.3.
 2. TQ02: nhánh tài liệu đúng nhưng câu trả lời sai (truy hồi đứng đầu là playbook, "Refresh: 1 phút" ở đoạn khác).
 3. Các mục 10.6 còn nguyên: C01/C03 hỏi lại thay vì từ chối; lệch thuật ngữ Việt ↔ Anh; kho Studio.
+
+## 12. Vòng 7 — A/B model SINH câu trả lời (`6ac570ba1`)
+
+### 12.1 Bước 0 — ba nhánh, cùng bundle, chỉ đổi thứ ghi dưới đây (BUILD-INFO KHÔNG lưu ENV — ghi ở đây)
+
+| Nhánh | Mã | ENV khởi động (ngoài `.env`) | Model câu trả lời | Model tự kiểm cổng lạc đề |
+|---|---|---|---|---|
+| A (hiện trạng) | `7be30e23d` | `KB_QA_CACHE_TTL_MS=0` | Qwen3-4B in-process (planner Tier 1) | Qwen3-4B |
+| B | `7be30e23d` | `KB_QA_CACHE_TTL_MS=0` · `GGUF_FAST_MODEL=" "` (MỌI lượt Tier 1 → mặc định) | 35B-A3B qua llama-server | 35B-A3B |
+| C | `6ac570ba1` | `KB_QA_CACHE_TTL_MS=0` | 35B-A3B qua llama-server | Qwen3-4B |
+
+Xác minh đường thật: bộ đếm `llamacpp:tokens_predicted_total` của :8091 tăng ~220 token sau MỘT câu ở nhánh B/C.
+Nhánh A: `v6b`, `v7a2`, `v7a3`; B: `v7b`, `v7b2`, `v7b3`; C: `v7c`, `v7c2` (tệp thô trong `pdca-kb-dau-cuoi-2026-09-24/`).
+
+### 12.2 Kết quả
+
+| | A (3 lượt) | B (3 lượt) | C (2 lượt) |
+|---|---|---|---|
+| 111 câu — trong corpus đạt | 70 · 70 · 69 | 70 · 71 · 71 | **71 · 71** |
+| 111 câu — ngoài corpus từ chối | 32 · 32 · 32 | 30 · 31 · 30 | 31 · 31 |
+| 34 câu QUY TẮC (có tài liệu) bị từ chối | 3 · 3 · 3 | 7 · 7 · 7 | 4 · 4 |
+| Giữ lại v5 / v6 — trong corpus | 11/12 · 11/12 | 11/12 · 11/12 | 11/12 · 11/12 |
+| Câu SỐNG đi nhánh tài liệu | 0/52 | 0/52 | 0/52 |
+| Trung vị / p90 (ms, 111 câu) | 3185/4663 · 1453/2355 · 1455/1943 | ~1760/~2430 | ~1780/~2400 |
+
+- "Rò" ngoài corpus của B/C là **N31** (và N21 ở B): câu trả lời MỞ ĐẦU bằng "Tài liệu hiện tại không cung cấp…" — từ chối
+  về nội dung, bộ chấm (khớp câu từ chối chuẩn) đếm là trả lời. Không bịa. Vẫn ghi là số đo thấp hơn A.
+- B thua vì TỰ KIỂM trên 35B chặn nhầm câu quy tắc có tài liệu (Q11 "Cpk bao nhiêu thì đạt", Q22, GQ03, T35 — ~0,7 s,
+  đúng chữ ký cổng). C giữ tự kiểm trên model planner ⇒ còn Q19 (câu trả lời: tài liệu ghi "CHƯA GHI LẠI" — từ chối có lý).
+- Câu sống: C từ chối kèm lý do rõ hơn (S11 "Chưa đủ dữ liệu yield … không thể cung cấp Cpk") nơi A trả dòng tool; 0 bịa số.
+- **Tốc độ:** lượt đầu của A (3,2 s) là nhiễu — hai lượt lặp của A ra 1,45 s. C chậm hơn A ~0,3 s trung vị. Lợi về ĐÚNG
+  nhỏ (+1–2/79, nhất quán qua lượt lặp; 35B gần tất định, 4B dao động ±1).
+- **Quyết định:** áp dụng C theo tiêu chí ĐÚNG hơn NHANH — không bộ nào tụt về đúng, giá là ~0,3 s và câu trả lời vận hành
+  nay chia 2 slot của llama-server với màn lập trình. Quay lại: `AI_KB_MODEL_TRA_LOI=planner`.
+- Đột biến 5/5 ĐỎ (luôn model planner · bỏ cổng "server giữ model" · bỏ công tắc · gỡ ở stream · gỡ ở non-stream).
+
+### 12.3 Còn mở
+1. Tranh chấp slot llama-server giữa trợ lý vận hành và màn lập trình — chưa đo dưới tải đồng thời.
+2. Bộ chấm từ chối chỉ nhận câu từ chối chuẩn — câu "tài liệu không nêu…" của 35B bị đếm là trả lời (N21/N31).
+3. TQ02, C01/C03, lệch thuật ngữ Việt ↔ Anh, kho Studio — như 10.6/11.5.
