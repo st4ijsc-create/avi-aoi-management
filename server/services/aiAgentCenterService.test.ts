@@ -28,7 +28,12 @@ process.env.LICENSE_BYPASS = "true";
 type Row = Record<string, any>;
 
 // ─── drizzle-orm — pure passthrough (never inspects its column args) ───────────────
-vi.mock("drizzle-orm", () => ({
+// ⚠ 2026-09-24 — CẢ HAI mock nay là "bản THẬT + ghi đè": ca router (`await import("../routers/aiAgentCenterRouter")`
+// → `_core/trpc` → `_core/sdk` → `server/db` (index)) nạp CẢ lớp db, nơi hàng chục tệp dựng biểu thức từ bảng
+// NGAY LÚC NẠP (`db/inspection.ts` · `db/statistics.ts` `sql`...``). Mock rỗng ⇒ 2 ca router đỏ ("No productInspections
+// export", rồi "No sql export"). Hàm so sánh vẫn là thẻ thuần; ba bảng hàng đợi vẫn là thẻ `__table`.
+vi.mock("drizzle-orm", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   and: (...args: unknown[]) => ({ __op: "and", args }),
   eq: (col: unknown, val: unknown) => ({ __op: "eq", col, val }),
   gte: (col: unknown, val: unknown) => ({ __op: "gte", col, val }),
@@ -37,7 +42,8 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 // ─── drizzle/schema — just enough to key a fake query builder by table name ────────
-vi.mock("../../drizzle/schema", () => ({
+vi.mock("../../drizzle/schema", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   aiPendingActions: { __table: "aiPendingActions" },
   aiSpecialistSessions: { __table: "aiSpecialistSessions" },
   aiSpecialistSessionSteps: { __table: "aiSpecialistSessionSteps" },

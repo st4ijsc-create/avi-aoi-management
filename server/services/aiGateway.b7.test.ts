@@ -6,10 +6,13 @@
  * Lưới đo HÀNG THẬT đi vào `db.insert(...).values(...)` qua `flush()`, không đo lời khai của `record()`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { getTableName } from "drizzle-orm";
 
 const getDbMock = vi.fn();
 const insertValuesMock = vi.fn(async () => undefined);
-const insertMock = vi.fn(() => ({ values: insertValuesMock }));
+// Bảng đi cùng mỗi lượt `values` — `record()` còn gọi `recordLlmAudit` (sổ `ai_llm_audit`, CÙNG getDb mock này), nên
+// đếm `insert` trần là đếm lẫn hai sổ. Xem `hangDaGhi`.
+const insertMock = vi.fn((table: unknown) => ({ values: (rows: unknown) => insertValuesMock(rows, table) }));
 
 vi.mock("./aiGgufEngine", () => ({
   generateText: vi.fn(),
@@ -41,8 +44,15 @@ async function hangDaGhi(o: Record<string, unknown>): Promise<Record<string, unk
   const plan = await gateway.planInference({ task: "code", text: "viết hàm cộng hai số", userId: 7 } as never);
   plan.record(o as never);
   await gateway.flush();
-  expect(insertValuesMock).toHaveBeenCalledTimes(1);
-  const hang = (insertValuesMock.mock.calls[0] as unknown[])[0] as Array<Record<string, unknown>>;
+  // ⚠ 2026-09-24 (đỏ khi chạy gộp cả thư mục, "called 2 times"): `record` gài HAI `setInterval` xả 5 s — của sổ đo
+  //   (aiGateway) và của sổ audit (aiLlmAudit, cùng getDb mock). `vi.resetModules()` không gỡ bộ đếm của bản module
+  //   cũ ⇒ khi máy chậm, bộ đếm mồ côi của sổ AUDIT bắn vào giữa ca kế và bị đếm như một hàng sổ đo. Gỡ cả hai bộ đếm
+  //   (móc có sẵn trong hai tệp) VÀ chỉ đếm lượt ghi vào `ai_gateway_metrics`.
+  gateway.stopGatewayFlushTimer();
+  (await import("./ai/aiLlmAudit")).stopLlmAuditFlushTimer();
+  const cuaSoDo = insertValuesMock.mock.calls.filter((c) => getTableName((c as unknown[])[1] as never) === "ai_gateway_metrics");
+  expect(cuaSoDo).toHaveLength(1);
+  const hang = (cuaSoDo[0] as unknown[])[0] as Array<Record<string, unknown>>;
   expect(hang).toHaveLength(1);
   return hang[0];
 }

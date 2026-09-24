@@ -192,6 +192,10 @@ describe("startLoraFinetune — gate", () => {
 
 // ─── orchestration: job.json contract + no-shell spawn ────────────────────
 
+// 2026-09-24: `vi.waitFor` mặc định chờ 1 s — chạy gộp cả thư mục (tải cao) thì chuỗi điều phối trước `spawn` vượt 1 s
+// ⇒ "expected null not to be null" dù mã đúng. Chờ tới 10 s; ca nhanh vẫn xong ngay khi `lastChild` có.
+const CHO_SPAWN = { timeout: 10_000 };
+
 describe("startLoraFinetune — happy path (orchestration)", () => {
   beforeEach(() => {
     process.env.LLM_FINETUNE_CMD = "python tools/trainer/finetune_lora.py";
@@ -207,7 +211,7 @@ describe("startLoraFinetune — happy path (orchestration)", () => {
       generateFn: perfectGenerateFn,
     });
 
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
 
     const jobJsonKey = findWritten("job.json")!;
     const contract = JSON.parse(fsStore.get(jobJsonKey)!);
@@ -255,7 +259,7 @@ describe("startLoraFinetune — happy path (orchestration)", () => {
       userId: 5,
       generateFn: perfectGenerateFn,
     });
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
 
     const jobJsonKey = findWritten("job.json")!;
     const contract = JSON.parse(fsStore.get(jobJsonKey)!);
@@ -311,7 +315,7 @@ describe("startLoraFinetune — happy path (orchestration)", () => {
     const p = startLoraFinetune({
       baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1", generateFn: perfectGenerateFn,
     });
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
     const contract = JSON.parse(fsStore.get(findWritten("job.json")!)!);
     fsExist.add(contract.output.ggufPath);
     fsStore.set(contract.output.resultPath, JSON.stringify({ success: true, metrics: {} }));
@@ -378,7 +382,7 @@ describe("startLoraFinetune — fail-safe", () => {
 
   it("sidecar spawn error (ENOENT-style) ⇒ LoraFinetuneError, job dir cleaned, no model_versions row", async () => {
     const p = startLoraFinetune({ baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1" });
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
     lastChild!.emit("error", new Error("spawn python ENOENT"));
     await expect(p).rejects.toBeInstanceOf(LoraFinetuneError);
     expect(createModelVersionMock).not.toHaveBeenCalled();
@@ -387,7 +391,7 @@ describe("startLoraFinetune — fail-safe", () => {
 
   it("sidecar exits non-zero ⇒ LoraFinetuneError, job dir cleaned, no model_versions row, no GGUF copy", async () => {
     const p = startLoraFinetune({ baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1" });
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
     lastChild!.emit("exit", 1);
     await expect(p).rejects.toThrow(/exited with code 1/);
     expect(copySpy).not.toHaveBeenCalled();
@@ -397,7 +401,7 @@ describe("startLoraFinetune — fail-safe", () => {
 
   it("exit 0 but no model.gguf produced ⇒ LoraFinetuneError, no registration", async () => {
     const p = startLoraFinetune({ baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1" });
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
     // Do NOT add output/model.gguf to fsExist.
     lastChild!.emit("exit", 0);
     await expect(p).rejects.toThrow(/produced no GGUF/i);
@@ -413,7 +417,7 @@ describe("startLoraFinetune — fail-safe", () => {
     // enough (15ms) that it can otherwise fire while we're still inside `vi.waitFor`'s polling
     // below, which would race Node's unhandledRejection detection against attaching `.catch`.
     const assertion = expect(p).rejects.toThrow(/timed out/i);
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
     // Never emit exit/error — only the timeout should settle this promise.
     await assertion;
     expect(lastChild!.killed).toBe(true);
@@ -424,7 +428,7 @@ describe("startLoraFinetune — fail-safe", () => {
   it("a downstream createModelVersion failure (after a genuinely successful train) is still a typed error with cleanup", async () => {
     createModelVersionMock.mockResolvedValueOnce(undefined);
     const p = startLoraFinetune({ baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1", generateFn: perfectGenerateFn });
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
     const contract = JSON.parse(fsStore.get(findWritten("job.json")!)!);
     fsExist.add(contract.output.ggufPath);
     fsStore.set(contract.output.resultPath, JSON.stringify({ success: true, metrics: {} }));
@@ -443,7 +447,7 @@ describe("startLoraFinetune — fail-safe", () => {
   it("createModelVersion THROWING (not just returning no row) also cleans up the orphaned .gguf", async () => {
     createModelVersionMock.mockRejectedValueOnce(new Error("db connection lost"));
     const p = startLoraFinetune({ baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1", generateFn: perfectGenerateFn });
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
     const contract = JSON.parse(fsStore.get(findWritten("job.json")!)!);
     fsExist.add(contract.output.ggufPath);
     fsStore.set(contract.output.resultPath, JSON.stringify({ success: true, metrics: {} }));
@@ -473,7 +477,7 @@ describe("startLoraFinetune — a malicious corpus name cannot inject via spawn 
     const p = startLoraFinetune({
       baseModelId: 7, corpus: maliciousCorpus, targetVersion: "1.0.0-lora.1", generateFn: perfectGenerateFn,
     });
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
 
     // The malicious string is passed through as ordinary DATA to the DB-read layer...
     expect(listCorpusChunksForTrainingMock).toHaveBeenCalledWith(maliciousCorpus, expect.any(Number));
@@ -537,7 +541,7 @@ describe("startLoraFinetune — finalPath is built from jobId only (targetVersio
     const p = startLoraFinetune({
       baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1", generateFn: perfectGenerateFn,
     });
-    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    await vi.waitFor(() => expect(lastChild).not.toBeNull(), CHO_SPAWN);
     const contract = JSON.parse(fsStore.get(findWritten("job.json")!)!);
     fsExist.add(contract.output.ggufPath);
     fsStore.set(contract.output.resultPath, JSON.stringify({ success: true, metrics: {} }));

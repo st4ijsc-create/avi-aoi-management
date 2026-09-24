@@ -75,6 +75,10 @@ const TOOLS: Record<string, any> = {
 };
 
 vi.mock("../aiLocalTools/toolRegistry", () => ({
+  // ⚠ 2026-09-24: chuỗi nạp THẬT `aiCopilotActions` → `writeHandlers/applyDiff` → `readToolsProgramming` gọi
+  //   `registerTool(...)` NGAY LÚC NẠP ⇒ thiếu export này là cả tệp đỏ ("No registerTool export", 0 ca chạy).
+  //   No-op đúng ý đồ của mock: ca dưới tự đăng ký tool giả qua `TOOLS`, không cần tool thật.
+  registerTool: () => {},
   getTool: (name: string) => TOOLS[name],
   isWriteTool: (t: any) => !!t && t.kind === "write",
   assertExecutable: (tool: any) => {

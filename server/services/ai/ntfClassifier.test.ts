@@ -246,7 +246,9 @@ afterAll(async () => {
   if (inspIds.length > 0) {
     await db.delete(measurementCorrections).where(inArray(measurementCorrections.inspectionId, inspIds));
     await db.delete(measurementResults).where(inArray(measurementResults.inspectionId, inspIds));
-    await db.delete(productInspections).where(inArray(productInspections.id, inspIds));
+    // ⚠ 2026-09-24: KHÔNG xoá `product_inspections` — bảng WORM (doc48 R1), vai `avi_app` nhận 42501 khi DELETE ⇒
+    //   lệnh xoá cũ làm ĐỎ afterAll của cả tệp dù mọi ca đạt. Hàng ở lại vô hại: tiền tố serial theo STAMP mỗi lượt
+    //   (cùng khuôn `server/api/export/apiKeyTenantScope.test.ts`). Chỉ dọn bảng con không WORM ở trên.
   }
   await db.delete(ntfClassifierModels).where(eq(ntfClassifierModels.machineId, machineId));
 });

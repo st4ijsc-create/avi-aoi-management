@@ -59,5 +59,11 @@ export default defineConfig({
     // Loads .env + forces DATABASE_URL to an ISOLATED test DB (see vitest.setup.ts).
     // Provision once: `node scripts/setup-test-db.mjs`.
     setupFiles: ["./vitest.setup.ts"],
+    // 2026-09-24 (nợ 3 báo cáo 5776daa30) — ĐO: chạy gộp `npx vitest run server/services/ai` (≈ 200 tệp song song) thì
+    // lượt nạp NGUỘI một module lớn (aiLlmAudit → aiGateway, codingToolLoop) vượt mặc định 5 s ⇒ ca "Test timed out in
+    // 5000ms", rồi lượt ghi trễ của ca bị cắt rơi vào ca KẾ (aiLlmAudit "responseSha256 to be null") — đỏ theo TẢI máy,
+    // không theo mã; chạy riêng từng tệp thì xanh. 30 s chỉ đổi thời điểm báo một ca treo thật, không che lỗi logic.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

@@ -48,8 +48,14 @@ beforeEach(() => {
   for (const k of ENV_KEYS) delete process.env[k];
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const k of ENV_KEYS) delete process.env[k];
+  // 2026-09-24 — gỡ bộ đếm xả 5 s của BẢN module ca này vừa dùng (sổ đo aiGateway + sổ audit aiLlmAudit, CÙNG getDb
+  // mock). `vi.resetModules()` ở ca sau không gỡ chúng ⇒ chạy gộp cả thư mục (chậm) thì bộ đếm mồ côi ghi vào giữa ca
+  // KẾ và `insertValuesMock.mock.calls[0]` là hàng audit chứ không phải hàng sổ đo (đo được: "expected undefined to
+  // match { outcome: 'ok' }"). Chưa resetModules nên import dưới trả ĐÚNG bản vừa dùng — cùng khuôn aiLlmAudit.test.ts.
+  (await import("./aiGateway")).stopGatewayFlushTimer();
+  (await import("./ai/aiLlmAudit")).stopLlmAuditFlushTimer();
 });
 
 const SECRET = "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";

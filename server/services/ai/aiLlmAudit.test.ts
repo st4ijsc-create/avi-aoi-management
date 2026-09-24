@@ -528,7 +528,9 @@ describe("aiLlmAudit — crash-safe shutdown flush (review fix)", () => {
     expect(audit.pendingAuditCount()).toBe(1);
 
     process.emit("beforeExit", 0);
-    await vi.waitFor(() => expect(insertValuesMock).toHaveBeenCalledTimes(1));
+    // 2026-09-24: lượt xả sau `beforeExit` còn `await import("../../db/connection")` — chạy gộp cả thư mục (tải cao) thì
+    // vượt mặc định 1 s của `vi.waitFor` ⇒ "called 0 times" dù mã đúng. Chờ tới 10 s; bình thường xong ngay.
+    await vi.waitFor(() => expect(insertValuesMock).toHaveBeenCalledTimes(1), { timeout: 10_000 });
 
     const rows = insertValuesMock.mock.calls[0]![0] as Array<Record<string, unknown>>;
     expect(rows[0]).toMatchObject({ task: "report", outcome: "ok" });
@@ -550,7 +552,7 @@ describe("aiLlmAudit — crash-safe shutdown flush (review fix)", () => {
     audit.recordLlmAudit({ task: "report", tier: 2, model: "m", outcome: "ok", promptText: "p" });
 
     expect(() => process.emit("beforeExit", 0)).not.toThrow();
-    await vi.waitFor(() => expect(insertValuesMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(insertValuesMock).toHaveBeenCalledTimes(1), { timeout: 10_000 });
     // The batch was dropped (fail-safe), not left stuck in the buffer forever.
     expect(audit.pendingAuditCount()).toBe(0);
   });
