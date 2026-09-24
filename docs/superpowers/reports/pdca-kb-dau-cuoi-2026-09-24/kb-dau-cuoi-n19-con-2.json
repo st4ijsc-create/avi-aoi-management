@@ -1,0 +1,35 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "n19-con-2",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 1,
+      "tuChoi": 0,
+      "traLoi": 1
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "N19",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1950,
+      "nguon": [
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Khi máy gắp đặt linh kiện báo lỗi \"nozzle hút không lên\", cần kiểm tra hệ thống khí nén và trạng thái E-stop, đồng thời xác minh thông qua cảnh báo hệ thống.  \n(2) Bước 1: Mở màn hình `/alerts` để xem mã lỗi hiện tại — nếu có mã như **E082 (Air pressure low)** hoặc **E099 (System crash)** thì xử lý theo hướng dẫn tương ứng [5]. Tại đây, kiểm tra áp suất khí nén bằng cách xác minh van điều áp và máy nén khí. Bước 2: Nếu lỗi liên quan đến hệ thống hút, mở màn hình `/machine-registration` để xem trạng thái thiết bị — nếu không có thông tin cụ thể về nozzle thì cần báo cáo sự cố [2]. Kết quả là xác định nguyên nhân từ mã lỗi hoặc tình trạng vật lý của máy. Bước 3: Nếu phát hiện áp suất thấp (E082), thực hiện thao tác điều chỉnh theo hướng dẫn, sau đó dùng lệnh `acknowledge` để đánh dấu đã xử lý nếu cảnh báo được giải quyết [4].  \n\n(3) Lỗi thường gặp: Cảnh báo không biến mất dù đã xác nhận — nguyên nhân là chưa reset E-stop hoặc áp suất vẫn thấp. Cần kiểm tra lại bằng mã lỗi và đảm bảo hệ thống đang hoạt động bình thường trước khi",
+      "loi": null
+    }
+  ]
+}

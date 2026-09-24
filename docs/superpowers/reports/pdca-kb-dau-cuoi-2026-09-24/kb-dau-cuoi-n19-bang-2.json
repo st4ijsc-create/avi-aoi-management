@@ -1,0 +1,35 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "n19-bang-2",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 1,
+      "tuChoi": 1,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "N19",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 2173,
+      "nguon": [
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/device-adapters.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Câu hỏi liên quan đến lỗi \"nozzle hút không lên\" của máy gắp đặt linh kiện, nhưng các tài liệu cung cấp chỉ đề cập đến sự cố như bão cảnh báo (NG burst), false alarm, board kẹt hoặc kiểm tra AI – **không có nội dung nào nói về lỗi nozzle hay hệ thống hút linh kiện**.  \n\nCác bước xử lý trong tài liệu được mô tả cho các tình huống cụ thể như:  \n1. Xem cảnh báo MQTT tại `/mqtt-alerts` để xác định hiện trạng [1].  \n2. Phân tích ảnh NG bằng `/ai-inspection-analytics` nếu có lỗi hình ảnh [1].  \n3. Thực hiện kiểm tra RCA khi phát hiện lỗi thật lặp lại qua `/root-cause-analysis` [1].\n\nTuy nhiên, **không có hướng dẫn cụ thể nào về xử lý nozzle hút không lên**, cũng như các thao tác liên quan đến thiết bị gắp hoặc hệ thống hút linh kiện. Các tài liệu chỉ đề cập đến việc kiểm tra camera, ánh sáng, căn chỉnh (calibration) hay false call – **không bao gồm lỗi cơ khí của nozzle**.\n\nDo đó:  \n→ Không thể cung cấp các bước hành động cụ thể tại UI hoặc CLI liên quan đến nozzle.  \n→ Không có schema",
+      "loi": null
+    }
+  ]
+}

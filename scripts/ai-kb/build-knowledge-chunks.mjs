@@ -8,6 +8,7 @@ import { parse as parseYaml } from "yaml";
 // G4-B — làm phẳng playbook `.yaml` (tách ra để test được; file này chạy `run()` khi nạp).
 import { playbookToText, playbookTitle } from "./_playbook-text.mjs";
 import { tachBangThanhNhom } from "./_bang-nhom-dong.mjs";
+import { tachDoanCon } from "./_doan-con.mjs";
 
 const ROOT = process.cwd();
 const KNOWLEDGE_DIR = path.join(ROOT, "knowledge");
@@ -329,6 +330,13 @@ function run() {
     if (process.env.KB_CHUNK_BANG_NHOM !== "0") {
       tachBangThanhNhom(fullText).forEach((text, k) => {
         chunks.push(makeChunk("domain", relFile, pieces.length + k, `${title} (bảng, nhóm ${k + 1})`, text));
+      });
+    }
+    // ★ PDCA vòng 4 — BỔ SUNG đoạn con cỡ đoạn văn (xem `_doan-con.mjs`). Chỉ số part bắt đầu từ 1000 để KHÔNG va chỉ số
+    //   của đoạn gốc/nhóm bảng (đổi số lượng nhóm bảng không làm đổi id đoạn con). Tắt: KB_CHUNK_DOAN_CON=0.
+    if (process.env.KB_CHUNK_DOAN_CON !== "0") {
+      tachDoanCon(fullText, { doanGoc: pieces }).forEach((text, k) => {
+        chunks.push(makeChunk("domain", relFile, 1000 + k, `${title} (đoạn con ${k + 1})`, text));
       });
     }
   }

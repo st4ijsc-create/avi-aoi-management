@@ -1,0 +1,125 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "ablation-con",
+  "tom": {
+    "trong": {
+      "n": 7,
+      "dung": 0,
+      "tuChoi": 2,
+      "sai": 5
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "T06",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 1283,
+      "nguon": [
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/features/alerts/predictive-alerts.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "T42",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1668,
+      "nguon": [
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational/repair-station.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/operational-approved/edge-nodes.md",
+        "knowledge/operational-approved/defect-catalog.md"
+      ],
+      "traLoi": "(1) Không có thông tin về việc sửa pad bị bong tróc tại chỗ trong quy trình xử lý sản phẩm NG.  \n(2) Trong tài liệu hiện có, chỉ có hướng dẫn xử lý lỗi ở các phần như danh mục lỗi (defect-catalog), adapter thiết bị và node biên — nhưng không đề cập đến thao tác *rework* cụ thể cho pad bong tróc [5]. Việc sửa tại chỗ chưa được mô tả trong bất kỳ bước nào của quy trình QA hoặc hệ thống xử lý NG. Các bước liên quan: mở `/defect-catalog` để kiểm tra danh mục lỗi, nếu không có mã lỗi phù hợp thì cần thêm mới — nhưng *không có hướng dẫn về việc thực hiện rework tại chỗ* [5]. Kết quả là người vận hành chưa biết cách xử lý cụ thể.  \n\n(3) Lỗi thường gặp: Danh mục lỗi thiếu hoặc trùng tên → không phân loại được lỗi pad bong tróc; nếu không tìm thấy mã, sẽ bị bỏ qua trong báo cáo NG",
+      "loi": null
+    },
+    {
+      "id": "T52",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1824,
+      "nguon": [
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "docs/ECOSYSTEM/29_COMPONENT_PANEL_OPERATOR_MASTER_DESIGN.md",
+        "knowledge/features/production/production-dashboard.md",
+        "docs/ECOSYSTEM/29_COMPONENT_PANEL_OPERATOR_MASTER_DESIGN.md"
+      ],
+      "traLoi": "(1) Mã định danh bảng (Board ID) thường được sinh ra từ cấu hình panel và chỉ số board trong hệ thống, không có định dạng cố định tại cấp độ sản phẩm.  \n(2) Bước 1: Tạo hoặc chọn sản phẩm → nhập ảnh mẫu với kích thước bắt buộc để xác định tọa độ điểm đo giữa các máy (ở form tạo/sửa sản phẩm). Bước 2: Định nghĩa panel N-up thông qua bảng `product_panel_defs`, nơi có cột `code` như \"PNL-2x4-V1\" thể hiện mã định danh. Trong đó, mỗi board trong panel được xác định bằng `boardIndex` (từ 1 đến nUp) và tọa độ gốc tại hệ thống là `(offsetXMm, offsetYMm)` [3]. Kết quả: mã hóa theo cấu trúc gồm code panel + index board → ví dụ \"PNL-2x4-V1-B3\".  \n(3) Lỗi thường gặp: không cung cấp `boardIndex`",
+      "loi": null
+    },
+    {
+      "id": "T55",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1653,
+      "nguon": [
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/features/production/production-orders.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/features/production/production-orders.md"
+      ],
+      "traLoi": "(1) Sau khi chạy bảng mẫu đầu tiên, sản xuất chỉ được bắt đầu sau khi có đơn hàng (production order) được tạo và xác nhận.  \n(2) Bước 1: Truy cập menu *Sản xuất → Đơn hàng sản xuất* để mở trang quản lý đơn hàng [3]. Tại đây, người dùng thực hiện bước **tạo mới** bằng cách nhấn nút `+ Tạo đơn hàng` ở đầu bảng — nhập mã đơn (order code), nhà máy, xưởng, dây chuyền và sản lượng mục tiêu. Kết quả là một dòng mới xuất hiện với trạng thái *Pending* [3]. Bước 2: Sau khi tạo đơn hàng thành công, người dùng có thể chuyển sang tab **Gantt** để kiểm tra lịch trình; nếu cần điều chỉnh thời gian hoặc xung đột (overlap), hệ thống sẽ cảnh báo và yêu cầu xác nhận việc bỏ qua kiểm tra bằng cách nhấn `Override` [3]. Khi không còn xung đột, sản xuất được kích hoạt tự động",
+      "loi": null
+    },
+    {
+      "id": "T56",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 1623,
+      "nguon": [
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational-approved/andon.md",
+        "knowledge/operational/equipment-standards.md",
+        "knowledge/operational/device-adapters.md",
+        "knowledge/operational/device-onboarding.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Câu hỏi \"Khi cầm bảng mạch cần đeo thiết bị gì?\" không liên quan đến các chủ đề được cung cấp như adapter thiết bị, bảng Andon hay tiêu chuẩn thiết bị. Tài liệu chỉ đề cập đến quyền truy cập, đường dẫn và quy trình xử lý sự cố, nhưng **không có nội dung nào nói về việc đeo thiết bị khi cầm bảng mạch**.\n\nCác tài liệu hiện tại không cung cấp thông tin về bảo hộ cá nhân (như găng tay, kính bảo vệ) hay yêu cầu vật lý khi thao tác với bảng mạch. Do đó, **không thể xác định thiết bị cần đeo dựa trên dữ kiện có sẵn**.\n\n👉 Đề xuất: Câu hỏi nên được cụ thể hơn về bối cảnh kỹ thuật (ví dụ: trong nhà máy sản xuất điện tử, lắp ráp linh kiện), hoặc thay bằng câu hỏi liên quan đến quyền truy cập (`machine_control`\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "T57",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1924,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/category-analytics.md"
+      ],
+      "traLoi": "(1) Tỷ lệ đạt ngay lần đầu (FPY) được tính bằng công thức: số lượng sản phẩm qua kiểm tra lần đầu chia cho tổng số sản phẩm thực tế, nhân 100%.  \n(2) Bước 1: Truy cập trang **Báo cáo theo lô** → chọn một lô cụ thể để xem chi tiết. Tại tab \"Chi tiết sản lượng\", thấy công thức `FPY = okQty / actualQty × 100%` [2]. Kết quả hiển thị là tỷ lệ phần trăm FPY, ví dụ: 95%. Bước 2: Trong bảng **Station View**, mỗi trạm có cột FPY được tô màu (xanh ≥90%, vàng 70–89%) dựa trên giá trị này [3]. Nếu FPY < 70% thì hệ thống cảnh báo đỏ.  \n(3) Lưu ý: FPY chỉ tính theo lần đầu kiểm tra, không bao gồm các lần rework.\n\n_Nguồn số liệu: `product_inspections` · interval=day · 14d · 2 hàng_",
+      "loi": null
+    },
+    {
+      "id": "T65",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1885,
+      "nguon": [
+        "knowledge/features/analytics/spc-rules.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/features/analytics/spc-rules.md"
+      ],
+      "traLoi": "(1) Khi vi phạm quy tắc SPC, hệ thống gửi cảnh báo đến các vai trò có quyền xem và xử lý cảnh báo như quality_inspector, supervisor hoặc admin.  \n(2) Bước 1: Hệ thống phát hiện vi phạm theo luật SPC (ví dụ `WE_1`, `NELSON_1`) tại engine `server/utils/spcRules.ts` → sinh ra bản ghi vào bảng `mp_spc_alerts`. Kết quả là một cảnh báo được tạo với mức độ critical hoặc warn. Bước 2: Cảnh báo này xuất hiện trong UI tại `/spc-advanced`, tab Control Chart + Violations, cho phép người dùng xem loại vi phạm và dữ liệu liên quan. Bước 3: Người dùng có quyền `alerts_view` (ví dụ quality_inspector) truy cập vào menu chính → Cảnh báo → Danh sách cảnh báo (`/alerts`) để xác nhận, xử lý hoặc gán trách nhiệm.  \n(3) Lỗi thường gặp: Vi phạm không được phát\n\n_Dữ liệu sống: Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua._",
+      "loi": null
+    }
+  ]
+}

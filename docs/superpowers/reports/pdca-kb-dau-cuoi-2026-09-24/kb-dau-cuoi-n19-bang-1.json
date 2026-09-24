@@ -1,0 +1,35 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "n19-bang-1",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 1,
+      "tuChoi": 1,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "N19",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 2014,
+      "nguon": [
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/device-adapters.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Câu hỏi liên quan đến lỗi \"nozzle hút không lên\" của máy gắp đặt linh kiện, nhưng các tài liệu cung cấp chỉ đề cập đến sự cố như bão cảnh báo (NG burst), false alarm, board kẹt hoặc việc xử lý thiết bị qua màn hình `/device-adapters`, mà **không có nội dung cụ thể về lỗi nozzle hút hay cơ chế hoạt động của máy gắp**.\n\nCác bước xử lý được mô tả trong tài liệu đều tập trung vào cảnh báo AI, phân tích nguyên nhân gốc (RCA), hoặc thao tác vận hành chung như bật nguồn, kiểm tra tự động – **không bao gồm hướng dẫn cụ thể cho lỗi cơ khí của nozzle hút**.\n\nDo đó:  \n→ Không có API, schema hay CLI liên quan đến việc xử lý lỗi \"nozzle hút không lên\".  \n→ Không tìm thấy dữ liệu về cấu hình thiết bị gắp hoặc thao tác kiểm tra phần này.  \n\nLỗi thường gặp như vậy **chưa được liệt kê** trong các tài liệu hiện tại (các triệu chứng và nguyên nhân đều chưa có). Việc xử lý cần dựa trên quy trình vận hành thiết bị cụ thể, mà theo dữ kiện đã cung cấp thì **không tồn tại hoặc chưa ghi lại**.\n\nLiên quan đến hai chủ",
+      "loi": null
+    }
+  ]
+}
