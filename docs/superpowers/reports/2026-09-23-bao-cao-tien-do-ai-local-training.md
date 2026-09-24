@@ -45,6 +45,14 @@ Bộ ST4I có 30 câu trong corpus và 4 câu ngoài corpus.
 
   Ngưỡng này chỉ áp cho route vscode.
 
+  > **Đính chính 2026-09-24 (phiên song song, `6919087c6`):** dòng "0,44: 0/51 nhiễu" chỉ đúng với nhiễu CHÉO corpus (câu C#
+  > hỏi vào tài liệu máy AOI, và ngược lại). Nhiễu CÙNG MIỀN khó hơn nhiều: thêm 8 câu vận hành không tài liệu nào trả lời
+  > (reflow SAC305, stencil 0201, ESD, MSL…) ⇒ eval #30 **3/12 câu ngoài corpus lọt qua 0,44** (N06 0,533 · N09 0,460 · N12 0,572),
+  > trong khi 4 nguồn đúng vẫn nằm 0,340–0,429. Không ngưỡng cosine nào tách được hai nhóm; 0,5 cũng để lọt 2/12. Reranker cũng
+  > không tách tốt hơn rõ ràng (điểm thô, `scripts/ai-eval/rerank-tach.ts`): bge‑v2‑m3 giữ đúng 21/29 · nhiễu 1/12; Qwen3‑Reranker‑0.6B
+  > 24/29 · 2/12; cosine 0,44 25/29 · 3/12. Sản xuất KHÔNG đổi; cần bộ vàng lớn hơn trước khi chọn. Bài học: mẫu nhiễu dễ (chéo miền)
+  > cho một ngưỡng trông "sạch" mà thật ra chưa được thử.
+
 ### R2 — Dữ liệu lập trình
 - **A.**
   - Tham chiếu API sinh từ XML doc có sẵn trên máy, không cần mạng, cắt mỗi ký hiệu thành một đoạn.
@@ -80,6 +88,10 @@ LoRA còn lại là ghi chú có lý do (G9), không phải nút vô hiệu.
     - Trang trắng: 0 dòng.
     - Chạy sống qua Studio: PDF ảnh chụp chữ ra 1 đoạn với huy hiệu vàng. PDF chỉ có hình ra huy hiệu đỏ "OCR không ra chữ" — nhãn cũ "chưa OCR" nói sai khi OCR đã chạy.
   - **Giới hạn đã đo:** model latin không có ư/ơ/ạ/ế/ộ. Chữ có dấu bị rơi, trong khi điểm tin cậy vẫn **0,97**. Điểm tin cậy không báo được lỗi này; chỉ bộ chữ báo được, nên có cảnh báo `ocr-mat-dau`.
+  - **Đã giải quyết 2026-09-24 (phiên song song, `c9cdb61f8`):** thêm bộ đọc dòng VietOCR (ONNX, đủ 178 chữ cái tiếng Việt), chế
+    độ tự động chạy cả hai và lấy VietOCR khi dòng có chữ Việt. Chấm bằng so chuỗi với bản gốc: tiếng Việt 0,850 → **0,979**,
+    Anh/mã/số giữ 0,992. Chỉ áp cho OCR trang (nạp tài liệu); đọc nhãn AOI (`runOcr`) vẫn dùng PaddleOCR. Cảnh báo `ocr-mat-dau`
+    tự tắt khi VietOCR là bộ đọc dòng.
 
 ### R5 — Checklist 4 bước
 Bốn bước: corpus → đã nạp (kèm cảnh báo đỏ của lần nạp mới nhất) → bộ vàng và số lượt eval → điểm lượt mới nhất.
@@ -111,10 +123,14 @@ Hợp đồng kiểm là tập ca đỏ **y hệt** trước/sau trên 62 tệp 
    - Từ giờ luôn chạy với `NODE_OPTIONS=--max-old-space-size=8192` và kiểm exit code. Lần chạy lại với heap đủ lớn: exit 0, 0 lỗi.
 
 ## 4. Còn mở, đề nghị theo thứ tự
-1. **OCR tiếng Việt:** cần một model rec có bộ chữ tiếng Việt, hoặc một bộ đọc riêng. Tới lúc đó, PDF quét tiếng Việt vẫn nên nạp bản PDF có chữ.
-2. **Truy hồi phía kho hệ thống:** 9/30 câu ST4I không kho nào đưa ra nguồn đúng (ví dụ T06: `alerts.md` lạc đề thắng). "Tới trợ lý" đang dừng ở 40 %.
-3. **Bốn câu ST4I có nguồn đúng nằm trong cụm nhiễu** (0,340–0,429): ngưỡng không cứu được, cần xếp hạng hoặc nhúng tốt hơn.
-4. **Bộ câu ngoài corpus cùng miền** (câu vận hành không có trong tài liệu) còn mỏng: 6 câu. Nên thêm câu để canh ngưỡng 0,44.
+> Cập nhật 2026-09-24: phiên song song đã làm bốn mục đầu (`c9cdb61f8`, `6919087c6`); trạng thái ghi ngay trong từng mục.
+
+1. ~~**OCR tiếng Việt**~~ — **XONG** (`c9cdb61f8`): VietOCR, tiếng Việt 0,850 → 0,979 (§2 R4).
+2. **Truy hồi phía kho hệ thống** — một phần do NHÃN: T29 trả lời được từ `spc-rules.md` mà bộ vàng không ghi ⇒ đã sửa nhãn,
+   "kho nào cũng ra nguồn đúng" 0,767 → 0,800. Còn **6 câu trượt thật** (T05 · T06 · T12 · T17 · T18 · T19) — việc tiếp theo.
+3. **Bốn câu ST4I trong cụm nhiễu** — đã thử reranker (bge‑v2‑m3, Qwen3‑Reranker‑0.6B): không tách tốt hơn cosine rõ ràng. Còn mở.
+4. ~~**Bộ câu ngoài corpus cùng miền**~~ — **đã thêm 8 câu** (N05–N12) và chính chúng lộ ra ngưỡng 0,44 để lọt 3/12 (đính chính ở
+   §2 R1). Việc còn lại: bộ vàng lớn hơn rồi mới chọn lại ngưỡng/reranker.
 5. ~~**B6** và **trần nghĩ 32k** vẫn hoãn: b9814 không nhận ngân sách nghĩ theo từng request.~~ **Đính chính (phiên lập trình
    song song, cùng ngày):** câu này SAI. B6 đã làm (`c8f57fbe5`, hybrid phủ quyết cho bộ chọn tool; lưới vá `70d86ba82`). b9814
    CÓ đọc ngân sách nghĩ theo yêu cầu qua `thinking_budget_tokens` (đo: 200 ⇒ nghĩ bị cắt ở 550 ký tự) — trường thử trước đây
