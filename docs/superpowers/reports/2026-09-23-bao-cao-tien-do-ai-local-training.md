@@ -1,5 +1,7 @@
 # Báo cáo tiến độ — AI Local: Training Studio (R1–R5) + B8 · 2026-09-23
 
+> **Cập nhật 2026-09-24:** các mục §4 còn mở được xử lý tiếp ở `2026-09-24-xu-ly-viec-con-mo-ai-local.md`.
+
 Kế hoạch gốc: `docs/superpowers/plans/2026-09-22-ai-local-nang-cap-lap-trinh-training.md` (§4 R1–R5, §2 B8).
 Nhánh `feat/ai-local-L7-hang-rao`, chưa push. Mọi số dưới đây có bằng chứng máy: lượt eval lưu ở `kb_eval_runs` (#id), báo cáo
 đo ở `scripts/ai-eval/codegen-chay-duoc/reports`, hoặc lưới test nêu tên.

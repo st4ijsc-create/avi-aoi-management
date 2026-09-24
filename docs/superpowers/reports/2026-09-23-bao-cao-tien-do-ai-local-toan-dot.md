@@ -1,5 +1,7 @@
 # Báo cáo tiến độ AI Local — lập trình + training, so với kế hoạch (2026-09-23, tối)
 
+> **Cập nhật 2026-09-24:** backlog 1–2 và nợ 2–3 đã xử lý — xem `2026-09-24-xu-ly-viec-con-mo-ai-local.md` (ST4I 6 → 5 câu trượt; bộ vàng 111 câu, giữ ngưỡng/reranker; test ai* gộp 4.618/4.618; ⚠ nợ 3 "chạy riêng thì xanh" sai với 8 tệp).
+
 Kế hoạch: `docs/superpowers/plans/2026-09-22-ai-local-nang-cap-lap-trinh-training.md`.
 Số đo chi tiết: `docs/superpowers/audits/2026-09-21-ai-local-lap-trinh-audit.md` §8.4a–8.4m.
 Báo cáo riêng phần training (phiên song song): `docs/superpowers/reports/2026-09-23-bao-cao-tien-do-ai-local-training.md`.
