@@ -22,6 +22,7 @@
     "i18n:audit": "node scripts/i18n-audit.mjs",
     "i18n:check": "node scripts/i18n-check.mjs",
     "kiem:du-lieu-twin": "tsx scripts/do-twin/ra-soat-du-lieu-twin.mts",
+    "kiem:lai-lich": "node scripts/ghi-lai-lich-ban-dung.mjs --kiem",
     "test:e2e": "playwright test",
     "test:e2e:canh-3d": "playwright test --project=chromium-canh-3d",
     "test:e2e:install": "playwright install --with-deps chromium",

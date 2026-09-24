@@ -41,6 +41,43 @@
  *
  * ⚠ Bước này **không được làm hỏng bản dựng**: mọi lỗi đều nuốt và vẫn ghi phần đọc được. Một
  *   bản dựng đổ vì không đọc nổi `git` là đổi một phiền toái lấy một sự cố.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ LẦN THỨ TƯ (2026-09-24) — VÀ NÓ DẠY MỘT THỨ KHÁC HẲN
+ * ════════════════════════════════════════════════════════════════════════════
+ * Một phiên khác dựng lại **RIÊNG** `dist/index.js` bằng esbuild (không qua `npm run build`,
+ * cũng không qua vite). Cả hai chỗ ghi tệp này đều bị bỏ qua, nên `BUILD-INFO` giữ nguyên số
+ * cũ: nó khai `server-index-js-mtime=07:14:08Z` trong khi trên đĩa là **08:28:45Z** — **lệch
+ * 74 phút**, và `commit=` trỏ một commit đã cũ.
+ *
+ * ★ Hai dòng mtime artefact (thêm ở lần thứ ba) **đã làm đúng việc của chúng**: độ lệch tự nói
+ *   ra. Nhưng nó chỉ nói ra cho ai **chịu đi so** — và lần này người đi so là một phiên khác,
+ *   bằng tay.
+ *
+ * ⇒ Bài học mới: **ghi đúng lúc ghi là chưa đủ; phải có cách HỎI LẠI lúc đọc.** Một tệp lai
+ *   lịch đúng lúc 07:14 có thể thành nói dối lúc 08:28 mà không ai đụng vào nó — thời gian
+ *   làm nó sai, không phải ai đó sửa nó.
+ *   ⇒ Thêm `--kiem`: đọc tệp, so **từng** dòng mtime đã ghi với mtime **sống** trên đĩa, và
+ *     thoát mã 1 khi lệch. Cắm được vào cổng kiểm; không phải nhớ đi so bằng tay.
+ *
+ * ⚠ `--kiem` cố ý **KHÔNG tự sửa**. Ghi lại đúng chỉ khi người ghi biết bundle được dựng từ
+ *   commit nào — kịch bản này đọc HEAD **lúc chạy**, nên chạy lại muộn có thể đổi một lời khai
+ *   cũ lấy một lời khai sai kiểu khác. Nó báo, người quyết.
+ *
+ * ⚠ `--kiem` KHÔNG nên cắm vào CI ngay sau `pnpm run build`: ở đó nó chỉ đọc lại tệp mà chính
+ *   bước trước vừa ghi ⇒ **luôn xanh, không đo gì**. Chỗ nó có nghĩa là **vận hành**: trước khi
+ *   tin lai lịch của một máy chủ đang chạy, hoặc sau một lượt dựng RIÊNG một phần.
+ *
+ * ── KIỂM BẰNG TAY, TÁI HIỆN ĐƯỢC (chạy lần lượt, ba nhánh) ─────────────────
+ *   ① đúng     : `npm run kiem:lai-lich`                      ⇒ mã thoát **0**, mọi dòng `OK`
+ *   ② lệch     : `touch dist/index.js && npm run kiem:lai-lich` ⇒ mã thoát **1**, in
+ *                `LECH server-index-js: … (+Ns)`  ← chứng minh nó BIẾT KÊU
+ *   ③ nhánh hiếm: bỏ dòng `commit=` khỏi `dist/BUILD-INFO.txt` ⇒ mã thoát **1**, **không sập**
+ *   ⚠ ② và ③ làm bẩn trạng thái thật (đổi mtime / sửa tệp lai lịch) — sao lưu rồi khôi phục:
+ *     `touch -d "<mtime cũ>" dist/index.js`. Lần chạy đầu tôi quên, và suýt để lại một tệp lai
+ *     lịch SAI do chính phép thử của mình tạo ra.
+ *   ⚠ Ba nhánh trên đã chạy thật 2026-09-24 (② cho `+967s`), nhưng **chưa có lưới tự động** —
+ *     nói ra chứ không giả vờ là đã có.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -54,6 +91,14 @@ const ARTEFACT = [
   ["client-index-html", path.join("dist", "public", "index.html")],
   ["server-index-js", path.join("dist", "index.js")],
 ];
+
+/**
+ * Giá trị thay cho "không đọc được" — **module scope**, vì CẢ hàm ghi lẫn hàm kiểm đều dùng.
+ * ⚠ Bản đầu của `--kiem` tham chiếu hằng này khi nó còn nằm TRONG hàm ghi: một `ReferenceError`
+ *   chỉ nổ ở nhánh hiếm (tệp lai lịch thiếu dòng `commit=`) nên ca thường vẫn xanh. Đúng lớp
+ *   "vá xong phải kiểm NHÁNH KIA".
+ */
+const khong = "(khong doc duoc)";
 
 /** Chạy `git …`; trả `null` khi không đọc được — KHÔNG bịa một giá trị thay thế. */
 function git(...args) {
@@ -71,6 +116,60 @@ function mtime(p) {
   } catch {
     return null;
   }
+}
+
+/**
+ * **KIỂM** — tệp lai lịch còn nói đúng về artefact đang nằm trên đĩa không?
+ *
+ * Không ghi gì. Trả `true` khi mọi dòng `*-mtime=` khớp mtime sống; `false` khi lệch hoặc khi
+ * không đọc nổi tệp. Sai lệch ở đây nghĩa là **có ai đó dựng lại một phần** mà tệp không biết.
+ */
+export function kiemLaiLich() {
+  let noi;
+  try {
+    noi = fs.readFileSync(DICH, "utf8");
+  } catch {
+    console.error(`[lai-lich] KHONG doc duoc ${DICH} — chua co lai lich de kiem.`);
+    return false;
+  }
+  const ghi = new Map();
+  for (const d of noi.split("\n")) {
+    const i = d.indexOf("=");
+    if (i > 0) ghi.set(d.slice(0, i), d.slice(i + 1));
+  }
+  let dat = true;
+  console.log(`[lai-lich] kiem ${DICH} — commit=${(ghi.get("commit") ?? khong).slice(0, 9)} luc-dung=${ghi.get("luc-dung") ?? khong}`);
+  for (const [ten, p] of ARTEFACT) {
+    const daGhi = ghi.get(`${ten}-mtime`);
+    const song = mtime(p);
+    if (daGhi === undefined) {
+      console.warn(`  ? ${ten}: tep lai lich KHONG co dong nay (ban cu?) — song=${song ?? "(khong co)"}`);
+      dat = false;
+      continue;
+    }
+    if (song === null) {
+      console.warn(`  ! ${ten}: khai ${daGhi} nhung artefact KHONG CON tren dia`);
+      dat = false;
+      continue;
+    }
+    // So tới GIÂY: một số hệ tệp làm tròn phần nghìn giây khi chép/đồng bộ.
+    const g = (x) => x.slice(0, 19);
+    if (g(daGhi) === g(song)) {
+      console.log(`  OK ${ten}: ${song}`);
+    } else {
+      const lech = Math.round((Date.parse(song) - Date.parse(daGhi)) / 1000);
+      console.error(`  LECH ${ten}: lai lich khai ${daGhi} · tren dia ${song} (${lech >= 0 ? "+" : ""}${lech}s)`);
+      dat = false;
+    }
+  }
+  console.log(
+    dat
+      ? "[lai-lich] DAT — lai lich con noi dung ve artefact dang nam tren dia."
+      : "[lai-lich] LECH — co ai do dung lai MOT PHAN ma tep lai lich khong biet.\n" +
+          "           Chay lai `node scripts/ghi-lai-lich-ban-dung.mjs` CHI KHI cay dang o dung\n" +
+          "           commit ma bundle duoc dung tu do — kich ban doc HEAD LUC CHAY.",
+  );
+  return dat;
 }
 
 /**
@@ -98,7 +197,6 @@ export function ghiLaiLichBanDung(nguon = "cli") {
       ? null
       : banTatCa.split("\n").filter((l) => l.trim().startsWith("??")).length;
 
-  const khong = "(khong doc duoc)";
   const dong = [
     `commit=${commit ?? khong}`,
     `nhanh=${nhanh ?? khong}`,
@@ -152,7 +250,8 @@ export function pluginGhiLaiLich() {
   };
 }
 
-/* Chạy thẳng bằng `node scripts/ghi-lai-lich-ban-dung.mjs` ⇒ ghi luôn. */
+/* Chạy thẳng: mặc định GHI; `--kiem` chỉ ĐỌC và so. */
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  ghiLaiLichBanDung("cli");
+  if (process.argv.includes("--kiem")) process.exitCode = kiemLaiLich() ? 0 : 1;
+  else ghiLaiLichBanDung("cli");
 }
