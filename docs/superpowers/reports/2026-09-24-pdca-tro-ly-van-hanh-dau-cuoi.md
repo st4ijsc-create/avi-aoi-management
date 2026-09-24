@@ -376,6 +376,8 @@ từ chức năng tiếng Anh. Mọi lỗi ⇒ truy hồi như cũ. Công tắc 
   Lưới cũ chưa sửa — ghi nợ.
 - Tệp thô: `kb-dau-cuoi-v9*.json`, `guard-v9/`.
 
+**2026-09-24: chủ dự án ĐỒNG Ý giữ dịch câu hỏi (mặc định bật) và đồng ý thêm `npm run build:server` (phiên 96 thực hiện).**
+
 ### 14.4 Còn mở
 1. T23 — hai tài liệu cùng nói "tỷ lệ báo giả" với hai ngưỡng khác ngữ cảnh (SOP NG 10 % · xử lý sự cố 30 %).
 2. LN06 LN08 LN10 T17 T79 — đoạn đáp án ngoài top‑20 kể cả khi có bản dịch.
