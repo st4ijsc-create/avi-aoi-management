@@ -1,0 +1,24 @@
+{"id":"HT01","cauHoi":"Xuất báo cáo thủ công thì chọn được những định dạng nào?","nguon":["aoi-reports.md"],"dapAnTraLoi":{"regex":"PDF[\\s\\S]{0,80}Excel[\\s\\S]{0,80}CSV|CSV[\\s\\S]{0,80}Excel"}}
+{"id":"HT02","cauHoi":"Cấu hình tích hợp tự động với MES nằm ở mục nào?","nguon":["aoi-reports.md"],"dapAnTraLoi":{"regex":"Settings[sS]{0,15}Integration"}}
+{"id":"HT03","cauHoi":"Muốn lấy kết quả kiểm tra theo serial number qua API thì xem tài liệu nào?","nguon":["aoi-reports.md"],"dapAnTraLoi":{"regex":"EXTERNAL_INSPECTION_API"}}
+{"id":"HT04","cauHoi":"Biểu đồ Pareto lỗi mặc định lọc theo khoảng thời gian bao lâu?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"(?<![\\d.,])7 ngày"}}
+{"id":"HT05","cauHoi":"Vạch đỏ trên biểu đồ Pareto đánh dấu mức phần trăm tích lũy nào?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"80\\s*%"}}
+{"id":"HT06","cauHoi":"Một mã lỗi chiếm hơn bao nhiêu phần trăm thì phải mở phân tích nguyên nhân gốc ngay?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"40\\s*%"}}
+{"id":"HT07","cauHoi":"Dữ liệu biểu đồ Pareto lỗi được cache trong bao lâu?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"(?<![\\d.,])5 phút"}}
+{"id":"HT08","cauHoi":"Sao lưu cơ sở dữ liệu hằng ngày dùng lệnh gì?","nguon":["howto-backup-restore.md"],"dapAnTraLoi":{"regex":"pg_dump"}}
+{"id":"HT09","cauHoi":"Ảnh kiểm tra trong thư mục uploads được sao lưu bằng công cụ nào?","nguon":["howto-backup-restore.md"],"dapAnTraLoi":{"regex":"rsync|aws s3 sync"}}
+{"id":"HT10","cauHoi":"Có được đưa tệp .env và license lên git khi sao lưu cấu hình không?","nguon":["howto-backup-restore.md"],"dapAnTraLoi":{"regex":"không (?:được )?đưa lên git|KHÔNG đưa|không (?:được )?(?:commit|đẩy)|kênh bảo mật"}}
+{"id":"HT11","cauHoi":"Top 3 mã lỗi cùng tập trung ở một line thì nên làm gì?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"audit[\\s\\S]{0,40}(?:cấu hình )?điểm đo|kiểm (?:tra|toán) cấu hình điểm đo"}}
+{"id":"HT12","cauHoi":"Bộ lọc mức độ lỗi trên biểu đồ Pareto có những giá trị nào?","nguon":["howto-pareto-defects.md"],"dapAnTraLoi":{"regex":"critical[\\s\\S]{0,30}major[\\s\\S]{0,30}minor"}}
+{"id":"HN01","cauHoi":"Máy in kem hàn báo lỗi dao gạt (squeegee) mòn thì thay sau bao nhiêu lần in?","nguon":[]}
+{"id":"HN02","cauHoi":"Máy gắp đặt báo feeder hết linh kiện thì nạp cuộn mới thế nào?","nguon":[]}
+{"id":"HN03","cauHoi":"Lò reflow báo quạt đối lưu vùng 5 hỏng thì xử lý ra sao?","nguon":[]}
+{"id":"HN04","cauHoi":"Máy X-ray AXI báo ống phát tia sắp hết tuổi thọ thì làm gì?","nguon":[]}
+{"id":"HN05","cauHoi":"Máy SPI đo chiều cao kem hàn lệch chuẩn thì hiệu chỉnh thế nào?","nguon":[]}
+{"id":"HN06","cauHoi":"Máy ICT báo kim đo (probe) tiếp xúc kém thì vệ sinh bằng gì?","nguon":[]}
+{"id":"HN07","cauHoi":"Robot hàn chọn lọc (selective soldering) báo bể thiếc thiếu thì bổ sung thế nào?","nguon":[]}
+{"id":"HN08","cauHoi":"Máy phủ keo conformal coating bị tắc vòi phun thì xử lý thế nào?","nguon":[]}
+{"id":"HN09","cauHoi":"Máy cắt panel (depaneling) bị lưỡi cắt mẻ thì thay thế ra sao?","nguon":[]}
+{"id":"HN10","cauHoi":"Máy khắc laser mã QR trên PCB bị mờ thì chỉnh công suất bao nhiêu?","nguon":[]}
+{"id":"HN11","cauHoi":"Máy rửa bo mạch báo độ dẫn điện nước rửa cao thì làm gì?","nguon":[]}
+{"id":"HN12","cauHoi":"Máy gắp đặt báo lỗi nhận dạng camera linh kiện (vision reject) liên tục thì xử lý thế nào?","nguon":[]}
