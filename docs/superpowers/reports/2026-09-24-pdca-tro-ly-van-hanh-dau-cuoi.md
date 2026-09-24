@@ -323,3 +323,18 @@ một trong hai: `-np 2` (mỗi slot 32k — màn lập trình đo được tụ
 1. ~~Quyết định của chủ dự án về 12.4~~ — **2026-09-24: chủ dự án ĐỒNG Ý giữ model planner (4B)** cho câu trả lời vận hành; `AI_KB_MODEL_TRA_LOI=mac-dinh` để ngỏ, không bật.
 2. Bộ chấm từ chối chỉ nhận câu từ chối chuẩn — câu "tài liệu không nêu…" của 35B bị đếm là trả lời (N21/N31).
 3. TQ02, C01/C03, lệch thuật ngữ Việt ↔ Anh, kho Studio — như 10.6/11.5.
+
+## 13. Bộ chấm — từ chối MỀM và hỏi lại (`3d306cb56`)
+
+Bộ chấm cũ chỉ nhận câu từ chối CHUẨN ⇒ mọi lời không-trả-lời khác chữ bị đếm là "trả lời" (N21 N31 ở model 35B, 12.2).
+Nay `scripts/ai-eval/_phan-loai-tra-loi.mjs` (thuần) phân bốn hình dạng: `tu-choi` (câu chuẩn) · `tu-choi-mem` (CÂU ĐẦU có
+chủ ngữ TÀI LIỆU + "không/chưa cung cấp|liệt kê|mô tả…", "Không có thông tin về…", "X không được liệt kê trong tài liệu") ·
+`hoi-lai` (< 400 ký tự, chỉ một câu hỏi lại) · trả lời thật. Đáp án đúng vẫn THẮNG hình dạng (T16 T18 T43 mở bằng lời từ chối
+nhưng có đáp án). `tom.ngoai.traLoi` từ nay CHỈ đếm trả lời thật.
+- **Census** trên toàn bộ tệp thô vòng 1–7 (~2.600 câu trả lời): soát tay MỌI ca `tu-choi-mem` (14 mẫu duy nhất: N21 N31 Q20
+  GS09 S10 TL01 T42 T46 TQ02…) và `hoi-lai`; các câu N/HN còn lại đều là trả lời thật (HN02 HN12 N04 N19 N22). Câu có vế
+  "không có" ở GIỮA hoặc chủ ngữ là DỮ LIỆU sống (S05 S07 S09 TL03 GS03) KHÔNG bị tính là từ chối — khoá bằng lưới.
+- Đột biến 5/5 ĐỎ (bỏ từ chối mềm · nhìn cả bài · hình dạng trước đáp án · bỏ giới hạn độ dài hỏi lại · chủ ngữ gồm DỮ LIỆU).
+- **Chấm lại** (`kb-dau-cuoi-cham-lai.mjs`, không gọi server): vòng 5–7 nhánh A không đổi câu nào; B/C chỉ N21/N31
+  `tra-loi → tu-choi-mem` ⇒ ở 12.2, ngoài corpus **không trả lời thật: A 32/32 · B 32/32 · C 32/32**. Nền 0924 chấm lại: 38/79
+  đạt, 17 câu trong corpus là `hoi-lai` (đúng chẩn đoán vòng 1: câu hỏi lại nuốt câu có tài liệu).
