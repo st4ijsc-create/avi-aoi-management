@@ -1,0 +1,50 @@
+{
+  "corpus": "scripts/ai-eval/st4i-giu-lai-lac-de.jsonl",
+  "label": "v5-khoi-phuc",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 1,
+      "tuChoi": 1,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "HT04",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 38619,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/aoi-reports.md"
+      ],
+      "traLoi": "(1) Biểu đồ Pareto lỗi mặc định lọc theo khoảng thời gian 30 ngày.  \n(2) Bước 1: Truy cập trang `/pareto-analysis` hoặc menu \"Báo cáo chất lượng → Pareto NG\" [2]. Tại đây, bộ lọc khoảng thời gian có giá trị mặc định là **30 ngày** (xem bảng Bộ lọc trong phần [1] và [3]). Bước 2: Không cần thay đổi nếu không yêu cầu khác; hệ thống tự động áp dụng 30 ngày khi người dùng không nhập tùy chọn. Kết quả hiển thị biểu đồ Pareto với dữ liệu từ khoảng thời gian này, được sắp xếp theo tần suất giảm dần và có đường tích lũy % [2].  \n(3) Lưu ý: Nếu cần thay đổi (ví dụ 7 ngày), người dùng phải thủ công chọn trong bộ lọc. Lỗi thường gặp khi không thấy dữ liệu là do khoảng thời gian quá hẹp hoặc thiếu inspection data – kiểm tra lại nguồn `inspection_defects` [3].  \n(4) Liên quan đến: Phân tích lỗi theo loại (By Type), phân tích theo ca (By Time Period). Khi chuyển sang tab \"By Time Period\", cần chọn nhóm thời gian như shift/day, và dữ liệu sẽ được group lại để phát hiện xu hướng [2].  \n\n```bash\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "HN02",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1867,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/workflows/install-new-machine.playbook.yaml",
+        "knowledge/operational/component-library.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/operational/feeder-verify.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    }
+  ]
+}

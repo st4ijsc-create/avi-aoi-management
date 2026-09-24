@@ -1,0 +1,380 @@
+{
+  "corpus": "scripts/ai-eval/st4i-giu-lai-lac-de.jsonl",
+  "label": "v5tat-giulai-lacde",
+  "tom": {
+    "trong": {
+      "n": 12,
+      "dung": 8,
+      "tuChoi": 1,
+      "sai": 3
+    },
+    "ngoai": {
+      "n": 12,
+      "tuChoi": 10,
+      "traLoi": 2
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "HT01",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 35455,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/domain/howto-export-pdf-report.md",
+        "knowledge/domain/howto-export-pdf-report.md",
+        "knowledge/features/analytics/scheduled-reports.md"
+      ],
+      "traLoi": "(1) Khi xuất báo cáo thủ công, người dùng có thể chọn định dạng PDF (trình bày), Excel (phân tích) hoặc CSV (import hệ thống khác).  \n(2) Bước 1: Vào trang Reports → Export [1]. Bước 2: Chọn loại báo cáo và khoảng thời gian. Bước 3: Tại mục Format, chọn một trong ba định dạng: **PDF**, **Excel** hoặc **CSV**. Kết quả là hệ thống tạo file theo định dạng đã chọn và lưu vào thư mục được chỉ định để xuất [1].  \n(3) Lưu ý: Nếu dữ liệu lớn (trên 90 ngày), quá trình export có thể bị treo; cần thu hẹp khoảng thời gian. Lỗi COPQ = 0 xảy ra nếu không nhập đơn giá rework trong localStorage (`copq_rework_cost_ng`, `copq_rework_cost_ntf`).  \n(4) Liên quan đến chủ đề xuất báo cáo PDF và định dạng dữ liệu: khi chọn\n\nAPI liên quan: `/api/reports/export`",
+      "loi": null
+    },
+    {
+      "id": "HT02",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1903,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/operational/mes-control-tower.md",
+        "knowledge/operational/equipment-integration.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/features/settings/shift-config.md"
+      ],
+      "traLoi": "(1) Cấu hình tích hợp tự động với MES nằm ở mục **Settings → Integration → MES**.  \n(2) Bước 1: Truy cập menu chính > Settings > Integration > MES để mở giao diện cấu hình. Tại đây, hệ thống sẽ hiển thị các thiết lập liên quan đến việc gửi dữ liệu real-time từ AOI sang MES qua API sau mỗi bảng kiểm tra [1]. Bước 2: Kiểm tra và xác nhận quyền truy cập `analytics_oee` được cấp phép; nếu không có, cần yêu cầu nâng cấp quyền. Kết quả là MES sẽ nhận dữ liệu theo thời gian thực để xử lý phân tích sản xuất.  \n(3) Lưu ý: Cần đảm bảo đã cấu hình đúng quyền `analytics_oee`. Nếu thiếu, hệ thống sẽ từ chối truy cập và không thể gửi dữ liệu. Lỗi thường gặp khi API bị lỗi do sai định dạng JSON hoặc thời gian đồng bộ (thời gian server phải khớp với timezone).  \n(4) Liên quan",
+      "loi": null
+    },
+    {
+      "id": "HT03",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2306,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/features/inspection/inspection-submit.md"
+      ],
+      "traLoi": "(1) Để lấy kết quả kiểm tra theo serial number qua API, cần tham khảo tài liệu `apidocs/EXTERNAL_INSPECTION_API.md`.  \n(2) Trong tài liệu này có nêu rõ: \"Lấy kết quả kiểm tra theo serial number\" là một trong các chức năng được liệt kê. Cụ thể, người dùng phải truy cập vào file `apidocs/EXTERNAL_INSPECTION_API.md` để tìm hiểu chi tiết về endpoint và schema liên quan [1]. Không có lệnh cụ thể nào được cung cấp trực tiếp như API call, nhưng tài liệu chỉ định đây là một trong các hành động hỗ trợ qua API.  \n(3) Lưu ý: Tài liệu không cung cấp URL hoặc endpoint cụ thể để lấy dữ liệu theo serial number; chỉ nói đến việc tham khảo tài liệu `EXTERNAL_INSPECTION_API.md`. Lỗi thường gặp nếu người dùng cố gắng gọi API mà chưa đọc kỹ tài liệu này là thiếu thông tin cấu trúc yêu cầu.  \n(4) Liên quan với chủ đề \"Submit Inspection\" và \"Chi tiết kiểm tra\", vì cả hai đều liên hệ đến việc xử lý dữ liệu sản phẩm theo serial, trong đó chi tiết kiểm tra (inspection detail) cho phép xem kết quả đo cụ thể, còn submit inspection là bước nộp lại để cập nhật trạng thái.  \n\n[1] AOI Reports & Analytics (Báo Cáo và Phân Tích): Xem tài liệu `apidocs/EXTERNAL_INSPECTION_API.md` để: lấy kết quả kiểm tra theo serial number...\n\nAPI liên quan: `/api/machine/submit-inspection`\nMàn hình liên quan: `/inspection/:id`",
+      "loi": null
+    },
+    {
+      "id": "HT04",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2343,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/aoi-reports.md"
+      ],
+      "traLoi": "(1) Biểu đồ Pareto lỗi mặc định lọc theo khoảng thời gian 30 ngày, nhưng có thể điều chỉnh sang các lựa chọn như 7 ngày hoặc 1 ngày.  \n(2) Bước 1: Truy cập trang `/pareto-analysis` qua menu **Analytics → Pareto Analysis** [2]. Tại đây, bộ lọc \"Khoảng thời gian\" mặc định là `30 ngày`, có thể thay đổi sang các tùy chọn như 7 hoặc 1 ngày. Bước 2: Khi mở biểu đồ, hệ thống tự động hiển thị dữ liệu theo khoảng thời gian đã chọn; nếu không thấy kết quả, kiểm tra lại bộ lọc trong phần **Bộ lọc** [3]. Kết quả là bar chart được sắp xếp giảm dần và có đường tích lũy % đạt ~80% ở nhóm đầu.  \n(3) Lưu ý: Nếu dữ liệu rỗng hoặc chỉ hiển thị \"Unknown\", cần kiểm tra cấu hình phân loại lỗi tại module Inspection (tham khảo [7]). Lỗi thường gặp khi chọn thời gian quá ngắn và không có đủ mẫu để biểu diễn rõ ràng.  \n(4) Liên quan đến chủ đề **phân tích nguyên nhân gốc rễ** và **điều kiện tiền xử lý dữ liệu**, vì Pareto giúp xác định \"Vital Few\" (20% lỗi gây 80%) [\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "HT05",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 765,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/aoi-reports.md"
+      ],
+      "traLoi": "Không có lỗi NG nào theo defectType trong 7 ngày qua.",
+      "loi": null
+    },
+    {
+      "id": "HT06",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1650,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/operational/root-cause-analysis.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   **Ngưỡng kích hoạt:** Một mã lỗi chiếm **> 40 %** (lớn hơn 40%).\n*   **Hành động đề xuất:** Mở RCA ngay (Root Cause Analysis) sử dụng phương pháp Fishbone hoặc 5-Why [1].\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n> \"1 mã lỗi chiếm > 40 % | Mở RCA ngay (Fishbone / 5-Why).\" [1]\n\n(4) Nguồn gốc:\n*   `knowledge/domain/howto-pareto-defects.md` (Phân tích Pareto NG — Hướng dẫn, đoạn con 5) [1]",
+      "loi": null
+    },
+    {
+      "id": "HT07",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 783,
+      "nguon": [
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/howto-pareto-defects.md"
+      ],
+      "traLoi": "Không có lỗi NG nào theo defectType trong 7 ngày qua.",
+      "loi": null
+    },
+    {
+      "id": "HT08",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3052,
+      "nguon": [
+        "knowledge/domain/howto-backup-restore.md",
+        "knowledge/features/inspection/history-export-scheduling.md",
+        "knowledge/domain/howto-backup-restore.md",
+        "knowledge/features/inspection/history-export-scheduling.md",
+        "knowledge/features/analytics/data-comparison.md"
+      ],
+      "traLoi": "(1) Lệnh sao lưu cơ sở dữ liệu hằng ngày sử dụng `pg_dump` với định dạng nén `.dump`.  \n(2) Bước 1: Thực hiện lệnh `pg_dump -h localhost -U postgres -d avi_aoi_db -Fc -f /backup/avi_$(date +%F).dump` để tạo bản sao lưu đầy đủ và được nén tại đường dẫn `/backup/avi_YYYY-MM-DD.dump`. Lệnh này chạy trong môi trường Linux/WSL, có thể thêm vào cron. Bước 2: Đảm bảo lệnh được đặt trong kịch bản `avi-backup.sh`, gọi bằng định kỳ hằng ngày theo lịch trình `0 2 * * * /opt/scripts/avi-backup.sh >> /var/log/avi-backup.log 2>&1`. Kết quả là file sao lưu đầy đủ, có thời gian tạo rõ ràng.  \n(3) Lưu ý: Lệnh này chỉ áp dụng cho cơ sở dữ liệu `avi_aoi_db`",
+      "loi": null
+    },
+    {
+      "id": "HT09",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 1767,
+      "nguon": [
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/features/ai/ai-image-search.md",
+        "knowledge/features/inspection/inspection-submit.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi \"Ảnh kiểm tra trong thư mục uploads được sao lưu bằng công cụ nào?\" liên quan đến cơ chế sao lưu (backup) hoặc hệ thống lưu trữ ảnh, nhưng các tài liệu cung cấp chỉ đề cập đến việc **tải và hiển thị** hình ảnh từ storage như S3/MinIO [1], hay truy vấn ảnh qua API như `/api/inspection/:id/images` hoặc `/api/measurement-point/:pointDefId/reference-image`, chứ không nêu rõ công cụ nào dùng để sao lưu (backup) các file trong thư mục uploads.  \n\nKhông có dữ liệu về quy trình, tên công cụ, hay hệ thống chịu trách nhiệm việc sao lưu ảnh từ upload vào storage được cung cấp trực tiếp [1][3]. Các tài liệu chỉ nói đến **kết nối với S3 hoặc MinIO** để truy cập hình ảnh và xử lý lỗi tải ảnh (ví dụ: URL sai, watermark), nhưng",
+      "loi": null
+    },
+    {
+      "id": "HT10",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1609,
+      "nguon": [
+        "knowledge/domain/howto-license-bypass-dev.md",
+        "knowledge/domain/howto-license-bypass-dev.md",
+        "knowledge/features/admin/license-mgmt.md",
+        "knowledge/domain/howto-backup-restore.md",
+        "knowledge/domain/howto-backup-restore.md"
+      ],
+      "traLoi": "(1) Không được đưa tệp `.env` và `license.lic` lên Git khi sao lưu cấu hình, do chứa thông tin nhạy cảm như biến môi trường và khóa license.  \n(2) Trong quá trình sao lưu: **tập hợp các file cần backup** (theo [4]) bao gồm PostgreSQL database (`pg_dump -Fc`), ảnh mẫu (`rsync` hoặc `aws s3 sync`), knowledge base (`tar`) và cấu hình môi trường `.env`, `license.lic`. Tuy nhiên, theo quy tắc bảo mật ([1]), **không commit file `license.lic` vào git**, và các file cấu hình như `.env` phải được sao lưu qua kênh bảo mật riêng — không đưa lên Git [4]. Khi phục hồi trên máy mới, license cần được tạo lại vì nó gắn với MAC address của máy chủ ([5]).  \n(3) Lỗi thường gặp: cố gắng upload `license.lic` vào git sẽ vi phạm quy tắc bảo mật và gây rủ\n\nMàn hình liên quan: `/admin/license`\nBiến cấu hình: `NODE_ENV=development`, `LICENSE_BYPASS=true`, `LICENSE_BYPASS_FEATURES=all`\n\nVí dụ:\n```ini\nNODE_ENV=development\nLICENSE_BYPASS=true            # bỏ qua kiểm tra license\nLICENSE_BYPASS_FEATURES=all    # bật toàn bộ feature flag\n```",
+      "loi": null
+    },
+    {
+      "id": "HT11",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2036,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/domain/aoi-reports.md"
+      ],
+      "traLoi": "(1) Khi top 3 mã lỗi cùng tập trung ở một line, cần audit cấu hình điểm đo của line đó để xác định nguyên nhân gốc rễ.  \n(2) Bước 1: Truy cập menu **Analytics → Pareto NG**, chọn khoảng thời gian và line cụ thể; tại biểu đồ, hover các cột lỗi top để xem count và % tích lũy [3]. Kết quả hiển thị rõ ràng loại lỗi chiếm tỷ lệ cao nhất. Bước 2: Chuyển sang tab **Defect Heatmap** (URL `/defect-heatmap`), chọn vùng lỗi tương ứng trên outline sản phẩm; hover hoặc click vào khu vực đỏ để xem danh sách inspections gần nhất [2]. Kết quả cho thấy các lần phát sinh lỗi cụ thể theo thời gian. Bước 3: Dựa vào dữ liệu từ hai tab, xác định nếu các điểm đo tại line đó có cấu hình sai (ví dụ: vị trí không chính xác hoặc thiếu điểm đo) và kiểm tra lại thiết lập trong **Product Setup → Measurement Points** [2].  \n\n(3) Lỗi thường gặp: Không thấy dữ liệu nhiệt lỗi do chưa bật `defectMeasurementPoints` – cần bật tính năng này. Nếu các mã lỗi trùng nhau nhưng không có trend rõ ràng, nên kiểm tra cấu hình điểm đo thay vì chỉ dựa vào Pareto.  \n\n(4) Liên quan",
+      "loi": null
+    },
+    {
+      "id": "HT12",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 699,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/aoi-reports.md"
+      ],
+      "traLoi": "Không có lỗi NG nào theo defectType trong 7 ngày qua.",
+      "loi": null
+    },
+    {
+      "id": "HN01",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 764,
+      "nguon": [
+        "knowledge/features/monitoring/machine-health.md",
+        "knowledge/operational-approved/work-orders.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.",
+      "loi": null
+    },
+    {
+      "id": "HN02",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1495,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/workflows/install-new-machine.playbook.yaml",
+        "knowledge/operational/component-library.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/operational/feeder-verify.md"
+      ],
+      "traLoi": "(1) Khi máy gắp đặt báo feeder hết linh kiện, kỹ sư cần thực hiện nạp cuộn mới thông qua chức năng kiểm tra vật tư tại line và cập nhật trạng thái trong hệ thống.  \n(2) Bước 1: Truy cập màn hình `/feeder-verify` (Menu: Sản xuất › Vật tư tại line), xác định slot feeder đang báo hết linh kiện [5]. Bước 2: Thực hiện hành động \"nạp cuộn mới\" bằng lệnh `POST /api/feeder/replace-slot`, điền thông tin mã cuộn, loại linh kiện và vị trí slot (ví dụ: `{slot_id: \"SLOT_03\", part_type: \"resistor_1k\"}\"`). Kết quả là hệ thống cập nhật trạng thái feeder thành `REPLACED` và gửi cảnh báo xác nhận.  \n(3) Lưu ý: Nếu không có quyền `machine_status`, truy cập sẽ bị từ chối [5]. Lỗi thường gặp khi",
+      "loi": null
+    },
+    {
+      "id": "HN03",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 2109,
+      "nguon": [
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/programming-copilot.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi liên quan đến lỗi của lò reflow (quạt đối lưu vùng 5), nhưng trong dữ liệu được cung cấp, **không có nội dung nào đề cập đến hệ thống lò reflow**, các mã lỗi liên quan hoặc quy trình xử lý sự cố cụ thể cho thiết bị này. Các tài liệu hiện có chỉ bao gồm:  \n- Danh mục lỗi tổng quát (chỉ định mã lỗi như E021–E040, nhưng đều thuộc hệ thống vận chuyển/conveyor),  \n- Quy trình phản ứng chùm lỗi NG với các màn hình liên quan đến kiểm tra AI và cảnh báo MQTT.  \n\nDo đó:  \n**Không có hướng dẫn cụ thể về xử lý khi quạt đối lưu vùng 5 hỏng trong lò reflow**, cũng như không có API, CLI hoặc schema tương ứng được ghi nhận [1][2].  \n\nLỗi này **không nằm trong danh mục lỗi đã xác minh từ mã nguồn (như E025–E031)** và không liên quan đến các màn hình xử lý sự cố hiện tại như `/mqtt-alerts`, `/ai-inspection-analytics` hoặc `/defect-catalog`.  \n\n👉 Đề xuất: Câu hỏi cần được cụ thể hóa hơn, ví dụ: \"Lò reflow báo lỗi EXX khi quạt vùng 5 hỏng thì làm sao?\" để có dữ liệu tham chiếu chính xác. Hiện tại, **không có tài liệu ghi nhận sự cố này hoặc quy trình xử lý** — nên không thể c",
+      "loi": null
+    },
+    {
+      "id": "HN04",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1598,
+      "nguon": [
+        "knowledge/domain/howto-export-pdf-report.md",
+        "knowledge/domain/howto-export-pdf-report.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi liên quan đến cảnh báo của máy X-ray AXI (inspection station) về tuổi thọ ống phát tia, nhưng tài liệu chỉ cung cấp hướng dẫn xử lý các cảnh báo tổng quát như:  \n- Cảnh báo dồn dập hoặc không hiển thị do ngưỡng nhạy hay lỗi cấu hình [4].  \n- Cách xác nhận và điều chỉnh ngưỡng cảnh báo cho vai trò \"Quản lý\" và \"Kỹ sư\" [5].\n\nKhông có nội dung nào đề cập cụ thể đến việc xử lý cảnh báo về tuổi thọ ống phát tia của máy AXI, cũng như các bước hành động (ví dụ: kiểm tra lịch sử, yêu cầu bảo trì, hoặc quy trình đổi mới thiết bị).  \n\nTài liệu chỉ nêu rõ rằng hệ thống có cấu hình `inspectionStation` enum bao gồm SPI / pre-reflow AOI / post-reflow AOI / AXI / ICT / FCT [\n\nMàn hình liên quan: `/uploads/reports/Bao`\n\nVí dụ:\n```\nPhản hồi:\n```\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN05",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1581,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/features/products/measurement-point-setup.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi liên quan đến việc hiệu chỉnh máy SPI đo chiều cao kem hàn lệch chuẩn, nhưng tài liệu chỉ cung cấp hướng dẫn cho:  \n- Máy AOI và quy trình hiệu chỉnh reference board [1]  \n- Phân tích SPC với các điểm đo (measurement points) và lỗi nhập dữ liệu [5]  \n- Cấu hình điểm đo trên sản phẩm như solder joint bằng cách vẽ ROI, chọn loại và mô hình AI phân loại [5]\n\nKhông có nội dung nào đề cập đến máy SPI, việc hiệu chỉnh chiều cao kem hàn hay quy trình kiểm tra cho thiết bị này.  \n\nCác bước liên quan trong tài liệu chỉ áp dụng với:  \n- `POST /api/machines/:id/refresh-config` để cập nhật cấu hình sau khi thay đổi điểm đo [5]  \n- Việc xác minh toạ độ sai do fiducial chưa được căn lại, không phải lỗi của SPI [5]\n\n\n\nMàn hình liên quan: `/products/PCB-A7-V2`, `/machines/5`\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN06",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1584,
+      "nguon": [
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/analytics/defect-prediction.md",
+        "knowledge/operational-approved/machine-registration.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi liên quan đến việc vệ sinh kim đo (probe) trên máy ICT khi tiếp xúc kém, nhưng tài liệu không cung cấp bất kỳ hướng dẫn cụ thể nào về vật dụng hoặc phương pháp vệ sinh cho thiết bị này. Không có dữ kiện từ các trang như [1], [2], [3], [4] hay [5] đề cập đến việc xử lý kim đo hoặc quy trình vệ sinh trong bối cảnh vận hành máy ICT.\n\nCác tài liệu hiện có chỉ nói về:\n- Cảnh báo dự báo (predictive alerts) và dự báo khiếm tật (defect prediction), ví dụ: xác suất lỗi spindle, xu hướng nhiệt độ [1], [4].\n- Quản lý ngưỡng cảnh báo hoặc xử lý sự cố theo loại máy nhưng không đề cập đến vật liệu vệ sinh hay thao tác cụ thể với kim đo.\n\nDo đó, **không có thông tin về \"vệ sinh bằng gì\"** được g\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN07",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1492,
+      "nguon": [
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/robot-control.md",
+        "knowledge/operational/robot-model-health.md",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Câu hỏi liên quan đến việc bổ sung thiếc cho robot hàn chọn lọc (selective soldering), nhưng các tài liệu cung cấp chỉ đề cập đến hoạt động đổi recipe, xử lý sản phẩm lỗi tại line AOI và giám sát sức khỏe robot/AI — không có nội dung nào về cơ chế báo thiếu thiếc hay hành vi bổ sung thiếc.  \n\nKhông tồn tại lệnh hoặc công cụ được liệt kê trong các playbook (như `add_tin`, `supplement_solder`) để xử lý tình trạng \"bể thiếc thiếu\". Các bước liên quan đến điều khiển robot chỉ bao gồm truy cập `/robot-control` và xác nhận trạng thái máy, không có quy trình bổ sung vật liệu.  \n\nDo đó, **không thể cung cấp API, lệnh CLI hoặc schema cụ thể** cho việc bổ sung thiếc vì dữ kiện này chưa được đề cập trong tài liệu hiện tại [1][4]. Nếu cần hỗ trợ về",
+      "loi": null
+    },
+    {
+      "id": "HN08",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1586,
+      "nguon": [
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/operational-approved/edge-nodes.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/operational-approved/anomaly-banks.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi liên quan đến việc xử lý máy phủ keo conformal coating bị tắc vòi phun, nhưng tất cả các tài liệu được cung cấp chỉ đề cập đến các màn hình và thao tác như: Adapter thiết bị (`/device-adapters`), Đăng ký máy (`/machine-registration`), Node biên (`/edge-nodes`) hoặc Phân tích kiểm tra AI (`/ai-inspection-analytics`). Không có nội dung nào nói về lỗi tắc vòi phun hay quy trình xử lý cụ thể cho loại máy này.  \n\nCác bước thao tác, triệu chứng, nguyên nhân hoặc cách xác nhận đã xong đều được ghi chú là **\"CHƯA GHI LẠI\"** trong các tài liệu liên quan đến thiết bị và giám sát [1], [2], [3]. Do đó, không thể cung cấp hướng dẫn cụ thể về xử lý sự cố tắc vòi phun trên máy phủ keo\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN09",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1583,
+      "nguon": [
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "docs/ECOSYSTEM/29_COMPONENT_PANEL_OPERATOR_MASTER_DESIGN.md",
+        "drizzle/schema/productPanel.ts",
+        "knowledge/operational/engineering-changes.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi liên quan đến việc thay thế lưỡi cắt mẻ trên máy cắt panel (depaneling), nhưng tài liệu chỉ cung cấp dữ kiện về adapter thiết bị, danh mục lỗi và cấu trúc bảng product_panel_defs/product_panel_boards — không đề cập đến bảo trì hoặc thay thế bộ phận cơ khí như lưỡi cắt.  \n\nCác bước xử lý sự cố liên quan đến máy móc được mô tả trong tài liệu chỉ khi có triệu chứng cụ thể (ví dụ: thiết bị không kết nối, lỗi báo cáo), nhưng **không liệt kê các hành động để thay thế lưỡi cắt** hay quy trình bảo trì.  \n\nTài liệu ghi rõ rằng \"CHƯA GHI LẠI\" trong nhiều trường hợp như:  \n- Các bước thao tác cụ thể khi xử lý sự cố thiết bị [1]  \n- Cách xử lý dữ liệu lịch sử khi mã lỗi bị loại bỏ [2]  \n→\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN10",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 836,
+      "nguon": [
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/features/monitoring/machine-sync.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN11",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1603,
+      "nguon": [
+        "knowledge/features/monitoring/machine-sync.md",
+        "knowledge/features/monitoring/machine-sync.md",
+        "knowledge/workflows/install-new-machine.playbook.yaml",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi liên quan đến việc xử lý cảnh báo \"độ dẫn điện nước rửa cao\" trên máy rửa bo mạch, nhưng tài liệu chỉ cung cấp hướng dẫn về đồng bộ cấu hình máy (machine sync), đăng ký máy và quản lý cảnh báo tổng thể — không đề cập cụ thể đến các ngưỡng đo như độ dẫn điện hay xử lý lỗi liên quan.  \n\nTài liệu [4] nói rằng nếu có bão cảnh báo từ một máy, cần xử lý riêng từng máy trước, **không xác nhận hàng loạt**, và chỉ nên thay đổi ngưỡng khi có quyền (quản lý hoặc kỹ sư). Ngoài ra, việc chỉnh sửa ngưỡng phải thực hiện trên màn hình cấu hình ngưỡng, không ở nơi kiểm tra cảnh báo.  \n\nTuy nhiên, không có thông tin nào trong dữ liệu về:  \n- Các điểm đo liên quan đến độ dẫn điện nước rửa;  \n- Cách xác định hoặc xử lý khi giá trị\n\nAPI liên quan: `/api/machine/sync-points`, `/api/machine/:id/sync-logs`\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN12",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1906,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml"
+      ],
+      "traLoi": "(1) Lỗi nhận dạng camera linh kiện (vision reject) liên tục thường do sai thiết lập ánh sáng, lỗi căn chỉnh hoặc tín hiệu kích hoạt.  \n(2) Bước 1: Truy cập **Danh sách cảnh báo** tại `/alerts`, kiểm tra nếu có cảnh báo loại `camera calibration fail` hay `multiple exposure error`. Nếu thấy mã E005 (calibration fail), thực hiện lại sequence căn chỉnh camera bằng lệnh `runCalibrationSequence()` trong giao diện thiết bị. Ở đây, cần xác minh trạng thái camera qua tRPC `machine.listPending`, nếu máy chưa đăng ký thì kiểm tra `machines.registrationStatus`. Bước 2: Nếu lỗi do ánh sáng yếu (mã E003), thực hiện vệ sinh lens và thay bóng LED ring như hướng dẫn tại [1]. Kết quả là hình ảnh rõ hơn, giảm tỷ lệ reject. Bước 3: Kiểm tra tín hiệu kích hoạt bằng cách xem log triggering signal; nếu có timeout thì giảm tốc độ conveyor theo gợi ý E004.  \n(3) Lỗi thường gặp: Không thấy cảnh báo dù máy lỗi → do ngưỡng cảnh báo bị bật sai hoặc chưa cấu hình đúng (xem `getEnabled`). Nếu đã xử lý nhưng vẫn phát sinh, cần kiểm tra lại focus và ánh sáng bằng tRPC `machine.update`.  \n(4) Liên quan\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`",
+      "loi": null
+    }
+  ]
+}

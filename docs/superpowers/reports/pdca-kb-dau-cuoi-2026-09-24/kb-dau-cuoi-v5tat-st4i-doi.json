@@ -1,0 +1,170 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "v5tat-st4i-doi",
+  "tom": {
+    "trong": {
+      "n": 7,
+      "dung": 3,
+      "tuChoi": 1,
+      "sai": 3
+    },
+    "ngoai": {
+      "n": 3,
+      "tuChoi": 0,
+      "traLoi": 3
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "T03",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1572,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Tụ chip 0402 được phép lệch trục X tối đa là ±0.10mm.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:  \n| Package | X-shift | Y-shift | Rotation |  \n|---------|--------|--------|----------|  \n| 0402 | ±0.10mm | ±0.10mm | ±7° |\n\n(4) Nguồn gốc (file/đường dẫn): [1] AOI Thresholds & Calibration (Ngưỡng và Hiệu Chỉnh AOI) (đoạn con 5), [2] AOI Thresholds & Calibration (Ngưỡng và Hiệu Chỉnh AOI) (bảng, nhóm 3), [3] aoi-thresholds.md – bảng \"Chip Resistor / Capacitor\" trong phần Ngưỡng Kích Thước Linh Kiện.",
+      "loi": null
+    },
+    {
+      "id": "T17",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 2435,
+      "nguon": [
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational-approved/oee-dashboard.md",
+        "knowledge/operational-approved/maintenance-hub.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/operational-approved/master-data.md"
+      ],
+      "traLoi": "(1) Khi bảng sửa lại vẫn hỏng sau nhiều lần, cần loại bỏ lỗi dựa trên danh mục lỗi đã xác định và kiểm tra trạng thái dữ liệu lịch sử.  \n(2) Bước 1: Mở `/defect-catalog`, tìm mã lỗi bằng tên tiếng Việt hoặc mã hiện có để xác minh trùng lặp — nếu tồn tại nhiều bản ghi, cần thống nhất một mã chuẩn [1]. Bước 2: Nếu đã phát hiện lỗi bị lặp do nhập tay khác nhau (ví dụ: hai mã lỗi tương đương), thực hiện cập nhật danh mục bằng cách tạo phiên bản mới với mã chuẩn và lưu lại mã cũ trong `unmatched_defect_codes` để curation. Kết quả là dữ liệu được gộp, tránh chia đôi báo cáo Pareto [1]. Bước 3: Trong trường hợp lỗi vẫn không cải thiện sau nhiều lần sửa (ví dụ: thay đổi liên tục nhưng không giải quyết), cần xem xét việc loại bỏ bản ghi này bằng lệnh `delete",
+      "loi": null
+    },
+    {
+      "id": "N04",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1682,
+      "nguon": [
+        "knowledge/features/production/production-scheduling.md",
+        "knowledge/operational/programming-copilot.md",
+        "docs/ECOSYSTEM/79_AI_CODING_WORKSPACE_NANG_CAP_2026-08-19.md",
+        "docs/ECOSYSTEM/79_AI_CODING_WORKSPACE_NANG_CAP_2026-08-19.md",
+        "knowledge/operational/ai-coding-workspace.md"
+      ],
+      "traLoi": "(1) Để viết vòng lặp `for` trong Python, bạn cần sử dụng cú pháp cơ bản như `for item in iterable:` để duyệt qua từng phần tử.  \n(2) **Bước 1**: Viết lệnh `for i in range(5):`, ở vùng mã nguồn (code editor), kết quả là các giá trị từ 0 đến 4 được gán vào biến `i`.  \n**Bước 2**: Thêm thân vòng lặp như `print(i)` — khi chạy, mỗi lần sẽ hiển thị một số. Trong không gian lập trình AI (`/ai-coding-workspace`), nếu bạn nhập câu hỏi \"viết vòng lặp for\", hệ thống nhận diện động từ “viết” và tự chuyển sang chế độ sinh mã với persona *KỸ SƯ LẬP TRÌNH*, gọi `streamAnswer`, sử dụng native tool-call để tạo đoạn code hoàn chỉnh trong khối ```python\\nfor i in range(5):\\n    print(i)``` [3].  \n(3) Lưu\n\nAPI liên quan: `/api/ai/coding/stream`\nBiến cấu hình: `AI_NATIVE_TOOLCALLS_ENABLED=true`",
+      "loi": null
+    },
+    {
+      "id": "T46",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1962,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-troubleshooting.md",
+        "knowledge/domain/howto-ng-handling-sop.md"
+      ],
+      "traLoi": "(1) Lỗi E050 không được liệt kê trong tài liệu hướng dẫn xử lý sự cố AOI. Các mã lỗi từ E001 đến E060 chỉ bao gồm các mã như E001–E020 (camera), E021–E040 (transport) và E041–E060 (communication). Không có thông tin về mã lỗi E050 trong bất kỳ tài liệu nào được cung cấp.  \n\n(2) Do không có dữ kiện cụ thể về mã lỗi E050, không thể xác định bước xử lý tại UI hay kết quả mong đợi. Nếu cần hỗ trợ với các mã lỗi đã liệt kê (ví dụ: E001–E040), vui lòng cung cấp thêm thông tin hoặc kiểm tra lại mã lỗi.  \n\n(3) Lỗi thường gặp liên quan đến camera, transport hoặc giao tiếp được mô tả chi tiết trong tài liệu [1] và [2]. Tuy nhiên, không có dữ kiện nào về E050 – điều này có thể là sai sót nhập liệu hoặc mã lỗi chưa cập nhật.  \n\n(4) Liên hệ với chủ đề xử lý board kẹt (E021) hay false alarm (đánh giá hình ảnh) vì cả hai đều liên quan đến việc phát hiện và xác minh sản phẩm bất thường, nhưng không có sự",
+      "loi": null
+    },
+    {
+      "id": "T47",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 1913,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "aoi-troubleshooting.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi liên quan đến tình trạng ổ cứng sắp đầy, nhưng trong các tài liệu cung cấp (bao gồm hướng dẫn xử lý lỗi AOI), **không có đề cập nào về mã lỗi do dung lượng lưu trữ hoặc tràn đĩa**. Các mã lỗi được liệt kê chỉ tập trung vào: camera, vận chuyển (conveyor), giao tiếp phần mềm và các vấn đề liên quan đến hình ảnh, cảm biến hay chương trình xử lý.\n\nDo đó, **không có mã lỗi nào trong danh sách E001–E060 phản ánh tình trạng ổ cứng sắp đầy**.  \n\nNếu cần xác định lỗi hệ thống do thiếu dung lượng lưu trữ, phải tham khảo tài liệu về quản trị hệ điều hành hoặc log system-level (ví dụ: cảnh báo từ phần mềm giám sát server), nhưng không có dữ kiện như vậy trong ngữ cảnh hiện tại.\n\n👉 **Lưu ý**: Các mã lỗi được cung cấp đều liên quan đến hoạt động cảm biến, vận chuyển hay giao tiếp – *không bao gồm các vấn đề về lưu trữ hệ thống*.  \n\n**Liên quan 2 chủ đề**:  \n1. Lỗi camera (E003–E015) → ảnh hưởng trực tiếp đến chất lượng hình ảnh và phát hiện lỗi PCB, nhưng không",
+      "loi": null
+    },
+    {
+      "id": "T54",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1676,
+      "nguon": [
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/features/alerts/mqtt-alert-rules.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 2  \n\n(2) Danh sách đầy đủ dưới dạng bullet hoặc bảng:\n\n- Tỷ lệ báo sai (false alarm rate) phải thấp hơn **30%** theo chỉ số KPI chính trong Báo Cáo và Phân Tích [2].  \n- Trong quy trình tạo chương trình AOI, yêu cầu về độ tin cậy của máy là: khi confidence score nằm ở mức 70%–90%, cần chờ operator xác nhận; nếu dưới 70%, kỹ sư phải xem xét thủ công. Điều này ảnh hưởng đến tỷ lệ báo sai nhưng không trực tiếp quy định giới hạn cụ thể cho false alarm rate.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có:\n\n```\nFalse Alarm Rate | False Alarm / Total Alarm | < 30%\n```\n\n(4) Nguồn gốc (file/đường dẫn): [2] AOI Reports & Analytics (Báo Cáo và Phân Tích) (part 2) | knowledge/domain/aoi-reports.md",
+      "loi": null
+    },
+    {
+      "id": "T58",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 999,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/operational/feeder-verify.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/workflows/ng-handling.playbook.yaml"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Tỷ lệ phế phẩm (scrap rate) mục tiêu là dưới 0.1% [1].  \n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:  \n\"Scrap Rate | Scrap / Total | < 0.1%\" — nguồn [1]  \n\n(4) Nguồn gốc: knowledge/domain/aoi-reports.md",
+      "loi": null
+    },
+    {
+      "id": "T76",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1837,
+      "nguon": [
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "(1) Chương trình kiểm tra được phát hành (release) sẽ không tự động chặn máy chạy chương trình cũ; thao tác này do hệ thống quản lý theo quy trình phê duyệt.  \n(2) Bước 1: Mở menu `AI › Phân tích kiểm tra AI`, truy cập route `/ai-inspection-analytics` để xem trạng thái phát hành [2]. Tại đây, xác nhận rằng **release hiện là audit-only**, không có chức năng tự động chặn máy. Bước 2: Trong bước `release` (bước #6 trong quy trình), kỹ sư phải nhúng `ProgramReleasePanel`, và hệ thống chỉ lưu trữ thông tin về phiên bản đã phê duyệt [3]. Kết quả: Máy vẫn chạy chương trình cũ nếu chưa được cập nhật cấu hình, vì không có lệnh chặn tự động.  \n(3) Lỗi thường gặp: Thiếu quyền `analytics_ai_performance` khiến màn hình hiển thị rỗng; lỗi module `MOD_AI` thiếu license sẽ ngăn truy cập vào route [2].\n\n_Nguồn số liệu: `machines` · onlyOffline=false · 1699 hàng_",
+      "loi": null
+    },
+    {
+      "id": "N19",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1888,
+      "nguon": [
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Khi máy gắp đặt linh kiện báo lỗi \"nozzle hút không lên\", cần kiểm tra hệ thống hút và các cảnh báo liên quan theo quy trình xử lý sự cố AOI.  \n(2) Bước 1: Mở màn hình `/alerts` để xem danh sách cảnh báo hiện tại, tìm mã lỗi tương ứng (ví dụ E083 hoặc E099). Nếu có cảnh báo về áp suất không ổn định hay hệ thống mất chức năng → kiểm tra thông số theo bảng [5]. Bước 2: Xác minh trạng thái hút bằng cách nhấn **Emergency Stop**, đợi dừng hoàn toàn, mở nắp an toàn (theo quy trình), và kiểm tra nozzle có bị kẹt hoặc tắc bụi không. Nếu thấy vật cản → loại bỏ và reset hệ thống. Kết quả là máy hoạt động bình thường sau khi xử lý. Bước 3: Truy cập `/machine-registration` để xác nhận trạng thái thiết bị, nếu chưa ghi lại thì cần bổ sung thông tin [2].  \n(3) Lỗi thường gặp: Cảnh báo không hiển thị do quyền `machine_status` thiếu → màn hình hiện rỗng; hoặc lỗi \"nozzle hút\" thực tế là do bụi bám gây tắc, nhưng người dùng bỏ qua bước kiểm tra vật lý. Cần xác minh bằng cách nhấn E-stop và mở nắp an toàn theo đúng",
+      "loi": null
+    },
+    {
+      "id": "N22",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1548,
+      "nguon": [
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/operational/equipment-standards.md"
+      ],
+      "traLoi": "(1) IPC-A-610 Class 3 có yêu cầu nghiêm ngặt hơn về mối hàn so với Class 2, đặc biệt trong các tiêu chí như độ đầy đủ (solder volume), hình dạng và sự hiện diện của lỗi.  \n(2) Bước 1: Truy cập bảng **Defect catalog seed IPC-A-610 Class 2/3** [1][2] → tìm mục \"Solder\" dưới danh sách các loại lỗi → xác định các mã lỗi cụ thể như *insufficient, excess, bridging, cold, void, HoP (head-on-pillow), tombstone, BGA-NWO*, và *wicking*. Mỗi lỗi được gán mức độ nghiêm trọng (`critical/major/minor`) và `classRef` (Class 2/3). Tại UI: trong phần **Product Measurement Points > Defect Catalog**, người dùng thấy danh sách các mã lỗi này đã được cấu hình. Kết quả là bảng đầy đủ, có thể lọc theo loại lỗi hoặc mức độ nghiêm trọng.",
+      "loi": null
+    }
+  ]
+}
