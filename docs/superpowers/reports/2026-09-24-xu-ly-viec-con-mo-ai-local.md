@@ -78,7 +78,7 @@ Nhánh `feat/ai-local-L7-hang-rao`, chưa push. Số liệu thô nằm ở `tmp/
 ⇒ Chênh ±2 trên 107 câu là nhiễu, nên **giữ 0,44**: ngang mức tốt nhất mà để lọt ít hơn (13 so với 22).
 ⇒ Reranker thô còn làm top‑1 **tệ hơn** cosine, nên không đổi reranker và không nâng BLEND.
 
-⚠ **Phát hiện về công cụ đo:** `rerank-tach.ts` thực ra trả điểm **trộn** (BLEND 0,20, tức 80 % là cosine), không phải điểm thô như tên gọi. Nay công cụ mặc định dùng điểm thô và in rõ đang dùng loại nào. Số "bge 21/29, Qwen 24/29" ở `6919087c6` nhiều khả năng đo bằng điểm trộn; không kiểm lại được.
+⚠ **Phát hiện về công cụ đo:** `rerank-tach.ts` thực ra trả điểm **trộn** (BLEND 0,20, tức 80 % là cosine), không phải điểm thô như tên gọi. Nay công cụ mặc định dùng điểm thô và in rõ đang dùng loại nào. ~~Số "bge 21/29, Qwen 24/29" ở `6919087c6` nhiều khả năng đo bằng điểm trộn.~~ **Đính chính:** phiên viết `6919087c6` xác nhận số đó là điểm THÔ suy ngược từ điểm trộn (raw = (trộn − 0,8·cos)/0,2) — đúng về toán, không phải điểm trộn. Câu tương tự trong thông điệp commit `3b27b0329` cũng sai theo cách này.
 
 ## 5. Nợ 3 — lưới test `server/services/ai*`
 
