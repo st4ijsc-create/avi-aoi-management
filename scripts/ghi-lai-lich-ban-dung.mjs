@@ -64,6 +64,21 @@
  *   commit nào — kịch bản này đọc HEAD **lúc chạy**, nên chạy lại muộn có thể đổi một lời khai
  *   cũ lấy một lời khai sai kiểu khác. Nó báo, người quyết.
  *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ `DAT` CHỨNG MINH ĐÚNG MỘT THỨ — VÀ PHẢI TỰ MANG THEO GIỚI HẠN ẤY
+ * ════════════════════════════════════════════════════════════════════════════
+ * Nó so **mtime đã ghi** với **mtime sống trên đĩa**. Chấm hết. `DAT` **không** chứng minh:
+ *   · **tiến trình đang chạy được nạp TỪ artefact này.** Một máy chủ khởi động lúc 07:48 vẫn
+ *     giữ mã cũ trong bộ nhớ sau khi ai đó dựng lại lúc 11:00 — đã xảy ra thật trong dự án
+ *     này. Muốn biết thì hỏi **PID và giờ khởi động**, rồi so với mtime artefact.
+ *   · **cấu hình CHẠY đúng mặc định đã commit.** Biến môi trường không nằm trong tệp này, nên
+ *     một lượt A/B (đổi `GGUF_FAST_MODEL`, tắt cache…) vẫn cho `DAT` trong khi hành vi máy chủ
+ *     khác hẳn bản mặc định. Tình huống này có thật: phiên 16 chạy đúng như vậy ngày 2026-09-24.
+ *
+ * ⇒ Một dấu xanh phải mang theo **phạm vi của chính nó**, nếu không người đọc sẽ mượn nó để
+ *   trả lời một câu hỏi rộng hơn. Vì thế hai giới hạn trên in **ngay trong dòng `DAT`** — gắn
+ *   liền với lời khẳng định, không để ở một docblock mà người chạy lệnh có thể không mở ra.
+ *
  * ⚠ `--kiem` KHÔNG nên cắm vào CI ngay sau `pnpm run build`: ở đó nó chỉ đọc lại tệp mà chính
  *   bước trước vừa ghi ⇒ **luôn xanh, không đo gì**. Chỗ nó có nghĩa là **vận hành**: trước khi
  *   tin lai lịch của một máy chủ đang chạy, hoặc sau một lượt dựng RIÊNG một phần.
@@ -164,7 +179,12 @@ export function kiemLaiLich() {
   }
   console.log(
     dat
-      ? "[lai-lich] DAT — lai lich con noi dung ve artefact dang nam tren dia."
+      ? "[lai-lich] DAT — lai lich con noi dung ve ARTEFACT DANG NAM TREN DIA.\n" +
+          "           Chi co the thoi. DAT o day KHONG chung minh:\n" +
+          "             · tien trinh dang chay duoc nap TU artefact nay (no co the da khoi\n" +
+          "               dong TRUOC mot luot dung sau do) — hoi PID va gio khoi dong;\n" +
+          "             · cau hinh CHAY dung mac dinh da commit — bien moi truong khong nam\n" +
+          "               trong tep nay, nen mot luot A/B doi ENV van cho DAT."
       : "[lai-lich] LECH — co ai do dung lai MOT PHAN ma tep lai lich khong biet.\n" +
           "           Chay lai `node scripts/ghi-lai-lich-ban-dung.mjs` CHI KHI cay dang o dung\n" +
           "           commit ma bundle duoc dung tu do — kich ban doc HEAD LUC CHAY.",
