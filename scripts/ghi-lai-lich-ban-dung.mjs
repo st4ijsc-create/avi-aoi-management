@@ -88,11 +88,20 @@
  *   ② lệch     : `touch dist/index.js && npm run kiem:lai-lich` ⇒ mã thoát **1**, in
  *                `LECH server-index-js: … (+Ns)`  ← chứng minh nó BIẾT KÊU
  *   ③ nhánh hiếm: bỏ dòng `commit=` khỏi `dist/BUILD-INFO.txt` ⇒ mã thoát **1**, **không sập**
- *   ⚠ ② và ③ làm bẩn trạng thái thật (đổi mtime / sửa tệp lai lịch) — sao lưu rồi khôi phục:
- *     `touch -d "<mtime cũ>" dist/index.js`. Lần chạy đầu tôi quên, và suýt để lại một tệp lai
- *     lịch SAI do chính phép thử của mình tạo ra.
- *   ⚠ Ba nhánh trên đã chạy thật 2026-09-24 (② cho `+967s`), nhưng **chưa có lưới tự động** —
- *     nói ra chứ không giả vờ là đã có.
+ *   ⚠ ② và ③ **làm bẩn trạng thái thật** (đổi mtime / sửa tệp lai lịch). Quy trình an toàn:
+ *     1. chụp trước:  `stat -c %s dist/index.js` · `md5sum dist/index.js` ·
+ *        `date -r dist/index.js -u +%Y-%m-%dT%H:%M:%S.%3NZ` · `cp dist/BUILD-INFO.txt <nơi khác>`
+ *     2. khôi phục:   `touch -d "<mtime cũ>" dist/index.js` (+ chép lại tệp lai lịch nếu đã sửa)
+ *     3. **kiểm khôi phục bằng NỘI DUNG, không chỉ mtime** — so lại **md5 và số byte**.
+ *        `touch -d` đặt lại được mtime **kể cả khi nội dung đã hỏng**, nên mtime khớp KHÔNG
+ *        chứng minh gì về nội dung. (Bài học do phiên 16 chỉ ra ngày 2026-09-24: họ kiểm bản
+ *        khôi phục của tôi bằng số byte + một chuỗi chỉ có trong bản dựng của họ — chặt hơn
+ *        hẳn cách tôi tự kiểm.)
+ *     ⚠ Và **đừng chạy ② trong lúc phiên khác đang đo trên `:3000`**: nó không đổi nội dung
+ *       bundle, nhưng làm `kiem:lai-lich` của họ đỏ giữa chừng.
+ *   ⚠ Ba nhánh đã chạy thật trên **chính bản này** (2026-09-24: ② cho `+977s`, khôi phục khớp
+ *     md5 `4a4113bf…` và 12.137.217 byte), nhưng **chưa có lưới tự động** — nói ra chứ không
+ *     giả vờ là đã có.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
