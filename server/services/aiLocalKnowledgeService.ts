@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { canDich, dichTruyVanBat, docBanDich, lenhDich } from "./ai/dichTruyVan";
 import { canTuKiem, congLacDeBat, doPhuTu, lenhTuKiem, taoBangIdf, tuKiemCo, type BangIdf } from "./ai/congLacDe";
 import {
   laCauHoiQuyTac,
@@ -186,6 +187,8 @@ export interface KbRetrieveResult {
    * `Date.now()` nào, nên chi phí rerank vô hình với mọi tầng phía trên.
    */
   rerankMs?: number | null;
+  /** ★ PDCA vòng 9 — bản dịch tiếng Anh dùng khi chấm điểm (`ai/dichTruyVan.ts`); vắng = không dịch. */
+  cauHoiDich?: string;
 }
 
 // C3a — optional, page-supplied context. All fields optional; absence keeps the
@@ -1084,7 +1087,11 @@ function bangIdfKho(): BangIdf {
 async function laCauLacDe(question: string, retrieve: KbRetrieveResult, userId?: number): Promise<boolean> {
   try {
     if (!congLacDeBat() || retrieve.contexts.length === 0) return false;
-    const phu = doPhuTu(question, retrieve.contexts, bangIdfKho());
+    // ★ Vòng 9 — độ phủ lấy MAX(câu gốc, bản dịch): câu Việt hỏi đoạn viết chữ Anh ("phế phẩm" ↔ "Scrap Rate", T58).
+    const phu = Math.max(
+      doPhuTu(question, retrieve.contexts, bangIdfKho()),
+      retrieve.cauHoiDich ? doPhuTu(retrieve.cauHoiDich, retrieve.contexts, bangIdfKho()) : 0,
+    );
     if (!canTuKiem(phu)) return false;
     const { generateText: ggufGen, isGgufAvailable } = await import("./aiGgufEngine");
     if (!(await isGgufAvailable())) return false;
@@ -1147,6 +1154,36 @@ async function modelTraLoiKb(planModelId: string | undefined): Promise<string | 
   if (!macDinh) return planModelId;
   const { laModelServerDangGiu } = await import("./aiLlamaServerClient");
   return laModelServerDangGiu(macDinh) ? macDinh : planModelId;
+}
+
+/**
+ * ★ PDCA vòng 9 — dịch câu hỏi Việt sang Anh để TRUY HỒI (xem `ai/dichTruyVan.ts`). Model của planner (câu ngắn ⇒ model
+ * nhanh in-process — KHÔNG xếp hàng sau lượt lập trình trên slot duy nhất của llama-server, §12.4). Có đệm theo câu hỏi
+ * (một lượt hỏi gọi truy hồi nhiều lần). Mọi lỗi ⇒ `null` = truy hồi như cũ.
+ */
+const DEM_DICH_TOI_DA = 500;
+const demDich = new Map<string, string | null>();
+async function dichTruyVan(question: string, language: KbLanguage, userId?: number): Promise<string | null> {
+  if (!dichTruyVanBat() || !canDich(question, language)) return null;
+  const khoa = question.trim();
+  if (demDich.has(khoa)) return demDich.get(khoa) ?? null;
+  let banDich: string | null = null;
+  try {
+    const { generateText: ggufGen, isGgufAvailable } = await import("./aiGgufEngine");
+    if (!(await isGgufAvailable())) return null;
+    const plan = await planInference({ task: "chat", text: question, userId });
+    // doc69 G2-3 — engine chỉ thấy câu hỏi ĐÃ CHE; lượt gọi được đo đếm.
+    const { he, nd } = lenhDich(plan.safeText);
+    const start = Date.now();
+    const r = await ggufGen({ systemPrompt: he, prompt: nd, maxTokens: 96, temperature: 0, disableThinking: true }, plan.decision.modelId);
+    plan.record({ tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated, latencyMs: Date.now() - start, outcome: "ok" });
+    banDich = docBanDich(stripThinking(r.text).answer);
+  } catch {
+    return null; // lỗi tạm thời: KHÔNG đệm, lượt sau thử lại
+  }
+  if (demDich.size >= DEM_DICH_TOI_DA) demDich.delete(demDich.keys().next().value as string);
+  demDich.set(khoa, banDich);
+  return banDich;
 }
 
 function buildGracefulFallback(language: KbLanguage): string {
@@ -2806,6 +2843,10 @@ export async function retrieveKnowledge(
   // but produce a CORRUPT cosine similarity, so keyword-only retrieval is safer.
   const embedModelMatches = computeEmbedModelMatches(data.corpusEmbedModel);
   const qVec = embedModelMatches ? await embedQuestion(question) : null;
+  // ★ PDCA vòng 9 — bản dịch Anh: điểm = MAX(câu gốc, bản dịch) cho cosine và từ khoá (chỉ NÂNG đoạn khớp chữ Anh).
+  const cauHoiDich = await dichTruyVan(question, language);
+  const tokensDich = cauHoiDich ? tokenize(cauHoiDich) : null;
+  const qVecDich = cauHoiDich && embedModelMatches ? await embedQuestion(cauHoiDich) : null;
 
   // doc69 B3 (Wave 5) — feedback-derived re-ranking signal. Flag-gated + fail-safe:
   // when disabled (default) this is a single boolean check and feedbackNetRatings
@@ -2824,8 +2865,10 @@ export async function retrieveKnowledge(
       return { emb, chunk: null as KbChunk | null, semantic: 0, keyword: 0, score: 0 };
     }
 
-    const semantic = qVec ? cosine(qVec, emb.embedding) : 0;
-    const keywordRaw = keywordScore(chunk, tokens, entities);
+    const semantic = qVec ? Math.max(cosine(qVec, emb.embedding), qVecDich ? cosine(qVecDich, emb.embedding) : 0) : 0;
+    const keywordRaw = tokensDich
+      ? Math.max(keywordScore(chunk, tokens, entities), keywordScore(chunk, tokensDich, entities))
+      : keywordScore(chunk, tokens, entities);
     const keyword = Math.tanh(keywordRaw / 15);
     const baseScore = qVec ? semantic * 0.72 + keyword * 0.28 : keyword;
     // Cycle-3: tilt ranking toward VN-language sources for VN questions (and
@@ -3073,6 +3116,7 @@ export async function retrieveKnowledge(
     citations,
     contexts,
     rerankMs,
+    ...(cauHoiDich ? { cauHoiDich } : {}),
   };
 }
 

@@ -374,6 +374,11 @@ const SO_KHAI: readonly BeMat[] = [
     ghiChu: "PDCA vòng 6 — phân loại một từ SONG/TAILIEU cho câu vùng mơ hồ khi tool rỗng; `stripThinking` trước `docPhanLoaiTaiLieu`. Không tới người dùng.",
   },
   {
+    tep: "server/services/aiLocalKnowledgeService.ts", ham: "dichTruyVan", goi: "generateText",
+    hienThi: false, noi: "tai_cho",
+    ghiChu: "PDCA vòng 9 — dịch câu hỏi Việt→Anh chỉ để CHẤM ĐIỂM truy hồi; `stripThinking` trước `docBanDich`. Không tới người dùng.",
+  },
+  {
     tep: "server/services/programming/aiProgrammingCopilot.ts", ham: "runCodeModel", goi: "chatCompletion",
     hienThi: true, noi: "tai_cho",
     ghiChu: "Copilot lập trình — bề mặt DUY NHẤT đã cắt TRƯỚC G5-C (di sản G5-B).",

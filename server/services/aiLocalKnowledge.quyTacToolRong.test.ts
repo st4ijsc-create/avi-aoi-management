@@ -96,6 +96,9 @@ async function gom(gen: AsyncGenerator<{ type: string; token?: string }>): Promi
 const promptCua = (m: ReturnType<typeof vi.fn>) => JSON.stringify(m.mock.calls[0]?.[0] ?? "");
 
 beforeEach(() => {
+  // PDCA vòng 9 — tắt lượt DỊCH câu hỏi (chỉ để chấm điểm truy hồi, lưới riêng: aiLocalKnowledge.dichTruyVan.test.ts):
+  // các ca ở đây đếm lượt gọi model TRẢ LỜI ("không gọi LLM") — lượt dịch không phải lượt trả lời.
+  process.env.AI_KB_DICH_TRUY_VAN = "0";
   vi.clearAllMocks();
   generateEmbedding.mockResolvedValue(unit(0)); // trùng đoạn duy nhất ⇒ tin cậy cao
   isGgufAvailable.mockResolvedValue(true);

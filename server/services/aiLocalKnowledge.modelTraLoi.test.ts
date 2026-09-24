@@ -90,6 +90,9 @@ async function gom(g: AsyncGenerator<{ type: string; token?: string }>) { let s 
 const modelTraLoi = () => generateText.mock.calls.find((c) => (c[0] as { maxTokens?: number })?.maxTokens !== 8)?.[1];
 
 beforeEach(() => {
+  // PDCA vòng 9 — tắt lượt DỊCH câu hỏi (chỉ để chấm điểm truy hồi, lưới riêng: aiLocalKnowledge.dichTruyVan.test.ts):
+  // các ca ở đây đếm lượt gọi model TRẢ LỜI ("không gọi LLM") — lượt dịch không phải lượt trả lời.
+  process.env.AI_KB_DICH_TRUY_VAN = "0";
   vi.clearAllMocks();
   for (const k of ENV) cu[k] = process.env[k];
   process.env.LLAMA_SERVER_ENABLED = "true";

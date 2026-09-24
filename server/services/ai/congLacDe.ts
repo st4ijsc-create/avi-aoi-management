@@ -16,7 +16,10 @@ export const NGUONG_PHU = 0.6;
 
 /** Từ chức năng + từ chung của miền — không mang nội dung phân biệt câu hỏi. */
 const TU_DUNG = new Set(
-  "là và của có không thì được bao nhiêu nào gì thế như sao khi phải cần cho các một những với này đó để từ trong ra vào lên hay hoặc bị đã sẽ đang ai ở đâu mấy lần thường theo trên dưới về rồi xử lý máy lỗi".split(" "),
+  "là và của có không thì được bao nhiêu nào gì thế như sao khi phải cần cho các một những với này đó để từ trong ra vào lên hay hoặc bị đã sẽ đang ai ở đâu mấy lần thường theo trên dưới về rồi xử lý máy lỗi".split(" ").concat(
+    // ★ Vòng 9 — độ phủ còn đo trên BẢN DỊCH tiếng Anh của câu hỏi (`ai/dichTruyVan.ts`): từ chức năng tiếng Anh.
+    "the a an is are was were be been of to in on at for by with from and or not no do does did how what which when where who why many much often long often can should must will would this that these those it its there".split(" "),
+  ),
 );
 
 export function tachTu(s: string): string[] {

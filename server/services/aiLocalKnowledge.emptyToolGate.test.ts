@@ -139,6 +139,9 @@ function datTool(textSummary: string, note?: string, soVong = 1) {
 }
 
 beforeEach(() => {
+  // PDCA vòng 9 — tắt lượt DỊCH câu hỏi (chỉ để chấm điểm truy hồi, lưới riêng: aiLocalKnowledge.dichTruyVan.test.ts):
+  // các ca ở đây đếm lượt gọi model TRẢ LỜI ("không gọi LLM") — lượt dịch không phải lượt trả lời.
+  process.env.AI_KB_DICH_TRUY_VAN = "0";
   vi.clearAllMocks();
   generateEmbedding.mockResolvedValue(unit(0));
   isGgufAvailable.mockResolvedValue(true);
