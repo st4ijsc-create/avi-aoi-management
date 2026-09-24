@@ -364,6 +364,11 @@ const SO_KHAI: readonly BeMat[] = [
     ghiChu: "Ops-chat streaming. `StreamingThinkingStripper` dựng NGOÀI mọi nhánh ⇒ không đường thoát nào đi vòng.",
   },
   {
+    tep: "server/services/aiLocalKnowledgeService.ts", ham: "laCauLacDe", goi: "generateText",
+    hienThi: false, noi: "tai_cho",
+    ghiChu: "PDCA vòng 5 — tự kiểm một từ CO/KHONG của cổng câu lạc đề; `stripThinking` trước `tuKiemCo`. Không tới người dùng (chỉ quyết nhánh từ chối chuẩn).",
+  },
+  {
     tep: "server/services/programming/aiProgrammingCopilot.ts", ham: "runCodeModel", goi: "chatCompletion",
     hienThi: true, noi: "tai_cho",
     ghiChu: "Copilot lập trình — bề mặt DUY NHẤT đã cắt TRƯỚC G5-C (di sản G5-B).",

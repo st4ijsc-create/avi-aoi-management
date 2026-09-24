@@ -146,11 +146,14 @@ describe("aiLocalKnowledgeService — input redaction (answerQuestion, non-strea
     const question = `hướng dẫn kiểm tra AOI, api_key=${SECRET} dùng để đăng nhập`;
     await answerQuestion(question, nextTopK());
 
-    expect(generateText).toHaveBeenCalledTimes(1);
-    const [engineArgs] = generateText.mock.calls[0]!;
-    expect(typeof engineArgs.prompt).toBe("string");
-    expect(engineArgs.prompt).not.toContain(SECRET);
-    expect(engineArgs.prompt).toContain("[REDACTED_SECRET]");
+    // ★ PDCA vòng 5 — có thể có THÊM một lượt tự kiểm (cổng câu lạc đề) trước lượt trả lời ⇒ MỌI lượt engine thấy đều phải
+    //   là bản đã che, không chỉ lượt đầu.
+    expect(generateText).toHaveBeenCalled();
+    for (const [engineArgs] of generateText.mock.calls) {
+      expect(typeof engineArgs.prompt).toBe("string");
+      expect(engineArgs.prompt).not.toContain(SECRET);
+      expect(engineArgs.prompt).toContain("[REDACTED_SECRET]");
+    }
   });
 
   it("legitimate manufacturing question with no secret reaches the engine unredacted (no false positive)", async () => {

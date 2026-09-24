@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { canTuKiem, congLacDeBat, doPhuTu, lenhTuKiem, taoBangIdf, tuKiemCo, type BangIdf } from "./ai/congLacDe";
 import { laCauHoiQuyTac, ghepQuyTacVoiDuLieuSong } from "./ai/cauHoiQuyTac";
 import { laTuChoi, nhuongChoTaiLieu, phanHoiLaiSauTuChoi } from "./ai/hoiLaiSauTaiLieu";
 import path from "node:path";
@@ -1020,12 +1021,7 @@ function buildExtractiveAnswer(question: string, retrieve: KbRetrieveResult): st
         ? `Không tìm thấy dữ liệu cho mã **${id}** trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Kiểm tra lại mã (định dạng đúng chưa, có khoảng trắng dư không)\n- Nếu đây là dữ liệu thời gian thực, hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ`
         : `No data found for **${id}** in the current documents.\n\n**Try:**\n- Verify the ID format and remove extra whitespace\n- For real-time data, specify the date/time range\n- Or contact a technical engineer for help`;
     }
-    if (language === "zh") {
-      return `在当前文档中我没有关于此问题的准确信息。\n\n**建议：**\n- 提问更具体一些（功能名称、界面、错误代码、机台/批次编号）\n- 如果询问实时数据（产量、机台、缺陷），请说明日期/时间范围\n- 或联系技术工程师寻求帮助`;
-    }
-    return language === "vi"
-      ? `Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ`
-      : `I don't have accurate information about this question in the current documents.\n\n**Try:**\n- Ask more specifically (feature name, screen, error code, machine/lot ID)\n- For real-time data (yield, machines, defects), specify the date/time range\n- Or contact a technical engineer for help`;
+    return cauTuChoiChuan(language);
   }
 
   const intro =
@@ -1051,6 +1047,51 @@ function buildExtractiveAnswer(question: string, retrieve: KbRetrieveResult): st
         : "\n\n💡 *If needed, ask about a specific step or error.*";
 
   return `${intro}\n\n${bullets}${outro}`;
+}
+
+/** Câu TỪ CHỐI chuẩn ("không có thông tin chính xác…") — một nguồn, dùng cho cổng độ liên quan và cổng lạc đề. */
+function cauTuChoiChuan(language: KbLanguage): string {
+  if (language === "zh") {
+    return `在当前文档中我没有关于此问题的准确信息。\n\n**建议：**\n- 提问更具体一些（功能名称、界面、错误代码、机台/批次编号）\n- 如果询问实时数据（产量、机台、缺陷），请说明日期/时间范围\n- 或联系技术工程师寻求帮助`;
+  }
+  return language === "vi"
+    ? `Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ`
+    : `I don't have accurate information about this question in the current documents.\n\n**Try:**\n- Ask more specifically (feature name, screen, error code, machine/lot ID)\n- For real-time data (yield, machines, defects), specify the date/time range\n- Or contact a technical engineer for help`;
+}
+
+// ★ PDCA vòng 5 — CỔNG CÂU LẠC ĐỀ CÙNG MIỀN (xem `ai/congLacDe.ts`). Bảng IDF dựng một lần cho mỗi lần nạp kho.
+let bangIdfCache: { nguon: KbDataBundle; bang: BangIdf } | null = null;
+function bangIdfKho(): BangIdf {
+  const data = ensureDataLoaded();
+  if (bangIdfCache?.nguon !== data) {
+    bangIdfCache = { nguon: data, bang: taoBangIdf([...data.chunksById.values()].map((c) => `${c.title}\n${c.text}`)) };
+  }
+  return bangIdfCache.bang;
+}
+
+/**
+ * `true` ⇔ CHẶN: độ phủ từ nội dung thấp VÀ tự kiểm (model, tắt nghĩ) nói đoạn trích KHÔNG trả lời được câu hỏi.
+ * Mọi lỗi (model vắng, ném, rỗng) ⇒ `false` — cổng không bao giờ làm hỏng đường trả lời cũ.
+ */
+async function laCauLacDe(question: string, retrieve: KbRetrieveResult, userId?: number): Promise<boolean> {
+  try {
+    if (!congLacDeBat() || retrieve.contexts.length === 0) return false;
+    const phu = doPhuTu(question, retrieve.contexts, bangIdfKho());
+    if (!canTuKiem(phu)) return false;
+    const { generateText: ggufGen, isGgufAvailable } = await import("./aiGgufEngine");
+    if (!(await isGgufAvailable())) return false;
+    const plan = await planInference({ task: "chat", text: question, userId });
+    // doc69 G2-3 — engine chỉ thấy câu hỏi ĐÃ CHE (`plan.safeText`), như `generateWithOllama`; lượt gọi được đo đếm.
+    const { he, nd } = lenhTuKiem(plan.safeText, retrieve.contexts);
+    const start = Date.now();
+    const r = await ggufGen({ systemPrompt: he, prompt: nd, maxTokens: 8, temperature: 0, disableThinking: true }, plan.decision.modelId);
+    plan.record({ tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated, latencyMs: Date.now() - start, outcome: "ok" });
+    const chan = !tuKiemCo(stripThinking(r.text).answer);
+    if (chan) console.info(`[aiLocalKnowledge] cổng lạc đề: CHẶN (độ phủ ${phu.toFixed(2)}, tự kiểm KHONG)`);
+    return chan;
+  } catch {
+    return false;
+  }
 }
 
 function buildGracefulFallback(language: KbLanguage): string {
@@ -3087,6 +3128,10 @@ export async function answerQuestion(
 
   let provider: "ollama" | "extractive" | "tool" = "extractive";
   let answer = buildExtractiveAnswer(question, retrieve);
+  // ★ PDCA vòng 5 — câu lạc đề cùng miền (không tool, không vscode) ⇒ từ chối chuẩn thay vì để model suy diễn.
+  //   Chỉ xét khi đường cũ SẼ gọi model (confidence ≥ 0.30) — dưới ngưỡng đó đường cũ đã từ chối, tự kiểm là phí.
+  const lacDeNS =
+    !toolResult && kbContext?.route !== "vscode" && retrieve.confidence >= 0.30 && (await laCauLacDe(question, retrieve, execCtx?.user?.id));
 
   // Step 2 — If we have live data, short-circuit when the tool's textSummary
   // is already substantial (Lever 8.B). LLM augmentation adds 10-15s latency
@@ -3179,6 +3224,9 @@ export async function answerQuestion(
     // `force=true` so this fires even when intent=general (typical for
     // P2 operator-experienced live-data questions).
     answer = appendHintsFooter(answer, retrieve, true);
+  } else if (lacDeNS) {
+    provider = "extractive";
+    answer = cauTuChoiChuan(retrieve.language); // câu hỏi lại (nếu có) được nối ở bước chung bên dưới
   } else if (
     retrieve.confidence >= 0.30 ||
     (kbContext?.route === "vscode" && !looksLikeLiveFactoryDataQuestion(question))
@@ -3656,6 +3704,13 @@ export async function* streamAnswer(
     } catch (e) {
       console.error(`[aiLocalKnowledge] lượt trả lời theo tài liệu (câu quy tắc, tool rỗng) HỎNG: ${(e as Error)?.message ?? e}`);
     }
+  }
+
+  // ★ PDCA vòng 5 — câu lạc đề cùng miền (không tool, không vscode) ⇒ từ chối chuẩn, KHÔNG gọi model trả lời.
+  if (shouldUseLlm && !accumulated && !toolResult && context?.route !== "vscode" && (await laCauLacDe(cauHoiTruyVan, retrieve, execCtx?.user?.id))) {
+    accumulated = cauTuChoiChuan(retrieve.language);
+    provider = "extractive";
+    yield { type: "token", token: accumulated };
   }
 
   if (shouldUseLlm && !accumulated) {
