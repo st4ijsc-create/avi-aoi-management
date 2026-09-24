@@ -151,3 +151,86 @@ describe("§3 — ĐỐI CHỨNG: câu số liệu SỐNG giữ cổng emptyTool
     expect(chu).toContain(CAU_RONG);
   });
 });
+
+// ★ PDCA vòng 6 — VÙNG MƠ HỒ: câu không dấu hiệu sống, không dấu hiệu quy tắc ⇒ model một từ SONG/TAILIEU quyết.
+//   generateText phục vụ cả lượt phân loại (maxTokens 8) lẫn lượt trả lời — tách theo maxTokens.
+function phanLoai(tu: string) {
+  generateText.mockImplementation(async (o: { maxTokens?: number }) =>
+    o?.maxTokens === 8 ? { text: tu, tokensPrompt: 1, tokensGenerated: 1 } : { text: CAU_TAI_LIEU, tokensPrompt: 10, tokensGenerated: 20 });
+}
+const soLanPhanLoai = () => generateText.mock.calls.filter((c) => (c[0] as { maxTokens?: number })?.maxTokens === 8).length;
+const lenhPhanLoai = () => JSON.stringify(generateText.mock.calls.find((c) => (c[0] as { maxTokens?: number })?.maxTokens === 8)?.[0] ?? "");
+
+describe("§4 — vùng mơ hồ + tool rỗng", () => {
+  // Phân loại chỉ chạy trên model MẶC ĐỊNH mà llama-server đang giữ — dựng môi trường "server giữ model mặc định".
+  const ENV = ["LLAMA_SERVER_ENABLED", "LLAMA_SERVER_URL", "LLAMA_SERVER_MODEL", "GGUF_DEFAULT_MODEL"] as const;
+  const cu: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of ENV) cu[k] = process.env[k];
+    process.env.LLAMA_SERVER_ENABLED = "true";
+    process.env.LLAMA_SERVER_URL = "http://127.0.0.1:1";
+    process.env.GGUF_DEFAULT_MODEL = "mac-dinh.gguf";
+    delete process.env.LLAMA_SERVER_MODEL;
+  });
+  afterEach(() => {
+    delete process.env.AI_KB_PHAN_LOAI_TAI_LIEU;
+    for (const k of ENV) (cu[k] === undefined ? delete process.env[k] : (process.env[k] = cu[k]));
+  });
+  it("★★★ server KHÔNG giữ model mặc định ⇒ không phân loại, không nạp gì — dòng tool như cũ", async () => {
+    process.env.LLAMA_SERVER_ENABLED = "false";
+    phanLoai("TAILIEU");
+    const r = await answerQuestion("Lỗi NG theo defectType có những giá trị nào? (a9)", 3);
+    expect(soLanPhanLoai()).toBe(0);
+    expect(r.answer).toContain(CAU_RONG);
+    expect(r.answer).not.toContain(CAU_TAI_LIEU);
+  });
+  it("★★ lượt phân loại xin model MẶC ĐỊNH (modelId undefined), không phải model của planner", async () => {
+    phanLoai("TAILIEU");
+    await answerQuestion("Lỗi NG theo defectType có những giá trị nào? (a10)", 3);
+    const goi = generateText.mock.calls.find((c) => (c[0] as { maxTokens?: number })?.maxTokens === 8);
+    expect(goi?.[1]).toBeUndefined();
+  });
+  it("★★★ answerQuestion: model nói TAILIEU ⇒ trả lời theo tài liệu, dòng tool làm ghi chú", async () => {
+    phanLoai("TAILIEU");
+    const r = await answerQuestion("Lỗi NG theo defectType có những giá trị nào? (a5)", 3);
+    expect(soLanPhanLoai()).toBe(1);
+    expect(lenhPhanLoai()).toContain("Lỗi NG theo defectType có những giá trị nào?");
+    expect(r.answer).toContain(CAU_TAI_LIEU);
+    expect(r.answer).toContain(CAU_RONG);
+  });
+  it("★★★ streamAnswer: model nói TAILIEU ⇒ trả lời theo tài liệu", async () => {
+    phanLoai("TAILIEU");
+    const chu = await gom(streamAnswer("Lỗi NG theo defectType có những giá trị nào? (s5)", 3));
+    expect(chu).toContain(CAU_TAI_LIEU);
+    expect(chu).toContain(CAU_RONG);
+    expect(promptCua(generateTextStream)).not.toContain("Chưa đủ dữ liệu yield");
+  });
+  it("★★★ model nói SONG ⇒ dòng tool như cũ, KHÔNG có lượt trả lời", async () => {
+    phanLoai("SONG");
+    const r = await answerQuestion("Lỗi NG theo defectType có những giá trị nào? (a6)", 3);
+    expect(soLanPhanLoai()).toBe(1);
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(r.answer).toContain(CAU_RONG);
+    expect(r.answer).not.toContain(CAU_TAI_LIEU);
+  });
+  it("★★ model trả chữ lạ ⇒ như SONG (nghi ngờ thì giữ đường cũ)", async () => {
+    phanLoai("Có thể là tài liệu");
+    const chu = await gom(streamAnswer("Lỗi NG theo defectType có những giá trị nào? (s6)", 3));
+    expect(chu).toContain(CAU_RONG);
+    expect(chu).not.toContain(CAU_TAI_LIEU);
+  });
+  it("★ công tắc AI_KB_PHAN_LOAI_TAI_LIEU=0 ⇒ không phân loại, dòng tool như cũ", async () => {
+    process.env.AI_KB_PHAN_LOAI_TAI_LIEU = "0";
+    phanLoai("TAILIEU");
+    const r = await answerQuestion("Lỗi NG theo defectType có những giá trị nào? (a7)", 3);
+    expect(soLanPhanLoai()).toBe(0);
+    expect(r.answer).toContain(CAU_RONG);
+    expect(r.answer).not.toContain(CAU_TAI_LIEU);
+  });
+  it("★★★ câu mang dấu hiệu SỐNG không vào vùng ⇒ không phân loại (model nói TAILIEU cũng vô can)", async () => {
+    phanLoai("TAILIEU");
+    const r = await answerQuestion("lỗi NG theo defectType của line 2 có những giá trị nào? (a8)", 3);
+    expect(soLanPhanLoai()).toBe(0);
+    expect(r.answer).toContain(CAU_RONG);
+  });
+});

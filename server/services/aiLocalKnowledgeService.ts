@@ -1,6 +1,13 @@
 import fs from "node:fs";
 import { canTuKiem, congLacDeBat, doPhuTu, lenhTuKiem, taoBangIdf, tuKiemCo, type BangIdf } from "./ai/congLacDe";
-import { laCauHoiQuyTac, ghepQuyTacVoiDuLieuSong } from "./ai/cauHoiQuyTac";
+import {
+  laCauHoiQuyTac,
+  ghepQuyTacVoiDuLieuSong,
+  laVungMoHo,
+  lenhPhanLoaiTaiLieu,
+  docPhanLoaiTaiLieu,
+  phanLoaiTaiLieuBat,
+} from "./ai/cauHoiQuyTac";
 import { laTuChoi, nhuongChoTaiLieu, phanHoiLaiSauTuChoi } from "./ai/hoiLaiSauTaiLieu";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -1089,6 +1096,35 @@ async function laCauLacDe(question: string, retrieve: KbRetrieveResult, userId?:
     const chan = !tuKiemCo(stripThinking(r.text).answer);
     if (chan) console.info(`[aiLocalKnowledge] cổng lạc đề: CHẶN (độ phủ ${phu.toFixed(2)}, tự kiểm KHONG)`);
     return chan;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ★ PDCA vòng 6 — câu trong VÙNG MƠ HỒ (không dấu hiệu sống, không dấu hiệu quy tắc; `ai/cauHoiQuyTac.ts`) có phải hỏi TÀI LIỆU
+ * không? Model một từ, tắt nghĩ. `true` CHỈ khi model nói TAILIEU; mọi lỗi ⇒ `false` (giữ dòng tool như cũ).
+ * Chỉ gọi khi tool RỖNG và tài liệu tin cậy — người gọi tự lọc trước.
+ */
+async function laCauHoiTaiLieuMoHo(question: string, userId?: number): Promise<boolean> {
+  try {
+    if (!phanLoaiTaiLieuBat() || !laVungMoHo(question)) return false;
+    // ★ MODEL: phân loại chạy trên model MẶC ĐỊNH mà llama-server đang giữ (`modelId` undefined), KHÔNG trên model của
+    //   `plan` — với câu ngắn planner chọn model NHANH (Qwen3-4B), và đo sống 2026-09-24 model đó nói SONG cho 3/3 câu tính
+    //   năng mà model mặc định nói TAILIEU (thiết kế đo trên model mặc định). Server không giữ model mặc định ⇒ KHÔNG nạp
+    //   gì in-process (tránh bản 35B thứ hai trên card) ⇒ `false` = đường tool như cũ.
+    const { laModelServerDangGiu } = await import("./aiLlamaServerClient");
+    if (!laModelServerDangGiu(undefined)) return false;
+    const { generateText: ggufGen } = await import("./aiGgufEngine");
+    const plan = await planInference({ task: "chat", text: question, userId });
+    // doc69 G2-3 — engine chỉ thấy câu hỏi ĐÃ CHE; lượt gọi được đo đếm.
+    const { he, nd } = lenhPhanLoaiTaiLieu(plan.safeText);
+    const start = Date.now();
+    const r = await ggufGen({ systemPrompt: he, prompt: nd, maxTokens: 8, temperature: 0, disableThinking: true }, undefined);
+    plan.record({ tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated, latencyMs: Date.now() - start, outcome: "ok" });
+    const taiLieu = docPhanLoaiTaiLieu(stripThinking(r.text).answer);
+    if (taiLieu) console.info("[aiLocalKnowledge] vùng mơ hồ: model phân loại TAILIEU ⇒ trả lời theo tài liệu, dòng tool làm ghi chú");
+    return taiLieu;
   } catch {
     return false;
   }
@@ -3176,8 +3212,12 @@ export async function answerQuestion(
     });
     // ★ PDCA #4 (2026-09-24) — tool RỖNG + câu hỏi QUY TẮC (`ai/cauHoiQuyTac.ts`, 0 câu sống lọt trên tập nhãn) + tài liệu
     //   tin cậy ⇒ trả lời THEO TÀI LIỆU (LLM KHÔNG thấy khối tool rỗng), dòng tool giữ làm ghi chú. Model từ chối ⇒ như cũ.
+    //   ★ Vòng 6: câu VÙNG MƠ HỒ (không dấu hiệu nào) ⇒ hỏi model một từ SONG/TAILIEU (`laCauHoiTaiLieuMoHo`).
     const quyTacTaiLieuNS =
-      khongCoGiDeNoi && laCauHoiQuyTac(question) && nhuongChoTaiLieu(retrieve.confidence) && !toolExec.pendingAction;
+      khongCoGiDeNoi &&
+      nhuongChoTaiLieu(retrieve.confidence) &&
+      !toolExec.pendingAction &&
+      (laCauHoiQuyTac(question) || (await laCauHoiTaiLieuMoHo(question, execCtx?.user?.id)));
     let daTraLoiTheoTaiLieu = false;
     if (quyTacTaiLieuNS) {
       try {
@@ -3686,8 +3726,8 @@ export async function* streamAnswer(
   const quyTacTaiLieu =
     !!toolResult &&
     toolKhongCoGiDeNoi(toolResult, loop?.rounds.length ?? 1) &&
-    laCauHoiQuyTac(cauHoiTruyVan) &&
-    nhuongChoTaiLieu(retrieve.confidence);
+    nhuongChoTaiLieu(retrieve.confidence) &&
+    (laCauHoiQuyTac(cauHoiTruyVan) || (await laCauHoiTaiLieuMoHo(cauHoiTruyVan, execCtx?.user?.id)));
   if (quyTacTaiLieu) {
     try {
       let dem = "";

@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
-import { laCauHoiQuyTac, __dauHieuSongChoTest } from "./cauHoiQuyTac";
+import { laCauHoiQuyTac, __dauHieuSongChoTest, laVungMoHo, docPhanLoaiTaiLieu, lenhPhanLoaiTaiLieu } from "./cauHoiQuyTac";
 
 const doc = (f: string) =>
   fs.readFileSync(`scripts/ai-eval/${f}.jsonl`, "utf8").trim().split(/\r?\n/).map((l) => JSON.parse(l) as { id: string; lop: string; cauHoi: string });
@@ -31,5 +31,29 @@ describe("lớp dấu hiệu SỐNG không được chết im lặng (lỗi `\b`
   it("★★ câu SỐNG mang dấu hiệu quy tắc vẫn bị giữ lại nhờ lớp sống", () => {
     for (const q of ["ngưỡng NG hiện tại của line 2 là bao nhiêu?", "hôm nay có phải dừng line không?", "Cpk đang thì sao?"])
       expect(laCauHoiQuyTac(q), q).toBe(false);
+  });
+});
+
+describe("vòng 6 — vùng mơ hồ + đọc phân loại", () => {
+  it("★ câu TÍNH NĂNG không dấu hiệu nào ⇒ trong vùng", () => {
+    for (const q of ["Vạch đỏ trên biểu đồ Pareto đánh dấu mức phần trăm tích lũy nào?", "Dữ liệu biểu đồ Pareto lỗi được cache trong bao lâu?", "OEE bao nhiêu?"])
+      expect(laVungMoHo(q), q).toBe(true);
+  });
+  it("★★★ câu có dấu hiệu SỐNG hoặc QUY TẮC ⇒ ngoài vùng (luật cũ quyết)", () => {
+    for (const q of ["hôm nay có lỗi NG nào không", "OEE của line 1 hiện tại là bao nhiêu?", "Cỡ nhóm con mặc định khi vẽ biểu đồ SPC là bao nhiêu?", "Công thức tính tỷ lệ NG là gì?", ""])
+      expect(laVungMoHo(q), q).toBe(false);
+  });
+  it("★★★ chỉ TAILIEU rõ ràng mới là true; nghi ngờ ⇒ false", () => {
+    expect(docPhanLoaiTaiLieu("TAILIEU")).toBe(true);
+    expect(docPhanLoaiTaiLieu(" Tài liệu.")).toBe(true);
+    expect(docPhanLoaiTaiLieu("SONG")).toBe(false);
+    expect(docPhanLoaiTaiLieu("Có thể là tài liệu")).toBe(false);
+    expect(docPhanLoaiTaiLieu("")).toBe(false);
+    expect(docPhanLoaiTaiLieu(null)).toBe(false);
+  });
+  it("lệnh chứa nguyên câu hỏi và hai nhãn", () => {
+    const { he, nd } = lenhPhanLoaiTaiLieu("OEE bao nhiêu?");
+    expect(he).toMatch(/SONG hoặc TAILIEU/);
+    expect(nd).toContain("«OEE bao nhiêu?»");
   });
 });

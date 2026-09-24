@@ -64,5 +64,41 @@ export function ghepQuyTacVoiDuLieuSong(traLoiTaiLieu: string | null | undefined
   return d ? `${t}\n\n_Dữ liệu sống: ${d}_` : t;
 }
 
+/**
+ * ★ PDCA vòng 6 (2026-09-24) — VÙNG MƠ HỒ: câu không mang dấu hiệu số liệu sống NHƯNG cũng không mang dấu hiệu quy tắc.
+ * Ở đây có cả câu hỏi TÍNH NĂNG ("Biểu đồ SPC có những đường giới hạn nào?", "Dữ liệu Pareto được cache trong bao lâu?") lẫn
+ * câu SỐNG không mốc ("OEE bao nhiêu?", "lỗi nào nhiều nhất?") — danh sách từ không tách được hai lớp này; người gọi hỏi model
+ * một từ (xem {@link lenhPhanLoaiTaiLieu}). Ngoài vùng này luật cũ giữ nguyên.
+ */
+export function laVungMoHo(question: string): boolean {
+  const q = String(question ?? "").trim();
+  if (!q) return false;
+  return !DAU_HIEU_SONG.some((re) => re.test(q)) && !DAU_HIEU_QUY_TAC.some((re) => re.test(q));
+}
+
+/** Lệnh phân loại một từ SONG/TAILIEU. Chữ lệnh CỐ ĐỊNH từ trước khi đo tập giữ lại vòng 6 — đổi chữ là phải đo lại. */
+export function lenhPhanLoaiTaiLieu(question: string): { he: string; nd: string } {
+  return {
+    he: "Bạn phân loại câu hỏi. Chỉ trả lời đúng MỘT từ: SONG hoặc TAILIEU.",
+    nd: `Câu hỏi của người dùng trong phần mềm quản lý nhà máy: «${question}»
+
+SONG = hỏi SỐ LIỆU hoặc TRẠNG THÁI THỰC TẾ của nhà máy lúc này (bao nhiêu, máy nào, lô nào, lỗi nào nhiều nhất, tình hình ra sao).
+TAILIEU = hỏi hệ thống/tính năng hoạt động thế nào: định nghĩa, công thức, cấu hình, quy trình, quyền, màn hình hiển thị gì.
+Trả lời SONG hoặc TAILIEU.`,
+  };
+}
+
+/** `true` CHỈ khi model nói rõ TAILIEU. Mọi thứ khác (SONG, rỗng, lạc đề) ⇒ `false` — nghi ngờ thì giữ đường tool như cũ. */
+export function docPhanLoaiTaiLieu(traLoi: string | null | undefined): boolean {
+  const t = String(traLoi ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+  return /^TAILIEU/.test(t);
+}
+
+export const phanLoaiTaiLieuBat = (): boolean => process.env.AI_KB_PHAN_LOAI_TAI_LIEU !== "0";
+
 /** Chỉ cho lưới: đo từng dấu hiệu SỐNG có còn sống (chống lại đúng lớp lỗi `\b` im lặng ở trên). */
 export const __dauHieuSongChoTest = DAU_HIEU_SONG;
