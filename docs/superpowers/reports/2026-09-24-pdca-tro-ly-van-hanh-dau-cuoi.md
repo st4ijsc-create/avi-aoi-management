@@ -112,7 +112,8 @@ thì nối câu hỏi lại vào sau.
 | + câu quy tắc khi tool rỗng | 57/79 | 30/32 |
 | + đoạn nhóm dòng bảng | **63/79** | **30/32** |
 
-\* bản lưu 400 ký tự ⇒ cận dưới. Câu số liệu sống bịa: 0 ở mọi lượt đã đo.
+\* bản lưu 400 ký tự ⇒ cận dưới. Câu số liệu sống bịa số: 0 ở các lượt CÓ đo đối chứng (vòng 1: 6 câu mơ hồ; vòng 2: 34 câu
+sống có nhãn). Vòng 3 chỉ đổi kho đoạn, không đổi định tuyến — đối chứng sống KHÔNG chạy lại ở vòng 3.
 
 ### 8.5 Còn mở — vòng sau
 1. **Giá biên hạng 5** (T42, PB07): nhiều đoạn cùng một tài liệu chiếm chỗ ⇒ thử giới hạn số đoạn mỗi tài liệu trong top‑5
