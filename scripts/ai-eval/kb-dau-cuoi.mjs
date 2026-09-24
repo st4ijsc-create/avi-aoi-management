@@ -14,6 +14,9 @@ const only = val("--only")?.split(",") ?? null;
 const label = val("--label") ?? new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
 const C = ck("D:/SOURCES/avi-aoi-management/tmp/audit-ai/ck.txt");
 const TU_CHOI = /không có thông tin chính xác/i;
+// Bỏ định dạng markdown (**đậm**, `mã`) TRƯỚC khi so mẫu: "**không** được tính" là một câu trả lời đúng mà
+// mẫu /không được tính/ trượt (đo được ở T67). Chuẩn hoá CHUNG, không theo nội dung từng câu.
+const phang = (s) => String(s ?? "").replace(/[*`]/g, ""); // KHÔNG bỏ "_": production_manager, quality_engineer…
 
 const bo = fs.readFileSync(corpus.endsWith(".jsonl") ? corpus : `knowledge/studio-golden/${corpus}.jsonl`, "utf8").trim().split(/\r?\n/).map((l) => JSON.parse(l))
   .filter((c) => !only || only.includes(c.id));
@@ -51,7 +54,7 @@ for (const c of bo) {
   if (r.loi) kq = "loi";
   else if (ngoai) kq = tuChoi ? "tu-choi" : "tra-loi";
   // Đạt nếu khớp regex BẢNG nguồn (`dapAn`) HOẶC mẫu theo cách người trả lời (`dapAnTraLoi`, viết từ đoạn vàng).
-  else if ((c.dapAn && new RegExp(c.dapAn.regex, "i").test(r.text)) || (c.dapAnTraLoi && new RegExp(c.dapAnTraLoi.regex, "i").test(r.text))) kq = "dung";
+  else if ((c.dapAn && new RegExp(c.dapAn.regex, "i").test(phang(r.text))) || (c.dapAnTraLoi && new RegExp(c.dapAnTraLoi.regex, "i").test(phang(r.text)))) kq = "dung";
   else kq = tuChoi ? "tu-choi" : "sai";
   ra.push({ id: c.id, ngoai, kq, ms: r.ms, nguon: r.nguon.slice(0, 5), traLoi: r.text /* TOÀN VĂN — bản 400 ký tự từng làm T44 không chấm được */, loi: r.loi ?? null });
   console.log(`${c.id.padEnd(4)} ${ngoai ? "NGOAI" : "TRONG"} ${kq.padEnd(8)} ${r.ms} ms`);

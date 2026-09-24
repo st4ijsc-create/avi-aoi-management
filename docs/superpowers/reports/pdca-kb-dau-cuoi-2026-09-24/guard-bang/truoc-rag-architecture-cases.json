@@ -1,0 +1,281 @@
+{
+  "label": "2026-09-24",
+  "timestamp": "2026-09-24T07:18:14.586Z",
+  "casesFile": "scripts\\ai-eval\\rag-architecture-cases.json",
+  "corpus": {
+    "chunks": 6310,
+    "vectors": 6310,
+    "embedModel": "Qwen3-Embedding-0.6B-f16",
+    "embedModelMatches": true
+  },
+  "params": {
+    "k": 5,
+    "ndcgK": 10,
+    "pool": 20,
+    "mrrWindow": 50
+  },
+  "hitRule": "STRICT — sourcePath BẰNG ĐÚNG expectPaths hoặc bắt đầu bằng expectPrefixes; CẤM khớp chuỗi con / từ khoá",
+  "absentExpectPaths": [],
+  "baseline": {
+    "n": 10,
+    "hitRateAt5": 1,
+    "precisionAt5": 0.76,
+    "mrr": 0.9333,
+    "ndcgAt10": 0.7185,
+    "recallAt5": 0.1221,
+    "recallAt5Capped": 0.76,
+    "distractorAboveRate": 0,
+    "avgDistractorsInTopK": 0
+  },
+  "parity": {
+    "available": true,
+    "n": 10,
+    "hitRateAt5": 0.9,
+    "precisionAt5": 0.32,
+    "mrr": 0.675,
+    "ndcgAt10": 0.2705,
+    "recallAt5": 0.0493,
+    "recallAt5Capped": 0.32,
+    "distractorAboveRate": 0.1,
+    "avgDistractorsInTopK": 0.2
+  },
+  "weightSweep": {
+    "available": false,
+    "requested": false
+  },
+  "reranked": {
+    "available": false,
+    "requested": false,
+    "reason": "không truyền --rerank"
+  },
+  "graphRag": {
+    "available": false,
+    "requested": false,
+    "reason": "không truyền --graph"
+  },
+  "perDomain": {
+    "kien-truc": {
+      "n": 10,
+      "hitRateAt5": 1,
+      "precisionAt5": 0.76,
+      "mrr": 0.9333,
+      "ndcgAt10": 0.7185,
+      "recallAt5": 0.1221,
+      "recallAt5Capped": 0.76,
+      "distractorAboveRate": 0,
+      "avgDistractorsInTopK": 0
+    }
+  },
+  "cases": [
+    {
+      "id": "AR01",
+      "domain": "kien-truc",
+      "question": "Tài liệu baseline audit toàn hệ thống mô tả hiện trạng 3 tầng Frontend Backend Database nằm ở đâu?",
+      "R": 29,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.4,
+        "relevantInTopK": 2,
+        "recallAt5": 0.069,
+        "recallAt5Capped": 0.4,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 0.5704,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/01_SYSTEM_BASELINE_AUDIT_2026-06.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "AR02",
+      "domain": "kien-truc",
+      "question": "Design system nền tảng của frontend được thiết kế thế nào, biến CSS và component shadcn có bị đổi không?",
+      "R": 38,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.4,
+        "relevantInTopK": 2,
+        "recallAt5": 0.0526,
+        "recallAt5Capped": 0.4,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 0.4409,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/17_FRONTEND_DESIGN_SYSTEM_2026-06.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "AR03",
+      "domain": "kien-truc",
+      "question": "Thiết kế hợp nhất hệ sinh thái điều phối robot và tự động hoá gồm những khối nào?",
+      "R": 29,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 1,
+        "relevantInTopK": 5,
+        "recallAt5": 0.1724,
+        "recallAt5Capped": 1,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 0.9337,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/16_AUTOMATION_ORCHESTRATION_ECOSYSTEM_UNIFIED_DESIGN_2026-06.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "AR04",
+      "domain": "kien-truc",
+      "question": "Chiến lược control plane nhà máy: nên tích hợp vào hệ hiện tại hay xây phần mềm riêng rồi upload?",
+      "R": 11,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 1,
+        "relevantInTopK": 5,
+        "recallAt5": 0.4545,
+        "recallAt5Capped": 1,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 0.7184,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/08_FACTORY_CONTROL_PLANE_STRATEGY_2026-06.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "AR05",
+      "domain": "kien-truc",
+      "question": "Bản đối chiếu SYNAPSE với codebase AVI AOI đưa ra kế hoạch nâng cấp hệ sinh thái ra sao?",
+      "R": 45,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.6,
+        "relevantInTopK": 3,
+        "recallAt5": 0.0667,
+        "recallAt5Capped": 0.6,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 0.5581,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/33_SYNAPSE_ALIGNMENT_AUDIT_UNIFIED_DESIGN_AND_UPGRADE_PLAN_2026-07.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "AR06",
+      "domain": "kien-truc",
+      "question": "Blueprint chuẩn hoá kết nối thiết bị cho máy AVI AOI, máy tự động hoá nội bộ và thiết bị IoT tự phát triển?",
+      "R": 276,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 1,
+        "relevantInTopK": 5,
+        "recallAt5": 0.0181,
+        "recallAt5Capped": 1,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 1,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/56_DEVICE_CONNECTIVITY_STANDARDIZATION_AUDIT_BLUEPRINT_AND_PLAN_2026-07-17.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "AR07",
+      "domain": "kien-truc",
+      "question": "Kế hoạch audit và nâng cấp end to end luồng AOI AVI gồm những đợt nào?",
+      "R": 53,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 1,
+        "relevantInTopK": 5,
+        "recallAt5": 0.0943,
+        "recallAt5Capped": 1,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 0.8482,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/27_AOI_AVI_END_TO_END_AUDIT_UPGRADE_PLAN_2026-07.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "AR08",
+      "domain": "kien-truc",
+      "question": "Audit sâu module AI và kế hoạch vá khoảng trống được ghi ở tài liệu nào?",
+      "R": 37,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.8,
+        "relevantInTopK": 4,
+        "recallAt5": 0.1081,
+        "recallAt5Capped": 0.8,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 0.9052,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/69_AI_MODULE_DEEP_AUDIT_GAP_AND_UPGRADE_PLAN_2026-07-25.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "AR09",
+      "domain": "kien-truc",
+      "question": "Kế hoạch audit và nâng cấp API máy AVI AOI mô tả những lỗ hổng P0 nào?",
+      "R": 47,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.6,
+        "relevantInTopK": 3,
+        "recallAt5": 0.0638,
+        "recallAt5Capped": 0.6,
+        "rr": 0.3333,
+        "firstRelRank": 3,
+        "ndcgAt10": 0.4417,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/27_AOI_AVI_END_TO_END_AUDIT_UPGRADE_PLAN_2026-07.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "AR10",
+      "domain": "kien-truc",
+      "question": "Audit các tầng kết nối quản lý và xử lý của máy cùng kế hoạch hoàn thiện nằm ở đâu?",
+      "R": 33,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.8,
+        "relevantInTopK": 4,
+        "recallAt5": 0.1212,
+        "recallAt5Capped": 0.8,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 0.7682,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "docs/ECOSYSTEM/37_MACHINE_CONNECT_MANAGE_PROCESS_LAYERS_AUDIT_AND_COMPLETION_PLAN_2026-07.md"
+      },
+      "rerank": null,
+      "graph": null
+    }
+  ]
+}

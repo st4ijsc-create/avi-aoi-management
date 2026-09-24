@@ -1,0 +1,140 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "ablation-bang",
+  "tom": {
+    "trong": {
+      "n": 8,
+      "dung": 1,
+      "tuChoi": 6,
+      "sai": 1
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "T12",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 2958,
+      "nguon": [
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/features/products/product-machine-mapping.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Câu hỏi liên quan đến lỗi do áp suất khí nén thấp, nhưng các tài liệu cung cấp chỉ đề cập đến lỗi đăng ký máy (ví dụ: API Key, trạng thái phê duyệt), lỗi gán sản phẩm-máy hoặc bản đồ nhiệt lỗi — không có nội dung nào nói về áp suất khí nén hay mã lỗi liên quan đến hệ thống khí nén.  \n\nDo đó, **không thể xác định mã lỗi cụ thể** khi áp suất khí nén thấp dựa trên dữ liệu hiện tại [1], [2]. Các API và màn hình được trích dẫn (như `/api/machine/submit-inspection`, `/machines/:id/allowed-products`) đều liên quan đến kiểm tra sản phẩm hoặc đăng ký máy, không phản ánh trạng thái cơ khí như áp suất.  \n\n**Lưu ý**: Nếu lỗi này xuất hiện trên thiết bị AOI, có thể cần tham khảo log từ hệ thống MQTT hay heartbeat (tài liệu [2] đề cập), nhưng không được cung cấp trong dữ liệu hiện tại.  \n\nLiên quan đến hai chủ đề:  \n1) **Gán sản phẩm-máy** – yêu cầu mapping active để máy chấp nhận inspection, nếu lỗi xảy ra do thiết bị hỏng thì có thể ảnh hưởng đến khả năng tạo mapping hoặc kiểm tra [1].  \n\n\nMàn hình liên quan: `/machines/5`",
+      "loi": null
+    },
+    {
+      "id": "T16",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 835,
+      "nguon": [
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/inspection/history.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.",
+      "loi": null
+    },
+    {
+      "id": "T18",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 1129,
+      "nguon": [
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/operational/oee-target-settings.md",
+        "knowledge/domain/howto-lot-management.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n_Nguồn số liệu: `product_inspections` · interval=day · 14d · 2 hàng_",
+      "loi": null
+    },
+    {
+      "id": "T19",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 1047,
+      "nguon": [
+        "knowledge/features/ai/ai-time-series.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/alerts/predictive-alerts.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "T36",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 2108,
+      "nguon": [
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/alerts.md",
+        "aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Hệ thống cảnh báo nhà máy không tự động phát sinh khi máy AOI mất kết nối; việc phát hiện sự cố phụ thuộc vào quy trình kiểm tra và các thao tác thủ công.  \n(2) Bước 1: Vào **Thiết bị & Giám sát → Danh sách cảnh báo**, lọc theo thiết bị (ví dụ `AOI-LINE2-03`) để xem có cảnh báo nào liên quan đến mất kết nối hay không [4]. Kết quả là danh sách các cảnh báo hiện tại, bao gồm loại và thời gian phát sinh. Bước 2: Nếu thấy cảnh báo \"connection lost\" hoặc tương tự, kiểm tra lịch sử (`history`) để xác định nó có xuất hiện từ trước (lặp lại) hay mới [4]. Kết quả là thông tin về tần suất và thời điểm xảy ra.  \n(3) Lưu ý: Cảnh báo chỉ phát sinh khi hệ thống nhận được tín hiệu mất kết nối; nếu không thấy cảnh báo, cần kiểm tra xem ngưỡng\n\n_Nguồn số liệu: `daily_statistics` · 1d · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "T43",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2561,
+      "nguon": [
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational-approved/anomaly-banks.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/ai-inspection-analytics.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi \"Lỗi mức độ Minor thì xử lý thế nào?\" chưa được đề cập hoặc có liên quan đến bất kỳ nội dung nào trong danh mục lỗi, ngân hàng bất thường hay playbook phản ứng chùm lỗi mà hệ thống cung cấp. Các tài liệu chỉ nêu rõ về việc xử lý lỗi theo mã loại (trùng tên), phân tích chùm lỗi (NG burst) và các bước điều tra nguyên nhân gốc (RCA), nhưng **không có thông tin cụ thể nào về mức độ \"Minor\"** trong quy trình xử lý hoặc cách xác định, ghi nhận hay phản ứng với nó.  \n\nDo đó:  \n- Không có hướng dẫn rõ ràng tại `/defect-catalog` cho các loại lỗi theo cấp độ (minor, major, critical).  \n- Các bước xử lý được mô tả chỉ áp dụng cho chùm lỗi (NG burst) hoặc phân tích AI, không đề cập đến mức độ lỗi.  \n\n**Lưu ý**: Trong tài liệu hiện tại, tất cả các triệu chứng và nguyên nhân đều liên quan đến việc trùng mã lỗi hay thiếu quyền truy cập module `MOD_AI`, chứ **không có dữ kiện về cấp độ lỗi (minor/major)** để phân loại xử lý cụ thể.  \n\n**Liên quan 2 chủ đề**:  \n1) Danh mục lỗi —",
+      "loi": null
+    },
+    {
+      "id": "T58",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 793,
+      "nguon": [
+        "knowledge/operational/feeder-verify.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/workflows/ng-handling.playbook.yaml"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "T61",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 789,
+      "nguon": [
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/operational/oee-target-settings.md",
+        "knowledge/features/analytics/reports.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.",
+      "loi": null
+    }
+  ]
+}

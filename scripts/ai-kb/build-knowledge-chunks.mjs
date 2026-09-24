@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { parse as parseYaml } from "yaml";
 // G4-B — làm phẳng playbook `.yaml` (tách ra để test được; file này chạy `run()` khi nạp).
 import { playbookToText, playbookTitle } from "./_playbook-text.mjs";
+import { tachBangThanhNhom } from "./_bang-nhom-dong.mjs";
 
 const ROOT = process.cwd();
 const KNOWLEDGE_DIR = path.join(ROOT, "knowledge");
@@ -324,6 +325,12 @@ function run() {
     pieces.forEach((text, partIndex) => {
       chunks.push(makeChunk("domain", relFile, partIndex, `${title} (part ${partIndex + 1})`, text));
     });
+    // ★ PDCA 2026-09-24 — BỔ SUNG đoạn theo nhóm dòng cho bảng lớn (xem `_bang-nhom-dong.mjs`). Tắt: KB_CHUNK_BANG_NHOM=0.
+    if (process.env.KB_CHUNK_BANG_NHOM !== "0") {
+      tachBangThanhNhom(fullText).forEach((text, k) => {
+        chunks.push(makeChunk("domain", relFile, pieces.length + k, `${title} (bảng, nhóm ${k + 1})`, text));
+      });
+    }
   }
 
   // Feature documentation (knowledge/features/**/*.md). Authored Vietnamese
