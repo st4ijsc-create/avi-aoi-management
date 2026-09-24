@@ -78,3 +78,45 @@ thì nối câu hỏi lại vào sau.
    bằng hit@5.
 3. **Bộ chấm:** thêm trường `dapAnTraLoi` (mẫu theo cách NGƯỜI trả lời, không theo bảng nguồn) cho 79 câu, viết trước lượt
    đo kế — để khỏi chấm tay.
+
+---
+
+## 8. Vòng 2–3 (cùng ngày) — bộ chấm, câu quy tắc, bảng
+
+### 8.1 Bước 0 — sửa BỘ CHẤM trước (`e6d06cb1a`)
+- `dapAnTraLoi` cho 79 câu: mẫu theo cách NGƯỜI trả lời, viết từ ĐOẠN VÀNG của tài liệu (không từ câu trả lời của model).
+- MSA: 0 lệch so với chấm tay (30 câu). Ba mẫu từng tự khớp CHÍNH câu hỏi (T57 T69 T73) — đã sửa, lưới chặn loại lỗi này.
+- Bỏ `**` và backtick trước khi so (T67 "**không** được tính"); GIỮ `_` (bản đầu bỏ cả `_` làm hỏng `production_manager`).
+- `kb-dau-cuoi.mjs` lưu TOÀN VĂN câu trả lời (nền và vòng 1 chỉ lưu 400 ký tự ⇒ số của hai lượt ấy là cận dưới).
+
+### 8.2 Nguyên nhân #4 — câu QUY TẮC bị tool rỗng cướp (`4488df827`)
+- Bộ phân loại `ai/cauHoiQuyTac.ts` (thận trọng một chiều). Tập nhãn viết TRƯỚC (`1f750d3e5`, giữ lại `3ad88f191`):
+  quy tắc 22/22 · 12/12, **câu sống bị xếp quy tắc 0/22 · 0/12**. Lỗi đo được giữa chừng: `\b` của JS chết im lặng với chữ
+  Việt ("thì", "đang") ⇒ đổi sang biên Unicode; lưới kiểm từng dấu hiệu sống còn sống.
+- Nhánh mới: tool rỗng + câu quy tắc + tài liệu tin cậy ⇒ LLM trả lời KHÔNG thấy khối tool; dòng tool giữ làm ghi chú.
+- Đầu–cuối: 7/8 câu từng bị cướp đạt; 0/34 câu số liệu sống có nhãn đi nhánh tài liệu. Ablation: 8/8 quay lại dòng tool.
+
+### 8.3 Truy hồi — bảng lớn bị pha loãng (`26fa747ca`)
+- 16/22 câu còn trượt là trượt truy hồi; ca điển hình: một dòng E082 trong đoạn 1.708 ký tự chứa cả bảng.
+- Thêm (không thay) đoạn theo nhóm 4 dòng cho bảng ≥ 5 dòng ở tài liệu miền: +111 đoạn, 0 đoạn cũ đổi.
+- Ablation: trả kho cũ ⇒ 8 câu vừa lên còn 1/8.
+- **Giá phải trả, đo được:** hai ca ở BIÊN hạng 5 tụt xuống hạng 6 vì một nhóm dòng khác chen vào — T42 (đầu–cuối) và PB07
+  (bộ playbook, hit@5 7/8 → 6/8). Bộ vận hành MRR 0,918 → 0,940; thẻ duyệt, kiến trúc, 151 câu vàng giữ.
+
+### 8.4 Tổng (bộ chấm thống nhất `dapAn ∪ dapAnTraLoi`, bỏ `**`)
+
+| Lượt | Trong corpus đạt | Ngoài corpus từ chối đúng |
+|---|---|---|
+| Nền | 38/79* | 21/32 |
+| + câu hỏi lại nhường tài liệu | 50/79* | 30/32 |
+| + câu quy tắc khi tool rỗng | 57/79 | 30/32 |
+| + đoạn nhóm dòng bảng | **63/79** | **30/32** |
+
+\* bản lưu 400 ký tự ⇒ cận dưới. Câu số liệu sống bịa: 0 ở mọi lượt đã đo.
+
+### 8.5 Còn mở — vòng sau
+1. **Giá biên hạng 5** (T42, PB07): nhiều đoạn cùng một tài liệu chiếm chỗ ⇒ thử giới hạn số đoạn mỗi tài liệu trong top‑5
+   (đo trên cả năm bộ, không chỉ ST4I).
+2. **9 câu nguồn đúng vẫn ngoài top‑20** (T43 T56 T66 T17 T79 …): không phải bảng; cần xem cách chunk văn xuôi/danh sách.
+3. **Kho Studio** (`st4i-may-aoi`) có bộ chunk RIÊNG — bản vá bảng chỉ áp cho kho hệ thống.
+4. T65 trả lời sai vai trò dù đi đúng nhánh tài liệu — lỗi sinh chữ, chưa phân tích.
