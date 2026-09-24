@@ -405,3 +405,18 @@ từ chức năng tiếng Anh. Mọi lỗi ⇒ truy hồi như cũ. Công tắc 
   ~2/6 — nhầm 5 % với 30 %). Bản dẫn chéo đầu (chỉ 10/30) làm T54 0/3 ⇒ thêm dòng 5 % mới đạt.
 - Hồi quy toàn bộ: 111 câu **72/79** (mất 0; T22 lên là nhiễu) · 32/32 · giữ lại Việt↔Anh 8/12 · tính năng 12/12 · lạc đề
   12/12 + 11/12 · câu sống đi nhánh tài liệu 0 · endpoint 54/17/8/10 (không đổi). Kho dựng lại cục bộ (tệp sinh ra bỏ khỏi git).
+
+## 17. Đồng bộ kho Studio `st4i-may-aoi` với tài liệu đã sửa (2026-09-25, chủ dự án chọn phương án xoá + nạp lại)
+
+- Phiên 1f chỉ ra: kho Studio là BẢN SAO riêng của 10 tài liệu miền (29 đoạn, nạp 2026-09-22) ⇒ sau `5da3cc144` tầng Studio
+  (EvalTab, màn lập trình) trả lời theo bản CŨ. Nạp lại cùng `sourceRef` KHÔNG thay mà NHÂN ĐÔI (chỉ `deleteCorpus` xoá).
+- Trình tự: eval TRƯỚC (#41) → sao lưu đầy đủ (1 dòng kb_corpora, 10 kb_ingest_jobs, 29 kb_studio_chunks kể cả vector —
+  `tmp/studio-sao-luu-st4i-may-aoi-*.json`, 628 KB, chưa commit vì là dữ liệu) → `kbStudioService.deleteCorpus` (giao dịch:
+  29 đoạn + 10 job) → nạp lại 10 tệp qua ĐƯỜNG THẬT `kbStudio.ingestDocumentJob` (`tmp/audit-ai/r1-nap.mjs`) → kiểm nội dung
+  (hai tệp nay có câu dẫn chéo) → eval SAU (#42). 27 lượt eval cũ (`kb_eval_runs`) giữ nguyên.
+- Eval Studio #41 → #42 (111 câu, k 5, ngưỡng 0,44): trúng nguồn 94,9 % = 94,9 % · qua ngưỡng 83,5 % = · đáp án trong ngữ cảnh
+  86,1 % = · từ chối đúng 59,4 % = · MRR 0,815 → 0,807 · đường ống 30 → 29/79. Khác biệt duy nhất đáng kể: **T14** hạng 1 → 2
+  (đoạn "UPS → Server" của `aoi-troubleshooting.md` đổi ranh giới vì bộ cắt Studio cắt theo 1.800 ký tự và ghi chú mới chèn
+  ~400 ký tự) — T14 đầu–cuối trên kho hệ thống vẫn đạt (v10). Tệp thô: `v11-eval-truoc.txt`, `v11-eval-sau.txt`.
+- Thấy thêm: `createdAt` của đoạn Studio hiển thị lệch −7 h (lớp lỗi timestamp naive của postgres.js đã ghi trong bộ nhớ dự án).
+- Còn mở (mục 3 cũ): kho Studio vẫn dùng bộ cắt cố định 1.800 ký tự — chưa có đoạn nhóm dòng bảng / đoạn con theo mục.
