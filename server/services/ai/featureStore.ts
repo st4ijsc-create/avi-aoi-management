@@ -198,7 +198,10 @@ export async function invalidate(entity: {
   if (entity.featureSet) conds.push(eq(mlFeatureCache.featureSet, entity.featureSet));
   try {
     const res = await db.delete(mlFeatureCache).where(and(...conds));
-    return (res as { rowCount?: number } | undefined)?.rowCount ?? 0;
+    // ⚠ 2026-09-24: driver là postgres-js (`db/connection.ts`) — số hàng nằm ở `count`, `rowCount` là của node-postgres
+    // ⇒ trước bản này hàm LUÔN trả 0 dù đã xoá (lưới featureStore "invalidate evicts ≥ 1" đỏ). Đọc cả hai.
+    const r = res as { count?: number; rowCount?: number } | undefined;
+    return r?.count ?? r?.rowCount ?? 0;
   } catch {
     return 0;
   }
