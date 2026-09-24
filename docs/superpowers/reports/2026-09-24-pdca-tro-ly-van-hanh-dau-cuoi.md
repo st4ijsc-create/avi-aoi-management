@@ -113,7 +113,8 @@ thì nối câu hỏi lại vào sau.
 | + đoạn nhóm dòng bảng | **63/79** | **30/32** |
 
 \* bản lưu 400 ký tự ⇒ cận dưới. Câu số liệu sống bịa số: 0 ở các lượt CÓ đo đối chứng (vòng 1: 6 câu mơ hồ; vòng 2: 34 câu
-sống có nhãn). Vòng 3 chỉ đổi kho đoạn, không đổi định tuyến — đối chứng sống KHÔNG chạy lại ở vòng 3.
+sống có nhãn; vòng 3: chạy lại cả 40 câu trên bản có đoạn bảng — 0/40 đi nhánh tài liệu, số liệu máy/line đến từ tool
+thật, câu lô ra hướng dẫn tra cứu có nguồn).
 
 ### 8.5 Còn mở — vòng sau
 1. **Giá biên hạng 5** (T42, PB07): nhiều đoạn cùng một tài liệu chiếm chỗ ⇒ thử giới hạn số đoạn mỗi tài liệu trong top‑5
