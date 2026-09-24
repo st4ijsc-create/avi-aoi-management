@@ -1,6 +1,6 @@
 // Đo ĐẦU–CUỐI trợ lý vận hành trên bộ vàng Studio: thứ người dùng NHẬN (câu trả lời cuối), không phải điểm truy hồi.
 //   node scripts/ai-eval/kb-dau-cuoi.mjs [corpus=st4i-may-aoi] [--only T05,N06] [--label ten]
-// Chấm tất định:
+// Chấm tất định (câu trong corpus: `dapAn` HOẶC `dapAnTraLoi`):
 //   câu TRONG corpus : "dung"  = câu trả lời khớp regex đáp án · "tu-choi" = câu từ chối chuẩn · "sai" = còn lại
 //   câu NGOÀI corpus : "tu-choi" = câu từ chối chuẩn (đúng) · "tra-loi" = trả lời (cần soi: bịa hay kiến thức chung)
 // Không in cookie. Ghi JSON vào scripts/ai-eval/reports/kb-dau-cuoi-<label>.json.
@@ -50,9 +50,10 @@ for (const c of bo) {
   let kq;
   if (r.loi) kq = "loi";
   else if (ngoai) kq = tuChoi ? "tu-choi" : "tra-loi";
-  else if (c.dapAn && new RegExp(c.dapAn.regex, "i").test(r.text)) kq = "dung";
+  // Đạt nếu khớp regex BẢNG nguồn (`dapAn`) HOẶC mẫu theo cách người trả lời (`dapAnTraLoi`, viết từ đoạn vàng).
+  else if ((c.dapAn && new RegExp(c.dapAn.regex, "i").test(r.text)) || (c.dapAnTraLoi && new RegExp(c.dapAnTraLoi.regex, "i").test(r.text))) kq = "dung";
   else kq = tuChoi ? "tu-choi" : "sai";
-  ra.push({ id: c.id, ngoai, kq, ms: r.ms, nguon: r.nguon.slice(0, 5), traLoi: r.text.slice(0, 400), loi: r.loi ?? null });
+  ra.push({ id: c.id, ngoai, kq, ms: r.ms, nguon: r.nguon.slice(0, 5), traLoi: r.text /* TOÀN VĂN — bản 400 ký tự từng làm T44 không chấm được */, loi: r.loi ?? null });
   console.log(`${c.id.padEnd(4)} ${ngoai ? "NGOAI" : "TRONG"} ${kq.padEnd(8)} ${r.ms} ms`);
 }
 const dem = (f) => ra.filter(f).length;
