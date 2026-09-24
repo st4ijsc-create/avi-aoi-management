@@ -184,11 +184,11 @@ describe("§4 — vùng mơ hồ + tool rỗng", () => {
     expect(r.answer).toContain(CAU_RONG);
     expect(r.answer).not.toContain(CAU_TAI_LIEU);
   });
-  it("★★ lượt phân loại xin model MẶC ĐỊNH (modelId undefined), không phải model của planner", async () => {
+  it("★★ lượt phân loại xin model MẶC ĐỊNH (id tường minh), không phải model của planner", async () => {
     phanLoai("TAILIEU");
     await answerQuestion("Lỗi NG theo defectType có những giá trị nào? (a10)", 3);
     const goi = generateText.mock.calls.find((c) => (c[0] as { maxTokens?: number })?.maxTokens === 8);
-    expect(goi?.[1]).toBeUndefined();
+    expect(goi?.[1]).toBe("mac-dinh");
   });
   it("★★★ answerQuestion: model nói TAILIEU ⇒ trả lời theo tài liệu, dòng tool làm ghi chú", async () => {
     phanLoai("TAILIEU");

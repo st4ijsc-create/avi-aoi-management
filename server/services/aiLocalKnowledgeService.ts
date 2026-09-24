@@ -76,6 +76,7 @@ import {
  */
 import { StreamingThinkingStripper, stripThinking, thinkingStartsOpen } from "./ai/thinkingStrip";
 import { planInference } from "./aiGateway";
+import { resolveTaskModel } from "./ai/modelResolver";
 // doc69 G2-7 (Wave E4) — "ask→do" 1-tap navigate: attaches a client `navigate`
 // action to a how-to answer grounded in a KNOWN, whitelisted operational card
 // (see aiOperationalGrounding.ts's top-of-file doc comment for the fail-safe
@@ -1109,18 +1110,19 @@ async function laCauLacDe(question: string, retrieve: KbRetrieveResult, userId?:
 async function laCauHoiTaiLieuMoHo(question: string, userId?: number): Promise<boolean> {
   try {
     if (!phanLoaiTaiLieuBat() || !laVungMoHo(question)) return false;
-    // ★ MODEL: phân loại chạy trên model MẶC ĐỊNH mà llama-server đang giữ (`modelId` undefined), KHÔNG trên model của
+    // ★ MODEL: phân loại chạy trên model MẶC ĐỊNH mà llama-server đang giữ (id TƯỜNG MINH), KHÔNG trên model của
     //   `plan` — với câu ngắn planner chọn model NHANH (Qwen3-4B), và đo sống 2026-09-24 model đó nói SONG cho 3/3 câu tính
     //   năng mà model mặc định nói TAILIEU (thiết kế đo trên model mặc định). Server không giữ model mặc định ⇒ KHÔNG nạp
     //   gì in-process (tránh bản 35B thứ hai trên card) ⇒ `false` = đường tool như cũ.
+    const macDinh = resolveTaskModel("default");
     const { laModelServerDangGiu } = await import("./aiLlamaServerClient");
-    if (!laModelServerDangGiu(undefined)) return false;
+    if (!macDinh || !laModelServerDangGiu(macDinh)) return false;
     const { generateText: ggufGen } = await import("./aiGgufEngine");
     const plan = await planInference({ task: "chat", text: question, userId });
     // doc69 G2-3 — engine chỉ thấy câu hỏi ĐÃ CHE; lượt gọi được đo đếm.
     const { he, nd } = lenhPhanLoaiTaiLieu(plan.safeText);
     const start = Date.now();
-    const r = await ggufGen({ systemPrompt: he, prompt: nd, maxTokens: 8, temperature: 0, disableThinking: true }, undefined);
+    const r = await ggufGen({ systemPrompt: he, prompt: nd, maxTokens: 8, temperature: 0, disableThinking: true }, macDinh);
     plan.record({ tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated, latencyMs: Date.now() - start, outcome: "ok" });
     const taiLieu = docPhanLoaiTaiLieu(stripThinking(r.text).answer);
     if (taiLieu) console.info("[aiLocalKnowledge] vùng mơ hồ: model phân loại TAILIEU ⇒ trả lời theo tài liệu, dòng tool làm ghi chú");
@@ -1128,6 +1130,22 @@ async function laCauHoiTaiLieuMoHo(question: string, userId?: number): Promise<b
   } catch {
     return false;
   }
+}
+
+/**
+ * ★ PDCA vòng 7 (2026-09-24) — MODEL SINH CÂU TRẢ LỜI KB. Planner xếp câu ngắn vào Tier 1 ⇒ `GGUF_FAST_MODEL` (Qwen3-4B,
+ * chạy in-process). A/B đầu–cuối 3×/nhánh: model MẶC ĐỊNH (llama-server) ngang hoặc hơn về đúng và NHANH hơn (trung vị
+ * ~1,8 s so với ~3,2 s) — xem báo cáo PDCA §12. Chỉ đổi khi llama-server ĐANG GIỮ model mặc định (không bao giờ nạp bản
+ * 35B thứ hai in-process); id TƯỜNG MINH (undefined có thể rơi về embedder đang nạp — doc 48 R1).
+ * `AI_KB_MODEL_TRA_LOI=planner` ⇒ như cũ. Lượt TỰ KIỂM của cổng lạc đề vẫn dùng model của planner (đo được: model mặc
+ * định tự kiểm chặn nhầm câu quy tắc có tài liệu — Q11 Q22 GQ03 T35).
+ */
+async function modelTraLoiKb(planModelId: string | undefined): Promise<string | undefined> {
+  if (process.env.AI_KB_MODEL_TRA_LOI === "planner") return planModelId;
+  const macDinh = resolveTaskModel("default");
+  if (!macDinh) return planModelId;
+  const { laModelServerDangGiu } = await import("./aiLlamaServerClient");
+  return laModelServerDangGiu(macDinh) ? macDinh : planModelId;
 }
 
 function buildGracefulFallback(language: KbLanguage): string {
@@ -1761,7 +1779,7 @@ async function generateWithOllama(
           repeatPenalty: KB_QA_REPEAT_PENALTY,
           // ★ B1 — lớp `kb-qa` không nghĩ (xem nhánh stream bên dưới cho lý do đo được).
           disableThinking: !luotDuocNghi("kb-qa"),
-        }, plan.decision.modelId);
+        }, await modelTraLoiKb(plan.decision.modelId));
         // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
         plan.record({
           tokensIn: result.tokensPrompt,
@@ -1924,7 +1942,7 @@ export async function* generateWithOllamaStream(
           // ★ B1 — KB-QA là lớp `kb-qa` (ai/loaiLuot.ts): KHÔNG nghĩ. Trần 220/900 token với model
           //   biết nghĩ mặc định ⇒ chuỗi suy luận nuốt hết trần, câu trả lời rỗng (đo sống 2026-09-22).
           disableThinking: !luotDuocNghi("kb-qa"),
-        }, plan.decision.modelId)) {
+        }, await modelTraLoiKb(plan.decision.modelId))) {
           // GGUF engine yields { type: "token" | "done" | "error", token?, ... }
           // We must extract the string token, not yield the whole object
           // (which would stringify to "[object Object]" downstream).
