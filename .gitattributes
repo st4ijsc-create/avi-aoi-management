@@ -8,6 +8,11 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 
+# 2026-09-24: du an C# mau cua /ai-coding-workspace la DE THI "repo that cua nguoi dung" - tep C# tren Windows
+# la CRLF, va aiCodingKhoiSua.stream.test.ts §8 kiem duong sua-theo-khoi GIU CRLF tren byte dia that.
+# Quy tac eol=lf o tren bien de thi thanh LF => ca "de thi dung la tep CRLF" do tu 2026-09-14 va live mat truc CRLF.
+sandbox-projects/csharp-demo/** text eol=crlf
+
 # Nhi phan (text=auto tu nhan, ghi ro de chac)
 *.png binary
 *.jpg binary
