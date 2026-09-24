@@ -1,0 +1,54 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "v10-t23-1",
+  "tom": {
+    "trong": {
+      "n": 2,
+      "dung": 1,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 1
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "T23",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 39012,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "howto-ng-handling-sop.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/features/products/measurement-point-setup.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: **2**\n\n(2) Danh sách đầy đủ:\n\n- Khi false call rate > 10 % cần kiểm tra lại điểm đo / ngưỡng AI. Đây là mức SỚM;  \n- Khi false alarm rate > 30% — mức KPI: điều tra false alarm đầy đủ theo các bước dưới đây.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n\n> Tỷ lệ báo giả (false alarm / false call) = số lần báo giả / số lần máy báo NG. Có HAI mức leo thang cho cùng chỉ số này:  \n> **> 10 %** — mức SỚM tại line: kiểm tra lại điểm đo / ngưỡng AI (SOP xử lý NG, `howto-ng-handling-sop.md`);  \n> **> 30 %** — mức KPI: điều tra false alarm đầy đủ theo các bước dưới đây.\n\n(4) Nguồn gốc (file/đường dẫn): [1] AOI Troubleshooting Guide (Hướng Dẫn Xử Lý Sự Cố), đoạn con 9 | knowledge/domain/aoi-troubleshooting.md",
+      "loi": null
+    },
+    {
+      "id": "T54",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 2560,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Khi tỷ lệ báo giả (false alarm rate) > 30% — mức KPI: điều tra false alarm đầy đủ theo các bước dưới đây.  \n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có:  \n> Tỷ lệ báo giả (false alarm / false call) = số lần báo giả / số lần máy báo NG. Có HAI mức leo thang cho cùng chỉ số này: **> 10 %** — mức SỚM tại line: kiểm tra lại điểm đo / ngưỡng AI; **> 30 %** — mức KPI: điều tra false alarm đầy đủ theo các bước dưới đây.\n\n(4) Nguồn gốc (file/đường dẫn): [1] AOI Troubleshooting Guide (Hướng Dẫn Xử Lý Sự Cố) (đoạn con 9) | knowledge/domain/aoi-troubleshooting.md",
+      "loi": null
+    }
+  ]
+}

@@ -393,3 +393,15 @@ từ chức năng tiếng Anh. Mọi lỗi ⇒ truy hồi như cũ. Công tắc 
   đoạn). Ghi thẳng: sửa hình làm tiền đề đúng, KHÔNG biến chúng thành lưới đo cosine. Lưới đo cosine thật: `dichTruyVan`.
 - Chống tái phát: `kbMockNhungDungHinh.test.ts` quét mọi `*.test.ts` dưới `server/` — mock TRẢ GIÁ TRỊ phải là
   `{ embedding: … }` (`vi.fn()` trơn và khối ném lỗi ngoài luật). Đột biến "trả lại mock cũ" ⇒ ĐỎ. Suite rộng 1.839/1.839.
+
+## 16. T23 — ba ngưỡng "tỷ lệ báo giả" trong tài liệu (`tài liệu miền`, chủ dự án chọn "hai mức leo thang")
+
+- Mã (`falseCallEscapeService.ts`): falseCallRate = báo giả / số lần máy báo NG; mã KHÔNG cố định ngưỡng (bảng cấu hình
+  `yield_alert_thresholds`). Tài liệu: SOP xử lý NG > 10 % ⇒ xem lại điểm đo/ngưỡng AI; KPI/xử lý sự cố/cảnh báo nhà máy
+  > 30 % ⇒ điều tra đầy đủ; thẩm định chương trình mới < 5 % trên 30 bảng. Cùng chỉ số, không tài liệu nào nói quan hệ.
+- Chủ dự án chọn: HAI MỨC LEO THANG (10 % sớm · 30 % KPI). Sửa: thêm câu dẫn chéo vào `aoi-troubleshooting.md` và
+  `howto-ng-handling-sop.md`, cộng một dòng phân biệt ngưỡng thẩm định 5 % — KHÔNG đổi con số nào.
+- Đầu–cuối (cache tắt, lặp 3×): T23 0/3 → **3/3**, T54 0/3 → **3/3** (ablation: trả hai tài liệu cũ ⇒ 0/3, 0/3; T54 lịch sử
+  ~2/6 — nhầm 5 % với 30 %). Bản dẫn chéo đầu (chỉ 10/30) làm T54 0/3 ⇒ thêm dòng 5 % mới đạt.
+- Hồi quy toàn bộ: 111 câu **72/79** (mất 0; T22 lên là nhiễu) · 32/32 · giữ lại Việt↔Anh 8/12 · tính năng 12/12 · lạc đề
+  12/12 + 11/12 · câu sống đi nhánh tài liệu 0 · endpoint 54/17/8/10 (không đổi). Kho dựng lại cục bộ (tệp sinh ra bỏ khỏi git).

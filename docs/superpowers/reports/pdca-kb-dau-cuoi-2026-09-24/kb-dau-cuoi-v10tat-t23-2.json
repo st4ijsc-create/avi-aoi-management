@@ -1,0 +1,54 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "v10tat-t23-2",
+  "tom": {
+    "trong": {
+      "n": 2,
+      "dung": 0,
+      "tuChoi": 1,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 1
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "T23",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1608,
+      "nguon": [
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "howto-ng-handling-sop.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/features/products/measurement-point-setup.md"
+      ],
+      "traLoi": "Tỷ lệ báo lỗi giả (false call) vượt **30%** thì phải xem lại điểm đo.\n\nNguyên văn từ tài liệu:  \n\"Khi false alarm rate > 30%:\" [3]\n\nCâu hỏi hiện tại liên quan trực tiếp đến ngưỡng cảnh báo về false call, và trong phần \"False Alarm Investigation\" của Hướng dẫn Xử lý Sự cố AOI (AOI Troubleshooting Guide), có nêu rõ:  \n> Khi false alarm rate > 30%:  \n> 1. Xuất báo cáo false alarm từ phần mềm  \n> 2. Phân loại: loại lỗi nào bị false alarm nhiều nhất  \n> ...  \n\nDo đó, ngưỡng cần xem lại điểm đo là **30%**.\n\nNguồn gốc: [3] AOI Troubleshooting Guide (Hướng Dẫn Xử Lý Sự Cố) | knowledge/domain/aoi-troubleshooting.md",
+      "loi": null
+    },
+    {
+      "id": "T54",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 715,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    }
+  ]
+}

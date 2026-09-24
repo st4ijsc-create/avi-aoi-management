@@ -40,7 +40,7 @@ Hoặc từ Dashboard: thẻ **NG hôm nay** → click số lượng NG để m�
 ## 5. Lưu ý quan trọng
 
 - **Không bỏ qua bước chọn mã lỗi.** Sản phẩm NG chưa gán mã lỗi sẽ KHÔNG được tính vào báo cáo Pareto / SPC.
-- **False call** vẫn được ghi log nhưng không tính vào NG-rate; nếu false-call rate > 10 % cần kiểm tra lại điểm đo / ngưỡng AI.
+- **False call** vẫn được ghi log nhưng không tính vào NG-rate; nếu false-call rate > 10 % cần kiểm tra lại điểm đo / ngưỡng AI. Đây là mức SỚM; mức KPI là > 30 % — khi đó điều tra false alarm đầy đủ theo `aoi-troubleshooting.md` (mục False Alarm Investigation). False-call rate = số lần báo giả / số lần máy báo NG.
 - Trường hợp máy AOI không thể kết nối DB (badge ⚠️ DB_UNAVAILABLE), thao tác vẫn được ghi vào hàng đợi local và đồng bộ sau khi DB phục hồi.
 
 ## 6. Tham số kỹ thuật

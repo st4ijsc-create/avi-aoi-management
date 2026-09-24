@@ -99,6 +99,12 @@
 ## False Alarm Investigation
 
 **Khi false alarm rate > 30%:**
+
+> Tỷ lệ báo giả (false alarm / false call) = số lần báo giả / số lần máy báo NG. Có HAI mức leo thang cho cùng chỉ số này:
+> **> 10 %** — mức SỚM tại line: kiểm tra lại điểm đo / ngưỡng AI (SOP xử lý NG, `howto-ng-handling-sop.md`);
+> **> 30 %** — mức KPI: điều tra false alarm đầy đủ theo các bước dưới đây.
+> Khác với hai mức trên: khi THẨM ĐỊNH chương trình kiểm tra MỚI, yêu cầu false alarm < 5 % trên 30 bảng (`aoi-workflow.md`).
+
 1. Xuất báo cáo false alarm từ phần mềm
 2. Phân loại: loại lỗi nào bị false alarm nhiều nhất
 3. Xem ảnh của false alarm → tìm pattern chung
