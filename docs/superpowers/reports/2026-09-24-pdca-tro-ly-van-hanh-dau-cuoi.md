@@ -383,3 +383,13 @@ từ chức năng tiếng Anh. Mọi lỗi ⇒ truy hồi như cũ. Công tắc 
 2. LN06 LN08 LN10 T17 T79 — đoạn đáp án ngoài top‑20 kể cả khi có bản dịch.
 3. Nợ lưới: sửa hình mock `generateEmbedding` ở các lưới cũ (cosine đang = 0 im lặng).
 4. C01/C03 hỏi lại; kho Studio.
+
+## 15. Nợ lưới — mock `generateEmbedding` sai hình (`1a1234b92`)
+
+- 8 tệp lưới mock trả MẢNG trơn trong khi `embedQuestionGguf` đọc `{ embedding }` ⇒ cosine = 0 im lặng. Đã sửa hình.
+- Sửa xong, đúng MỘT ca đỏ: `vscodeRouteGate` §F (đối chứng "câu không liên quan ⇒ độ tin thấp") — nó chỉ xanh NHỜ lỗi mock.
+  Nay đặt vector TRỰC GIAO cho câu đó (tiền đề thật) ⇒ xanh vì đúng lý do.
+- Đột biến "tắt vector câu hỏi" trên 8 tệp sau khi sửa: 101/101 vẫn xanh ⇒ kết quả các lưới này do TỪ KHOÁ quyết (kho một
+  đoạn). Ghi thẳng: sửa hình làm tiền đề đúng, KHÔNG biến chúng thành lưới đo cosine. Lưới đo cosine thật: `dichTruyVan`.
+- Chống tái phát: `kbMockNhungDungHinh.test.ts` quét mọi `*.test.ts` dưới `server/` — mock TRẢ GIÁ TRỊ phải là
+  `{ embedding: … }` (`vi.fn()` trơn và khối ném lỗi ngoài luật). Đột biến "trả lại mock cũ" ⇒ ĐỎ. Suite rộng 1.839/1.839.
