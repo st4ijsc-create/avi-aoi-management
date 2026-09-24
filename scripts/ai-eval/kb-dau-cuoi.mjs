@@ -1,11 +1,15 @@
 // Đo ĐẦU–CUỐI trợ lý vận hành trên bộ vàng Studio: thứ người dùng NHẬN (câu trả lời cuối), không phải điểm truy hồi.
 //   node scripts/ai-eval/kb-dau-cuoi.mjs [corpus=st4i-may-aoi] [--only T05,N06] [--label ten]
 // Chấm tất định (câu trong corpus: `dapAn` HOẶC `dapAnTraLoi`):
-//   câu TRONG corpus : "dung"  = câu trả lời khớp regex đáp án · "tu-choi" = câu từ chối chuẩn · "sai" = còn lại
-//   câu NGOÀI corpus : "tu-choi" = câu từ chối chuẩn (đúng) · "tra-loi" = trả lời (cần soi: bịa hay kiến thức chung)
+//   câu TRONG corpus : "dung"  = câu trả lời khớp regex đáp án · rồi HÌNH DẠNG (`_phan-loai-tra-loi.mjs`):
+//                      "tu-choi" (câu chuẩn) · "tu-choi-mem" (câu đầu nói tài liệu không có) · "hoi-lai" · "sai" = còn lại
+//   câu NGOÀI corpus : "tu-choi" · "tu-choi-mem" · "hoi-lai" (đều KHÔNG trả lời — không bịa) · "tra-loi" = trả lời THẬT
+//   ⚠ Từ 2026-09-24 (PDCA §13): `tom.ngoai.traLoi` CHỈ đếm câu trả lời thật; trước đó nó gộp cả tu-choi-mem/hoi-lai.
+//     Chấm lại báo cáo cũ bằng `kb-dau-cuoi-cham-lai.mjs` để so cùng thước.
 // Không in cookie. Ghi JSON vào scripts/ai-eval/reports/kb-dau-cuoi-<label>.json.
 import fs from "node:fs";
 import { ck } from "../../tmp/audit-ai/cookie.mjs";
+import { chamMot, tomTat } from "./_phan-loai-tra-loi.mjs";
 
 const args = process.argv.slice(2);
 const corpus = args.find((a) => !a.startsWith("--")) ?? "st4i-may-aoi";
@@ -13,10 +17,6 @@ const val = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : nu
 const only = val("--only")?.split(",") ?? null;
 const label = val("--label") ?? new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
 const C = ck("D:/SOURCES/avi-aoi-management/tmp/audit-ai/ck.txt");
-const TU_CHOI = /không có thông tin chính xác/i;
-// Bỏ định dạng markdown (**đậm**, `mã`) TRƯỚC khi so mẫu: "**không** được tính" là một câu trả lời đúng mà
-// mẫu /không được tính/ trượt (đo được ở T67). Chuẩn hoá CHUNG, không theo nội dung từng câu.
-const phang = (s) => String(s ?? "").replace(/[*`]/g, ""); // KHÔNG bỏ "_": production_manager, quality_engineer…
 
 const bo = fs.readFileSync(corpus.endsWith(".jsonl") ? corpus : `knowledge/studio-golden/${corpus}.jsonl`, "utf8").trim().split(/\r?\n/).map((l) => JSON.parse(l))
   .filter((c) => !only || only.includes(c.id));
@@ -49,23 +49,11 @@ const ra = [];
 for (const c of bo) {
   const r = await hoi(c.cauHoi);
   const ngoai = (c.nguon ?? []).length === 0;
-  const tuChoi = TU_CHOI.test(r.text);
-  let kq;
-  if (r.loi) kq = "loi";
-  else if (ngoai) kq = tuChoi ? "tu-choi" : "tra-loi";
-  // Đạt nếu khớp regex BẢNG nguồn (`dapAn`) HOẶC mẫu theo cách người trả lời (`dapAnTraLoi`, viết từ đoạn vàng).
-  else if ((c.dapAn && new RegExp(c.dapAn.regex, "i").test(phang(r.text))) || (c.dapAnTraLoi && new RegExp(c.dapAnTraLoi.regex, "i").test(phang(r.text)))) kq = "dung";
-  else kq = tuChoi ? "tu-choi" : "sai";
+  const kq = r.loi ? "loi" : chamMot(c, r.text);
   ra.push({ id: c.id, ngoai, kq, ms: r.ms, nguon: r.nguon.slice(0, 5), traLoi: r.text /* TOÀN VĂN — bản 400 ký tự từng làm T44 không chấm được */, loi: r.loi ?? null });
   console.log(`${c.id.padEnd(4)} ${ngoai ? "NGOAI" : "TRONG"} ${kq.padEnd(8)} ${r.ms} ms`);
 }
-const dem = (f) => ra.filter(f).length;
-const trong = ra.filter((x) => !x.ngoai), ngoai = ra.filter((x) => x.ngoai);
-const tom = {
-  trong: { n: trong.length, dung: dem((x) => !x.ngoai && x.kq === "dung"), tuChoi: dem((x) => !x.ngoai && x.kq === "tu-choi"), sai: dem((x) => !x.ngoai && x.kq === "sai") },
-  ngoai: { n: ngoai.length, tuChoi: dem((x) => x.ngoai && x.kq === "tu-choi"), traLoi: dem((x) => x.ngoai && x.kq === "tra-loi") },
-  loi: dem((x) => x.kq === "loi"),
-};
+const tom = tomTat(ra);
 console.log("TÓM", JSON.stringify(tom));
 fs.mkdirSync("scripts/ai-eval/reports", { recursive: true });
 fs.writeFileSync(`scripts/ai-eval/reports/kb-dau-cuoi-${label}.json`, JSON.stringify({ corpus, label, tom, ra }, null, 2));
