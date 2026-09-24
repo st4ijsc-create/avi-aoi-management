@@ -3163,6 +3163,18 @@
         "type": "boolean"
       },
       {
+        "field": "reasoningTokens",
+        "type": "integer"
+      },
+      {
+        "field": "thinking",
+        "type": "boolean"
+      },
+      {
+        "field": "samplingProfile",
+        "type": "varchar"
+      },
+      {
         "field": "userId",
         "type": "integer"
       },
@@ -4033,6 +4045,35 @@
       }
     ],
     "fks": []
+  },
+  {
+    "table": "andon_notes",
+    "file": "drizzle/schema/andon.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "andonId",
+        "type": "integer"
+      },
+      {
+        "field": "note",
+        "type": "text"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "andonEvents.id"
+    ]
   },
   {
     "table": "aoi_commissioning_records",
@@ -7384,6 +7425,10 @@
         "type": "integer"
       },
       {
+        "field": "tangId",
+        "type": "integer"
+      },
+      {
         "field": "code",
         "type": "varchar"
       },
@@ -7989,6 +8034,22 @@
         "type": "integer"
       },
       {
+        "field": "ntfSource",
+        "type": "varchar"
+      },
+      {
+        "field": "machineProductIndex",
+        "type": "integer"
+      },
+      {
+        "field": "configDriftFlags",
+        "type": "jsonb"
+      },
+      {
+        "field": "summaryCounts",
+        "type": "jsonb"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       },
@@ -8161,6 +8222,38 @@
         "type": "varchar"
       },
       {
+        "field": "inspectionCaptureRowId",
+        "type": "integer"
+      },
+      {
+        "field": "componentExtId",
+        "type": "varchar"
+      },
+      {
+        "field": "ntf",
+        "type": "boolean"
+      },
+      {
+        "field": "ntfSource",
+        "type": "varchar"
+      },
+      {
+        "field": "errorCode",
+        "type": "varchar"
+      },
+      {
+        "field": "errorDesc",
+        "type": "text"
+      },
+      {
+        "field": "startedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "completedAt",
+        "type": "timestamp"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       }
@@ -8246,6 +8339,10 @@
       {
         "field": "imageCount",
         "type": "integer"
+      },
+      {
+        "field": "sha256Presign",
+        "type": "varchar"
       },
       {
         "field": "status",
@@ -8462,6 +8559,211 @@
       }
     ],
     "fks": []
+  },
+  {
+    "table": "inspection_surfaces",
+    "file": "drizzle/schema/inspectionTree.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "inspectionId",
+        "type": "integer"
+      },
+      {
+        "field": "inspectionTime",
+        "type": "timestamp"
+      },
+      {
+        "field": "surfaceName",
+        "type": "varchar"
+      },
+      {
+        "field": "surfaceExtId",
+        "type": "varchar"
+      },
+      {
+        "field": "result",
+        "type": "overallResultEnum"
+      },
+      {
+        "field": "ntf",
+        "type": "boolean"
+      },
+      {
+        "field": "ntfSource",
+        "type": "varchar"
+      },
+      {
+        "field": "rolledResult",
+        "type": "overallResultEnum"
+      },
+      {
+        "field": "rolledNtf",
+        "type": "boolean"
+      },
+      {
+        "field": "declaredMismatch",
+        "type": "boolean"
+      },
+      {
+        "field": "startedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "completedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "inspection_positions",
+    "file": "drizzle/schema/inspectionTree.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "surfaceRowId",
+        "type": "integer"
+      },
+      {
+        "field": "inspectionId",
+        "type": "integer"
+      },
+      {
+        "field": "inspectionTime",
+        "type": "timestamp"
+      },
+      {
+        "field": "positionId",
+        "type": "varchar"
+      },
+      {
+        "field": "positionNumber",
+        "type": "integer"
+      },
+      {
+        "field": "result",
+        "type": "overallResultEnum"
+      },
+      {
+        "field": "ntf",
+        "type": "boolean"
+      },
+      {
+        "field": "ntfSource",
+        "type": "varchar"
+      },
+      {
+        "field": "rolledResult",
+        "type": "overallResultEnum"
+      },
+      {
+        "field": "rolledNtf",
+        "type": "boolean"
+      },
+      {
+        "field": "declaredMismatch",
+        "type": "boolean"
+      },
+      {
+        "field": "startedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "completedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "inspectionSurfaces.id"
+    ]
+  },
+  {
+    "table": "inspection_captures",
+    "file": "drizzle/schema/inspectionTree.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "positionRowId",
+        "type": "integer"
+      },
+      {
+        "field": "inspectionId",
+        "type": "integer"
+      },
+      {
+        "field": "inspectionTime",
+        "type": "timestamp"
+      },
+      {
+        "field": "captureExtId",
+        "type": "varchar"
+      },
+      {
+        "field": "captureName",
+        "type": "varchar"
+      },
+      {
+        "field": "captureIndex",
+        "type": "integer"
+      },
+      {
+        "field": "result",
+        "type": "overallResultEnum"
+      },
+      {
+        "field": "ntf",
+        "type": "boolean"
+      },
+      {
+        "field": "ntfSource",
+        "type": "varchar"
+      },
+      {
+        "field": "rolledResult",
+        "type": "overallResultEnum"
+      },
+      {
+        "field": "rolledNtf",
+        "type": "boolean"
+      },
+      {
+        "field": "declaredMismatch",
+        "type": "boolean"
+      },
+      {
+        "field": "startedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "completedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "inspectionPositions.id"
+    ]
   },
   {
     "table": "backup_logs",
@@ -9493,6 +9795,10 @@
         "type": "text"
       },
       {
+        "field": "ketQuaMay",
+        "type": "jsonb"
+      },
+      {
         "field": "createdBy",
         "type": "integer"
       },
@@ -9558,6 +9864,85 @@
       {
         "field": "embeddingVec",
         "type": "pgvector"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "kb_eval_runs",
+    "file": "drizzle/schema/kbStudio.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "corpus",
+        "type": "varchar"
+      },
+      {
+        "field": "boVang",
+        "type": "varchar"
+      },
+      {
+        "field": "trangThai",
+        "type": "varchar"
+      },
+      {
+        "field": "lyDo",
+        "type": "text"
+      },
+      {
+        "field": "k",
+        "type": "integer"
+      },
+      {
+        "field": "nguong",
+        "type": "real"
+      },
+      {
+        "field": "tangDuongOng",
+        "type": "boolean"
+      },
+      {
+        "field": "soChunk",
+        "type": "integer"
+      },
+      {
+        "field": "soNguon",
+        "type": "integer"
+      },
+      {
+        "field": "lanNapCuoi",
+        "type": "timestamp"
+      },
+      {
+        "field": "embedModel",
+        "type": "varchar"
+      },
+      {
+        "field": "boVangHash",
+        "type": "varchar"
+      },
+      {
+        "field": "tongHop",
+        "type": "jsonb"
+      },
+      {
+        "field": "ketQua",
+        "type": "jsonb"
+      },
+      {
+        "field": "msTong",
+        "type": "integer"
+      },
+      {
+        "field": "createdBy",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
       }
     ],
     "fks": []
@@ -16511,6 +16896,34 @@
         "type": "integer"
       },
       {
+        "field": "captureRowId",
+        "type": "integer"
+      },
+      {
+        "field": "componentExtId",
+        "type": "varchar"
+      },
+      {
+        "field": "roiX",
+        "type": "integer"
+      },
+      {
+        "field": "roiY",
+        "type": "integer"
+      },
+      {
+        "field": "roiWidth",
+        "type": "integer"
+      },
+      {
+        "field": "roiHeight",
+        "type": "integer"
+      },
+      {
+        "field": "templateVersionId",
+        "type": "integer"
+      },
+      {
         "field": "createdAt",
         "type": "timestamp"
       },
@@ -18498,6 +18911,250 @@
       }
     ],
     "fks": []
+  },
+  {
+    "table": "product_surfaces",
+    "file": "drizzle/schema/productConfigTree.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "surfaceName",
+        "type": "varchar"
+      },
+      {
+        "field": "surfaceExtId",
+        "type": "varchar"
+      },
+      {
+        "field": "templateImageUrl",
+        "type": "text"
+      },
+      {
+        "field": "templateImageKey",
+        "type": "varchar"
+      },
+      {
+        "field": "orderIndex",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "productModels.id"
+    ]
+  },
+  {
+    "table": "product_positions",
+    "file": "drizzle/schema/productConfigTree.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "surfaceRowId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "positionId",
+        "type": "varchar"
+      },
+      {
+        "field": "positionIndex",
+        "type": "integer"
+      },
+      {
+        "field": "name",
+        "type": "varchar"
+      },
+      {
+        "field": "shape",
+        "type": "varchar"
+      },
+      {
+        "field": "markerWidth",
+        "type": "numeric"
+      },
+      {
+        "field": "markerHeight",
+        "type": "numeric"
+      },
+      {
+        "field": "markerRadius",
+        "type": "numeric"
+      },
+      {
+        "field": "relX",
+        "type": "numeric"
+      },
+      {
+        "field": "relY",
+        "type": "numeric"
+      },
+      {
+        "field": "templateImageUrl",
+        "type": "text"
+      },
+      {
+        "field": "templateImageKey",
+        "type": "varchar"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "productSurfaces.id"
+    ]
+  },
+  {
+    "table": "product_captures",
+    "file": "drizzle/schema/productConfigTree.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "positionRowId",
+        "type": "integer"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "captureExtId",
+        "type": "varchar"
+      },
+      {
+        "field": "captureName",
+        "type": "varchar"
+      },
+      {
+        "field": "captureIndex",
+        "type": "integer"
+      },
+      {
+        "field": "templateImageUrl",
+        "type": "text"
+      },
+      {
+        "field": "templateImageKey",
+        "type": "varchar"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "productPositions.id"
+    ]
+  },
+  {
+    "table": "machine_template_versions",
+    "file": "drizzle/schema/productConfigTree.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "machineId",
+        "type": "integer"
+      },
+      {
+        "field": "productModelId",
+        "type": "integer"
+      },
+      {
+        "field": "version",
+        "type": "integer"
+      },
+      {
+        "field": "checksum",
+        "type": "varchar"
+      },
+      {
+        "field": "surfaceCount",
+        "type": "integer"
+      },
+      {
+        "field": "positionCount",
+        "type": "integer"
+      },
+      {
+        "field": "captureCount",
+        "type": "integer"
+      },
+      {
+        "field": "componentCount",
+        "type": "integer"
+      },
+      {
+        "field": "snapshot",
+        "type": "jsonb"
+      },
+      {
+        "field": "pushedAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "lastSeenAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "supersededAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "previousVersionId",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": [
+      "productModels.id"
+    ]
   },
   {
     "table": "daily_statistics",
@@ -22666,6 +23323,460 @@
       },
       {
         "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "twin_toa_nha",
+    "file": "drizzle/schema/twin3d.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "factoryId",
+        "type": "integer"
+      },
+      {
+        "field": "ma",
+        "type": "varchar"
+      },
+      {
+        "field": "ten",
+        "type": "varchar"
+      },
+      {
+        "field": "viTriXMm",
+        "type": "numeric"
+      },
+      {
+        "field": "viTriYMm",
+        "type": "numeric"
+      },
+      {
+        "field": "viTriZMm",
+        "type": "numeric"
+      },
+      {
+        "field": "rongMm",
+        "type": "numeric"
+      },
+      {
+        "field": "sauMm",
+        "type": "numeric"
+      },
+      {
+        "field": "caoMm",
+        "type": "numeric"
+      },
+      {
+        "field": "quatX",
+        "type": "numeric"
+      },
+      {
+        "field": "quatY",
+        "type": "numeric"
+      },
+      {
+        "field": "quatZ",
+        "type": "numeric"
+      },
+      {
+        "field": "quatW",
+        "type": "numeric"
+      },
+      {
+        "field": "modelVoId",
+        "type": "integer"
+      },
+      {
+        "field": "donViNguon",
+        "type": "varchar"
+      },
+      {
+        "field": "nguon",
+        "type": "twinNguonEnum"
+      },
+      {
+        "field": "isActive",
+        "type": "boolean"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "twin_tang",
+    "file": "drizzle/schema/twin3d.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "toaNhaId",
+        "type": "integer"
+      },
+      {
+        "field": "capSo",
+        "type": "integer"
+      },
+      {
+        "field": "ten",
+        "type": "varchar"
+      },
+      {
+        "field": "caoDoMm",
+        "type": "numeric"
+      },
+      {
+        "field": "caoThongThuyMm",
+        "type": "numeric"
+      },
+      {
+        "field": "daiMm",
+        "type": "numeric"
+      },
+      {
+        "field": "rongMm",
+        "type": "numeric"
+      },
+      {
+        "field": "nguonHinhHoc",
+        "type": "varchar"
+      },
+      {
+        "field": "anhNenUrl",
+        "type": "text"
+      },
+      {
+        "field": "anhNenKey",
+        "type": "text"
+      },
+      {
+        "field": "tiLeMmMoiPx",
+        "type": "numeric"
+      },
+      {
+        "field": "daHieuChuan",
+        "type": "boolean"
+      },
+      {
+        "field": "nguon",
+        "type": "twinNguonEnum"
+      },
+      {
+        "field": "isActive",
+        "type": "boolean"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "twin_dat_cho",
+    "file": "drizzle/schema/twin3d.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "tangId",
+        "type": "integer"
+      },
+      {
+        "field": "loaiThucThe",
+        "type": "twinThucTheEnum"
+      },
+      {
+        "field": "thucTheId",
+        "type": "integer"
+      },
+      {
+        "field": "viTriXMm",
+        "type": "numeric"
+      },
+      {
+        "field": "viTriYMm",
+        "type": "numeric"
+      },
+      {
+        "field": "viTriZMm",
+        "type": "numeric"
+      },
+      {
+        "field": "rongMm",
+        "type": "numeric"
+      },
+      {
+        "field": "caoMm",
+        "type": "numeric"
+      },
+      {
+        "field": "sauMm",
+        "type": "numeric"
+      },
+      {
+        "field": "kichThuocDaDo",
+        "type": "boolean"
+      },
+      {
+        "field": "quatX",
+        "type": "numeric"
+      },
+      {
+        "field": "quatY",
+        "type": "numeric"
+      },
+      {
+        "field": "quatZ",
+        "type": "numeric"
+      },
+      {
+        "field": "quatW",
+        "type": "numeric"
+      },
+      {
+        "field": "tiLeX",
+        "type": "numeric"
+      },
+      {
+        "field": "tiLeY",
+        "type": "numeric"
+      },
+      {
+        "field": "tiLeZ",
+        "type": "numeric"
+      },
+      {
+        "field": "modelId",
+        "type": "integer"
+      },
+      {
+        "field": "daKhoa",
+        "type": "boolean"
+      },
+      {
+        "field": "hienThi",
+        "type": "boolean"
+      },
+      {
+        "field": "nguon",
+        "type": "twinNguonEnum"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "twin_vat_the",
+    "file": "drizzle/schema/twin3d.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "tangId",
+        "type": "integer"
+      },
+      {
+        "field": "chaId",
+        "type": "integer"
+      },
+      {
+        "field": "loai",
+        "type": "twinVatTheEnum"
+      },
+      {
+        "field": "ten",
+        "type": "varchar"
+      },
+      {
+        "field": "modelId",
+        "type": "integer"
+      },
+      {
+        "field": "viTriXMm",
+        "type": "numeric"
+      },
+      {
+        "field": "viTriYMm",
+        "type": "numeric"
+      },
+      {
+        "field": "viTriZMm",
+        "type": "numeric"
+      },
+      {
+        "field": "rongMm",
+        "type": "numeric"
+      },
+      {
+        "field": "caoMm",
+        "type": "numeric"
+      },
+      {
+        "field": "sauMm",
+        "type": "numeric"
+      },
+      {
+        "field": "quatX",
+        "type": "numeric"
+      },
+      {
+        "field": "quatY",
+        "type": "numeric"
+      },
+      {
+        "field": "quatZ",
+        "type": "numeric"
+      },
+      {
+        "field": "quatW",
+        "type": "numeric"
+      },
+      {
+        "field": "tiLeX",
+        "type": "numeric"
+      },
+      {
+        "field": "tiLeY",
+        "type": "numeric"
+      },
+      {
+        "field": "tiLeZ",
+        "type": "numeric"
+      },
+      {
+        "field": "mau",
+        "type": "varchar"
+      },
+      {
+        "field": "diemDa",
+        "type": "jsonb"
+      },
+      {
+        "field": "thuocTinh",
+        "type": "jsonb"
+      },
+      {
+        "field": "thuTu",
+        "type": "integer"
+      },
+      {
+        "field": "daKhoa",
+        "type": "boolean"
+      },
+      {
+        "field": "hienThi",
+        "type": "boolean"
+      },
+      {
+        "field": "nguon",
+        "type": "twinNguonEnum"
+      },
+      {
+        "field": "createdAt",
+        "type": "timestamp"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "twin_kich_thuoc_loai",
+    "file": "drizzle/schema/twin3d.ts",
+    "columns": [
+      {
+        "field": "loaiMay",
+        "type": "varchar"
+      },
+      {
+        "field": "rongMm",
+        "type": "numeric"
+      },
+      {
+        "field": "caoMm",
+        "type": "numeric"
+      },
+      {
+        "field": "sauMm",
+        "type": "numeric"
+      },
+      {
+        "field": "laGiaDinh",
+        "type": "boolean"
+      },
+      {
+        "field": "ghiChu",
+        "type": "text"
+      },
+      {
+        "field": "updatedAt",
+        "type": "timestamp"
+      }
+    ],
+    "fks": []
+  },
+  {
+    "table": "twin_ban_ghi",
+    "file": "drizzle/schema/twin3d.ts",
+    "columns": [
+      {
+        "field": "id",
+        "type": "serial"
+      },
+      {
+        "field": "tangId",
+        "type": "integer"
+      },
+      {
+        "field": "nhan",
+        "type": "varchar"
+      },
+      {
+        "field": "anhChup",
+        "type": "jsonb"
+      },
+      {
+        "field": "daXuatBan",
+        "type": "boolean"
+      },
+      {
+        "field": "nguoiTao",
+        "type": "integer"
+      },
+      {
+        "field": "createdAt",
         "type": "timestamp"
       }
     ],

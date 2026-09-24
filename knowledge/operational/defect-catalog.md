@@ -25,5 +25,5 @@ Doc 31 Đợt B (OP4): IPC-A-610 defect catalog curation + unmatched-code + repa
 - Permission: `history_view`
 
 ## Endpoint liên quan
-- Router tRPC: `defectCatalogRouter` (server/routers/productRouters.ts, ~121 thủ tục query/mutation).
+- Router tRPC: `defectCatalogRouter` (server/routers/productRouters.ts, ~122 thủ tục query/mutation).
 

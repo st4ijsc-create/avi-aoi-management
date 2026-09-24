@@ -1,57 +1,7 @@
 [
   {
-    "path": "/",
-    "component": "Home",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/setup",
-    "component": "Setup",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/login",
-    "component": "Login",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/api-docs",
-    "component": "ApiDocs",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": null
-  },
-  {
-    "path": "/component-showcase",
-    "component": "ComponentShowcase",
-    "guarded": false,
-    "requiredRole": [],
-    "requiredPermission": null,
-    "navHref": null,
-    "redirectTo": null,
-    "purpose": "Wave 1: dev showcase of DS + foundation primitives"
-  },
-  {
-    "path": "/dashboard",
-    "component": "Dashboard",
+    "path": "/twin/line/:id",
+    "component": "Route",
     "guarded": true,
     "requiredRole": [],
     "requiredPermission": null,
@@ -201,13 +151,53 @@
   },
   {
     "path": "/digital-twin",
-    "component": "TwinHub",
+    "component": "(inline)",
+    "guarded": false,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": null,
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/twin",
+    "component": "TwinVanHanh",
     "guarded": true,
     "requiredRole": [],
     "requiredPermission": null,
-    "navHref": "/digital-twin",
+    "navHref": "/twin",
     "redirectTo": null,
     "purpose": null
+  },
+  {
+    "path": "/twin/line/:id",
+    "component": "TwinLine",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/twin",
+    "redirectTo": null,
+    "purpose": "★★★ Đợt 31 (QĐ-19/QĐ-21) — màn MÁY 3D RIÊNG, canvas RIÊNG. Xem khối chú"
+  },
+  {
+    "path": "/twin/may/:id",
+    "component": "TwinMay",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/twin",
+    "redirectTo": null,
+    "purpose": null
+  },
+  {
+    "path": "/twin-studio",
+    "component": "TwinStudio",
+    "guarded": true,
+    "requiredRole": [],
+    "requiredPermission": null,
+    "navHref": "/twin-studio",
+    "redirectTo": null,
+    "purpose": "★★★ Đợt 30 (QĐ-19/QĐ-21) — màn LINE 3D RIÊNG, canvas RIÊNG. Xem khối chú"
   },
   {
     "path": "/history",
@@ -576,7 +566,7 @@
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
-    "redirectTo": "/digital-twin?tab=map",
+    "redirectTo": "/twin",
     "purpose": null
   },
   {
@@ -956,17 +946,17 @@
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
-    "redirectTo": "/digital-twin?tab=floor",
+    "redirectTo": "/twin-studio",
     "purpose": null
   },
   {
     "path": "/rf-test-cell",
-    "component": "(inline)",
-    "guarded": false,
+    "component": "RfTestCellSim",
+    "guarded": true,
     "requiredRole": [],
-    "requiredPermission": null,
+    "requiredPermission": "machine_status",
     "navHref": null,
-    "redirectTo": "/digital-twin?tab=rf",
+    "redirectTo": null,
     "purpose": null
   },
   {
@@ -976,7 +966,7 @@
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
-    "redirectTo": "/digital-twin?tab=cell",
+    "redirectTo": "/twin",
     "purpose": null
   },
   {
@@ -986,7 +976,7 @@
     "requiredRole": [],
     "requiredPermission": null,
     "navHref": null,
-    "redirectTo": "/digital-twin?tab=center",
+    "redirectTo": "/twin",
     "purpose": null
   },
   {
@@ -1963,13 +1953,13 @@
   },
   {
     "path": "/layout",
-    "component": "Layout",
-    "guarded": true,
+    "component": "(inline)",
+    "guarded": false,
     "requiredRole": [],
     "requiredPermission": null,
-    "navHref": "/layout",
-    "redirectTo": null,
-    "purpose": "doc64 S5-OPT: eager→lazy"
+    "navHref": null,
+    "redirectTo": "/twin-studio",
+    "purpose": null
   },
   {
     "path": "/layout/:id",

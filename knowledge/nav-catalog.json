@@ -119,11 +119,18 @@
         "permissionCategory": "analytics"
       },
       {
-        "href": "/digital-twin",
-        "label": "nav.digitalTwin",
+        "href": "/twin",
+        "label": "nav.twin3d",
         "requiredRole": null,
-        "requiredPermission": "analytics_oee",
+        "requiredPermission": null,
         "permissionCategory": "analytics"
+      },
+      {
+        "href": "/twin-studio",
+        "label": "nav.twinStudio",
+        "requiredRole": null,
+        "requiredPermission": null,
+        "permissionCategory": "settings"
       },
       {
         "href": "/history",
@@ -1073,13 +1080,6 @@
       {
         "href": "/datasettings",
         "label": "nav.dataSettingsPage",
-        "requiredRole": null,
-        "requiredPermission": "settings_factory",
-        "permissionCategory": "settings"
-      },
-      {
-        "href": "/layout",
-        "label": "nav.factoryLayout",
         "requiredRole": null,
         "requiredPermission": "settings_factory",
         "permissionCategory": "settings"

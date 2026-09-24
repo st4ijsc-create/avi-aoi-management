@@ -782,20 +782,6 @@
     "license": "OPTIONAL"
   },
   {
-    "slug": "dashboard",
-    "sourcePath": "knowledge/operational/dashboard.md",
-    "route": "/dashboard",
-    "permission": "dashboard_view",
-    "role": [],
-    "screenVi": "Chất lượng sản xuất",
-    "screenEn": "Production Quality",
-    "inSidebar": true,
-    "navGroupVi": "Tổng quan",
-    "navGroupEn": "Overview",
-    "module": "CORE_DASHBOARD",
-    "license": "CORE"
-  },
-  {
     "slug": "dashboard-center",
     "sourcePath": "knowledge/operational/dashboard-center.md",
     "route": "/dashboard-center",
@@ -950,20 +936,6 @@
     "navGroupEn": "Devices & Monitoring",
     "module": null,
     "license": null
-  },
-  {
-    "slug": "digital-twin",
-    "sourcePath": "knowledge/operational/digital-twin.md",
-    "route": "/digital-twin",
-    "permission": "analytics_oee",
-    "role": [],
-    "screenVi": "Bản sao số",
-    "screenEn": "Digital Twin",
-    "inSidebar": true,
-    "navGroupVi": "Sản xuất",
-    "navGroupEn": "Production",
-    "module": "MOD_PRODUCTION",
-    "license": "OPTIONAL"
   },
   {
     "slug": "drill-down",
@@ -1276,20 +1248,6 @@
     "navGroupEn": "Engineering & Control (Advanced)",
     "module": null,
     "license": null
-  },
-  {
-    "slug": "layout",
-    "sourcePath": "knowledge/operational/layout.md",
-    "route": "/layout",
-    "permission": "settings_factory",
-    "role": [],
-    "screenVi": "Bố cục nhà máy",
-    "screenEn": "Factory Layout",
-    "inSidebar": true,
-    "navGroupVi": "Quản lý dữ liệu",
-    "navGroupEn": "Data Management",
-    "module": "MOD_DATA_MANAGEMENT",
-    "license": "OPTIONAL"
   },
   {
     "slug": "license",
@@ -1956,6 +1914,20 @@
     "license": "CORE"
   },
   {
+    "slug": "rf-test-cell",
+    "sourcePath": "knowledge/operational/rf-test-cell.md",
+    "route": "/rf-test-cell",
+    "permission": "machine_status",
+    "role": [],
+    "screenVi": "Rf Test Cell Sim",
+    "screenEn": "Rf Test Cell Sim",
+    "inSidebar": false,
+    "navGroupVi": null,
+    "navGroupEn": null,
+    "module": "MOD_OT_CONTROL",
+    "license": "OPTIONAL"
+  },
+  {
     "slug": "robot-control",
     "sourcePath": "knowledge/operational/robot-control.md",
     "route": "/robot-control",
@@ -2246,6 +2218,34 @@
     "navGroupEn": "Production",
     "module": "MOD_PRODUCTION",
     "license": "OPTIONAL"
+  },
+  {
+    "slug": "twin",
+    "sourcePath": "knowledge/operational/twin.md",
+    "route": "/twin",
+    "permission": null,
+    "role": [],
+    "screenVi": "Nhà máy 3D",
+    "screenEn": "3D Factory",
+    "inSidebar": true,
+    "navGroupVi": "Sản xuất",
+    "navGroupEn": "Production",
+    "module": null,
+    "license": null
+  },
+  {
+    "slug": "twin-studio",
+    "sourcePath": "knowledge/operational/twin-studio.md",
+    "route": "/twin-studio",
+    "permission": null,
+    "role": [],
+    "screenVi": "Thiết kế nhà máy 3D",
+    "screenEn": "3D Factory Design",
+    "inSidebar": true,
+    "navGroupVi": "Sản xuất",
+    "navGroupEn": "Production",
+    "module": null,
+    "license": null
   },
   {
     "slug": "user-assignments",

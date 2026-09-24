@@ -26,5 +26,5 @@ Màn hình `/products` (Products).
 - Module: `MOD_DATA_MANAGEMENT` (OPTIONAL — cần license).
 
 ## Endpoint liên quan
-- Router tRPC: `productModelRouter` (server/routers/productRouters.ts, ~121 thủ tục query/mutation).
+- Router tRPC: `productModelRouter` (server/routers/productRouters.ts, ~122 thủ tục query/mutation).
 

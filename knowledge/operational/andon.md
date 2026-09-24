@@ -26,5 +26,5 @@ W5-C (doc 27 F7): dedicated Andon/TV wall board (huge type, auto-cycle, socket-f
 - Module: `CORE_DASHBOARD` (CORE — luôn bật).
 
 ## Endpoint liên quan
-- Router tRPC: `andonRouter` (server/routers/andonRouter.ts, ~8 thủ tục query/mutation).
+- Router tRPC: `andonRouter` (server/routers/andonRouter.ts, ~11 thủ tục query/mutation).
 

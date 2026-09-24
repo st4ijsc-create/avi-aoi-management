@@ -26,5 +26,5 @@ Màn hình `/product-mapping` (Product Mapping).
 - Module: `MOD_DATA_MANAGEMENT` (OPTIONAL — cần license).
 
 ## Endpoint liên quan
-- Router tRPC: `productMachineMappingRouter` (server/routers/productRouters.ts, ~121 thủ tục query/mutation).
+- Router tRPC: `productMachineMappingRouter` (server/routers/productRouters.ts, ~122 thủ tục query/mutation).
 

@@ -28,6 +28,14 @@
     ]
   },
   {
+    "file": "server/services/ai/aiSafety.giuNhan.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiSafety"
+    ]
+  },
+  {
     "file": "server/services/ai/aiSafety.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -81,6 +89,8 @@
     "file": "server/services/ai/autonomyPolicy.ts",
     "exportedFunctions": [
       "isAutonomyEnabled",
+      "autonomyGhiTuTriBat",
+      "apDungDiffTuTriDuoc",
       "getAutonomyAllowlist",
       "autonomyMaxPerHour",
       "phanLoaiTuTri",
@@ -107,6 +117,65 @@
       "../aiLocalTools/toolRegistry",
       "./autonomyPolicy"
     ]
+  },
+  {
+    "file": "server/services/ai/boSungUsingCSharp.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./boSungUsingCSharp"
+    ]
+  },
+  {
+    "file": "server/services/ai/boSungUsingCSharp.ts",
+    "exportedFunctions": [
+      "boChuThichVaChuoi",
+      "phanTichThieuUsing",
+      "chenUsing",
+      "boSungUsingTrongVanBan",
+      "thongBaoBoSung"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ai/cauSinhMa.test.ts",
+    "exportedFunctions": [
+      "gopKhoang"
+    ],
+    "exportedClasses": [
+      "BoNhoLRU"
+    ],
+    "localImports": [
+      "./cauSinhMa"
+    ]
+  },
+  {
+    "file": "server/services/ai/cauSinhMa.ts",
+    "exportedFunctions": [
+      "laCauSinhMa"
+    ],
+    "exportedClasses": [
+      "BoNhoLRU"
+    ],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ai/chonTacVuModel.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./chonTacVuModel"
+    ]
+  },
+  {
+    "file": "server/services/ai/chonTacVuModel.ts",
+    "exportedFunctions": [
+      "locTacVuNguoiChon",
+      "chonTacVuModel"
+    ],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/ai/codingLessonContext.test.ts",
@@ -237,6 +306,30 @@
     ],
     "exportedClasses": [],
     "localImports": []
+  },
+  {
+    "file": "server/services/ai/dotnetNewScaffold.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./dotnetNewScaffold"
+    ]
+  },
+  {
+    "file": "server/services/ai/dotnetNewScaffold.ts",
+    "exportedFunctions": [
+      "anhXaTemplateDotnet",
+      "slugDuAn",
+      "giuTepKhung",
+      "docCayTepKhung",
+      "coPackageReference",
+      "chayDotnetNewVaoTam"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../aiLocalTools/repoCommandSandbox",
+      "../aiLocalTools/repoSandbox"
+    ]
   },
   {
     "file": "server/services/ai/embeddingHead.test.ts",
@@ -406,6 +499,43 @@
     "localImports": []
   },
   {
+    "file": "server/services/ai/hoSoModelStudio.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./hoSoModelStudio"
+    ]
+  },
+  {
+    "file": "server/services/ai/hoSoModelStudio.ts",
+    "exportedFunctions": [
+      "gomBaoCao",
+      "layHoSoModel",
+      "timLech"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection"
+    ]
+  },
+  {
+    "file": "server/services/ai/hoSoSampling.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./hoSoSampling"
+    ]
+  },
+  {
+    "file": "server/services/ai/hoSoSampling.ts",
+    "exportedFunctions": [
+      "docTenHoSo",
+      "hoSoSamplingCho"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
     "file": "server/services/ai/kbStudioAccess.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -417,6 +547,32 @@
     "file": "server/services/ai/kbStudioAccess.ts",
     "exportedFunctions": [
       "canAccessStudioCorpus"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ai/loaiLuot.cheDo.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./loaiLuot"
+    ]
+  },
+  {
+    "file": "server/services/ai/loaiLuot.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./loaiLuot"
+    ]
+  },
+  {
+    "file": "server/services/ai/loaiLuot.ts",
+    "exportedFunctions": [
+      "locCheDoNghi",
+      "luotDuocNghi",
+      "tranTokenTheoLop"
     ],
     "exportedClasses": [],
     "localImports": []
@@ -641,6 +797,26 @@
     "localImports": []
   },
   {
+    "file": "server/services/ai/nghiSau.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./nghiSau",
+      "./tranTokenSinhMa"
+    ]
+  },
+  {
+    "file": "server/services/ai/nghiSau.ts",
+    "exportedFunctions": [
+      "nganSachNghiChoLuot",
+      "tranMongMuonChoCheDo"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./loaiLuot"
+    ]
+  },
+  {
     "file": "server/services/ai/ntfClassifier.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -729,16 +905,44 @@
       "similarityRatio",
       "labelMatch",
       "ctcGreedyDecode",
+      "dbTimHop",
       "loadCharset",
+      "boChuThieuDauViet",
       "runOcr",
+      "runOcrTrang",
       "checkLabel",
       "_resetOcrCachesForTests"
     ],
     "exportedClasses": [],
     "localImports": [
       "../vram/vramRefusalSignal",
-      "../vram/vramCaps"
+      "../vram/vramCaps",
+      "./ocrVietOcr"
     ]
+  },
+  {
+    "file": "server/services/ai/ocrVietOcr.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./ocrVietOcr"
+    ]
+  },
+  {
+    "file": "server/services/ai/ocrVietOcr.ts",
+    "exportedFunctions": [
+      "thuMucVietOcr",
+      "coVietOcr",
+      "cheDoNhanDang",
+      "dungVietOcr",
+      "coChuViet",
+      "rongVietOcr",
+      "giaiMaChiSo",
+      "argmaxSoftmax",
+      "nhanDangDongViet"
+    ],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/ai/parameterGuardrailService.test.ts",
@@ -791,6 +995,48 @@
     "exportedClasses": [],
     "localImports": [
       "./parameterGuardrailService"
+    ]
+  },
+  {
+    "file": "server/services/ai/phuQuyetTool.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./phuQuyetTool"
+    ]
+  },
+  {
+    "file": "server/services/ai/phuQuyetTool.ts",
+    "exportedFunctions": [
+      "tinHieuYeu",
+      "ketHopPhuQuyet"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ai/phuQuyetToolNative.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./phuQuyetToolNative",
+      "../aiLocalTools/intentClassifier"
+    ]
+  },
+  {
+    "file": "server/services/ai/phuQuyetToolNative.ts",
+    "exportedFunctions": [
+      "dungWireToolLapTrinh",
+      "hoiModelChonTool",
+      "phuQuyetToolLapTrinh"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../ai/thinkingStrip",
+      "../aiLocalTools/intentClassifier",
+      "../aiLocalTools/toolRegistry",
+      "./nativeToolCalls",
+      "./phuQuyetTool"
     ]
   },
   {
@@ -968,6 +1214,103 @@
       "../orchestration/aiWatcher",
       "../../_core/eventBus"
     ]
+  },
+  {
+    "file": "server/services/ai/thuMucTuLoi.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./thuMucTuLoi"
+    ]
+  },
+  {
+    "file": "server/services/ai/thuMucTuLoi.ts",
+    "exportedFunctions": [
+      "thuMucTuLoi"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ai/tienToNhungCauHoi.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./tienToNhungCauHoi"
+    ]
+  },
+  {
+    "file": "server/services/ai/tienToNhungCauHoi.ts",
+    "exportedFunctions": [
+      "tienToNhungCauHoi"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ai/toolDuongTat.grepDeadline.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./toolDuongTat"
+    ]
+  },
+  {
+    "file": "server/services/ai/toolDuongTat.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./toolDuongTat"
+    ]
+  },
+  {
+    "file": "server/services/ai/toolDuongTat.ts",
+    "exportedFunctions": [
+      "moiVongDeuTuChoi",
+      "quyetDinhDuongTat",
+      "cauChiNenNo"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ai/tranTokenSinhMa.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./tranTokenSinhMa"
+    ]
+  },
+  {
+    "file": "server/services/ai/tranTokenSinhMa.ts",
+    "exportedFunctions": [
+      "tranTokenSinhMa",
+      "nenThuLaiVoiTranRong",
+      "ghiModelDaNghi",
+      "modelDaTungNghi",
+      "__resetONhoForTests",
+      "goiYModelBietNghi",
+      "modelNenCoiLaBietNghi"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/ai/vanBanChoModel.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./vanBanChoModel"
+    ]
+  },
+  {
+    "file": "server/services/ai/vanBanChoModel.ts",
+    "exportedFunctions": [
+      "vanBanChoModel",
+      "menhLenhTuChoiChoModel"
+    ],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/ai/visionInferenceSlo.test.ts",
@@ -1598,15 +1941,19 @@
       "personaSuaTep",
       "personaSuaTepKhoi",
       "personaTaoTep",
+      "personaTaoKhung",
       "bocKhoiMa",
       "bocKhoiSua",
       "apDungKhoiSua",
       "dongBoXuongDong",
       "chuanHoaTepMoi",
+      "bocManifestKhung",
+      "chonDuongTuTri",
       "nhanNgonNgu",
       "promptSuaTep",
       "promptSuaTepKhoi",
       "promptTaoTep",
+      "promptTaoKhung",
       "promptSinhMa",
       "chuanHoaLichSu",
       "veKhoiLichSu",
@@ -1617,10 +1964,21 @@
     "exportedClasses": [],
     "localImports": [
       "./ai/aiSafety",
+      "./ai/chonTacVuModel",
       "./aiLlamaServerClient",
       "./ai/thinkingStrip",
       "./ai/generationGuard",
-      "./aiGateway"
+      "./aiGateway",
+      "./ai/hoSoSampling",
+      "./aiLocalTools/repoSandbox"
+    ]
+  },
+  {
+    "file": "server/services/aiCodingChonTep.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiCodingAgent"
     ]
   },
   {
@@ -1682,6 +2040,19 @@
     ]
   },
   {
+    "file": "server/services/aiCodingCli/cliTaoKhung.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./cli",
+      "../aiCodingAgent",
+      "../../db/auth",
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../../drizzle/schema/auth"
+    ]
+  },
+  {
     "file": "server/services/aiCodingCli/cliVongThat.test.ts",
     "exportedFunctions": [
       "cong"
@@ -1732,6 +2103,23 @@
       "../aiLocalTools/repoProjects",
       "./cauNoiCli"
     ]
+  },
+  {
+    "file": "server/services/aiCodingCli/mcpStdoutSach.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./mcpStdoutSach"
+    ]
+  },
+  {
+    "file": "server/services/aiCodingCli/mcpStdoutSach.ts",
+    "exportedFunctions": [
+      "laCheDoMcp",
+      "chuyenLogRaStderr"
+    ],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/aiCodingDot02.stream.test.ts",
@@ -1792,6 +2180,26 @@
     ]
   },
   {
+    "file": "server/services/aiCodingTaoKhung.stream.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService",
+      "./aiCodingAgent",
+      "./aiLocalTools/intentClassifier",
+      "./aiLocalTools/writeHandlers/applyDiffBatch"
+    ]
+  },
+  {
+    "file": "server/services/aiCodingTaoKhungDotnet.stream.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService",
+      "./aiCodingAgent"
+    ]
+  },
+  {
     "file": "server/services/aiCodingTaoTep.stream.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -1799,6 +2207,45 @@
       "./aiLocalKnowledgeService",
       "./aiCodingAgent",
       "./aiLocalTools/intentClassifier"
+    ]
+  },
+  {
+    "file": "server/services/aiCodingTuTriGhi.stream.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiCodingTuTriGhi.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiCodingTuTriGhi",
+      "./aiCodingVerify",
+      "./aiLocalTools/repoCommandSandbox"
+    ]
+  },
+  {
+    "file": "server/services/aiCodingTuTriGhi.ts",
+    "exportedFunctions": [
+      "tranTuTriGhi",
+      "khoiDongTuTriGhiDuoc",
+      "laTepTest",
+      "chayLuotTuTriGhi",
+      "ghiAuditLuotTuTri",
+      "chayVongTuTriGhi"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./ai/autonomyPolicy",
+      "./aiLocalTools/intentClassifier",
+      "./aiCodingVerify",
+      "./aiLocalTools",
+      "./aiCopilotActions",
+      "./aiLocalTools/repoProjects",
+      "./auditTrailService"
     ]
   },
   {
@@ -1824,6 +2271,23 @@
       "./aiLocalTools/repoCommandSandbox",
       "./aiLocalTools/repoProjects",
       "./aiLocalTools",
+      "./aiCopilotActions"
+    ]
+  },
+  {
+    "file": "server/services/aiCopilotActions.apMotPhan.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiCopilotActions",
+      "./aiLocalTools/writeHandlers/applyDiffBatch"
+    ]
+  },
+  {
+    "file": "server/services/aiCopilotActions.apOClient.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
       "./aiCopilotActions"
     ]
   },
@@ -1894,11 +2358,15 @@
       "proposeAction",
       "listPendingActionsForUser",
       "getPendingActionForUser",
+      "trangThaiSauThucThi",
+      "cauKetCucThucThi",
       "confirmAction",
       "cancelAction",
       "getAction",
       "expireStaleActions",
-      "evaluateContractForAutonomy"
+      "evaluateContractForAutonomy",
+      "batDauApDungOClient",
+      "chotApDungOClient"
     ],
     "exportedClasses": [],
     "localImports": [
@@ -1908,9 +2376,23 @@
       "./aiLocalTools/toolRegistry",
       "../../client/src/lib/diffHunks",
       "./aiLocalTools/writeHandlers/applyDiff",
+      "./aiLocalTools/writeHandlers/applyDiffBatch",
       "./auditTrailService",
       "./ai/autonomyPolicy",
       "./aiAgentRealtime"
+    ]
+  },
+  {
+    "file": "server/services/aiCopilotActions.tuChoiGhi.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiCopilotActions",
+      "./aiLocalTools/writeHandlers/applyDiff",
+      "../db/connection",
+      "../../drizzle/schema",
+      "../../drizzle/schema/auth",
+      "../db/auth"
     ]
   },
   {
@@ -2162,6 +2644,12 @@
     "localImports": [
       "./aiInferenceEngine"
     ]
+  },
+  {
+    "file": "server/services/aiGateway.b7.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/aiGateway.ts",
@@ -2632,6 +3120,7 @@
     "exportedFunctions": [
       "docHaiNua",
       "phanDinhCauTraLoiRong",
+      "lapNganSachNghi",
       "llamaServerEnabled",
       "llamaServerStrict",
       "laModelServerDangGiu",
@@ -2745,6 +3234,30 @@
     ]
   },
   {
+    "file": "server/services/aiLocalKnowledge.h6VscodeShouldUseLlmBypass.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledge.numPredictVscode.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledge.progKbRouteGate.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
     "file": "server/services/aiLocalKnowledge.studioMerge.integration.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -2777,12 +3290,179 @@
     ]
   },
   {
+    "file": "server/services/aiLocalKnowledge.tienToCauHoi.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
     "file": "server/services/aiLocalKnowledge.toolLoopHonesty.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
     "localImports": [
       "./aiLocalKnowledgeService",
       "./ai/aiSafety"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledge.v11FactoryDataGate.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledge.vendorDetect.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledge.vendorFilterWiring.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledge.vscodeRouteGate.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledge.vscodeStudioMerge.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalKnowledgeService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledgeCoding.ts",
+    "exportedFunctions": [
+      "bocDauRaMayChoLichSu",
+      "laYDinhSuaTep",
+      "laYDinhTaoTep",
+      "nguCanhDuAnChoPrompt",
+      "doneSinhMa"
+    ],
+    "exportedClasses": [
+      "BoNhoLRU"
+    ],
+    "localImports": [
+      "./aiLocalTools",
+      "./aiLocalTools/intentClassifier",
+      "./ai/toolDuongTat",
+      "./ai/cauSinhMa",
+      "./ai/vanBanChoModel",
+      "./aiCodingAgent",
+      "./ai/codingRepoContext",
+      "./ai/codingLessonContext",
+      "./ai/aiSafety",
+      "./aiLocalKnowledgeService",
+      "./aiLocalKnowledgeCodingThongBao",
+      "./aiLocalKnowledgeCodingSinhMa",
+      "./aiLocalKnowledgeCodingSua",
+      "./aiLocalKnowledgeCodingTaoKhung"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools",
+      "./ai/tranTokenSinhMa",
+      "./aiLlamaServerClient",
+      "./ai/loaiLuot",
+      "./ai/nghiSau",
+      "./ai/hoSoSampling",
+      "./aiCodingAgent",
+      "./ai/codingRepoContext",
+      "./ai/boSungUsingCSharp",
+      "./aiLocalKnowledgeService",
+      "./aiLocalKnowledgeCodingThongBao",
+      "./aiLocalKnowledgeCoding"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools",
+      "./aiCodingTuTriGhi",
+      "./aiCopilotActions",
+      "./aiLocalTools/repoSandbox",
+      "./ai/thuMucTuLoi",
+      "./ai/tranTokenSinhMa",
+      "./aiLlamaServerClient",
+      "./ai/loaiLuot",
+      "./ai/nghiSau",
+      "./ai/hoSoSampling",
+      "./aiCodingAgent",
+      "./ai/codingRepoContext",
+      "./aiLocalKnowledgeService",
+      "./aiLocalKnowledgeCodingThongBao",
+      "./aiLocalKnowledgeCoding"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools",
+      "./aiLocalTools/repoSandbox",
+      "./aiLocalTools/writeHandlers/applyDiffBatch",
+      "./ai/dotnetNewScaffold",
+      "./aiCodingAgent",
+      "./aiLocalKnowledgeService",
+      "./aiLocalKnowledgeCodingThongBao",
+      "./aiLocalKnowledgeCodingSua",
+      "./aiLocalKnowledgeCoding"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalKnowledgeCodingThongBao.ts",
+    "exportedFunctions": [
+      "codingNoToolMessage",
+      "codingThoaiHoaMessage",
+      "codingModelErrorMessage",
+      "codingKhongCoKhoiMaMessage",
+      "codingKhoiHongMessage",
+      "codingKhongDoiMessage",
+      "codingGoiYTaoTepMessage",
+      "codingTepDaTonTaiMessage",
+      "codingQuaNhieuTepMessage",
+      "codingTieuDeTepMessage",
+      "codingLoDungMessage",
+      "codingLoKhongDoiMessage",
+      "codingKhungDotnetMessage",
+      "codingKhungLoaiTepMessage",
+      "codingKhungTuSuaThongBao",
+      "codingKhungCauTuSua",
+      "codingKhungHongMessage",
+      "codingKhungQuaTranMessage",
+      "codingKhungTuChoiMessage",
+      "codingTaoRongMessage",
+      "codingKhongTuSuaMessage",
+      "codingProjectDeniedMessage",
+      "codingErrorMessage"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools/writeHandlers/applyDiffBatch",
+      "./aiCodingAgent",
+      "./aiLocalKnowledgeService",
+      "./aiLocalKnowledgeCoding"
     ]
   },
   {
@@ -2799,15 +3479,16 @@
     "exportedFunctions": [
       "extractStructuredResponse",
       "detectLanguage",
+      "embedQuestion",
       "toolKhongCoGiDeNoi",
+      "looksLikeLiveFactoryDataQuestion",
       "getKbHealth",
       "reloadKbArtifacts",
+      "resolveLanguage",
+      "detectProgrammingVendors",
       "retrieveKnowledge",
       "getCacheKey",
       "answerQuestion",
-      "bocDauRaMayChoLichSu",
-      "laYDinhSuaTep",
-      "laYDinhTaoTep",
       "warmUpOllamaModels",
       "isAutoIngestEnabled",
       "ingestKnowledgeRecord",
@@ -2816,12 +3497,13 @@
     "exportedClasses": [],
     "localImports": [
       "./aiLocalTools",
-      "./aiLocalTools/intentClassifier",
+      "./ai/toolDuongTat",
+      "./ai/vanBanChoModel",
+      "./ai/loaiLuot",
       "./aiCodingAgent",
-      "./ai/codingRepoContext",
-      "./ai/codingLessonContext",
       "./aiReranker",
       "./aiKbSourceWeights",
+      "./ai/tienToNhungCauHoi",
       "./aiSemanticGraph",
       "./ai/generationGuard",
       "./ai/aiSafety",
@@ -2832,7 +3514,11 @@
       "./vram/vramDefer",
       "./aiKbFeedbackSignal",
       "./ai/kbStudioAccess",
-      "./ai/dataCitation"
+      "./aiProgrammingKnowledgeService",
+      "./ai/dataCitation",
+      "./aiLocalKnowledgeCoding",
+      "./aiLocalKnowledgeVongTool",
+      "./aiLocalTools/intentClassifier"
     ]
   },
   {
@@ -2842,6 +3528,17 @@
     ],
     "exportedClasses": [],
     "localImports": []
+  },
+  {
+    "file": "server/services/aiLocalKnowledgeVongTool.ts",
+    "exportedFunctions": [
+      "tachThanKhoiGiaoCuVscode"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiLocalTools",
+      "./aiLocalKnowledgeService"
+    ]
   },
   {
     "file": "server/services/aiLocalTools/analyticsTools.test.ts",
@@ -2893,6 +3590,16 @@
     ]
   },
   {
+    "file": "server/services/aiLocalTools/applyDiffMienHITL.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./toolRegistry",
+      "./repoSandbox",
+      "./writeHandlers/applyDiff"
+    ]
+  },
+  {
     "file": "server/services/aiLocalTools/authCtxInjection.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -2941,6 +3648,15 @@
     ],
     "exportedClasses": [],
     "localImports": []
+  },
+  {
+    "file": "server/services/aiLocalTools/grepLoaiTru.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./toolRegistry",
+      "./repoSandbox"
+    ]
   },
   {
     "file": "server/services/aiLocalTools/handlers.scopeDb.test.ts",
@@ -3024,6 +3740,7 @@
   {
     "file": "server/services/aiLocalTools/index.ts",
     "exportedFunctions": [
+      "chonToolLapTrinh",
       "tryExecuteCodingTool",
       "tryExecuteTool",
       "executeDecision",
@@ -3038,7 +3755,8 @@
       "./intentClassifier",
       "./toolLoop",
       "./toolRegistry",
-      "../aiCopilotActions"
+      "../aiCopilotActions",
+      "../ai/phuQuyetToolNative"
     ]
   },
   {
@@ -3161,12 +3879,46 @@
       "laCauCanSuyLuan",
       "chanLenhKhiCauHoi",
       "trichDuongSuaTatDinh",
+      "laYDinhTaoDuAn",
+      "laYDinhTuTri",
       "decideNextCodingToolLLM"
     ],
     "exportedClasses": [],
     "localImports": [
       "./toolRegistry",
+      "../ai/cauSinhMa",
+      "./tenCongNghe",
       "../programming/programmingAdapter"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/intentClassifier.tuTri.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./intentClassifier"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/lenhSong.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./lenhSong"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/lenhSong.ts",
+    "exportedFunctions": [
+      "batDauLenhSong",
+      "noiDauRaSong",
+      "ketThucLenhSong",
+      "docLenhSong",
+      "_xoaSachSoSong"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../ai/aiSafety"
     ]
   },
   {
@@ -3182,6 +3934,7 @@
     "exportedFunctions": [],
     "exportedClasses": [],
     "localImports": [
+      "../ot/aiControlGate",
       "./toolRegistry",
       "../aiCopilotActions"
     ]
@@ -3331,6 +4084,7 @@
     "file": "server/services/aiLocalTools/repoCommandSandbox.ts",
     "exportedFunctions": [
       "tachArgv",
+      "dotnetChoPhepRestore",
       "phanQuyetLenh",
       "goiYLenhGanNhat",
       "hanGioThucTe",
@@ -3412,6 +4166,7 @@
     ],
     "exportedClasses": [],
     "localImports": [
+      "../ai/vanBanChoModel",
       "./readToolRbac",
       "./repoSandbox",
       "./toolRegistry"
@@ -3436,6 +4191,7 @@
       "nganSachConLai",
       "tieuNganSach",
       "xoaSoNganSach",
+      "trangThaiNganSach",
       "moTepTrongHopCat",
       "lietKeTrongHopCat",
       "duyetTepDocDuoc"
@@ -3445,6 +4201,31 @@
       "../ai/aiSafety",
       "./readToolsProgramming"
     ]
+  },
+  {
+    "file": "server/services/aiLocalTools/repoSandboxPhang.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./repoSandbox"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/tenCongNghe.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./tenCongNghe"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/tenCongNghe.ts",
+    "exportedFunctions": [
+      "laTenCongNghe",
+      "locBoTenCongNghe"
+    ],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/aiLocalTools/toolArgCoverage.test.ts",
@@ -3478,6 +4259,7 @@
     "localImports": [
       "../ai/aiSafety",
       "../aiLlamaServerClient",
+      "../ai/vanBanChoModel",
       "./intentClassifier",
       "./toolRegistry",
       "../aiCopilotActions"
@@ -3619,8 +4401,11 @@
     "file": "server/services/aiLocalTools/writeHandlers/applyDiff.ts",
     "exportedFunctions": [
       "bam",
+      "_xoaSoBamHITL",
       "trich",
       "cauTuChoi",
+      "mienKiemGitChoLuotTao",
+      "cauCanhBaoKhongGit",
       "phanQuyet",
       "ghiTheoPhanQuyet"
     ],
@@ -3636,7 +4421,9 @@
   },
   {
     "file": "server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts",
-    "exportedFunctions": [],
+    "exportedFunctions": [
+      "laMaGhiMotPhan"
+    ],
     "exportedClasses": [],
     "localImports": [
       "./applyDiff",
@@ -3697,6 +4484,7 @@
     "exportedFunctions": [],
     "exportedClasses": [],
     "localImports": [
+      "../../ot/aiControlGate",
       "../toolRegistry"
     ]
   },
@@ -3710,6 +4498,8 @@
       "../../../../drizzle/schema",
       "../../../db/machineRecipe",
       "../../ot/commandDispatcher",
+      "../../ot/aiControlGate",
+      "../../ot/aiControlGate.safety",
       "../toolRegistry"
     ]
   },
@@ -3739,8 +4529,11 @@
     "exportedClasses": [],
     "localImports": [
       "../../../db/product",
+      "../../../db/system",
       "../toolRegistry",
-      "../../auditTrailService"
+      "../../auditTrailService",
+      "../../thresholdGovernanceService",
+      "../../../utils/measurementPointLimitGate"
     ]
   },
   {
@@ -3772,6 +4565,7 @@
     "localImports": [
       "../../../_core/accessControl",
       "../repoCommandSandbox",
+      "../lenhSong",
       "../repoSandbox",
       "../toolRegistry",
       "../../auditTrailService"
@@ -3795,6 +4589,8 @@
       "../../../db/connection",
       "../../../../drizzle/schema",
       "../../ot/commandDispatcher",
+      "../../ot/aiControlGate",
+      "../../ot/aiControlGate.safety",
       "../toolRegistry",
       "../../auditTrailService"
     ]
@@ -3806,7 +4602,8 @@
     "localImports": [
       "../../../db/alerts",
       "../toolRegistry",
-      "../../auditTrailService"
+      "../../auditTrailService",
+      "../../ot/aiControlGate"
     ]
   },
   {
@@ -3815,7 +4612,8 @@
     "exportedClasses": [],
     "localImports": [
       "./toolRegistry",
-      "../aiCopilotActions"
+      "../aiCopilotActions",
+      "../ot/aiControlGate"
     ]
   },
   {
@@ -4189,6 +4987,7 @@
       "searchProgrammingKb",
       "getProgrammingKbStatus",
       "reloadProgrammingKb",
+      "getProgrammingKbVendorSlugs",
       "isProgrammingKbEnabled"
     ],
     "exportedClasses": [],
@@ -4367,7 +5166,8 @@
       "../db/connection",
       "../../drizzle/schema",
       "../../drizzle/schema/ai",
-      "./aiDriftMonitor"
+      "./aiDriftMonitor",
+      "../utils/kpi"
     ]
   },
   {
@@ -5854,7 +6654,8 @@
       "../_core/accessControl",
       "../_core/accessControlLabels",
       "./ai/modelResolver",
-      "./ai/thinkingStrip"
+      "./ai/thinkingStrip",
+      "../utils/kpi"
     ]
   },
   {
@@ -6137,11 +6938,14 @@
     "exportedClasses": [],
     "localImports": [
       "../../db/connection",
+      "../../db/hierarchy",
       "../../../drizzle/schema",
       "../../db/machine",
       "../equipment/capabilityModel",
       "../standards/deviceTypeRegistry",
       "../oeeService",
+      "../trangThaiMayTuoi",
+      "../../db/twinCanh",
       "../predictiveMaintenanceService",
       "../twin/modelRegistry",
       "../programming/sim/kinematicModel",
@@ -6163,6 +6967,7 @@
     "exportedFunctions": [
       "resolveAlertScope",
       "resolveKpiScope",
+      "resolveHierarchyScope",
       "andonFactoryGate",
       "safetyFactoryGate",
       "predictiveAlertFactoryGate",
@@ -6752,7 +7557,10 @@
       "./oeeService",
       "../utils/kpi",
       "./factoryCommandPriority",
-      "./semantics/metricRegistry"
+      "./semantics/metricRegistry",
+      "./trangThaiMayTuoi",
+      "../db/twinCanh",
+      "../db/hierarchy"
     ]
   },
   {
@@ -6894,7 +7702,8 @@
       "../../../drizzle/schema",
       "../uns/sparkplugEncoder",
       "./rollupStore",
-      "./siteClient"
+      "./siteClient",
+      "../../utils/kpi"
     ]
   },
   {
@@ -7114,6 +7923,7 @@
     "localImports": [
       "../../db/connection",
       "../../../drizzle/schema",
+      "../../db/telemetryMoiNhat",
       "../../../drizzle/schema/fleet",
       "../equipment/capabilityModel",
       "../ecosystem/ecosystemEvents",
@@ -7265,6 +8075,32 @@
     "localImports": []
   },
   {
+    "file": "server/services/gioiHanLucDoCayV2.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./gioiHanLucDoCayV2",
+      "./pointResultEvaluator",
+      "../db/cayDay",
+      "../contracts/machineDataContractV2"
+    ]
+  },
+  {
+    "file": "server/services/gioiHanLucDoCayV2.ts",
+    "exportedFunctions": [
+      "laCongSnapshotBat",
+      "canhBaoCongSnapshotTat",
+      "giaiGioiHanTaiLucDo"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./pointResultEvaluator",
+      "../db/connection",
+      "../../drizzle/schema",
+      "../logger"
+    ]
+  },
+  {
     "file": "server/services/goldenApproval.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -7349,6 +8185,20 @@
     ]
   },
   {
+    "file": "server/services/gonLoiKhongNuotTin.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./telemetryBus"
+    ]
+  },
+  {
+    "file": "server/services/hopDongTrangThaiMotChu.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
     "file": "server/services/imageAlignment.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -7425,6 +8275,43 @@
     "localImports": []
   },
   {
+    "file": "server/services/ingestCayKetQua.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../contracts/machineDataContractV2",
+      "../contracts/machineDataContractV2.test-helpers",
+      "./ingestCayKetQua"
+    ]
+  },
+  {
+    "file": "server/services/ingestCayKetQua.ts",
+    "exportedFunctions": [
+      "dichCayKetQua"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../contracts/machineDataContractV2",
+      "./specGateCayV2",
+      "./mayTuMauThuan"
+    ]
+  },
+  {
+    "file": "server/services/inspection/deadLetterReader.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/inspection/deadLetterReader.ts",
+    "exportedFunctions": [
+      "listDeadLetterEntries",
+      "getDeadLetterDetail"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
     "file": "server/services/inspection/inspectionStoreForward.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -7439,6 +8326,7 @@
       "setProcessFn",
       "setDedupFn",
       "computeSubmissionKey",
+      "dungKhoaGuiTheoHinhDang",
       "isPermanentSubmitError",
       "restoreInspectionWal",
       "markSubmissionApplied",
@@ -7453,7 +8341,35 @@
       "_resetInspectionStoreForward"
     ],
     "exportedClasses": [],
-    "localImports": []
+    "localImports": [
+      "../../contracts/machineDataContract",
+      "../../contracts/machineDataContractV2"
+    ]
+  },
+  {
+    "file": "server/services/inspection/inspectionStoreForwardBaLoWal.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./inspectionStoreForward"
+    ]
+  },
+  {
+    "file": "server/services/inspection/inspectionStoreForwardKhongChanDauHang.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./inspectionStoreForward"
+    ]
+  },
+  {
+    "file": "server/services/inspection/walCayV2.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./inspectionStoreForward",
+      "../../contracts/machineDataContractV2.test-helpers"
+    ]
   },
   {
     "file": "server/services/inspectionProgramService.test.ts",
@@ -7772,6 +8688,14 @@
     ]
   },
   {
+    "file": "server/services/integrityScanBoKhongDo.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./integrityScanService"
+    ]
+  },
+  {
     "file": "server/services/integrityScanService.ts",
     "exportedFunctions": [
       "runIntegrityScanNow",
@@ -7953,6 +8877,14 @@
     ]
   },
   {
+    "file": "server/services/kbIngestService.kyHieu.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./kbIngestService"
+    ]
+  },
+  {
     "file": "server/services/kbIngestService.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -7966,6 +8898,7 @@
     "exportedFunctions": [
       "isKbStudioEnabled",
       "chunkText",
+      "chunkTheoKyHieu",
       "estimateTokenCount",
       "ingestDocument"
     ],
@@ -7981,6 +8914,25 @@
     ]
   },
   {
+    "file": "server/services/kbKiemSauNap.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./kbKiemSauNap"
+    ]
+  },
+  {
+    "file": "server/services/kbKiemSauNap.ts",
+    "exportedFunctions": [
+      "kiemSauNap",
+      "kiemKhiKhongCoChu"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./kbDocParser"
+    ]
+  },
+  {
     "file": "server/services/kbPdfOcr.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -7990,6 +8942,7 @@
     "file": "server/services/kbPdfOcr.ts",
     "exportedFunctions": [
       "isKbOcrEnabled",
+      "lyDoOcrKhongSan",
       "isKbPdfOcrAvailable",
       "ocrScannedPdf"
     ],
@@ -7997,6 +8950,48 @@
       "KbOcrUnavailableError",
       "KbOcrRenderError"
     ],
+    "localImports": []
+  },
+  {
+    "file": "server/services/kbStudioEval.ts",
+    "exportedFunctions": [
+      "listBoVang",
+      "chayEval",
+      "listEvalRuns",
+      "getEvalRun"
+    ],
+    "exportedClasses": [
+      "KbEvalBoVangVangError",
+      "KbEvalBoVangLoiError",
+      "KbEvalDangChayError",
+      "KbEvalBangVangError"
+    ],
+    "localImports": [
+      "../db/connection",
+      "../_core/dbErrors",
+      "../../drizzle/schema/kbStudio",
+      "./kbStudioEvalCham"
+    ]
+  },
+  {
+    "file": "server/services/kbStudioEvalCham.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./kbStudioEvalCham"
+    ]
+  },
+  {
+    "file": "server/services/kbStudioEvalCham.ts",
+    "exportedFunctions": [
+      "phanTichBoVang",
+      "khopNguon",
+      "chamDapAn",
+      "kiemDe",
+      "chamCau",
+      "tongHop"
+    ],
+    "exportedClasses": [],
     "localImports": []
   },
   {
@@ -8025,6 +9020,7 @@
     ],
     "localImports": [
       "../db/connection",
+      "./kbKiemSauNap",
       "../_core/dbErrors",
       "../../drizzle/schema/kbStudio"
     ]
@@ -8143,6 +9139,25 @@
     "localImports": [
       "./kbDocParser",
       "./kbIngestService"
+    ]
+  },
+  {
+    "file": "server/services/kiemTraCayDay.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../contracts/machineTemplateContract",
+      "./kiemTraCayDay"
+    ]
+  },
+  {
+    "file": "server/services/kiemTraCayDay.ts",
+    "exportedFunctions": [
+      "kiemTraCayDay"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../contracts/machineTemplateContract"
     ]
   },
   {
@@ -8510,6 +9525,27 @@
     ]
   },
   {
+    "file": "server/services/mayTuMauThuan.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./mayTuMauThuan",
+      "./ingestCayKetQua",
+      "../contracts/machineDataContractV2.test-helpers"
+    ]
+  },
+  {
+    "file": "server/services/mayTuMauThuan.ts",
+    "exportedFunctions": [
+      "demTuMauThuan",
+      "taoDemMayTuMauThuan"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/inspection"
+    ]
+  },
+  {
     "file": "server/services/measurementPointRemap.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -8571,7 +9607,8 @@
     "exportedClasses": [],
     "localImports": [
       "../../drizzle/schema",
-      "./mqttService"
+      "./mqttService",
+      "../utils/kpi"
     ]
   },
   {
@@ -9491,6 +10528,39 @@
     ]
   },
   {
+    "file": "server/services/ot/aiControlGate.safety.ts",
+    "exportedFunctions": [
+      "preflightSafetyChoAi"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiControlGate"
+    ]
+  },
+  {
+    "file": "server/services/ot/aiControlGate.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiControlGate"
+    ]
+  },
+  {
+    "file": "server/services/ot/aiControlGate.ts",
+    "exportedFunctions": [
+      "laTagAnToan",
+      "phanLoaiMuc",
+      "boDemChungChoTest",
+      "coAiOtBat",
+      "kiemCongAi",
+      "ketQuaTuChoiChoTool"
+    ],
+    "exportedClasses": [
+      "BoDemTanSuat"
+    ],
+    "localImports": []
+  },
+  {
     "file": "server/services/ot/commandDispatcher.commissioning.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -10258,7 +11328,8 @@
     "exportedClasses": [],
     "localImports": [
       "../db",
-      "./fontAssets"
+      "./fontAssets",
+      "../utils/kpi"
     ]
   },
   {
@@ -10605,6 +11676,15 @@
     ]
   },
   {
+    "file": "server/services/predictiveMaintenanceChuaDuDuLieu.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./predictiveMaintenanceService",
+      "./aiTimeSeriesEngine"
+    ]
+  },
+  {
     "file": "server/services/predictiveMaintenanceService.rul.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -10762,6 +11842,18 @@
     ]
   },
   {
+    "file": "server/services/productReadinessCayDay.db.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../routers/machineApiRouters",
+      "../routers/productRouters",
+      "../services/machineAuthService",
+      "./productReadinessService",
+      "../_core/context"
+    ]
+  },
+  {
     "file": "server/services/productReadinessService.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -10782,7 +11874,8 @@
       "../db/connection",
       "../../drizzle/schema/product",
       "../../drizzle/schema/productPanel",
-      "../../drizzle/schema/goldenSample"
+      "../../drizzle/schema/goldenSample",
+      "../db/cayDay"
     ]
   },
   {
@@ -12470,9 +13563,19 @@
     ]
   },
   {
+    "file": "server/services/scheduledReportService.tongCong.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./scheduledReportService",
+      "../utils/kpi"
+    ]
+  },
+  {
     "file": "server/services/scheduledReportService.ts",
     "exportedFunctions": [
-      "resolveScheduleScope"
+      "resolveScheduleScope",
+      "tinhDongTong"
     ],
     "exportedClasses": [],
     "localImports": [
@@ -12482,7 +13585,8 @@
       "../utils/factoryTime",
       "../_core/reportExportScope",
       "../_core/accessControlLabels",
-      "../db/reportAggregators"
+      "../db/reportAggregators",
+      "../utils/kpi"
     ]
   },
   {
@@ -12560,6 +13664,7 @@
       "./secs2Codec",
       "./s1Messages",
       "../../../drizzle/schema",
+      "../../_core/deviceErrors",
       "../ot/commandDispatcher",
       "../equipment/capabilityModel"
     ]
@@ -13258,6 +14363,30 @@
     ]
   },
   {
+    "file": "server/services/specGateCayV2.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./specGateCayV2",
+      "./pointResultEvaluator"
+    ]
+  },
+  {
+    "file": "server/services/specGateCayV2.ts",
+    "exportedFunctions": [
+      "nhanCongDatTheoBasis",
+      "laNhanCongDat",
+      "taoCongSpecCayV2",
+      "congSpecTuBanDay"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./pointResultEvaluator",
+      "../db/cayDay",
+      "../db/inspection"
+    ]
+  },
+  {
     "file": "server/services/standards/alarmMasterService.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -13647,6 +14776,12 @@
     ]
   },
   {
+    "file": "server/services/sucKhoeTheoIndexQd27.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
     "file": "server/services/telemetryBus.contractValidation.test.ts",
     "exportedFunctions": [],
     "exportedClasses": [],
@@ -13684,6 +14819,7 @@
   {
     "file": "server/services/telemetryBus.ts",
     "exportedFunctions": [
+      "gonLoi",
       "registerTelemetryTap",
       "toCanonicalRow",
       "clearMachineIdCache",
@@ -13778,6 +14914,28 @@
       "./spaceTimeAStar",
       "./infraCoordinator"
     ]
+  },
+  {
+    "file": "server/services/trangThaiMayTuoi.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./trangThaiMayTuoi",
+      "../../client/src/components/twin3d/mauTrangThai"
+    ]
+  },
+  {
+    "file": "server/services/trangThaiMayTuoi.ts",
+    "exportedFunctions": [
+      "msCua",
+      "isoCua",
+      "mocConTuoi",
+      "dangKetNoi",
+      "mapMachineStatus",
+      "trangThaiLichSuTaiMoc"
+    ],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/twin/driftDetector.ts",
@@ -15440,6 +16598,7 @@
     "localImports": [
       "./vramHeadroom",
       "./vramRefusal",
+      "./vramTranThietBi",
       "./vramSharedLedger"
     ]
   },
@@ -15876,6 +17035,23 @@
     "localImports": [
       "./types"
     ]
+  },
+  {
+    "file": "server/services/vram/vramTranThietBi.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./vramTranThietBi"
+    ]
+  },
+  {
+    "file": "server/services/vram/vramTranThietBi.ts",
+    "exportedFunctions": [
+      "tranTheoThietBi",
+      "apTranThietBi"
+    ],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/vram/vramWiring.ts",

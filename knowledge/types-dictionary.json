@@ -149,6 +149,49 @@
     "zodSchemas": []
   },
   {
+    "file": "server/contracts/capChuoiVarcharScan.ts",
+    "interfaces": [
+      "MucCapChuoi",
+      "KetQuaKiemKe",
+      "TruongChuoiPhatHien"
+    ],
+    "aliases": [
+      "BuocDuongDan"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/contracts/capChuoiVarcharUnionDeQuy.test.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "schema"
+    ]
+  },
+  {
+    "file": "server/contracts/hinhDangHopDongMetaJson.test.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "s",
+      "sNullable",
+      "sDefault",
+      "schemaGia"
+    ]
+  },
+  {
+    "file": "server/contracts/hinhDangHopDongMetaJson.ts",
+    "interfaces": [
+      "KyVongChapNhan",
+      "KyVongTuChoi",
+      "HinhDangMetaJson"
+    ],
+    "aliases": [
+      "KyVongOverallResult"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/contracts/machineDataContract.ts",
     "interfaces": [
       "ValidateResult"
@@ -165,6 +208,43 @@
       "processMetricV1",
       "processWaveformV1",
       "machineProcessResultContractV1"
+    ]
+  },
+  {
+    "file": "server/contracts/machineDataContractV2.ts",
+    "interfaces": [],
+    "aliases": [
+      "MachineDataContractV2",
+      "ImageRef"
+    ],
+    "zodSchemas": [
+      "identityV2",
+      "componentV2",
+      "captureV2",
+      "positionV2",
+      "surfaceV2",
+      "summaryGroupV2",
+      "machineDataContractV2",
+      "imageRefSchema"
+    ]
+  },
+  {
+    "file": "server/contracts/machineTemplateContract.ts",
+    "interfaces": [],
+    "aliases": [
+      "MachineTemplate",
+      "SurfaceTemplate",
+      "PositionTemplate",
+      "CaptureTemplate",
+      "ComponentTemplate"
+    ],
+    "zodSchemas": [
+      "roiTemplate",
+      "componentTemplate",
+      "captureTemplate",
+      "positionTemplate",
+      "surfaceTemplate",
+      "machineTemplateContract"
     ]
   },
   {
@@ -276,6 +356,23 @@
     "zodSchemas": []
   },
   {
+    "file": "server/db/cayDay.ts",
+    "interfaces": [
+      "KetQuaGhiCayDay",
+      "KetQuaTraPointDef",
+      "MayCoBanDayCayDay",
+      "CayDayCapture",
+      "CayDayPosition",
+      "CayDaySurface",
+      "ComponentCayDay"
+    ],
+    "aliases": [
+      "HangAnhTemplate",
+      "KetQuaTraAnhTemplate"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/db/energy.ts",
     "interfaces": [
       "EnergyRange",
@@ -304,9 +401,11 @@
   {
     "file": "server/db/hierarchy.ts",
     "interfaces": [
-      "PhamViNguoiXem"
+      "PhamViNguoiXem",
+      "PhamViMaTenant"
     ],
     "aliases": [
+      "PhamViDoc",
       "CapPhanCap",
       "MachineClaimToken",
       "MachineEnrollmentToken",
@@ -318,6 +417,8 @@
     "file": "server/db/inspection.ts",
     "interfaces": [
       "CreateInspectionOutcome",
+      "ThongKeCapComponent",
+      "CayCoKhoaTra",
       "CursorPaginationResult",
       "CursorPaginationParams"
     ],
@@ -331,6 +432,14 @@
     "interfaces": [
       "LineBalanceRow",
       "StationDwellAgg"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/db/machine.ts",
+    "interfaces": [
+      "TrangThaiTapMay"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -376,12 +485,15 @@
       "VariantPointsConfigBump",
       "CloneProductModelSummary",
       "CreateMeasurementPointOutcome",
+      "LimitsBatchResult",
       "RevertPointsSummary",
       "PointTombstone",
       "MpDefectStat",
       "EffectivePointsInput"
     ],
-    "aliases": [],
+    "aliases": [
+      "LimitsBatchItem"
+    ],
     "zodSchemas": []
   },
   {
@@ -466,6 +578,14 @@
     "zodSchemas": []
   },
   {
+    "file": "server/db/telemetryMoiNhat.ts",
+    "interfaces": [],
+    "aliases": [
+      "HangTelemetryRobot"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/db/tenantContext.ts",
     "interfaces": [
       "TenantScope",
@@ -491,6 +611,31 @@
       "WipCountBucket"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/db/twinCanh.ts",
+    "interfaces": [
+      "LuuToaNhaInput",
+      "LuuTangInput",
+      "TuongBaoGhi",
+      "DatChoGhi",
+      "KetQuaGhiHangLoat",
+      "TrangThaiMayHangLoat",
+      "AnToanRobot",
+      "VungAnToanRa",
+      "VungAnToanGhi",
+      "BanGhiTomTat",
+      "AnhChupBoCuc",
+      "LuuBanGhiInput",
+      "SucKhoeMayRa"
+    ],
+    "aliases": [
+      "NguonGiaTri",
+      "NguonHinhHoc",
+      "LoaiNoiTwin",
+      "PhamViGanModel"
+    ],
     "zodSchemas": []
   },
   {
@@ -812,9 +957,19 @@
   {
     "file": "server/routers/aoiPackageRouter.ts",
     "interfaces": [],
+    "aliases": [
+      "MetaJson"
+    ],
+    "zodSchemas": [
+      "presignCoreObject"
+    ]
+  },
+  {
+    "file": "server/routers/aoiPackageZipHinhDangMayThat.test.ts",
+    "interfaces": [],
     "aliases": [],
     "zodSchemas": [
-      "metaJsonSchema"
+      "schema"
     ]
   },
   {
@@ -836,6 +991,14 @@
     ]
   },
   {
+    "file": "server/routers/cayDayRouter.ts",
+    "interfaces": [],
+    "aliases": [
+      "CayDayRouter"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/routers/componentLibraryRouter.ts",
     "interfaces": [],
     "aliases": [],
@@ -850,6 +1013,16 @@
       "KetQuaQuetCong",
       "TuyenAiExpress",
       "KetQuaQuetExpress"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routers/cuaIngestScan.ts",
+    "interfaces": [
+      "CuaIngest",
+      "KetQuaQuetCuaIngest",
+      "TuyChonQuetCuaIngest"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -929,6 +1102,16 @@
     "zodSchemas": []
   },
   {
+    "file": "server/routers/ghiInspectionWalScan.ts",
+    "interfaces": [
+      "TepQuetGhi",
+      "DuongGhiInspection",
+      "KetQuaQuetGhiInspection"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/routers/goldenSampleRouter.ts",
     "interfaces": [],
     "aliases": [],
@@ -974,6 +1157,8 @@
       "processMetricSchema",
       "processWaveformSchema",
       "submitProcessResultCoreObject",
+      "syncEdgeResultsCoreObject",
+      "submitMachineTemplateCoreObject",
       "submitProcessResultBatchInputSchema"
     ]
   },
@@ -1199,6 +1384,16 @@
     "zodSchemas": []
   },
   {
+    "file": "server/routers/twinCanhRouter.ts",
+    "interfaces": [],
+    "aliases": [
+      "TwinCanhRouter"
+    ],
+    "zodSchemas": [
+      "cauHinhSinhSchema"
+    ]
+  },
+  {
     "file": "server/routers/unsMappingRouter.ts",
     "interfaces": [],
     "aliases": [],
@@ -1250,6 +1445,14 @@
   },
   {
     "file": "server/routes/aiLocalKbStreamEvents.census.test.ts",
+    "interfaces": [],
+    "aliases": [
+      "StreamEvent"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/routes/aiLocalKnowledgeApi.sseCensus.test.ts",
     "interfaces": [],
     "aliases": [
       "StreamEvent"
@@ -1353,6 +1556,25 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/ai/boSungUsingCSharp.ts",
+    "interfaces": [
+      "ChiMucUsing",
+      "UsingThem",
+      "KetQuaBoSung"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/chonTacVuModel.ts",
+    "interfaces": [],
+    "aliases": [
+      "TacVuNguoiChon",
+      "TacVuRouter"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/ai/codingLessonContext.ts",
     "interfaces": [
       "KetQuaKhoiBaiHoc"
@@ -1414,6 +1636,18 @@
     "aliases": [
       "PCorrectionMethod",
       "CorrelationDirection"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/dotnetNewScaffold.ts",
+    "interfaces": [
+      "TepKhungSinh",
+      "TuyChonDotnetNew"
+    ],
+    "aliases": [
+      "KetQuaDotnetNew",
+      "ChayDotnetNew"
     ],
     "zodSchemas": []
   },
@@ -1480,6 +1714,33 @@
       "GuardResult"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/hoSoModelStudio.ts",
+    "interfaces": [
+      "HoSoModel"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/hoSoSampling.ts",
+    "interfaces": [
+      "HoSoSampling"
+    ],
+    "aliases": [
+      "TenHoSo"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/loaiLuot.ts",
+    "interfaces": [],
+    "aliases": [
+      "LoaiLuot",
+      "CheDoNghi"
+    ],
     "zodSchemas": []
   },
   {
@@ -1611,10 +1872,21 @@
       "OcrLine",
       "OcrResult",
       "LabelCheckResult",
-      "CtcDecodeResult"
+      "CtcDecodeResult",
+      "HopChu"
     ],
     "aliases": [
       "OcrEngine"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/ocrVietOcr.ts",
+    "interfaces": [
+      "DongViet"
+    ],
+    "aliases": [
+      "CheDoNhanDang"
     ],
     "zodSchemas": []
   },
@@ -1631,6 +1903,16 @@
       "TwinValidationStatus",
       "MachineMetrics",
       "SetGuardrailResult"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/phuQuyetTool.ts",
+    "interfaces": [
+      "QuyetDinhTool"
+    ],
+    "aliases": [
+      "LyDoYeu"
     ],
     "zodSchemas": []
   },
@@ -1695,6 +1977,31 @@
       "EstimateRulOptions"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/toolDuongTat.ts",
+    "interfaces": [],
+    "aliases": [
+      "QuyetDinhDuongTat",
+      "ThamSoDuongTat"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/tranTokenSinhMa.ts",
+    "interfaces": [
+      "ThamSoTranToken"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ai/vanBanChoModel.ts",
+    "interfaces": [],
+    "aliases": [
+      "CoChu"
+    ],
     "zodSchemas": []
   },
   {
@@ -1920,8 +2227,11 @@
     "file": "server/services/aiCodingAgent.ts",
     "interfaces": [
       "KhoiSua",
+      "DungLuotModel",
       "YeuCauSinhChu",
+      "ManhSuyLuan",
       "KetQuaChu",
+      "TepKhung",
       "LuotHoiThoai",
       "KetQuaLichSu"
     ],
@@ -1929,7 +2239,9 @@
       "NgonNguMa",
       "MaKhoiHong",
       "KetQuaBocKhoi",
-      "KetQuaApKhoi"
+      "KetQuaApKhoi",
+      "MaManifestKhung",
+      "KetQuaManifestKhung"
     ],
     "zodSchemas": []
   },
@@ -1980,6 +2292,24 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiCodingTuTriGhi.ts",
+    "interfaces": [
+      "YeuCauLuotGhi",
+      "KetQuaLuotGhi",
+      "AuditLuotTuTri",
+      "TienDoTuTri",
+      "YeuCauVongTuTri",
+      "LuotVong",
+      "KetQuaVongTuTri"
+    ],
+    "aliases": [
+      "MaLuotGhi",
+      "SinhBanVa",
+      "OnTienTuTri"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiCodingVerify.ts",
     "interfaces": [
       "MucGoc",
@@ -2003,11 +2333,16 @@
       "ProposeResult",
       "ConfirmResult",
       "ConfirmContractDeps",
-      "PendingActionSummary"
+      "PendingActionSummary",
+      "BatDauApDungOClientInput",
+      "BatDauApDungOClientResult",
+      "ChotApDungOClientInput",
+      "ChotApDungOClientResult"
     ],
     "aliases": [
       "AdviceRequirement",
-      "HunkRejectReason"
+      "HunkRejectReason",
+      "TrangThaiSauThucThi"
     ],
     "zodSchemas": []
   },
@@ -2264,6 +2599,14 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "interfaces": [],
+    "aliases": [
+      "LyDoKhongSinhMa"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiLocalKnowledgeService.ts",
     "interfaces": [
       "KbChunk",
@@ -2343,6 +2686,14 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiLocalTools/lenhSong.ts",
+    "interfaces": [
+      "LatDocSong"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiLocalTools/readToolRbac.ts",
     "interfaces": [],
     "aliases": [
@@ -2409,6 +2760,7 @@
     "file": "server/services/aiLocalTools/repoSandbox.ts",
     "interfaces": [
       "ThuChiByte",
+      "TrangThaiNganSach",
       "TuyChonDocTep"
     ],
     "aliases": [
@@ -3437,6 +3789,7 @@
       "KpiSummary",
       "SeedAlert",
       "CommandCenterStatus",
+      "HierarchyTenant",
       "HierarchyScope"
     ],
     "aliases": [
@@ -3677,9 +4030,7 @@
       "FactoryCommandOverview",
       "CommandMachineDetail"
     ],
-    "aliases": [
-      "CommandMachineStatus"
-    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -3888,6 +4239,14 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/gioiHanLucDoCayV2.ts",
+    "interfaces": [
+      "KetQuaGiaiGioiHan"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/goldenRevalidationService.ts",
     "interfaces": [
       "MarkRevalidationInput",
@@ -3943,6 +4302,30 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/ingestCayKetQua.ts",
+    "interfaces": [
+      "ComponentDaDich",
+      "CaptureDaDich",
+      "PositionDaDich",
+      "SurfaceDaDich",
+      "CayDaDich"
+    ],
+    "aliases": [
+      "MachinePayloadV2"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/inspection/deadLetterReader.ts",
+    "interfaces": [
+      "DeadLetterSummary",
+      "DeadLetterListResult",
+      "DeadLetterDetail"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/inspection/inspectionStoreForward.ts",
     "interfaces": [
       "BufferedSubmission",
@@ -3954,6 +4337,14 @@
       "DedupFn"
     ],
     "zodSchemas": []
+  },
+  {
+    "file": "server/services/inspection/inspectionStoreForwardBaLoWal.test.ts",
+    "interfaces": [],
+    "aliases": [],
+    "zodSchemas": [
+      "schema"
+    ]
   },
   {
     "file": "server/services/inspectionProgramService.ts",
@@ -4176,11 +4567,49 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/kbKiemSauNap.ts",
+    "interfaces": [
+      "CanhBaoNap",
+      "KetQuaMayNap"
+    ],
+    "aliases": [
+      "MaCanhBaoNap",
+      "MucCanhBao"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/kbPdfOcr.ts",
     "interfaces": [
       "OcrScannedPdfResult"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbStudioEval.ts",
+    "interfaces": [
+      "BoVangTomTat",
+      "ChayEvalInput",
+      "ListEvalRunsResult"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbStudioEvalCham.ts",
+    "interfaces": [
+      "LoiBoVang",
+      "BoVangDaDoc",
+      "ChunkCorpus",
+      "HitTruyHoi",
+      "KetQuaCau",
+      "TongHopEval"
+    ],
+    "aliases": [
+      "CauVang",
+      "TinhTrangDe"
+    ],
     "zodSchemas": []
   },
   {
@@ -4250,6 +4679,14 @@
     "aliases": [
       "HopResult"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kiemTraCayDay.ts",
+    "interfaces": [
+      "KetQuaKiemTraCayDay"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -4369,6 +4806,16 @@
       "MammothMessage",
       "MammothRawTextResult",
       "MammothInput"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/mayTuMauThuan.ts",
+    "interfaces": [
+      "LaTuMauThuan",
+      "ThongKeMayTuMauThuan",
+      "DemMayTuMauThuan"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -4772,6 +5219,20 @@
       "OtAdapterFacade"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/ot/aiControlGate.ts",
+    "interfaces": [
+      "DauVaoCongAi",
+      "KetQuaCongAi",
+      "KetQuaDispatchToiThieu"
+    ],
+    "aliases": [
+      "MucRuiRo",
+      "TrangThaiSafety",
+      "MaTuChoi"
+    ],
     "zodSchemas": []
   },
   {
@@ -6374,6 +6835,20 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/specGateCayV2.ts",
+    "interfaces": [
+      "ThongKeSpecGate",
+      "LaCanCham",
+      "KetQuaChamLa",
+      "CongSpecCayV2"
+    ],
+    "aliases": [
+      "TraGioiHanDaDay",
+      "TraVersionIdDaDung"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/standards/alarmMasterService.ts",
     "interfaces": [
       "DbAlarmTaxonomyRow",
@@ -6595,6 +7070,16 @@
       "ReserveResult"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/trangThaiMayTuoi.ts",
+    "interfaces": [
+      "BangChungKetNoi"
+    ],
+    "aliases": [
+      "CommandMachineStatus"
+    ],
     "zodSchemas": []
   },
   {
@@ -7429,6 +7914,15 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/vram/vramTranThietBi.ts",
+    "interfaces": [
+      "SoThietBi",
+      "KetQuaCap"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/vram/vramWiring.ts",
     "interfaces": [
       "VramTicket",
@@ -7587,6 +8081,14 @@
     "zodSchemas": [
       "deepImportPointSchema"
     ]
+  },
+  {
+    "file": "server/utils/measurementPointLimitGate.ts",
+    "interfaces": [],
+    "aliases": [
+      "CapGioiHan"
+    ],
+    "zodSchemas": []
   },
   {
     "file": "server/utils/monteCarloFlow.ts",
@@ -8071,6 +8573,8 @@
       "SafetyRealtimeEvent",
       "TwinStationSnapshot",
       "TwinUpdateEvent",
+      "TwinTrangThaiMay",
+      "TwinTrangThaiEvent",
       "TwinDeviceDelta",
       "DeviceStreamDelta",
       "RobotTelemetryLive",
@@ -8110,6 +8614,14 @@
     "file": "server/_core/totpOnce.ts",
     "interfaces": [
       "KetQuaTotp"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/_core/twinPhamViQuyen.ts",
+    "interfaces": [
+      "NguoiXemSocket"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -8240,6 +8752,24 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/ai/BangTerminal.tsx",
+    "interfaces": [
+      "LuotLenh"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/ai/bangTerminalLogic.ts",
+    "interfaces": [
+      "LuotLenhToiThieu"
+    ],
+    "aliases": [
+      "CheDoLocLenh"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/ai/BoChonPhien.tsx",
     "interfaces": [
       "TomTatPhienUI"
@@ -8269,6 +8799,14 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/ai/RibbonTacVu.tsx",
+    "interfaces": [
+      "RibbonTacVuProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/ai/SimilarImageGrid.tsx",
     "interfaces": [
       "SimilarImageItem"
@@ -8295,6 +8833,38 @@
       "Message",
       "AIChatBoxProps"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/aiCoding/bangDangNghiLogic.ts",
+    "interfaces": [
+      "TomTatNghi"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/aiCoding/lyDoDuyetLogic.ts",
+    "interfaces": [
+      "LyDoDuyet"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/aiCoding/ThanhTrangThaiAiLocal.tsx",
+    "interfaces": [],
+    "aliases": [
+      "MucCanhBao"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/aiCoding/thongKePhien.ts",
+    "interfaces": [
+      "ThongKePhien"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -8615,14 +9185,6 @@
     "zodSchemas": []
   },
   {
-    "file": "client/src/components/FactoryFloor3D.tsx",
-    "interfaces": [
-      "MachineNode"
-    ],
-    "aliases": [],
-    "zodSchemas": []
-  },
-  {
     "file": "client/src/components/FalseCallEscapePanel.tsx",
     "interfaces": [
       "FalseCallEscapeScope"
@@ -8687,6 +9249,34 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/kbStudio/BangKetQuaEval.tsx",
+    "interfaces": [
+      "LuotChiTiet"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/kbStudio/checklistCorpusLogic.ts",
+    "interfaces": [
+      "BuocChecklist",
+      "DauVaoChecklist"
+    ],
+    "aliases": [
+      "TrangThaiBuoc"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/kbStudio/evalTabLogic.ts",
+    "interfaces": [
+      "LuotTomTat",
+      "DiemBieuDo"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/kbStudio/kbStudioSourceState.ts",
     "interfaces": [
       "KbIngestStatusQuery"
@@ -8700,6 +9290,14 @@
     "file": "client/src/components/kbStudio/SourceTab.tsx",
     "interfaces": [
       "SourceTabProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/kbStudio/sourceTabLogic.ts",
+    "interfaces": [
+      "KbCorpusDomainSuggestion"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -8881,6 +9479,14 @@
     "aliases": [
       "ConnectionState"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/patterns/CuonNgangCoMep.tsx",
+    "interfaces": [
+      "CuonNgangCoMepProps"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -9148,6 +9754,71 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/products/teach/ComponentLimitsDialog.tsx",
+    "interfaces": [
+      "ComponentLimitsDialogProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/products/teach/componentLimitsDialogLogic.ts",
+    "interfaces": [
+      "LoiTruongForm",
+      "KetQuaLuuThanhCong",
+      "KetQuaCanDuyet",
+      "ThongBaoKetQua",
+      "KeHoachLamMoiSauLuu",
+      "DiemCayDayChoCanvas"
+    ],
+    "aliases": [
+      "SetLimitsBatchInput",
+      "SetLimitsBatchItem",
+      "RequestApprovalInput",
+      "TenTruongForm",
+      "FormGioiHan",
+      "TruongThayDoi",
+      "RequestApprovalItem",
+      "LyDoCanDuyet",
+      "NguonAnhTemplate"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/products/teach/ComponentLimitsTable.tsx",
+    "interfaces": [
+      "ComponentLimitsTableProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/products/teach/teachTreeLogic.ts",
+    "interfaces": [
+      "ComponentLimitsRow",
+      "TrangThaiGioiHan"
+    ],
+    "aliases": [
+      "RouterOutputs",
+      "MayCoBanDay",
+      "CayDayTree",
+      "CayDaySurface",
+      "CayDayPosition",
+      "CayDayCapture",
+      "ComponentCayDay",
+      "ThongKeGioiHan"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/products/teach/TeachTreeTab.tsx",
+    "interfaces": [
+      "TeachTreeTabProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/programming/flowHistory.ts",
     "interfaces": [
       "FlowHistory"
@@ -9380,11 +10051,1273 @@
     "zodSchemas": []
   },
   {
-    "file": "client/src/components/twin/ArticulatedRobot.tsx",
+    "file": "client/src/components/twin3d/bo-cuc/DaiHopNhat.tsx",
     "interfaces": [
-      "ColorSource"
+      "DaiHopNhatProps"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/bo-cuc/daiHopNhatLogic.ts",
+    "interfaces": [
+      "MucViec",
+      "TachViec"
+    ],
+    "aliases": [
+      "NhomViec"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/bo-cuc/vungQuyen.ts",
+    "interfaces": [],
+    "aliases": [
+      "DoQuyen"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/boCucTang.ts",
+    "interfaces": [
+      "ToaNhaNhapMet",
+      "TangNhapMet",
+      "ToaNhaMm",
+      "TangMm",
+      "TuongBaoMm",
+      "LoiNhapLieu"
+    ],
+    "aliases": [
+      "NguonGiaTri",
+      "NguonHinhHoc"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/docBanVe.ts",
+    "interfaces": [
+      "OcctMesh",
+      "OcctNode",
+      "KetQuaOcct",
+      "TomTatBanVe",
+      "PhanQuyetChan",
+      "SuyDoanDonVi"
+    ],
+    "aliases": [
+      "DinhDangBanVe",
+      "LoaiVatTheNhap"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/heToaDo.ts",
+    "interfaces": [
+      "DiemMm",
+      "DiemScene",
+      "Quat",
+      "BBox"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/hieuChinhNhapModel.ts",
+    "interfaces": [
+      "CauHinhHieuChinh",
+      "KetQuaHieuChinh",
+      "TrucLech",
+      "KetQuaSoSanhKichThuoc"
+    ],
+    "aliases": [
+      "DonViNguon",
+      "TrucLen",
+      "KieuDiemGoc"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/hinhHocCanChinh.ts",
+    "interfaces": [
+      "VatTheCoBBox",
+      "KetQuaDich",
+      "BanSaoToaTron"
+    ],
+    "aliases": [
+      "TrucScene",
+      "HuongCanh",
+      "HuongNudge"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/hinhKhoiMay.ts",
+    "interfaces": [
+      "KichThuocMm",
+      "HopCon",
+      "MoTaKhoi"
+    ],
+    "aliases": [
+      "KhoiKey",
+      "VaiTroHop"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/kiemTraAsset.ts",
+    "interfaces": [
+      "SoDoAsset",
+      "KetQuaKiemTra",
+      "LechKichThuoc"
+    ],
+    "aliases": [
+      "BacKiemTra",
+      "LyDoKiemTra"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/lichSuThaoTac.ts",
+    "interfaces": [
+      "ThaoTac",
+      "LichSu",
+      "KetQuaHoanTac"
+    ],
+    "aliases": [
+      "MaThaoTac",
+      "TrangThaiVatThe"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "interfaces": [
+      "CuaSoDoChonChiHuy",
+      "CanhNhaMayProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/chonVatThe.ts",
+    "interfaces": [
+      "BangTraLo",
+      "TrangThaiChon"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/dieuKhienQuay.ts",
+    "interfaces": [
+      "CauHinhDieuKhien",
+      "DieuKhienQuayDaNoi"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/giaiPhong.ts",
+    "interfaces": [
+      "SoDaGiaiPhong"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/KhungCanh.tsx",
+    "interfaces": [
+      "CuaSoDoTwin3d",
+      "KhungCanhProps",
+      "VienDemDuoc"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/LoBatchMay.tsx",
+    "interfaces": [
+      "MayTrongLo",
+      "LoBatchMayProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/locNhan.ts",
+    "interfaces": [
+      "NhanUngVien",
+      "HinhChuNhat",
+      "KhungCanvasPx",
+      "NhanDuocVe",
+      "KetQuaLocNhan",
+      "CauHinhLocNhan"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/LopNhan.tsx",
+    "interfaces": [
+      "NhanTheGioi",
+      "LopNhanProps",
+      "WindowCoDo"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/matDoKhungHinh.ts",
+    "interfaces": [
+      "DacTinhBac",
+      "KetQuaGhiKhung",
+      "CauHinhMatDo"
+    ],
+    "aliases": [
+      "BacChatLuong"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/ModelErrorBoundary.tsx",
+    "interfaces": [
+      "ModelErrorBoundaryProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/ModelMay.tsx",
+    "interfaces": [
+      "MayCoModel",
+      "LopModelMayProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/phanBietBamKeo.ts",
+    "interfaces": [
+      "CuChiBam"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/useBuocLuoi.ts",
+    "interfaces": [
+      "CuaSoLuoi",
+      "TuyChonLuoi"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/loi/vienNoiBat.ts",
+    "interfaces": [
+      "CauHinhVien"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/mauTrangThai.ts",
+    "interfaces": [
+      "MauTrangThai"
+    ],
+    "aliases": [
+      "TrangThaiCanh",
+      "HoaTiet",
+      "MucTuoi"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/mucChiTiet.ts",
+    "interfaces": [
+      "MayChoLod",
+      "KetQuaLod",
+      "KetQuaChonMucChiTiet",
+      "CauHinhLod",
+      "KetQuaCapNhatLru"
+    ],
+    "aliases": [
+      "BacChiTiet"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/napModel.ts",
+    "interfaces": [
+      "HangModel",
+      "MayCanModel",
+      "ModelDaChon",
+      "MayTrongCanh",
+      "KeHoachNap"
+    ],
+    "aliases": [
+      "CapGan"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/occtWorker.ts",
+    "interfaces": [
+      "YeuCauOcct",
+      "PhanHoiOcct"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/phamViLine.ts",
+    "interfaces": [
+      "ViTriDaDat",
+      "HinhHocLine",
+      "ViTriMoi",
+      "DuongThang"
+    ],
+    "aliases": [
+      "TrucLine"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/sinhBoCuc.ts",
+    "interfaces": [
+      "CauHinhSinh",
+      "CayPhanCapDauVao",
+      "ViTriDatCho",
+      "ViTriVatThe",
+      "MucBoQua",
+      "KetQuaSinh",
+      "ODatXuong"
+    ],
+    "aliases": [
+      "LoaiThucThe",
+      "LoaiVatThe"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/tachTangTuHinhHoc.ts",
+    "interfaces": [
+      "NodeHinhHoc",
+      "CumTang",
+      "KetQuaTachTang"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/AnhNenTang.tsx",
+    "interfaces": [
+      "AnhNenTangProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/banDoNho.ts",
+    "interfaces": [
+      "DiemPx",
+      "PhepChieu",
+      "ChamBanDo"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/BanGhiBoCuc.tsx",
+    "interfaces": [
+      "DatChoAnhChup",
+      "BanGhiBoCucProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/BangThuocTinh.tsx",
+    "interfaces": [
+      "BangThuocTinhProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "interfaces": [
+      "CanhThietKeProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/CauNoiCanh.tsx",
+    "interfaces": [
+      "CanhDaNoi"
+    ],
+    "aliases": [
+      "RefCanh"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/CayPhanCap.tsx",
+    "interfaces": [
+      "CayPhanCapProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/cayPhanCapLogic.ts",
+    "interfaces": [
+      "ManhNhan",
+      "PhamViNhanh",
+      "HangPhang",
+      "ViecPhim"
+    ],
+    "aliases": [
+      "DemCanhBao",
+      "PhimCayHopLe"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/DungNhaXuong.tsx",
+    "interfaces": [
+      "DungNhaXuongProps",
+      "KhungXemTruoc3DProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/GizmoBienDoi.tsx",
+    "interfaces": [
+      "GizmoBienDoiProps",
+      "CuaSoDoGizmo"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/gizmoNoiLogic.ts",
+    "interfaces": [],
+    "aliases": [
+      "CheDoGizmo",
+      "TrucKhoa"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/HopThoaiChuaLuu.tsx",
+    "interfaces": [
+      "HopThoaiChuaLuuProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/HopThoaiSinh.tsx",
+    "interfaces": [
+      "HopThoaiSinhProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/khungNhin.ts",
+    "interfaces": [
+      "VatTheTrongKhung",
+      "KhungNhin",
+      "CongFullscreen"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/LopVung.tsx",
+    "interfaces": [
+      "LopVungProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/napStudio.ts",
+    "interfaces": [
+      "NhaMayTho",
+      "ToaNhaTho",
+      "TangTho",
+      "SanThietKe",
+      "NapThietKe",
+      "DuLieuNap"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/NhapBanVe.tsx",
+    "interfaces": [
+      "NhapBanVeProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/quyenXuong.ts",
+    "interfaces": [
+      "CoQuyenModule",
+      "QuyenThoXuong",
+      "QuyenXuong",
+      "CongCuXuong"
+    ],
+    "aliases": [
+      "CongServer",
+      "MaCongCu"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/ThanhCanChinh.tsx",
+    "interfaces": [
+      "ThanhCanChinhProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/ThanhCongCuCanh.tsx",
+    "interfaces": [
+      "MayTrenCanh",
+      "ThanhCongCuCanhProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/ThuVienAsset.tsx",
+    "interfaces": [
+      "MayChoThuVien",
+      "ThuVienAssetProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/tiLeAnhNen.ts",
+    "interfaces": [
+      "DiemPx",
+      "KetQuaTiLe",
+      "DoiChieuSan"
+    ],
+    "aliases": [
+      "LoiTiLe"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/trangThaiThietKe.ts",
+    "interfaces": [
+      "MayDauVao",
+      "TramDauVao",
+      "ChuyenDauVao",
+      "XuongDauVao",
+      "DatChoDauVao",
+      "SucKhoeDuLieu",
+      "NodeCay",
+      "CayThietKe",
+      "ThayDoiDatCho"
+    ],
+    "aliases": [
+      "KhoaNode",
+      "TapChon"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/VeVung.tsx",
+    "interfaces": [
+      "VeVungProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/vungAnToan.ts",
+    "interfaces": [
+      "DinhMm",
+      "HangVung",
+      "VungVe",
+      "VungGhi"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/xemTruocSinh.ts",
+    "interfaces": [
+      "TongKetSinh",
+      "HopMa"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/xuatAnh.ts",
+    "interfaces": [
+      "CanvasChupDuoc",
+      "KetQuaChup",
+      "DocTaiXuong"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "interfaces": [
+      "XuongThietKeProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/BangKpiNoi.tsx",
+    "interfaces": [
+      "BangKpiNoiProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/boChonNap.ts",
+    "interfaces": [
+      "MucChon",
+      "LuaChonNap",
+      "TapCoSan",
+      "YeuCauNap",
+      "TapDoiSoat",
+      "PhamViThuc",
+      "TangDeHoi"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/BoChonNapUI.tsx",
+    "interfaces": [
+      "BoChonNapUIProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/boCucThanhCongCu.ts",
+    "interfaces": [
+      "BreadcrumbGop"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/canhBaoAnToan.ts",
+    "interfaces": [
+      "ThietBiAnToan",
+      "TomTatAnToan"
+    ],
+    "aliases": [
+      "TrangThaiAnToan"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/canhLine.ts",
+    "interfaces": [
+      "DatChoTho",
+      "TramTho",
+      "MayCoViTri",
+      "ThuocVeMay",
+      "HinhLine",
+      "TuyChonHinhLine"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/canhTapDoan.ts",
+    "interfaces": [
+      "NhaMayDeNap",
+      "ToaNhaKhuonVien",
+      "ToaNhaDaDoi",
+      "KhoiNhaMay",
+      "KhuonVien",
+      "BieuTuongToa",
+      "OCumSaBan",
+      "SaBanTapDoan",
+      "TuyChonSaBan"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "interfaces": [
+      "CanhVanHanhProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "interfaces": [
+      "CanhVanHanh2DProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/cayVanHanh.ts",
+    "interfaces": [
+      "DieuHuongCay"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/chinhSachNhan.ts",
+    "interfaces": [],
+    "aliases": [
+      "ChinhSachNhan"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/cuaVaoTwin.unit.test.ts",
+    "interfaces": [
+      "ThanManLineProps",
+      "ThanManMayProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/cumTram.ts",
+    "interfaces": [
+      "MayDeGopCum",
+      "CumTram",
+      "TuyChonCum",
+      "HopCumDeVe",
+      "CumDeVe"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/DaiCanhBao.tsx",
+    "interfaces": [
+      "DaiCanhBaoProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/daiCanhBaoLogic.ts",
+    "interfaces": [
+      "CanhBaoDai",
+      "TraDanhTinh",
+      "NhomCanhBao",
+      "TapPhamVi",
+      "HangCanhBaoTho"
+    ],
+    "aliases": [
+      "MucDoCanhBao",
+      "NguonCanhBao",
+      "PhaCanhBao",
+      "ChonMuc"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/DaiLine.tsx",
+    "interfaces": [
+      "TramTrenDai",
+      "DaiLineProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/DanhSachMay.tsx",
+    "interfaces": [
+      "DanhSachMayProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/datNhanSaBan.ts",
+    "interfaces": [
+      "HopNhanPx",
+      "CoNhanPx",
+      "ChoDatNhan"
+    ],
+    "aliases": [
+      "UuTienNhan",
+      "MaChoDat"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/DongChayLine.tsx",
+    "interfaces": [
+      "DiemDongChay",
+      "DongChayLineProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/DongThoiGian.tsx",
+    "interfaces": [
+      "DongThoiGianProps"
+    ],
+    "aliases": [
+      "TocDo"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/duongDanTwin.ts",
+    "interfaces": [
+      "PhamVi",
+      "VatTheChon",
+      "TuTheCamera",
+      "LuaChonNapUrl",
+      "TrangThaiTwinUrl",
+      "TrangThaiDuongVe"
+    ],
+    "aliases": [
+      "CapPhamVi",
+      "LoaiVatThe",
+      "ThayDoiTwinUrl",
+      "KieuGhiLichSu"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/giuDuLieuTruoc.ts",
+    "interfaces": [
+      "TruyVanTruoc"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/hopNhatCanh.ts",
+    "interfaces": [
+      "MayVaoCanh",
+      "DatChoVaoCanh",
+      "CoMacDinh",
+      "MayDaDung",
+      "CongCuMau",
+      "GocToaMm",
+      "ThamSoMayVe",
+      "ThamSoChuaDat",
+      "MayDeNeo",
+      "NhanMay",
+      "ThamSoNhanMay",
+      "NhanLineVao",
+      "AndonVao",
+      "CanhBaoDaNeo",
+      "BieuTuongToaVe",
+      "CumSaBanVe",
+      "SaBanVao"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/khoTrangThai.ts",
+    "interfaces": [
+      "MocTrangThai",
+      "KhoTrangThai"
+    ],
+    "aliases": [
+      "NguonMoc",
+      "TrangThaiKetNoi"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/khuChoVaNhanLine.ts",
+    "interfaces": [
+      "CauHinhKhuCho",
+      "MayKhuCho",
+      "NhanLine",
+      "LineDeDatNhan"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/khungNhinBan2D.ts",
+    "interfaces": [
+      "HopNoiDung2D",
+      "HopCanvas2D",
+      "NeoBan2D",
+      "KhungNhin2D"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/kpiNoiLogic.ts",
+    "interfaces": [
+      "MayTongQuanKpi",
+      "OKpi",
+      "KetQuaKpiNoi"
+    ],
+    "aliases": [
+      "SacThaiKpi"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/locBadge.ts",
+    "interfaces": [
+      "BadgeUngVien",
+      "BadgeDuocVe",
+      "KetQuaLocBadge",
+      "CauHinhLocBadge"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/LopCanhBao.tsx",
+    "interfaces": [
+      "CanhBaoTheGioi",
+      "LopCanhBaoProps",
+      "WindowCoDoBadge"
+    ],
+    "aliases": [
+      "MucCanhBao"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/LopSaBan.tsx",
+    "interfaces": [
+      "LopSaBanProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/manLine.ts",
+    "interfaces": [
+      "TramCuaLine",
+      "MayThuocLine",
+      "ThamSoTinhWipLine",
+      "HangDaiLine",
+      "ThamSoHangDaiLine",
+      "TomTatLine",
+      "CanhXetManLine"
+    ],
+    "aliases": [
+      "LyDoManLine"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/manMay.ts",
+    "interfaces": [
+      "KhoiMayDaDung",
+      "DanhTinhMay",
+      "TomTatMay",
+      "CanhXetManMay"
+    ],
+    "aliases": [
+      "LyDoManMay"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/mauChuTrenNen.ts",
+    "interfaces": [],
+    "aliases": [
+      "ByteMau"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/moPhongLogic.ts",
+    "interfaces": [
+      "TramMoPhong",
+      "NhipChuyen",
+      "DauVaoWhatIf",
+      "ThamSoWhatIf",
+      "BuocMoPhong",
+      "BuocPhatLai",
+      "TuoiDaRut"
+    ],
+    "aliases": [
+      "LyDoKhongMoPhong",
+      "KetQuaDungWhatIf"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/NganMoPhong.tsx",
+    "interfaces": [
+      "KetQuaWhatIf",
+      "WorkflowChon",
+      "KetQuaPhatLai",
+      "NganMoPhongProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/NganNhung.tsx",
+    "interfaces": [
+      "NganNhungProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/NganXuLy.tsx",
+    "interfaces": [
+      "NganXuLyProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/nganXuLyLogic.ts",
+    "interfaces": [
+      "QuyenXuLy",
+      "CanhBaoDangMo",
+      "HanhDongKhaDung",
+      "NutDieuHuong",
+      "NguoiCoTheGan",
+      "HangStatsAoi",
+      "StatsAoi"
+    ],
+    "aliases": [
+      "NhomHanhDong",
+      "MaHanhDong",
+      "LoaiDich"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/nguonDuLieu.ts",
+    "interfaces": [
+      "NguonHienTai"
+    ],
+    "aliases": [
+      "XuatXu"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/nguongDonViVe.ts",
+    "interfaces": [
+      "CoThatMm",
+      "DiemMet",
+      "MayDeChamCo"
+    ],
+    "aliases": [
+      "DonViVe"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/nhanSaBan2D.ts",
+    "interfaces": [
+      "MucNhan2D",
+      "KetQuaNhan2D"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/nhungTaiCho.ts",
+    "interfaces": [
+      "NganNhungMo",
+      "CanhXetNgan"
+    ],
+    "aliases": [
+      "LoaiNhung",
+      "LyDoNgan"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/noiThucTheTwin.ts",
+    "interfaces": [
+      "NoiThucThe",
+      "HangDatChoNoi"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/phamViCanh.ts",
+    "interfaces": [
+      "VatTheCoPhamVi",
+      "KhungNhin",
+      "MatXich",
+      "KhungKhop",
+      "DiemNdc",
+      "HopCanvas",
+      "DoanPx"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/phuUns.ts",
+    "interfaces": [
+      "AnhChupUns"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/soDoLine.ts",
+    "interfaces": [
+      "TuyChonSoDoLine",
+      "SoDoLine"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/sucKhoeMay.ts",
+    "interfaces": [
+      "KhaiSucKhoe",
+      "VienDeMay",
+      "ChoDatVien",
+      "DongXepHangSucKhoe",
+      "ODemHangSucKhoe",
+      "TomTatSucKhoe"
+    ],
+    "aliases": [
+      "MucKhanBaoTri",
+      "HangSucKhoe"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/trungThucDuLieu.ts",
+    "interfaces": [
+      "MayVanHanh",
+      "TrangThaiHienThi",
+      "NutFleetCoMoc",
+      "DemTuoi",
+      "KetQuaDoiSoat",
+      "TinhTrangTruyVan",
+      "KetQuaChuaDo",
+      "NhanDoTuoi"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/useAnhLichSu.ts",
+    "interfaces": [
+      "ThamSoAnhLichSu"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/useKhoTrangThai.ts",
+    "interfaces": [
+      "KetQuaKhoTrangThai"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/useMoPhongTwin.ts",
+    "interfaces": [
+      "ThamSoMoPhongTwin"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/usePhanTichLine.ts",
+    "interfaces": [
+      "ThamSoPhanTichLine"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/useTrangThaiSong.ts",
+    "interfaces": [
+      "ThamSoTrangThaiSong"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/useTrangThaiTwin.ts",
+    "interfaces": [
+      "TrangThaiTwin"
+    ],
+    "aliases": [
+      "DieuHuongTwin"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/useTruDinhKhung.ts",
+    "interfaces": [],
+    "aliases": [
+      "TenBienCss"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/wipTram.ts",
+    "interfaces": [
+      "TinhWip",
+      "CotWip",
+      "DongXepHangWip",
+      "KhaiNghen",
+      "ThangCotWip"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/xuatUsd.ts",
+    "interfaces": [
+      "KetQuaUsdExport",
+      "ThamDinhUsda",
+      "KetQuaXuatUsd"
+    ],
+    "aliases": [
+      "LyDoKhongXuat"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/components/twin3d/van-hanh/xuatXuNhip.ts",
+    "interfaces": [
+      "TinhHinhNguon",
+      "KhaiNguonSo"
+    ],
+    "aliases": [
+      "CoCheGiao"
+    ],
     "zodSchemas": []
   },
   {
@@ -9521,6 +11454,14 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/hooks/dongHoHaiPha.ts",
+    "interfaces": [
+      "DongHoHaiPha"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/hooks/useActuationReadiness.ts",
     "interfaces": [
       "ActuationBlocker",
@@ -9606,6 +11547,7 @@
       "KbStreamContext",
       "KbStreamRequest",
       "KbStreamCallbacks",
+      "KbUsageLuot",
       "KbToolLoopProgress"
     ],
     "aliases": [
@@ -9711,11 +11653,21 @@
   {
     "file": "client/src/lib/aiCodingInput.ts",
     "interfaces": [
-      "PhimNhap"
+      "PhimNhap",
+      "PhimTat"
     ],
     "aliases": [
-      "PhanQuyetPhimNhap"
+      "PhanQuyetPhimNhap",
+      "PhimTatKhung"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/aiCodingTabs.ts",
+    "interfaces": [
+      "KetQuaDongTab"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -9803,6 +11755,14 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/lib/dauRaSong.ts",
+    "interfaces": [
+      "LuotSong"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/lib/diffHunks.ts",
     "interfaces": [
       "DiffHunk",
@@ -9880,6 +11840,22 @@
       "Mat4",
       "JointType"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/kyHieuTep.ts",
+    "interfaces": [
+      "KyHieu"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/lib/kyHieuTep.unit.test.ts",
+    "interfaces": [
+      "DiaDiemLoi"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -10055,6 +12031,15 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/pages/aoiPackagesStatusPresentation.ts",
+    "interfaces": [
+      "PackageStatusBadgeVariant",
+      "PackageStatusFilterOption"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/pages/ComponentShowcase.tsx",
     "interfaces": [],
     "aliases": [],
@@ -10063,11 +12048,30 @@
     ]
   },
   {
+    "file": "client/src/pages/ingestIntegrityScanPresentation.ts",
+    "interfaces": [],
+    "aliases": [
+      "IntegrityRelationshipLike"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/pages/machineWorkspace/MachineRail.tsx",
     "interfaces": [
       "MachineRailProps"
     ],
     "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/pages/nguyCoHongHienThi.ts",
+    "interfaces": [
+      "NguonNguyCo"
+    ],
+    "aliases": [
+      "XuatXuNguyCo",
+      "NhanNguyCo"
+    ],
     "zodSchemas": []
   },
   {
@@ -10089,6 +12093,30 @@
     "aliases": [
       "BatchResultCategory"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/pages/thresholdApprovalsDeXuatDisplay.ts",
+    "interfaces": [
+      "DeXuatHienThi"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/pages/TwinLine.tsx",
+    "interfaces": [
+      "ThanManLineProps"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/pages/TwinMay.tsx",
+    "interfaces": [
+      "ThanManMayProps"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -10119,6 +12147,15 @@
     "aliases": [
       "YDinhBaiHoc"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "shared/aiCodingLoiViTri.ts",
+    "interfaces": [
+      "DiaDiemLoi",
+      "TuyChonPhanTich"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
@@ -10199,6 +12236,28 @@
     ],
     "aliases": [
       "PluginKind"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "shared/pointLimitSpec.ts",
+    "interfaces": [
+      "MucGioiHan",
+      "CapGioiHanPair"
+    ],
+    "aliases": [
+      "PointLimitField"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "shared/rollupVerdict.ts",
+    "interfaces": [
+      "NutKetQua"
+    ],
+    "aliases": [
+      "ResultVerdict",
+      "NtfSource"
     ],
     "zodSchemas": []
   },
@@ -10403,7 +12462,9 @@
     "interfaces": [],
     "aliases": [
       "AndonEvent",
-      "InsertAndonEvent"
+      "InsertAndonEvent",
+      "AndonNote",
+      "InsertAndonNote"
     ],
     "zodSchemas": []
   },
@@ -10730,7 +12791,10 @@
   },
   {
     "file": "drizzle/schema/inspection.ts",
-    "interfaces": [],
+    "interfaces": [
+      "BoDemMotCap",
+      "SummaryCounts"
+    ],
     "aliases": [
       "ProductInspection",
       "InsertProductInspection",
@@ -10744,6 +12808,19 @@
       "InsertPackageImage",
       "PackageActivityLog",
       "InsertPackageActivityLog"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/inspectionTree.ts",
+    "interfaces": [],
+    "aliases": [
+      "InspectionSurface",
+      "InsertInspectionSurface",
+      "InspectionPosition",
+      "InsertInspectionPosition",
+      "InspectionCapture",
+      "InsertInspectionCapture"
     ],
     "zodSchemas": []
   },
@@ -10812,7 +12889,8 @@
       "KbIngestJob",
       "InsertKbIngestJob",
       "KbStudioChunk",
-      "InsertKbStudioChunk"
+      "InsertKbStudioChunk",
+      "KbEvalRun"
     ],
     "zodSchemas": []
   },
@@ -11268,6 +13346,21 @@
     "zodSchemas": []
   },
   {
+    "file": "drizzle/schema/productConfigTree.ts",
+    "interfaces": [],
+    "aliases": [
+      "ProductSurface",
+      "InsertProductSurface",
+      "ProductPosition",
+      "InsertProductPosition",
+      "ProductCapture",
+      "InsertProductCapture",
+      "MachineTemplateVersion",
+      "InsertMachineTemplateVersion"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "drizzle/schema/production.ts",
     "interfaces": [],
     "aliases": [
@@ -11543,6 +13636,25 @@
     "aliases": [
       "Equipment3dModel",
       "InsertEquipment3dModel"
+    ],
+    "zodSchemas": []
+  },
+  {
+    "file": "drizzle/schema/twin3d.ts",
+    "interfaces": [],
+    "aliases": [
+      "TwinToaNha",
+      "InsertTwinToaNha",
+      "TwinTang",
+      "InsertTwinTang",
+      "TwinDatCho",
+      "InsertTwinDatCho",
+      "TwinVatThe",
+      "InsertTwinVatThe",
+      "TwinKichThuocLoai",
+      "InsertTwinKichThuocLoai",
+      "TwinBanGhi",
+      "InsertTwinBanGhi"
     ],
     "zodSchemas": []
   },

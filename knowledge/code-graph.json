@@ -456,6 +456,30 @@
     "to": "../../_core/tenantCodeScope"
   },
   {
+    "from": "server/api/v1/moduleReads.ts",
+    "to": "../../db/hierarchy"
+  },
+  {
+    "from": "server/api/v1/moduleReads.ts",
+    "to": "./apiKeyScope"
+  },
+  {
+    "from": "server/api/v1/moduleReadsCockpitPhamVi.db.test.ts",
+    "to": "./auth"
+  },
+  {
+    "from": "server/api/v1/moduleReadsCockpitPhamVi.db.test.ts",
+    "to": "./apiKeyScope"
+  },
+  {
+    "from": "server/api/v1/moduleReadsCockpitPhamVi.db.test.ts",
+    "to": "./moduleReads"
+  },
+  {
+    "from": "server/api/v1/moduleReadsCockpitPhamVi.db.test.ts",
+    "to": "../../services/ecosystem/assetCockpitService"
+  },
+  {
     "from": "server/api/v1/openapi.ts",
     "to": "./scopes"
   },
@@ -772,7 +796,155 @@
     "to": "./db"
   },
   {
+    "from": "server/contracts/capChuoiThoiGianCensus.test.ts",
+    "to": "./machineDataContractV2"
+  },
+  {
+    "from": "server/contracts/capChuoiThoiGianCensus.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/contracts/capChuoiThoiGianCensus.test.ts",
+    "to": "../routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/contracts/capChuoiThoiGianCensus.test.ts",
+    "to": "./capChuoiVarcharScan"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharCensus.test.ts",
+    "to": "./machineDataContractV2"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharCensus.test.ts",
+    "to": "./machineDataContractV2.test-helpers"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharCensus.test.ts",
+    "to": "./capChuoiVarcharScan"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharDuongIngestMacDinh.test.ts",
+    "to": "./machineDataContractV2"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharDuongIngestMacDinh.test.ts",
+    "to": "./capChuoiVarcharScan"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharDuongIngestMacDinh.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharDuongIngestMacDinh.test.ts",
+    "to": "./machineTemplateContract"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharDuongIngestMacDinh.test.ts",
+    "to": "../routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharDuongIngestMacDinh.test.ts",
+    "to": "../routers/cuaIngestScan"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharScan.ts",
+    "to": "./machineDataContractV2"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharSchemaWalk.test.ts",
+    "to": "./machineDataContractV2"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharSchemaWalk.test.ts",
+    "to": "../routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharSchemaWalk.test.ts",
+    "to": "./capChuoiVarcharScan"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharUnionDeQuy.test.ts",
+    "to": "./capChuoiVarcharScan"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharUnionDeQuy.test.ts",
+    "to": "./machineDataContractV2"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharUnionDeQuy.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/contracts/capChuoiVarcharUnionDeQuy.test.ts",
+    "to": "../routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/contracts/hinhDangHopDongMetaJson.test.ts",
+    "to": "./hinhDangHopDongMetaJson"
+  },
+  {
+    "from": "server/contracts/hinhDangHopDongMetaJson.test.ts",
+    "to": "../routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/contracts/hinhDangHopDongMetaJson.ts",
+    "to": "../routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/contracts/hopDongVsIngest.test.ts",
+    "to": "./machineDataContractV2"
+  },
+  {
+    "from": "server/contracts/hopDongVsIngest.test.ts",
+    "to": "./machineDataContractV2.test-helpers"
+  },
+  {
     "from": "server/contracts/machineDataContract.test.ts",
+    "to": "./machineDataContract"
+  },
+  {
+    "from": "server/contracts/machineDataContract.ts",
+    "to": "./machineDataContractV2"
+  },
+  {
+    "from": "server/contracts/machineDataContractV2.test.ts",
+    "to": "./machineDataContractV2"
+  },
+  {
+    "from": "server/contracts/machineDataContractV2.test.ts",
+    "to": "./machineDataContract"
+  },
+  {
+    "from": "server/contracts/machineDataContractV2.test.ts",
+    "to": "./machineDataContractV2.test-helpers"
+  },
+  {
+    "from": "server/contracts/machineTemplateContract.test.ts",
+    "to": "./machineTemplateContract"
+  },
+  {
+    "from": "server/contracts/machineTemplateContract.test.ts",
+    "to": "./capChuoiVarcharScan"
+  },
+  {
+    "from": "server/contracts/pointLimitSpecCensus.test.ts",
+    "to": "../services/pointResultEvaluator"
+  },
+  {
+    "from": "server/contracts/pointLimitSpecCensus.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/contracts/pointLimitSpecCensus.test.ts",
+    "to": "../../shared/pointLimitSpec"
+  },
+  {
+    "from": "server/contracts/taiLieuMetaJsonKhopHopDong.test.ts",
+    "to": "../routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/contracts/taiLieuMetaJsonKhopHopDong.test.ts",
     "to": "./machineDataContract"
   },
   {
@@ -968,6 +1140,10 @@
     "to": "../utils/factoryTime"
   },
   {
+    "from": "server/db/apDungVariantPatch.test.ts",
+    "to": "./product"
+  },
+  {
     "from": "server/db/auditLogWriter.test.ts",
     "to": "./system"
   },
@@ -1030,6 +1206,134 @@
   {
     "from": "server/db/bom.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/capComponentGhiThat.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/capComponentGhiThat.db.test.ts",
+    "to": "../routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/db/capComponentGhiThat.db.test.ts",
+    "to": "../services/machineAuthService"
+  },
+  {
+    "from": "server/db/capComponentGhiThat.db.test.ts",
+    "to": "./inspection"
+  },
+  {
+    "from": "server/db/capComponentGhiThat.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/db/cayCauHinhBatBien.db.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/cayCauHinhSchema.db.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/cayDay.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/cayDay.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/cayDay.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/cayDay.ts",
+    "to": "../../drizzle/schema/productConfigTree"
+  },
+  {
+    "from": "server/db/cayDay.ts",
+    "to": "../contracts/machineTemplateContract"
+  },
+  {
+    "from": "server/db/cayDay.ts",
+    "to": "../services/pointResultEvaluator"
+  },
+  {
+    "from": "server/db/cayDay.ts",
+    "to": "./hierarchy"
+  },
+  {
+    "from": "server/db/cayDay.ts",
+    "to": "./product"
+  },
+  {
+    "from": "server/db/cayDayChieuMay.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/cayDayChieuMay.db.test.ts",
+    "to": "../services/machineAuthService"
+  },
+  {
+    "from": "server/db/cayDayChieuMay.db.test.ts",
+    "to": "./cayDay"
+  },
+  {
+    "from": "server/db/cayDayChieuMay.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/db/cayDayGhiThat.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/cayDayGhiThat.db.test.ts",
+    "to": "../services/machineAuthService"
+  },
+  {
+    "from": "server/db/cayDayGhiThat.db.test.ts",
+    "to": "./product"
+  },
+  {
+    "from": "server/db/cayDayGhiThat.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/db/cayKetQuaSchema.db.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/congPhamViGop.db.test.ts",
+    "to": "./twinCanh"
+  },
+  {
+    "from": "server/db/congPhamViGop.db.test.ts",
+    "to": "./hierarchy"
+  },
+  {
+    "from": "server/db/congPhamViGop.db.test.ts",
+    "to": "../queryMonitor"
+  },
+  {
+    "from": "server/db/congRaKhoiC.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/congRaKhoiC.db.test.ts",
+    "to": "../routers/productRouters"
+  },
+  {
+    "from": "server/db/congRaKhoiC.db.test.ts",
+    "to": "../services/machineAuthService"
+  },
+  {
+    "from": "server/db/congRaKhoiC.db.test.ts",
+    "to": "../services/gioiHanLucDoCayV2"
+  },
+  {
+    "from": "server/db/congRaKhoiC.db.test.ts",
+    "to": "../_core/context"
   },
   {
     "from": "server/db/connection.ts",
@@ -1136,6 +1440,10 @@
     "to": "../constants/machineTypes"
   },
   {
+    "from": "server/db/hierarchy.ts",
+    "to": "../_core/tenantCodeScope"
+  },
+  {
     "from": "server/db/index.ts",
     "to": "../db"
   },
@@ -1236,6 +1544,54 @@
     "to": "./energy"
   },
   {
+    "from": "server/db/ingestCayKetQua.db.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/ingestCayKetQua.db.test.ts",
+    "to": "./inspection"
+  },
+  {
+    "from": "server/db/ingestCayKetQua.db.test.ts",
+    "to": "../services/ingestCayKetQua"
+  },
+  {
+    "from": "server/db/ingestCayKetQua.db.test.ts",
+    "to": "../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/db/ingestCayKetQua.db.test.ts",
+    "to": "../contracts/machineDataContractV2.test-helpers"
+  },
+  {
+    "from": "server/db/ingestV2KhuTrung.db.test.ts",
+    "to": "../contracts/machineDataContractV2.test-helpers"
+  },
+  {
+    "from": "server/db/ingestV2KhuTrung.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/ingestV2KhuTrung.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/db/ingestV2XuyenSuot.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/ingestV2XuyenSuot.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/db/ingestV2XuyenSuot.db.test.ts",
+    "to": "../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/db/ingestV2XuyenSuot.db.test.ts",
+    "to": "../services/ingestCayKetQua"
+  },
+  {
     "from": "server/db/inspection.ts",
     "to": "./connection"
   },
@@ -1256,6 +1612,26 @@
     "to": "../_core/accessControlLabels"
   },
   {
+    "from": "server/db/inspection.ts",
+    "to": "../services/ingestCayKetQua"
+  },
+  {
+    "from": "server/db/inspection.ts",
+    "to": "./cayDay"
+  },
+  {
+    "from": "server/db/inspection.ts",
+    "to": "../services/gioiHanLucDoCayV2"
+  },
+  {
+    "from": "server/db/inspection.ts",
+    "to": "../../shared/rollupVerdict"
+  },
+  {
+    "from": "server/db/inspection.ts",
+    "to": "../utils/factoryTime"
+  },
+  {
     "from": "server/db/inspectionIdempotency.test.ts",
     "to": "./inspection"
   },
@@ -1306,6 +1682,14 @@
   {
     "from": "server/db/license.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/lienKetBoTrongBienThe.db.test.ts",
+    "to": "./product"
+  },
+  {
+    "from": "server/db/lienKetBoTrongBienThe.db.test.ts",
+    "to": "./cayDay"
   },
   {
     "from": "server/db/lineBalance.ts",
@@ -1412,6 +1796,34 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/db/mvYieldParity.db.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/naiveTimestampQuaExecute.db.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/naiveTimestampQuaExecute.db.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/naiveTimestampQuaExecute.db.test.ts",
+    "to": "./twinCanh"
+  },
+  {
+    "from": "server/db/nftCauNoi.db.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/ntfCotKhongLech.db.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/ntfSourceNguoiXacNhan.db.test.ts",
+    "to": "./inspection"
+  },
+  {
     "from": "server/db/otTelemetry.ts",
     "to": "./connection"
   },
@@ -1470,6 +1882,10 @@
   {
     "from": "server/db/product.ts",
     "to": "../utils/genealogyChain"
+  },
+  {
+    "from": "server/db/product.ts",
+    "to": "../utils/measurementPointLimitGate"
   },
   {
     "from": "server/db/productClone.db.test.ts",
@@ -1568,6 +1984,42 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/db/specGateCayV2.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/specGateCayV2.db.test.ts",
+    "to": "../routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/db/specGateCayV2.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/specGateCayV2.db.test.ts",
+    "to": "../services/machineAuthService"
+  },
+  {
+    "from": "server/db/specGateCayV2.db.test.ts",
+    "to": "../services/specGateCayV2"
+  },
+  {
+    "from": "server/db/specGateCayV2.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/db/specGateCayV2.db.test.ts",
+    "to": "./product"
+  },
+  {
+    "from": "server/db/specGateCayV2.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/specGateCayV2.db.test.ts",
+    "to": "../services/inspection/inspectionStoreForward"
+  },
+  {
     "from": "server/db/stationTraceScope.test.ts",
     "to": "./product"
   },
@@ -1660,6 +2112,10 @@
     "to": "./catTheoTranCot"
   },
   {
+    "from": "server/db/telemetryMoiNhat.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/db/tenantContextNoi.unit.test.ts",
     "to": "./tenantContext"
   },
@@ -1692,12 +2148,136 @@
     "to": "../../drizzle/schema/ot"
   },
   {
+    "from": "server/db/trangThaiHangLoat.unit.test.ts",
+    "to": "./twinCanh"
+  },
+  {
     "from": "server/db/twin.ts",
     "to": "./connection"
   },
   {
     "from": "server/db/twin.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/twinAnToanRobot.db.test.ts",
+    "to": "./twinCanh"
+  },
+  {
+    "from": "server/db/twinAnToanRobot.db.test.ts",
+    "to": "../../client/src/components/twin3d/van-hanh/canhBaoAnToan"
+  },
+  {
+    "from": "server/db/twinBanGhi.db.test.ts",
+    "to": "./twinCanh"
+  },
+  {
+    "from": "server/db/twinCanh.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/twinCanh.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/db/twinCanh.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/db/twinCanh.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/twinCanh.ts",
+    "to": "./hierarchy"
+  },
+  {
+    "from": "server/db/twinCanh.ts",
+    "to": "../../client/src/components/twin3d/van-hanh/noiThucTheTwin"
+  },
+  {
+    "from": "server/db/twinCanh.ts",
+    "to": "../utils/kpi"
+  },
+  {
+    "from": "server/db/twinCanh.ts",
+    "to": "../services/trangThaiMayTuoi"
+  },
+  {
+    "from": "server/db/twinCanhTrungMa.db.test.ts",
+    "to": "./twinCanh"
+  },
+  {
+    "from": "server/db/twinCanhTrungMa.db.test.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/db/twinDemVatThePhamVi.db.test.ts",
+    "to": "./twinCanh"
+  },
+  {
+    "from": "server/db/versionBienTheTachChuoi.db.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/versionBienTheTachChuoi.db.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/versionBienTheTachChuoi.db.test.ts",
+    "to": "./product"
+  },
+  {
+    "from": "server/db/versionBienTheTachChuoi.db.test.ts",
+    "to": "./cayDay"
+  },
+  {
+    "from": "server/db/versionBienTheTachChuoi.db.test.ts",
+    "to": "../services/gioiHanLucDoCayV2"
+  },
+  {
+    "from": "server/db/versionBienTheTachChuoi.db.test.ts",
+    "to": "../services/pointResultEvaluator"
+  },
+  {
+    "from": "server/db/walCayV2PhatLai.db.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/db/walCayV2PhatLai.db.test.ts",
+    "to": "./index"
+  },
+  {
+    "from": "server/db/walCayV2PhatLai.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/db/walCayV2PhatLai.db.test.ts",
+    "to": "../services/inspection/inspectionStoreForward"
+  },
+  {
+    "from": "server/db/walCayV2PhatLai.db.test.ts",
+    "to": "../contracts/machineDataContractV2.test-helpers"
+  },
+  {
+    "from": "server/db/walCayV2PhatLai.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/db/workshopTangId.db.test.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/workshopTangId.db.test.ts",
+    "to": "../../drizzle/schema/hierarchy"
+  },
+  {
+    "from": "server/db/xoaGioiHanVeNull.db.test.ts",
+    "to": "./product"
+  },
+  {
+    "from": "server/db/xoaGioiHanVeNull.db.test.ts",
+    "to": "../services/pointResultEvaluator"
   },
   {
     "from": "server/db/__tests__/tenantContext.test.ts",
@@ -1810,6 +2390,10 @@
   {
     "from": "server/functions/cachedStatistics.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/functions/cachedStatistics.unit.test.ts",
+    "to": "./cachedStatistics"
   },
   {
     "from": "server/genealogyCorrelation.w2b2.test.ts",
@@ -2832,6 +3416,10 @@
     "to": "../constants/machineTypes"
   },
   {
+    "from": "server/routers/aiTimeSeriesRouter.ts",
+    "to": "../utils/kpi"
+  },
+  {
     "from": "server/routers/aiTimeSeriesScope.db.test.ts",
     "to": "../_core/accessControl"
   },
@@ -3028,6 +3616,14 @@
     "to": "./webhookRouter"
   },
   {
+    "from": "server/routers/alertRouters.ts",
+    "to": "../utils/kpi"
+  },
+  {
+    "from": "server/routers/alertRouters.yield.test.ts",
+    "to": "./alertRouters"
+  },
+  {
     "from": "server/routers/analyzeWithAI.suggestions.test.ts",
     "to": "../_core/llm"
   },
@@ -3042,6 +3638,10 @@
   {
     "from": "server/routers/analyzeWithAI.suggestions.test.ts",
     "to": "./inspectionRouters"
+  },
+  {
+    "from": "server/routers/andonGhiChuPhamVi.db.test.ts",
+    "to": "./andonRouter"
   },
   {
     "from": "server/routers/andonRouter.ts",
@@ -3074,6 +3674,14 @@
   {
     "from": "server/routers/andonRouter.ts",
     "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routers/andonRouter.ts",
+    "to": "../db/reportAggregators"
+  },
+  {
+    "from": "server/routers/andonRouter.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/annotationComparisonRouter.test.ts",
@@ -3118,6 +3726,10 @@
   {
     "from": "server/routers/annotationRouters.ts",
     "to": "../_core/llm"
+  },
+  {
+    "from": "server/routers/annotationRouters.ts",
+    "to": "../utils/kpi"
   },
   {
     "from": "server/routers/aoiOnboardingRouter.test.ts",
@@ -3176,6 +3788,98 @@
     "to": "../services/aoiCommissioningService"
   },
   {
+    "from": "server/routers/aoiPackageAnhGoiGhiLai.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageAnhGoiGhiLai.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageAnhGoiGhiLai.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageBaLoToanVenBg87.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageBaLoToanVenBg87.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageBaLoToanVenBg87.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageBienBg85.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageBienBg85.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageBienBg85.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageDeadCongDanHangNhat.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageDeadCongDanHangNhat.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageDeadCongDanHangNhat.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageDeadLetterRouter.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageDemNtfBonCap.test.ts",
+    "to": "../contracts/hinhDangHopDongMetaJson"
+  },
+  {
+    "from": "server/routers/aoiPackageDemNtfBonCap.test.ts",
+    "to": "../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/routers/aoiPackageDemNtfBonCap.test.ts",
+    "to": "../services/ingestCayKetQua"
+  },
+  {
+    "from": "server/routers/aoiPackageDemNtfBonCap.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageHinhDangHopDongChoPhep.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageHinhDangHopDongChoPhep.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageHinhDangHopDongChoPhep.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageHinhDangHopDongChoPhep.test.ts",
+    "to": "../contracts/hinhDangHopDongMetaJson"
+  },
+  {
+    "from": "server/routers/aoiPackageIngestHopNhat.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageIngestHopNhat.test.ts",
+    "to": "../db"
+  },
+  {
     "from": "server/routers/aoiPackageInlineGate.test.ts",
     "to": "../services/aiInferenceEngine"
   },
@@ -3194,6 +3898,18 @@
   {
     "from": "server/routers/aoiPackageInlineGate.test.ts",
     "to": "../services/aiQualityGate"
+  },
+  {
+    "from": "server/routers/aoiPackagePresignLamMoiLoiKhai.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackagePresignLamMoiLoiKhai.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackagePresignLamMoiLoiKhai.test.ts",
+    "to": "../../drizzle/schema"
   },
   {
     "from": "server/routers/aoiPackageRouter.ts",
@@ -3221,19 +3937,151 @@
   },
   {
     "from": "server/routers/aoiPackageRouter.ts",
-    "to": "../services/measurementPointResolver"
-  },
-  {
-    "from": "server/routers/aoiPackageRouter.ts",
-    "to": "./_shared"
-  },
-  {
-    "from": "server/routers/aoiPackageRouter.ts",
-    "to": "../services/pointResultEvaluator"
-  },
-  {
-    "from": "server/routers/aoiPackageRouter.ts",
     "to": "./phamViGhiMay"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../services/machineAuthService"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../services/inspection/inspectionStoreForward"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../contracts/machineDataContract"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../services/ingestCayKetQua"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../services/specGateCayV2"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../services/mayTuMauThuan"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../utils/factoryTime"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../services/inspection/deadLetterReader"
+  },
+  {
+    "from": "server/routers/aoiPackageSerialRongVanGhi.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageSerialRongVanGhi.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageSerialRongVanGhi.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageSha256PresignKiemThat.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageSha256PresignKiemThat.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageSha256PresignKiemThat.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageThieuMetaJsonTuChoi.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageThieuMetaJsonTuChoi.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageThieuMetaJsonTuChoi.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageZipChotChanRetry.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageZipChotChanRetry.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageZipChotChanRetry.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageZipCuaNoiDoi.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageZipCuaNoiDoi.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageZipCuaNoiDoi.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageZipGacMayCu.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageZipGacMayCu.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageZipGacMayCu.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aoiPackageZipGacMayCu.test.ts",
+    "to": "../services/auditTrailService"
+  },
+  {
+    "from": "server/routers/aoiPackageZipGacMayCu.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/aoiPackageZipHinhDangMayThat.test.ts",
+    "to": "./aoiPackageRouter"
+  },
+  {
+    "from": "server/routers/aoiPackageZipHinhDangMayThat.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageZipHinhDangMayThat.test.ts",
+    "to": "../../drizzle/schema"
   },
   {
     "from": "server/routers/apiKeyRouter.test.ts",
@@ -3286,6 +4134,10 @@
   {
     "from": "server/routers/assetCockpitRouter.ts",
     "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/assetCockpitRouter.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/assetCockpitRouter.ts",
@@ -3376,6 +4228,22 @@
     "to": "./statusTemplateRouters"
   },
   {
+    "from": "server/routers/canhNhieuNhaMayPhamVi.db.test.ts",
+    "to": "../routers"
+  },
+  {
+    "from": "server/routers/canhNhieuNhaMayPhamVi.db.test.ts",
+    "to": "../db/twinCanh"
+  },
+  {
+    "from": "server/routers/canhNhieuNhaMayPhamVi.db.test.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routers/canhNhieuNhaMayPhamVi.db.test.ts",
+    "to": "../queryMonitor"
+  },
+  {
     "from": "server/routers/causalGraphRouter.ts",
     "to": "../_core/appError"
   },
@@ -3390,6 +4258,50 @@
   {
     "from": "server/routers/causalGraphRouter.ts",
     "to": "../services/aiCausalGraph"
+  },
+  {
+    "from": "server/routers/cayDayRouter.db.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/cayDayRouter.db.test.ts",
+    "to": "./productRouters"
+  },
+  {
+    "from": "server/routers/cayDayRouter.db.test.ts",
+    "to": "./cayDayRouter"
+  },
+  {
+    "from": "server/routers/cayDayRouter.db.test.ts",
+    "to": "../services/machineAuthService"
+  },
+  {
+    "from": "server/routers/cayDayRouter.db.test.ts",
+    "to": "../db/cayDay"
+  },
+  {
+    "from": "server/routers/cayDayRouter.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/cayDayRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/cayDayRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/cayDayRouter.ts",
+    "to": "../db/cayDay"
+  },
+  {
+    "from": "server/routers/changeReasonGiaTienToBienThe.test.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/routers/changeReasonGiaTienToBienThe.test.ts",
+    "to": "./productRouters"
   },
   {
     "from": "server/routers/commandCenterKpiScope.db.test.ts",
@@ -3504,6 +4416,14 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/routers/congDocHinhHoc.unit.test.ts",
+    "to": "./twinCanhRouter"
+  },
+  {
+    "from": "server/routers/congDocHinhHoc.unit.test.ts",
+    "to": "../../client/src/lib/navigation"
+  },
+  {
     "from": "server/routers/congGiayPhepAiCensus.test.ts",
     "to": "./congGiayPhepScan"
   },
@@ -3562,6 +4482,34 @@
   {
     "from": "server/routers/contractsRouter.ts",
     "to": "../../drizzle/schema/contracts"
+  },
+  {
+    "from": "server/routers/cuaIngestCensus.test.ts",
+    "to": "./cuaIngestScan"
+  },
+  {
+    "from": "server/routers/cuaIngestCensus.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/dangKyTinHieuHinhDangIngestBg89.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/dangKyTinHieuHinhDangIngestBg89.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/dangKyTinHieuHinhDangIngestBg89.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/dangKyTinHieuHinhDangIngestBg89.test.ts",
+    "to": "../services/auditTrailService"
+  },
+  {
+    "from": "server/routers/dangKyTinHieuHinhDangIngestBg89.test.ts",
+    "to": "../_core/context"
   },
   {
     "from": "server/routers/dashboardStatsRouters.ts",
@@ -3646,6 +4594,10 @@
   {
     "from": "server/routers/dataRouters.ts",
     "to": "../services/thresholdGovernanceService"
+  },
+  {
+    "from": "server/routers/dataRouters.ts",
+    "to": "../utils/measurementPointLimitGate"
   },
   {
     "from": "server/routers/defectDispositionRouter.ts",
@@ -3796,12 +4748,24 @@
     "to": "../services/devportal/pluginTemplate"
   },
   {
+    "from": "server/routers/digitalTwinPhamVi.db.test.ts",
+    "to": "./digitalTwinRouter"
+  },
+  {
     "from": "server/routers/digitalTwinRouter.ts",
     "to": "../_core/trpc"
   },
   {
     "from": "server/routers/digitalTwinRouter.ts",
     "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/digitalTwinRouter.ts",
@@ -4188,6 +5152,14 @@
     "to": "../_core/aiAnalyticsScope"
   },
   {
+    "from": "server/routers/factoryCommandAssetCockpitPhamVi.db.test.ts",
+    "to": "./factoryCommandRouter"
+  },
+  {
+    "from": "server/routers/factoryCommandAssetCockpitPhamVi.db.test.ts",
+    "to": "./assetCockpitRouter"
+  },
+  {
     "from": "server/routers/factoryCommandRouter.ts",
     "to": "../_core/appError"
   },
@@ -4198,6 +5170,10 @@
   {
     "from": "server/routers/factoryCommandRouter.ts",
     "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/factoryCommandRouter.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/factoryCommandRouter.ts",
@@ -4297,6 +5273,10 @@
   },
   {
     "from": "server/routers/fleetRouter.ts",
+    "to": "../db/telemetryMoiNhat"
+  },
+  {
+    "from": "server/routers/fleetRouter.ts",
     "to": "../../drizzle/schema/fleetResource"
   },
   {
@@ -4340,6 +5320,22 @@
     "to": "../services/fleet/chargingPlanner"
   },
   {
+    "from": "server/routers/ganKyThuatVienQuyen.db.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/ganKyThuatVienQuyen.db.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/ganKyThuatVienQuyen.db.test.ts",
+    "to": "./userRouters"
+  },
+  {
+    "from": "server/routers/ganKyThuatVienQuyen.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
     "from": "server/routers/genealogyRouter.ts",
     "to": "../_core/trpc"
   },
@@ -4362,6 +5358,10 @@
   {
     "from": "server/routers/generatePredictionsRoute.test.ts",
     "to": "./aiRouters"
+  },
+  {
+    "from": "server/routers/ghiInspectionWalCensus.test.ts",
+    "to": "./ghiInspectionWalScan"
   },
   {
     "from": "server/routers/goldenSampleRouter.ts",
@@ -4624,6 +5624,10 @@
     "to": "../_core/llm"
   },
   {
+    "from": "server/routers/inspectionRouters.ts",
+    "to": "../utils/kpi"
+  },
+  {
     "from": "server/routers/inspectionVariantRouter.ts",
     "to": "../_core/appError"
   },
@@ -4645,11 +5649,31 @@
   },
   {
     "from": "server/routers/integrityRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/integrityRouter.ts",
     "to": "../db/connection"
   },
   {
     "from": "server/routers/integrityRouter.ts",
     "to": "../services/integrityScanService"
+  },
+  {
+    "from": "server/routers/integrityRouterPermission.db.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/integrityRouterPermission.db.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/integrityRouterPermission.db.test.ts",
+    "to": "./integrityRouter"
+  },
+  {
+    "from": "server/routers/integrityRouterPermission.db.test.ts",
+    "to": "../_core/context"
   },
   {
     "from": "server/routers/interlockRouter.ts",
@@ -4841,6 +5865,10 @@
   },
   {
     "from": "server/routers/kbStudioRouter.test.ts",
+    "to": "../services/kbStudioEval"
+  },
+  {
+    "from": "server/routers/kbStudioRouter.test.ts",
     "to": "../services/kbIngestService"
   },
   {
@@ -4897,6 +5925,18 @@
   },
   {
     "from": "server/routers/kbStudioRouter.ts",
+    "to": "../services/kbStudioEval"
+  },
+  {
+    "from": "server/routers/kbStudioRouter.ts",
+    "to": "../services/kbKiemSauNap"
+  },
+  {
+    "from": "server/routers/kbStudioRouter.ts",
+    "to": "../services/kbStudioEval"
+  },
+  {
+    "from": "server/routers/kbStudioRouter.ts",
     "to": "./kbErrors"
   },
   {
@@ -4918,6 +5958,42 @@
   {
     "from": "server/routers/layoutRouters.ts",
     "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/layoutRouters.ts",
+    "to": "../services/auditTrailService"
+  },
+  {
+    "from": "server/routers/layoutRoutersAuditKhoiD.db.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/layoutRoutersAuditKhoiD.db.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/layoutRoutersAuditKhoiD.db.test.ts",
+    "to": "./layoutRouters"
+  },
+  {
+    "from": "server/routers/layoutRoutersAuditKhoiD.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/layoutRoutersPermissionKhoiD.db.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/layoutRoutersPermissionKhoiD.db.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/layoutRoutersPermissionKhoiD.db.test.ts",
+    "to": "./layoutRouters"
+  },
+  {
+    "from": "server/routers/layoutRoutersPermissionKhoiD.db.test.ts",
+    "to": "../_core/context"
   },
   {
     "from": "server/routers/licenseRouter.ts",
@@ -5078,6 +6154,26 @@
   {
     "from": "server/routers/machineApiIdempotency.test.ts",
     "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/machineApiIngestCayV2.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/machineApiIngestCayV2.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/machineApiIngestCayV2.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/machineApiIngestCayV2.test.ts",
+    "to": "../services/pointResultEvaluator"
+  },
+  {
+    "from": "server/routers/machineApiIngestCayV2.test.ts",
+    "to": "../services/inspection/inspectionStoreForward"
   },
   {
     "from": "server/routers/machineApiInlineGate.test.ts",
@@ -5253,6 +6349,46 @@
   },
   {
     "from": "server/routers/machineApiRouters.ts",
+    "to": "../contracts/machineTemplateContract"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../services/kiemTraCayDay"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../db/cayDay"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../db/inspection"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../services/specGateCayV2"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../db/product"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../db/product"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../services/mayTuMauThuan"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../utils/factoryTime"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
     "to": "../services/machineAuthService"
   },
   {
@@ -5332,6 +6468,22 @@
     "to": "./phamViGhiMay"
   },
   {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../contracts/machineDataContract"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../services/ingestCayKetQua"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../services/auditTrailService"
+  },
+  {
     "from": "server/routers/machineApiSingleTx.test.ts",
     "to": "./machineApiRouters"
   },
@@ -5396,6 +6548,18 @@
     "to": "../_core/context"
   },
   {
+    "from": "server/routers/machineApiThoiGianDaiThat.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/machineApiV1CuonNg.db.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/machineApiV1CuonNg.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
     "from": "server/routers/machineApiVariantGate.test.ts",
     "to": "./machineApiRouters"
   },
@@ -5418,6 +6582,10 @@
   {
     "from": "server/routers/machineApiVersionGate.test.ts",
     "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/machineApproveGiayToImLang.test.ts",
+    "to": "./hierarchyRouters"
   },
   {
     "from": "server/routers/machineClaimKey.test.ts",
@@ -5446,6 +6614,30 @@
   {
     "from": "server/routers/machineConfigSync.test.ts",
     "to": "./machineRecipeRouter"
+  },
+  {
+    "from": "server/routers/machineContractRouter.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/machineContractRouter.test.ts",
+    "to": "./machineContractRouter"
+  },
+  {
+    "from": "server/routers/machineContractRouter.test.ts",
+    "to": "../contracts/machineDataContract"
+  },
+  {
+    "from": "server/routers/machineContractRouter.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/machineContractRouter.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/machineContractRouter.test.ts",
+    "to": "../services/pointResultEvaluator"
   },
   {
     "from": "server/routers/machineContractRouter.ts",
@@ -5536,6 +6728,26 @@
     "to": "../services/mqttService"
   },
   {
+    "from": "server/routers/machineTemplateImagePresignCommit.db.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/machineTemplateImagePresignCommit.db.test.ts",
+    "to": "../services/machineAuthService"
+  },
+  {
+    "from": "server/routers/machineTemplateImagePresignCommit.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/maintenanceAndonPhamVi.db.test.ts",
+    "to": "./maintenanceRouter"
+  },
+  {
+    "from": "server/routers/maintenanceAndonPhamVi.db.test.ts",
+    "to": "./andonRouter"
+  },
+  {
     "from": "server/routers/maintenanceRouter.test.ts",
     "to": "./__otFakeDb"
   },
@@ -5558,6 +6770,14 @@
   {
     "from": "server/routers/maintenanceRouter.ts",
     "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/maintenanceRouter.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routers/maintenanceRouter.ts",
+    "to": "./_phamViNguoiXem"
   },
   {
     "from": "server/routers/maintenanceRouter.ts",
@@ -5680,6 +6900,14 @@
     "to": "./productRouters"
   },
   {
+    "from": "server/routers/measurementPointLimits.db.test.ts",
+    "to": "./productRouters"
+  },
+  {
+    "from": "server/routers/measurementPointLimits.db.test.ts",
+    "to": "../../shared/pointLimitSpec"
+  },
+  {
     "from": "server/routers/measurementPointVersionBump.test.ts",
     "to": "./productRouters"
   },
@@ -5774,6 +7002,10 @@
   {
     "from": "server/routers/mqttBulletinRouter.ts",
     "to": "../services/mqttService"
+  },
+  {
+    "from": "server/routers/mqttBulletinRouter.ts",
+    "to": "../utils/kpi"
   },
   {
     "from": "server/routers/mqttClientManagementRouter.ts",
@@ -6164,6 +7396,10 @@
     "to": "../services/pdfTemplateService"
   },
   {
+    "from": "server/routers/pdfReportRouter.ts",
+    "to": "../utils/kpi"
+  },
+  {
     "from": "server/routers/permissions.analyticsCategory.test.ts",
     "to": "./permissionsRouter"
   },
@@ -6308,6 +7544,10 @@
     "to": "../services/powerpointService"
   },
   {
+    "from": "server/routers/powerpointRouter.ts",
+    "to": "../utils/kpi"
+  },
+  {
     "from": "server/routers/predictiveMaintenanceRouter.ts",
     "to": "../_core/trpc"
   },
@@ -6450,6 +7690,10 @@
   {
     "from": "server/routers/productionSessionRouter.ts",
     "to": "../../drizzle/schema/production"
+  },
+  {
+    "from": "server/routers/productionSessionRouter.ts",
+    "to": "../utils/kpi"
   },
   {
     "from": "server/routers/productModelRouter.test.ts",
@@ -6609,6 +7853,14 @@
   },
   {
     "from": "server/routers/productRouters.ts",
+    "to": "../utils/measurementPointLimitGate"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "../utils/changeReasonGuard"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
     "to": "../services/componentLinkBackfill"
   },
   {
@@ -6662,6 +7914,14 @@
   {
     "from": "server/routers/productVariantRouter.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/productVariantRouter.ts",
+    "to": "../services/thresholdGovernanceService"
+  },
+  {
+    "from": "server/routers/productVariantRouter.ts",
+    "to": "../utils/measurementPointLimitGate"
   },
   {
     "from": "server/routers/programmingRouter.safetyGuard.test.ts",
@@ -7004,6 +8264,10 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/routers/repoWorkspaceNgonNgu.test.ts",
+    "to": "./repoWorkspaceRouter"
+  },
+  {
     "from": "server/routers/repoWorkspaceRouter.ts",
     "to": "../_core/trpc"
   },
@@ -7022,6 +8286,10 @@
   {
     "from": "server/routers/repoWorkspaceRouter.ts",
     "to": "../db/aiCodingSessions"
+  },
+  {
+    "from": "server/routers/repoWorkspaceRouter.ts",
+    "to": "../services/aiLocalTools/lenhSong"
   },
   {
     "from": "server/routers/revertPointsConfigRouter.test.ts",
@@ -7221,6 +8489,10 @@
   },
   {
     "from": "server/routers/sensorRouter.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/routers/sensorRouter.ts",
     "to": "../db/connection"
   },
   {
@@ -7230,6 +8502,14 @@
   {
     "from": "server/routers/sensorRouter.ts",
     "to": "../services/predictiveMaintenanceService"
+  },
+  {
+    "from": "server/routers/sensorRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/sensorRouter.ts",
+    "to": "../db/hierarchy"
   },
   {
     "from": "server/routers/sessionGrantScan.test.ts",
@@ -7368,6 +8648,10 @@
     "to": "../utils/spc"
   },
   {
+    "from": "server/routers/stationAnalysis.yield.test.ts",
+    "to": "./stationAnalysisRouter"
+  },
+  {
     "from": "server/routers/stationAnalysisRouter.ts",
     "to": "../_core/trpc"
   },
@@ -7390,6 +8674,10 @@
   {
     "from": "server/routers/stationAnalysisRouter.ts",
     "to": "../utils/spc"
+  },
+  {
+    "from": "server/routers/stationAnalysisRouter.ts",
+    "to": "../utils/kpi"
   },
   {
     "from": "server/routers/stationTriangulationRouter.ts",
@@ -7544,6 +8832,18 @@
     "to": "../db"
   },
   {
+    "from": "server/routers/thoiGianMotHeQuyChieu.db.test.ts",
+    "to": "./machineApiRouters"
+  },
+  {
+    "from": "server/routers/thoiGianMotHeQuyChieu.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
+    "from": "server/routers/thoiGianMotHeQuyChieu.db.test.ts",
+    "to": "../contracts/machineDataContractV2.test-helpers"
+  },
+  {
     "from": "server/routers/thresholdApprovalComplement.test.ts",
     "to": "./__otFakeDb"
   },
@@ -7558,6 +8858,14 @@
   {
     "from": "server/routers/thresholdApprovalCount.test.ts",
     "to": "../services/thresholdApprovalCount"
+  },
+  {
+    "from": "server/routers/thresholdApprovalDeXuat.db.test.ts",
+    "to": "./thresholdApprovalRouter"
+  },
+  {
+    "from": "server/routers/thresholdApprovalRouter.test.ts",
+    "to": "../_core/appError"
   },
   {
     "from": "server/routers/thresholdApprovalRouter.test.ts",
@@ -7594,6 +8902,14 @@
   {
     "from": "server/routers/thresholdApprovalRouter.ts",
     "to": "../services/thresholdGovernanceService"
+  },
+  {
+    "from": "server/routers/thresholdApprovalRouter.ts",
+    "to": "../utils/changeReasonGuard"
+  },
+  {
+    "from": "server/routers/thresholdApprovalRouter.ts",
+    "to": "../utils/measurementPointLimitGate"
   },
   {
     "from": "server/routers/thresholdSuggestionRouter.ts",
@@ -7724,6 +9040,54 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/routers/trangThaiNhieuNhaMayPhamVi.db.test.ts",
+    "to": "../routers"
+  },
+  {
+    "from": "server/routers/trangThaiNhieuNhaMayPhamVi.db.test.ts",
+    "to": "../queryMonitor"
+  },
+  {
+    "from": "server/routers/twinBonManApiVaiPhamVi.db.test.ts",
+    "to": "../routers"
+  },
+  {
+    "from": "server/routers/twinCanhRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/twinCanhRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/twinCanhRouter.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/routers/twinCanhRouter.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/routers/twinCanhRouter.ts",
+    "to": "../services/twin/modelRegistry"
+  },
+  {
+    "from": "server/routers/twinCanhRouter.ts",
+    "to": "../_core/uploadValidation"
+  },
+  {
+    "from": "server/routers/twinCanhRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/twinCanhRouter.ts",
+    "to": "../db/twinCanh"
+  },
+  {
+    "from": "server/routers/twinCanhRouter.ts",
+    "to": "../../client/src/components/twin3d/sinhBoCuc"
+  },
+  {
     "from": "server/routers/twinGovRouter.ts",
     "to": "../_core/trpc"
   },
@@ -7754,6 +9118,14 @@
   {
     "from": "server/routers/twinRouter.ts",
     "to": "../_core/uploadValidation"
+  },
+  {
+    "from": "server/routers/twinRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/twinRouter.ts",
+    "to": "../db/hierarchy"
   },
   {
     "from": "server/routers/twinRouter.ts",
@@ -7854,6 +9226,10 @@
   {
     "from": "server/routers/userRouters.ts",
     "to": "./_shared"
+  },
+  {
+    "from": "server/routers/userRouters.ts",
+    "to": "../_core/accessControl"
   },
   {
     "from": "server/routers/userRouters.ts",
@@ -8233,6 +9609,18 @@
   },
   {
     "from": "server/routers/wipRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/wipRouter.ts",
+    "to": "./_phamViNguoiXem"
+  },
+  {
+    "from": "server/routers/wipRouter.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routers/wipRouter.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -8366,6 +9754,10 @@
   {
     "from": "server/routers.ts",
     "to": "./routers/productRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/cayDayRouter"
   },
   {
     "from": "server/routers.ts",
@@ -8901,6 +10293,10 @@
   },
   {
     "from": "server/routers.ts",
+    "to": "./routers/twinCanhRouter"
+  },
+  {
+    "from": "server/routers.ts",
     "to": "./routers/safetyRouter"
   },
   {
@@ -9088,6 +10484,18 @@
     "to": "./aiLocalKnowledgeApi"
   },
   {
+    "from": "server/routes/aiLocalKnowledgeApi.parseContextRoute.test.ts",
+    "to": "./aiLocalKnowledgeApi"
+  },
+  {
+    "from": "server/routes/aiLocalKnowledgeApi.ts",
+    "to": "../services/ai/chonTacVuModel"
+  },
+  {
+    "from": "server/routes/aiLocalKnowledgeApi.ts",
+    "to": "../services/ai/loaiLuot"
+  },
+  {
     "from": "server/routes/aiLocalKnowledgeApi.ts",
     "to": "./_xacThucRest"
   },
@@ -9146,6 +10554,10 @@
   {
     "from": "server/routes/externalInspectionApi.ts",
     "to": "../_core/anhKyUrl"
+  },
+  {
+    "from": "server/routes/externalInspectionApi.ts",
+    "to": "../utils/factoryTime"
   },
   {
     "from": "server/routes/externalInspectionApi.ts",
@@ -9328,6 +10740,10 @@
     "to": "./aiSafety"
   },
   {
+    "from": "server/services/ai/aiSafety.giuNhan.test.ts",
+    "to": "./aiSafety"
+  },
+  {
     "from": "server/services/ai/aiSafety.test.ts",
     "to": "./aiSafety"
   },
@@ -9366,6 +10782,18 @@
   {
     "from": "server/services/ai/autonomyWriteToolCensus.test.ts",
     "to": "./autonomyPolicy"
+  },
+  {
+    "from": "server/services/ai/boSungUsingCSharp.test.ts",
+    "to": "./boSungUsingCSharp"
+  },
+  {
+    "from": "server/services/ai/cauSinhMa.test.ts",
+    "to": "./cauSinhMa"
+  },
+  {
+    "from": "server/services/ai/chonTacVuModel.test.ts",
+    "to": "./chonTacVuModel"
   },
   {
     "from": "server/services/ai/codingLessonContext.test.ts",
@@ -9430,6 +10858,18 @@
   {
     "from": "server/services/ai/defectCorrelationService.test.ts",
     "to": "./defectCorrelationService"
+  },
+  {
+    "from": "server/services/ai/dotnetNewScaffold.test.ts",
+    "to": "./dotnetNewScaffold"
+  },
+  {
+    "from": "server/services/ai/dotnetNewScaffold.ts",
+    "to": "../aiLocalTools/repoCommandSandbox"
+  },
+  {
+    "from": "server/services/ai/dotnetNewScaffold.ts",
+    "to": "../aiLocalTools/repoSandbox"
   },
   {
     "from": "server/services/ai/embeddingHead.test.ts",
@@ -9560,8 +11000,28 @@
     "to": "./ggufCtxCap"
   },
   {
+    "from": "server/services/ai/hoSoModelStudio.test.ts",
+    "to": "./hoSoModelStudio"
+  },
+  {
+    "from": "server/services/ai/hoSoModelStudio.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/ai/hoSoSampling.test.ts",
+    "to": "./hoSoSampling"
+  },
+  {
     "from": "server/services/ai/kbStudioAccess.test.ts",
     "to": "./kbStudioAccess"
+  },
+  {
+    "from": "server/services/ai/loaiLuot.cheDo.test.ts",
+    "to": "./loaiLuot"
+  },
+  {
+    "from": "server/services/ai/loaiLuot.test.ts",
+    "to": "./loaiLuot"
   },
   {
     "from": "server/services/ai/materialForecastService.test.ts",
@@ -9704,6 +11164,18 @@
     "to": "./nativeToolCalls"
   },
   {
+    "from": "server/services/ai/nghiSau.test.ts",
+    "to": "./nghiSau"
+  },
+  {
+    "from": "server/services/ai/nghiSau.test.ts",
+    "to": "./tranTokenSinhMa"
+  },
+  {
+    "from": "server/services/ai/nghiSau.ts",
+    "to": "./loaiLuot"
+  },
+  {
     "from": "server/services/ai/ntfClassifier.test.ts",
     "to": "../../db/connection"
   },
@@ -9804,6 +11276,14 @@
     "to": "../vram/vramCaps"
   },
   {
+    "from": "server/services/ai/ocrService.ts",
+    "to": "./ocrVietOcr"
+  },
+  {
+    "from": "server/services/ai/ocrVietOcr.test.ts",
+    "to": "./ocrVietOcr"
+  },
+  {
     "from": "server/services/ai/parameterGuardrailService.test.ts",
     "to": "./parameterGuardrailService"
   },
@@ -9818,6 +11298,42 @@
   {
     "from": "server/services/ai/parameterGuardrailService.wired.test.ts",
     "to": "./parameterGuardrailService"
+  },
+  {
+    "from": "server/services/ai/phuQuyetTool.test.ts",
+    "to": "./phuQuyetTool"
+  },
+  {
+    "from": "server/services/ai/phuQuyetToolNative.test.ts",
+    "to": "./phuQuyetToolNative"
+  },
+  {
+    "from": "server/services/ai/phuQuyetToolNative.test.ts",
+    "to": "../aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/ai/phuQuyetToolNative.ts",
+    "to": "../ai/thinkingStrip"
+  },
+  {
+    "from": "server/services/ai/phuQuyetToolNative.ts",
+    "to": "../aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/ai/phuQuyetToolNative.ts",
+    "to": "../aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/ai/phuQuyetToolNative.ts",
+    "to": "../aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/ai/phuQuyetToolNative.ts",
+    "to": "./nativeToolCalls"
+  },
+  {
+    "from": "server/services/ai/phuQuyetToolNative.ts",
+    "to": "./phuQuyetTool"
   },
   {
     "from": "server/services/ai/rcaActionSuggester.test.ts",
@@ -9970,6 +11486,30 @@
   {
     "from": "server/services/ai/thinkingSurfaces.wiring.test.ts",
     "to": "../../_core/eventBus"
+  },
+  {
+    "from": "server/services/ai/thuMucTuLoi.test.ts",
+    "to": "./thuMucTuLoi"
+  },
+  {
+    "from": "server/services/ai/tienToNhungCauHoi.test.ts",
+    "to": "./tienToNhungCauHoi"
+  },
+  {
+    "from": "server/services/ai/toolDuongTat.grepDeadline.test.ts",
+    "to": "./toolDuongTat"
+  },
+  {
+    "from": "server/services/ai/toolDuongTat.test.ts",
+    "to": "./toolDuongTat"
+  },
+  {
+    "from": "server/services/ai/tranTokenSinhMa.test.ts",
+    "to": "./tranTokenSinhMa"
+  },
+  {
+    "from": "server/services/ai/vanBanChoModel.test.ts",
+    "to": "./vanBanChoModel"
   },
   {
     "from": "server/services/ai/visionInferenceSlo.test.ts",
@@ -10505,6 +12045,10 @@
   },
   {
     "from": "server/services/aiCodingAgent.ts",
+    "to": "./ai/chonTacVuModel"
+  },
+  {
+    "from": "server/services/aiCodingAgent.ts",
     "to": "./aiLlamaServerClient"
   },
   {
@@ -10518,6 +12062,18 @@
   {
     "from": "server/services/aiCodingAgent.ts",
     "to": "./aiGateway"
+  },
+  {
+    "from": "server/services/aiCodingAgent.ts",
+    "to": "./ai/hoSoSampling"
+  },
+  {
+    "from": "server/services/aiCodingAgent.ts",
+    "to": "./aiLocalTools/repoSandbox"
+  },
+  {
+    "from": "server/services/aiCodingChonTep.test.ts",
+    "to": "./aiCodingAgent"
   },
   {
     "from": "server/services/aiCodingCli/batDau.ts",
@@ -10576,6 +12132,30 @@
     "to": "./cauNoiCli"
   },
   {
+    "from": "server/services/aiCodingCli/cliTaoKhung.test.ts",
+    "to": "./cli"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliTaoKhung.test.ts",
+    "to": "../aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliTaoKhung.test.ts",
+    "to": "../../db/auth"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliTaoKhung.test.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliTaoKhung.test.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiCodingCli/cliTaoKhung.test.ts",
+    "to": "../../../drizzle/schema/auth"
+  },
+  {
     "from": "server/services/aiCodingCli/cliVongThat.test.ts",
     "to": "./cli"
   },
@@ -10626,6 +12206,10 @@
   {
     "from": "server/services/aiCodingCli/mcpServer.ts",
     "to": "./cauNoiCli"
+  },
+  {
+    "from": "server/services/aiCodingCli/mcpStdoutSach.test.ts",
+    "to": "./mcpStdoutSach"
   },
   {
     "from": "server/services/aiCodingDot02.stream.test.ts",
@@ -10700,6 +12284,30 @@
     "to": "./aiLocalKnowledgeService"
   },
   {
+    "from": "server/services/aiCodingTaoKhung.stream.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCodingTaoKhung.stream.test.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiCodingTaoKhung.stream.test.ts",
+    "to": "./aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/aiCodingTaoKhung.stream.test.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiffBatch"
+  },
+  {
+    "from": "server/services/aiCodingTaoKhungDotnet.stream.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCodingTaoKhungDotnet.stream.test.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
     "from": "server/services/aiCodingTaoTep.stream.test.ts",
     "to": "./aiLocalKnowledgeService"
   },
@@ -10710,6 +12318,50 @@
   {
     "from": "server/services/aiCodingTaoTep.stream.test.ts",
     "to": "./aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.stream.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.test.ts",
+    "to": "./aiCodingTuTriGhi"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.test.ts",
+    "to": "./aiCodingVerify"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.test.ts",
+    "to": "./aiLocalTools/repoCommandSandbox"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.ts",
+    "to": "./ai/autonomyPolicy"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.ts",
+    "to": "./aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.ts",
+    "to": "./aiCodingVerify"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.ts",
+    "to": "./aiLocalTools"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.ts",
+    "to": "./aiLocalTools/repoProjects"
+  },
+  {
+    "from": "server/services/aiCodingTuTriGhi.ts",
+    "to": "./auditTrailService"
   },
   {
     "from": "server/services/aiCodingVerify.test.ts",
@@ -10733,6 +12385,18 @@
   },
   {
     "from": "server/services/aiCodingVerify.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiCopilotActions.apMotPhan.test.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiCopilotActions.apMotPhan.test.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiffBatch"
+  },
+  {
+    "from": "server/services/aiCopilotActions.apOClient.test.ts",
     "to": "./aiCopilotActions"
   },
   {
@@ -10833,6 +12497,10 @@
   },
   {
     "from": "server/services/aiCopilotActions.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiffBatch"
+  },
+  {
+    "from": "server/services/aiCopilotActions.ts",
     "to": "./auditTrailService"
   },
   {
@@ -10842,6 +12510,30 @@
   {
     "from": "server/services/aiCopilotActions.ts",
     "to": "./aiAgentRealtime"
+  },
+  {
+    "from": "server/services/aiCopilotActions.tuChoiGhi.test.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiCopilotActions.tuChoiGhi.test.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiff"
+  },
+  {
+    "from": "server/services/aiCopilotActions.tuChoiGhi.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiCopilotActions.tuChoiGhi.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiCopilotActions.tuChoiGhi.test.ts",
+    "to": "../../drizzle/schema/auth"
+  },
+  {
+    "from": "server/services/aiCopilotActions.tuChoiGhi.test.ts",
+    "to": "../db/auth"
   },
   {
     "from": "server/services/aiCostModel.test.ts",
@@ -11328,6 +13020,18 @@
     "to": "./aiLocalKnowledgeService"
   },
   {
+    "from": "server/services/aiLocalKnowledge.h6VscodeShouldUseLlmBypass.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.numPredictVscode.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.progKbRouteGate.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
     "from": "server/services/aiLocalKnowledge.studioMerge.integration.test.ts",
     "to": "./aiLocalKnowledgeService"
   },
@@ -11352,6 +13056,254 @@
     "to": "./ai/aiSafety"
   },
   {
+    "from": "server/services/aiLocalKnowledge.v11FactoryDataGate.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.vendorDetect.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.vendorFilterWiring.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.vscodeRouteGate.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.vscodeStudioMerge.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiLocalTools"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./ai/toolDuongTat"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./ai/cauSinhMa"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./ai/vanBanChoModel"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./ai/codingRepoContext"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./ai/codingLessonContext"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./ai/aiSafety"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiLocalKnowledgeCodingThongBao"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiLocalKnowledgeCodingSinhMa"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiLocalKnowledgeCodingSua"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiLocalKnowledgeCodingTaoKhung"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCoding.ts",
+    "to": "./aiLocalKnowledgeCodingSinhMa"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./aiLocalTools"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./ai/tranTokenSinhMa"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./ai/loaiLuot"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./ai/nghiSau"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./ai/hoSoSampling"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./ai/codingRepoContext"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./ai/boSungUsingCSharp"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./aiLocalKnowledgeCodingThongBao"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSinhMa.ts",
+    "to": "./aiLocalKnowledgeCoding"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./aiLocalTools"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./aiCodingTuTriGhi"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./aiLocalTools/repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./ai/thuMucTuLoi"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./ai/tranTokenSinhMa"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./ai/loaiLuot"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./ai/nghiSau"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./ai/hoSoSampling"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./ai/codingRepoContext"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./aiLocalKnowledgeCodingThongBao"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingSua.ts",
+    "to": "./aiLocalKnowledgeCoding"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "to": "./aiLocalTools"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "to": "./aiLocalTools/repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiffBatch"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "to": "./ai/dotnetNewScaffold"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "to": "./aiLocalKnowledgeCodingThongBao"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "to": "./aiLocalKnowledgeCodingSua"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
+    "to": "./aiLocalKnowledgeCoding"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingThongBao.ts",
+    "to": "./aiLocalTools/writeHandlers/applyDiffBatch"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingThongBao.ts",
+    "to": "./aiCodingAgent"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingThongBao.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingThongBao.ts",
+    "to": "./aiLocalKnowledgeCoding"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeCodingThongBao.ts",
+    "to": "./aiLocalKnowledgeCoding"
+  },
+  {
     "from": "server/services/aiLocalKnowledgeSafety.test.ts",
     "to": "./aiLocalKnowledgeService"
   },
@@ -11365,19 +13317,19 @@
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
-    "to": "./aiLocalTools/intentClassifier"
+    "to": "./ai/toolDuongTat"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./ai/vanBanChoModel"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./ai/loaiLuot"
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
     "to": "./aiCodingAgent"
-  },
-  {
-    "from": "server/services/aiLocalKnowledgeService.ts",
-    "to": "./ai/codingRepoContext"
-  },
-  {
-    "from": "server/services/aiLocalKnowledgeService.ts",
-    "to": "./ai/codingLessonContext"
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
@@ -11386,6 +13338,10 @@
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
     "to": "./aiKbSourceWeights"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./ai/tienToNhungCauHoi"
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
@@ -11429,11 +13385,39 @@
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiProgrammingKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
     "to": "./ai/dataCitation"
   },
   {
     "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiLocalKnowledgeCoding"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiLocalKnowledgeVongTool"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
     "to": "./aiLocalTools/intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiLocalKnowledgeCoding"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiLocalKnowledgeVongTool"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeVongTool.ts",
+    "to": "./aiLocalTools"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeVongTool.ts",
+    "to": "./aiLocalKnowledgeService"
   },
   {
     "from": "server/services/aiLocalTools/analyticsTools.test.ts",
@@ -11516,6 +13500,18 @@
     "to": "./writeHandlers/applyDiffBatch"
   },
   {
+    "from": "server/services/aiLocalTools/applyDiffMienHITL.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiffMienHITL.test.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/applyDiffMienHITL.test.ts",
+    "to": "./writeHandlers/applyDiff"
+  },
+  {
     "from": "server/services/aiLocalTools/authCtxInjection.test.ts",
     "to": "./index"
   },
@@ -11542,6 +13538,14 @@
   {
     "from": "server/services/aiLocalTools/codingToolLoop.test.ts",
     "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/grepLoaiTru.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/grepLoaiTru.test.ts",
+    "to": "./repoSandbox"
   },
   {
     "from": "server/services/aiLocalTools/handlers.scopeDb.test.ts",
@@ -11689,6 +13693,10 @@
   },
   {
     "from": "server/services/aiLocalTools/index.ts",
+    "to": "../ai/phuQuyetToolNative"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
     "to": "./toolLoop"
   },
   {
@@ -11773,11 +13781,35 @@
   },
   {
     "from": "server/services/aiLocalTools/intentClassifier.ts",
+    "to": "../ai/cauSinhMa"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.ts",
+    "to": "./tenCongNghe"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.ts",
     "to": "../programming/programmingAdapter"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.tuTri.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/lenhSong.test.ts",
+    "to": "./lenhSong"
+  },
+  {
+    "from": "server/services/aiLocalTools/lenhSong.ts",
+    "to": "../ai/aiSafety"
   },
   {
     "from": "server/services/aiLocalTools/llmKhongKhoiXuongGhi.test.ts",
     "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/machineControl.tools.test.ts",
+    "to": "../ot/aiControlGate"
   },
   {
     "from": "server/services/aiLocalTools/machineControl.tools.test.ts",
@@ -11957,6 +13989,10 @@
   },
   {
     "from": "server/services/aiLocalTools/repoReadTools.ts",
+    "to": "../ai/vanBanChoModel"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoReadTools.ts",
     "to": "./readToolRbac"
   },
   {
@@ -11982,6 +14018,14 @@
   {
     "from": "server/services/aiLocalTools/repoSandbox.ts",
     "to": "./readToolsProgramming"
+  },
+  {
+    "from": "server/services/aiLocalTools/repoSandboxPhang.test.ts",
+    "to": "./repoSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/tenCongNghe.test.ts",
+    "to": "./tenCongNghe"
   },
   {
     "from": "server/services/aiLocalTools/toolArgCoverage.test.ts",
@@ -12018,6 +14062,10 @@
   {
     "from": "server/services/aiLocalTools/toolLoop.ts",
     "to": "../aiLlamaServerClient"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolLoop.ts",
+    "to": "../ai/vanBanChoModel"
   },
   {
     "from": "server/services/aiLocalTools/toolLoop.ts",
@@ -12277,6 +14325,10 @@
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/machineControl.guardrail.test.ts",
+    "to": "../../ot/aiControlGate"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/machineControl.guardrail.test.ts",
     "to": "../toolRegistry"
   },
   {
@@ -12298,6 +14350,14 @@
   {
     "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
     "to": "../../ot/commandDispatcher"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
+    "to": "../../ot/aiControlGate"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
+    "to": "../../ot/aiControlGate.safety"
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
@@ -12333,11 +14393,23 @@
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/measurementPoint.ts",
+    "to": "../../../db/system"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/measurementPoint.ts",
     "to": "../toolRegistry"
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/measurementPoint.ts",
     "to": "../../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/measurementPoint.ts",
+    "to": "../../thresholdGovernanceService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/measurementPoint.ts",
+    "to": "../../../utils/measurementPointLimitGate"
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/programmingFile.ts",
@@ -12366,6 +14438,10 @@
   {
     "from": "server/services/aiLocalTools/writeHandlers/repoCommand.ts",
     "to": "../repoCommandSandbox"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/repoCommand.ts",
+    "to": "../lenhSong"
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/repoCommand.ts",
@@ -12405,6 +14481,14 @@
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers/visionControl.ts",
+    "to": "../../ot/aiControlGate"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/visionControl.ts",
+    "to": "../../ot/aiControlGate.safety"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/visionControl.ts",
     "to": "../toolRegistry"
   },
   {
@@ -12424,12 +14508,20 @@
     "to": "../../auditTrailService"
   },
   {
+    "from": "server/services/aiLocalTools/writeHandlers/yield.ts",
+    "to": "../../ot/aiControlGate"
+  },
+  {
     "from": "server/services/aiLocalTools/writeHandlers.gd3.test.ts",
     "to": "./toolRegistry"
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers.gd3.test.ts",
     "to": "../aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers.gd3.test.ts",
+    "to": "../ot/aiControlGate"
   },
   {
     "from": "server/services/aiLocalTools/writeHandlers.ts",
@@ -12878,6 +14970,10 @@
   {
     "from": "server/services/aiReportGenerator.ts",
     "to": "./aiDriftMonitor"
+  },
+  {
+    "from": "server/services/aiReportGenerator.ts",
+    "to": "../utils/kpi"
   },
   {
     "from": "server/services/aiReportPhrases.exhaustive.test.ts",
@@ -13836,6 +15932,10 @@
     "to": "./ai/thinkingStrip"
   },
   {
+    "from": "server/services/dataComparisonService.ts",
+    "to": "../utils/kpi"
+  },
+  {
     "from": "server/services/dataRetentionService.test.ts",
     "to": "./dataRetentionService"
   },
@@ -14017,6 +16117,10 @@
   },
   {
     "from": "server/services/ecosystem/assetCockpitService.ts",
+    "to": "../../db/hierarchy"
+  },
+  {
+    "from": "server/services/ecosystem/assetCockpitService.ts",
     "to": "../../../drizzle/schema"
   },
   {
@@ -14034,6 +16138,14 @@
   {
     "from": "server/services/ecosystem/assetCockpitService.ts",
     "to": "../oeeService"
+  },
+  {
+    "from": "server/services/ecosystem/assetCockpitService.ts",
+    "to": "../trangThaiMayTuoi"
+  },
+  {
+    "from": "server/services/ecosystem/assetCockpitService.ts",
+    "to": "../../db/twinCanh"
   },
   {
     "from": "server/services/ecosystem/assetCockpitService.ts",
@@ -14520,6 +16632,18 @@
     "to": "./semantics/metricRegistry"
   },
   {
+    "from": "server/services/factoryCommandService.ts",
+    "to": "./trangThaiMayTuoi"
+  },
+  {
+    "from": "server/services/factoryCommandService.ts",
+    "to": "../db/twinCanh"
+  },
+  {
+    "from": "server/services/factoryCommandService.ts",
+    "to": "../db/hierarchy"
+  },
+  {
     "from": "server/services/faiGateService.ts",
     "to": "../_core/appError"
   },
@@ -14650,6 +16774,10 @@
   {
     "from": "server/services/federation/unsSubscriber.ts",
     "to": "./siteClient"
+  },
+  {
+    "from": "server/services/federation/unsSubscriber.ts",
+    "to": "../../utils/kpi"
   },
   {
     "from": "server/services/feederVerifyService.ts",
@@ -14829,6 +16957,10 @@
   },
   {
     "from": "server/services/fleet/taskAllocator.ts",
+    "to": "../../db/telemetryMoiNhat"
+  },
+  {
+    "from": "server/services/fleet/taskAllocator.ts",
     "to": "../../../drizzle/schema/fleet"
   },
   {
@@ -14928,6 +17060,38 @@
     "to": "./ggufConcurrency"
   },
   {
+    "from": "server/services/gioiHanLucDoCayV2.test.ts",
+    "to": "./gioiHanLucDoCayV2"
+  },
+  {
+    "from": "server/services/gioiHanLucDoCayV2.test.ts",
+    "to": "./pointResultEvaluator"
+  },
+  {
+    "from": "server/services/gioiHanLucDoCayV2.test.ts",
+    "to": "../db/cayDay"
+  },
+  {
+    "from": "server/services/gioiHanLucDoCayV2.test.ts",
+    "to": "../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/services/gioiHanLucDoCayV2.ts",
+    "to": "./pointResultEvaluator"
+  },
+  {
+    "from": "server/services/gioiHanLucDoCayV2.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/gioiHanLucDoCayV2.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/gioiHanLucDoCayV2.ts",
+    "to": "../logger"
+  },
+  {
     "from": "server/services/goldenApproval.test.ts",
     "to": "../db/connection"
   },
@@ -15000,6 +17164,10 @@
     "to": "../db/goldenSample"
   },
   {
+    "from": "server/services/gonLoiKhongNuotTin.test.ts",
+    "to": "./telemetryBus"
+  },
+  {
     "from": "server/services/imageAlignment.test.ts",
     "to": "./imageAlignment"
   },
@@ -15020,8 +17188,56 @@
     "to": "./imageRegistration"
   },
   {
+    "from": "server/services/ingestCayKetQua.test.ts",
+    "to": "../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/services/ingestCayKetQua.test.ts",
+    "to": "../contracts/machineDataContractV2.test-helpers"
+  },
+  {
+    "from": "server/services/ingestCayKetQua.test.ts",
+    "to": "./ingestCayKetQua"
+  },
+  {
+    "from": "server/services/ingestCayKetQua.ts",
+    "to": "../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/services/ingestCayKetQua.ts",
+    "to": "./specGateCayV2"
+  },
+  {
+    "from": "server/services/ingestCayKetQua.ts",
+    "to": "./mayTuMauThuan"
+  },
+  {
     "from": "server/services/inspection/inspectionStoreForward.test.ts",
     "to": "./inspectionStoreForward"
+  },
+  {
+    "from": "server/services/inspection/inspectionStoreForward.ts",
+    "to": "../../contracts/machineDataContract"
+  },
+  {
+    "from": "server/services/inspection/inspectionStoreForward.ts",
+    "to": "../../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/services/inspection/inspectionStoreForwardBaLoWal.test.ts",
+    "to": "./inspectionStoreForward"
+  },
+  {
+    "from": "server/services/inspection/inspectionStoreForwardKhongChanDauHang.test.ts",
+    "to": "./inspectionStoreForward"
+  },
+  {
+    "from": "server/services/inspection/walCayV2.test.ts",
+    "to": "./inspectionStoreForward"
+  },
+  {
+    "from": "server/services/inspection/walCayV2.test.ts",
+    "to": "../../contracts/machineDataContractV2.test-helpers"
   },
   {
     "from": "server/services/inspectionProgramService.test.ts",
@@ -15208,6 +17424,10 @@
     "to": "./integrityScanService"
   },
   {
+    "from": "server/services/integrityScanBoKhongDo.test.ts",
+    "to": "./integrityScanService"
+  },
+  {
     "from": "server/services/integrityScanService.ts",
     "to": "../db/connection"
   },
@@ -15312,6 +17532,10 @@
     "to": "./aiProviderRouter"
   },
   {
+    "from": "server/services/kbIngestService.kyHieu.test.ts",
+    "to": "./kbIngestService"
+  },
+  {
     "from": "server/services/kbIngestService.test.ts",
     "to": "./kbIngestService"
   },
@@ -15328,8 +17552,40 @@
     "to": "./kbVectorStore"
   },
   {
+    "from": "server/services/kbKiemSauNap.test.ts",
+    "to": "./kbKiemSauNap"
+  },
+  {
+    "from": "server/services/kbKiemSauNap.ts",
+    "to": "./kbDocParser"
+  },
+  {
+    "from": "server/services/kbStudioEval.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/kbStudioEval.ts",
+    "to": "../_core/dbErrors"
+  },
+  {
+    "from": "server/services/kbStudioEval.ts",
+    "to": "../../drizzle/schema/kbStudio"
+  },
+  {
+    "from": "server/services/kbStudioEval.ts",
+    "to": "./kbStudioEvalCham"
+  },
+  {
+    "from": "server/services/kbStudioEvalCham.test.ts",
+    "to": "./kbStudioEvalCham"
+  },
+  {
     "from": "server/services/kbStudioService.ts",
     "to": "../db/connection"
+  },
+  {
+    "from": "server/services/kbStudioService.ts",
+    "to": "./kbKiemSauNap"
   },
   {
     "from": "server/services/kbStudioService.ts",
@@ -15386,6 +17642,18 @@
   {
     "from": "server/services/kbWebFetcher.ts",
     "to": "./kbIngestService"
+  },
+  {
+    "from": "server/services/kiemTraCayDay.test.ts",
+    "to": "../contracts/machineTemplateContract"
+  },
+  {
+    "from": "server/services/kiemTraCayDay.test.ts",
+    "to": "./kiemTraCayDay"
+  },
+  {
+    "from": "server/services/kiemTraCayDay.ts",
+    "to": "../contracts/machineTemplateContract"
   },
   {
     "from": "server/services/lineController/lineControllerService.test.ts",
@@ -15672,6 +17940,22 @@
     "to": "../db/connection"
   },
   {
+    "from": "server/services/mayTuMauThuan.test.ts",
+    "to": "./mayTuMauThuan"
+  },
+  {
+    "from": "server/services/mayTuMauThuan.test.ts",
+    "to": "./ingestCayKetQua"
+  },
+  {
+    "from": "server/services/mayTuMauThuan.test.ts",
+    "to": "../contracts/machineDataContractV2.test-helpers"
+  },
+  {
+    "from": "server/services/mayTuMauThuan.ts",
+    "to": "../db/inspection"
+  },
+  {
     "from": "server/services/measurementPointRemap.test.ts",
     "to": "../db"
   },
@@ -15702,6 +17986,10 @@
   {
     "from": "server/services/mqttBulletinService.ts",
     "to": "./mqttService"
+  },
+  {
+    "from": "server/services/mqttBulletinService.ts",
+    "to": "../utils/kpi"
   },
   {
     "from": "server/services/mqttPointsConfigVariant.test.ts",
@@ -16320,6 +18608,14 @@
     "to": "../equipment/capabilityModel"
   },
   {
+    "from": "server/services/ot/aiControlGate.safety.ts",
+    "to": "./aiControlGate"
+  },
+  {
+    "from": "server/services/ot/aiControlGate.test.ts",
+    "to": "./aiControlGate"
+  },
+  {
     "from": "server/services/ot/commandDispatcher.commissioning.test.ts",
     "to": "./commandDispatcher"
   },
@@ -16904,6 +19200,10 @@
     "to": "./fontAssets"
   },
   {
+    "from": "server/services/pdfTemplateService.ts",
+    "to": "../utils/kpi"
+  },
+  {
     "from": "server/services/pdmAutoWorkOrderService.ts",
     "to": "../logger"
   },
@@ -17120,6 +19420,14 @@
     "to": "./pdfTemplateService"
   },
   {
+    "from": "server/services/predictiveMaintenanceChuaDuDuLieu.test.ts",
+    "to": "./predictiveMaintenanceService"
+  },
+  {
+    "from": "server/services/predictiveMaintenanceChuaDuDuLieu.test.ts",
+    "to": "./aiTimeSeriesEngine"
+  },
+  {
     "from": "server/services/predictiveMaintenanceService.rul.test.ts",
     "to": "./predictiveMaintenanceService"
   },
@@ -17244,6 +19552,26 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/services/productReadinessCayDay.db.test.ts",
+    "to": "../routers/machineApiRouters"
+  },
+  {
+    "from": "server/services/productReadinessCayDay.db.test.ts",
+    "to": "../routers/productRouters"
+  },
+  {
+    "from": "server/services/productReadinessCayDay.db.test.ts",
+    "to": "../services/machineAuthService"
+  },
+  {
+    "from": "server/services/productReadinessCayDay.db.test.ts",
+    "to": "./productReadinessService"
+  },
+  {
+    "from": "server/services/productReadinessCayDay.db.test.ts",
+    "to": "../_core/context"
+  },
+  {
     "from": "server/services/productReadinessService.test.ts",
     "to": "./productReadinessService"
   },
@@ -17262,6 +19590,10 @@
   {
     "from": "server/services/productReadinessService.ts",
     "to": "../../drizzle/schema/goldenSample"
+  },
+  {
+    "from": "server/services/productReadinessService.ts",
+    "to": "../db/cayDay"
   },
   {
     "from": "server/services/programming/aiProgrammingCopilot.metrics.test.ts",
@@ -18572,6 +20904,14 @@
     "to": "../_core/accessControlLabels"
   },
   {
+    "from": "server/services/scheduledReportService.tongCong.test.ts",
+    "to": "./scheduledReportService"
+  },
+  {
+    "from": "server/services/scheduledReportService.tongCong.test.ts",
+    "to": "../utils/kpi"
+  },
+  {
     "from": "server/services/scheduledReportService.ts",
     "to": "../db"
   },
@@ -18600,6 +20940,10 @@
     "to": "../db/reportAggregators"
   },
   {
+    "from": "server/services/scheduledReportService.ts",
+    "to": "../utils/kpi"
+  },
+  {
     "from": "server/services/secsgem/gem300.test.ts",
     "to": "./secs2Codec"
   },
@@ -18622,6 +20966,10 @@
   {
     "from": "server/services/secsgem/gem300.ts",
     "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/secsgem/gem300.ts",
+    "to": "../../_core/deviceErrors"
   },
   {
     "from": "server/services/secsgem/gem300.ts",
@@ -18666,6 +21014,10 @@
   {
     "from": "server/services/secsgem/hsmsClient.ts",
     "to": "./secs2Codec"
+  },
+  {
+    "from": "server/services/secsgem/hsmsClient.ts",
+    "to": "../../_core/deviceErrors"
   },
   {
     "from": "server/services/secsgem/hsmsClient.ts",
@@ -19096,6 +21448,26 @@
     "to": "../utils/spcRules"
   },
   {
+    "from": "server/services/specGateCayV2.test.ts",
+    "to": "./specGateCayV2"
+  },
+  {
+    "from": "server/services/specGateCayV2.test.ts",
+    "to": "./pointResultEvaluator"
+  },
+  {
+    "from": "server/services/specGateCayV2.ts",
+    "to": "./pointResultEvaluator"
+  },
+  {
+    "from": "server/services/specGateCayV2.ts",
+    "to": "../db/cayDay"
+  },
+  {
+    "from": "server/services/specGateCayV2.ts",
+    "to": "../db/inspection"
+  },
+  {
     "from": "server/services/standards/alarmMasterService.test.ts",
     "to": "./alarmMasterService"
   },
@@ -19450,6 +21822,14 @@
   {
     "from": "server/services/traffic/traffic.test.ts",
     "to": "./infraCoordinator"
+  },
+  {
+    "from": "server/services/trangThaiMayTuoi.test.ts",
+    "to": "./trangThaiMayTuoi"
+  },
+  {
+    "from": "server/services/trangThaiMayTuoi.test.ts",
+    "to": "../../client/src/components/twin3d/mauTrangThai"
   },
   {
     "from": "server/services/twin/dstarLite.test.ts",
@@ -20901,6 +23281,10 @@
   },
   {
     "from": "server/services/vram/vramEnforcement.ts",
+    "to": "./vramTranThietBi"
+  },
+  {
+    "from": "server/services/vram/vramEnforcement.ts",
     "to": "./vramSharedLedger"
   },
   {
@@ -21252,6 +23636,10 @@
     "to": "./types"
   },
   {
+    "from": "server/services/vram/vramTranThietBi.test.ts",
+    "to": "./vramTranThietBi"
+  },
+  {
     "from": "server/services/vram/vramWiring.ts",
     "to": "./types"
   },
@@ -21456,8 +23844,44 @@
     "to": "../../drizzle/schema/product"
   },
   {
+    "from": "server/utils/changeReasonGuard.test.ts",
+    "to": "./changeReasonGuard"
+  },
+  {
+    "from": "server/utils/changeReasonGuard.test.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/utils/changeReasonGuard.ts",
+    "to": "../_core/appError"
+  },
+  {
+    "from": "server/utils/changeReasonGuard.ts",
+    "to": "../db/product"
+  },
+  {
+    "from": "server/utils/docGioMay.test.ts",
+    "to": "./factoryTime"
+  },
+  {
+    "from": "server/utils/docGioTuongNhaMay.test.ts",
+    "to": "./factoryTime"
+  },
+  {
+    "from": "server/utils/docGioTuongNhaMay.test.ts",
+    "to": "./kpi"
+  },
+  {
     "from": "server/utils/factoryTime.test.ts",
     "to": "./factoryTime"
+  },
+  {
+    "from": "server/utils/fakeUtcCensus.test.ts",
+    "to": "../contracts/machineDataContractV2"
+  },
+  {
+    "from": "server/utils/fakeUtcCensus.test.ts",
+    "to": "../contracts/machineDataContractV2"
   },
   {
     "from": "server/utils/genealogyChain.correlation.test.ts",
@@ -21492,6 +23916,10 @@
     "to": "./factoryTime"
   },
   {
+    "from": "server/utils/kpi.ts",
+    "to": "./kpi"
+  },
+  {
     "from": "server/utils/lightingRecipePublisher.ts",
     "to": "../../drizzle/schema/product"
   },
@@ -21506,6 +23934,18 @@
   {
     "from": "server/utils/measurementPointImport.ts",
     "to": "../lib/measurementGeometry"
+  },
+  {
+    "from": "server/utils/measurementPointImport.ts",
+    "to": "./measurementPointLimitGate"
+  },
+  {
+    "from": "server/utils/measurementPointLimitGate.test.ts",
+    "to": "./measurementPointLimitGate"
+  },
+  {
+    "from": "server/utils/measurementPointLimitGate.ts",
+    "to": "../_core/appError"
   },
   {
     "from": "server/utils/monteCarloFlow.ts",
@@ -21792,6 +24232,26 @@
     "to": "../services/cacheService"
   },
   {
+    "from": "server/_core/cheDo2faTheoTrienKhai.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/_core/cheDo2faTheoTrienKhai.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/_core/cheDo2faTheoTrienKhai.test.ts",
+    "to": "./totpOnce"
+  },
+  {
+    "from": "server/_core/cheDo2faTheoTrienKhai.test.ts",
+    "to": "./trpc"
+  },
+  {
+    "from": "server/_core/cheDo2faTheoTrienKhai.test.ts",
+    "to": "./appError"
+  },
+  {
     "from": "server/_core/context.ts",
     "to": "../../drizzle/schema"
   },
@@ -21938,6 +24398,14 @@
   {
     "from": "server/_core/index.ts",
     "to": "./email"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../utils/kpi"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../utils/factoryTime"
   },
   {
     "from": "server/_core/index.ts",
@@ -22244,6 +24712,10 @@
     "to": "./rateLimitConfig"
   },
   {
+    "from": "server/_core/rawErrorCensus.test.ts",
+    "to": "./x"
+  },
+  {
     "from": "server/_core/reportExportScope.ts",
     "to": "./appError"
   },
@@ -22254,6 +24726,26 @@
   {
     "from": "server/_core/reportExportScope.ts",
     "to": "./accessControlLabels"
+  },
+  {
+    "from": "server/_core/requireAnyPermissionKhoiC.db.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/_core/requireAnyPermissionKhoiC.db.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/_core/requireAnyPermissionKhoiC.db.test.ts",
+    "to": "./accessControl"
+  },
+  {
+    "from": "server/_core/requireAnyPermissionKhoiC.db.test.ts",
+    "to": "./appError"
+  },
+  {
+    "from": "server/_core/requireAnyPermissionKhoiC.db.test.ts",
+    "to": "./context"
   },
   {
     "from": "server/_core/samlProvider.test.ts",
@@ -22348,6 +24840,10 @@
     "to": "./socketMachineAuth"
   },
   {
+    "from": "server/_core/socket.ts",
+    "to": "./twinPhamViQuyen"
+  },
+  {
     "from": "server/_core/socket.twin.test.ts",
     "to": "./socket"
   },
@@ -22362,6 +24858,10 @@
   {
     "from": "server/_core/socketMachineAuth.ts",
     "to": "../logger"
+  },
+  {
+    "from": "server/_core/socketNhipTimGhiDb.test.ts",
+    "to": "../services/trangThaiMayTuoi"
   },
   {
     "from": "server/_core/soPhienTruocCache.test.ts",
@@ -22520,6 +25020,10 @@
     "to": "./appError"
   },
   {
+    "from": "server/_core/twinTrangThaiPhamVi.unit.test.ts",
+    "to": "./twinPhamViQuyen"
+  },
+  {
     "from": "server/_core/uploadValidation.model3d.test.ts",
     "to": "./uploadValidation"
   },
@@ -22597,6 +25101,10 @@
   },
   {
     "from": "client/src/App.tsx",
+    "to": "./components/twin3d/bo-cuc/dinhTuyenTwinCu"
+  },
+  {
+    "from": "client/src/App.tsx",
     "to": "./components/CongDoiMatKhau"
   },
   {
@@ -22652,12 +25160,56 @@
     "to": "../../../../server/routers"
   },
   {
+    "from": "client/src/components/ai/BangTerminal.tsx",
+    "to": "./bangTerminalLogic"
+  },
+  {
+    "from": "client/src/components/ai/bangTerminalLogic.unit.test.ts",
+    "to": "./bangTerminalLogic"
+  },
+  {
     "from": "client/src/components/ai/BootstrapClassifierDialog.tsx",
     "to": "./ModelSelect"
   },
   {
     "from": "client/src/components/ai/ClassifierHealthBanner.tsx",
     "to": "./BootstrapClassifierDialog"
+  },
+  {
+    "from": "client/src/components/ai/TheDuyetDiffLo.tsx",
+    "to": "./TheDuyetDiff"
+  },
+  {
+    "from": "client/src/components/aiCoding/BangDangNghi.tsx",
+    "to": "./bangDangNghiLogic"
+  },
+  {
+    "from": "client/src/components/aiCoding/bangDangNghiLogic.unit.test.ts",
+    "to": "./bangDangNghiLogic"
+  },
+  {
+    "from": "client/src/components/aiCoding/LyDoDuyet.tsx",
+    "to": "./lyDoDuyetLogic"
+  },
+  {
+    "from": "client/src/components/aiCoding/lyDoDuyetLogic.ts",
+    "to": "./bangDangNghiLogic"
+  },
+  {
+    "from": "client/src/components/aiCoding/lyDoDuyetLogic.unit.test.ts",
+    "to": "./lyDoDuyetLogic"
+  },
+  {
+    "from": "client/src/components/aiCoding/ThanhTrangThaiAiLocal.tsx",
+    "to": "./thongKePhien"
+  },
+  {
+    "from": "client/src/components/aiCoding/ThanhTrangThaiAiLocal.unit.test.ts",
+    "to": "./ThanhTrangThaiAiLocal"
+  },
+  {
+    "from": "client/src/components/aiCoding/thongKePhien.unit.test.ts",
+    "to": "./thongKePhien"
   },
   {
     "from": "client/src/components/AILocalChatBubble.tsx",
@@ -22924,35 +25476,15 @@
     "to": "./sceneTypes"
   },
   {
-    "from": "client/src/components/factory-scene/FactoryScene3D.tsx",
-    "to": "./useOptionalTheme"
-  },
-  {
-    "from": "client/src/components/factory-scene/FactoryScene3D.tsx",
-    "to": "./machineMesh"
-  },
-  {
-    "from": "client/src/components/factory-scene/FactoryScene3D.tsx",
-    "to": "./sceneTypes"
-  },
-  {
     "from": "client/src/components/factory-scene/index.ts",
     "to": "./FactoryScene2D"
   },
   {
     "from": "client/src/components/factory-scene/index.ts",
-    "to": "./FactoryScene3D"
-  },
-  {
-    "from": "client/src/components/factory-scene/index.ts",
     "to": "./sceneTypes"
   },
   {
     "from": "client/src/components/factory-scene/index.ts",
-    "to": "./sceneTypes"
-  },
-  {
-    "from": "client/src/components/factory-scene/machineMesh.tsx",
     "to": "./sceneTypes"
   },
   {
@@ -22996,6 +25528,10 @@
     "to": "./entityTypes"
   },
   {
+    "from": "client/src/components/factoryConfig/workshopsTabLoiVaoLayout.unit.test.ts",
+    "to": "./WorkshopsTab"
+  },
+  {
     "from": "client/src/components/FreshnessStrip.tsx",
     "to": "./RealtimeBadge"
   },
@@ -23012,6 +25548,46 @@
     "to": "./BulkAnnotationToolbar"
   },
   {
+    "from": "client/src/components/kbStudio/BangKetQuaEval.tsx",
+    "to": "./evalTabLogic"
+  },
+  {
+    "from": "client/src/components/kbStudio/ChecklistCorpus.tsx",
+    "to": "./checklistCorpusLogic"
+  },
+  {
+    "from": "client/src/components/kbStudio/corpusNgonNgu.unit.test.ts",
+    "to": "./sourceTabLogic"
+  },
+  {
+    "from": "client/src/components/kbStudio/EvalTab.tsx",
+    "to": "./BangKetQuaEval"
+  },
+  {
+    "from": "client/src/components/kbStudio/EvalTab.tsx",
+    "to": "./evalTabLogic"
+  },
+  {
+    "from": "client/src/components/kbStudio/evalTabLogic.ts",
+    "to": "../../../../server/services/kbStudioEvalCham"
+  },
+  {
+    "from": "client/src/components/kbStudio/HuyHieuKiemMay.tsx",
+    "to": "../../../../server/services/kbKiemSauNap"
+  },
+  {
+    "from": "client/src/components/kbStudio/JobsTab.tsx",
+    "to": "./HuyHieuKiemMay"
+  },
+  {
+    "from": "client/src/components/kbStudio/kbFormatGuidance.crossCheck.unit.test.ts",
+    "to": "../../../../server/services/kbDocParser"
+  },
+  {
+    "from": "client/src/components/kbStudio/kbFormatGuidance.crossCheck.unit.test.ts",
+    "to": "./sourceTabLogic"
+  },
+  {
     "from": "client/src/components/kbStudio/kbStudioSourceState.ts",
     "to": "./SourceTab"
   },
@@ -23020,8 +25596,20 @@
     "to": "./kbStudioSourceState"
   },
   {
+    "from": "client/src/components/kbStudio/ModelBuilderTab.tsx",
+    "to": "../../../../server/services/ai/hoSoModelStudio"
+  },
+  {
     "from": "client/src/components/kbStudio/sourceTab.logic.unit.test.ts",
     "to": "./sourceTabLogic"
+  },
+  {
+    "from": "client/src/components/kbStudio/SourceTab.tsx",
+    "to": "./HuyHieuKiemMay"
+  },
+  {
+    "from": "client/src/components/kbStudio/SourceTab.tsx",
+    "to": "./ChecklistCorpus"
   },
   {
     "from": "client/src/components/kbStudio/SourceTab.tsx",
@@ -23106,6 +25694,10 @@
   {
     "from": "client/src/components/orchestration/WorkflowGraphCanvas.tsx",
     "to": "./workflowTypes"
+  },
+  {
+    "from": "client/src/components/patterns/cuonNgangCoMep.unit.test.ts",
+    "to": "./CuonNgangCoMep"
   },
   {
     "from": "client/src/components/patterns/Heading.stories.tsx",
@@ -23396,6 +25988,54 @@
     "to": "./types"
   },
   {
+    "from": "client/src/components/products/teach/componentLimitsDialog.dom.test.tsx",
+    "to": "./ComponentLimitsDialog"
+  },
+  {
+    "from": "client/src/components/products/teach/componentLimitsDialog.dom.test.tsx",
+    "to": "./teachTreeLogic"
+  },
+  {
+    "from": "client/src/components/products/teach/ComponentLimitsDialog.tsx",
+    "to": "./teachTreeLogic"
+  },
+  {
+    "from": "client/src/components/products/teach/ComponentLimitsDialog.tsx",
+    "to": "./componentLimitsDialogLogic"
+  },
+  {
+    "from": "client/src/components/products/teach/componentLimitsDialog.unit.test.ts",
+    "to": "./componentLimitsDialogLogic"
+  },
+  {
+    "from": "client/src/components/products/teach/componentLimitsDialogLogic.ts",
+    "to": "../../../../../server/routers"
+  },
+  {
+    "from": "client/src/components/products/teach/ComponentLimitsTable.tsx",
+    "to": "./teachTreeLogic"
+  },
+  {
+    "from": "client/src/components/products/teach/teachTreeLogic.ts",
+    "to": "../../../../../server/routers"
+  },
+  {
+    "from": "client/src/components/products/teach/TeachTreeTab.tsx",
+    "to": "./ComponentLimitsTable"
+  },
+  {
+    "from": "client/src/components/products/teach/TeachTreeTab.tsx",
+    "to": "./ComponentLimitsDialog"
+  },
+  {
+    "from": "client/src/components/products/teach/TeachTreeTab.tsx",
+    "to": "./teachTreeLogic"
+  },
+  {
+    "from": "client/src/components/products/teach/teachTreeTab.unit.test.ts",
+    "to": "./teachTreeLogic"
+  },
+  {
     "from": "client/src/components/programming/flowHistory.unit.test.ts",
     "to": "./flowHistory"
   },
@@ -23472,6 +26112,2086 @@
     "to": "./savedSearches"
   },
   {
+    "from": "client/src/components/twin3d/bo-cuc/DaiHopNhat.tsx",
+    "to": "./daiHopNhatLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/bo-cuc/daiHopNhatLogic.unit.test.ts",
+    "to": "./daiHopNhatLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/bo-cuc/dinhTuyenTwinCu.ts",
+    "to": "../van-hanh/duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/bo-cuc/dinhTuyenTwinCu.ts",
+    "to": "../van-hanh/nhungTaiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/bo-cuc/dinhTuyenTwinCu.unit.test.ts",
+    "to": "./dinhTuyenTwinCu"
+  },
+  {
+    "from": "client/src/components/twin3d/bo-cuc/vungQuyen.unit.test.ts",
+    "to": "./vungQuyen"
+  },
+  {
+    "from": "client/src/components/twin3d/boCucTang.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/boCucTang.unit.test.ts",
+    "to": "./boCucTang"
+  },
+  {
+    "from": "client/src/components/twin3d/boCucTang.unit.test.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/docBanVe.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/docBanVe.ts",
+    "to": "./tachTangTuHinhHoc"
+  },
+  {
+    "from": "client/src/components/twin3d/docBanVe.ts",
+    "to": "./hieuChinhNhapModel"
+  },
+  {
+    "from": "client/src/components/twin3d/docBanVe.unit.test.ts",
+    "to": "./docBanVe"
+  },
+  {
+    "from": "client/src/components/twin3d/docBanVe.unit.test.ts",
+    "to": "./hieuChinhNhapModel"
+  },
+  {
+    "from": "client/src/components/twin3d/docBanVe.unit.test.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/heToaDo.unit.test.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/hieuChinhNhapModel.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/hieuChinhNhapModel.unit.test.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/hieuChinhNhapModel.unit.test.ts",
+    "to": "./hieuChinhNhapModel"
+  },
+  {
+    "from": "client/src/components/twin3d/hinhHocCanChinh.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/hinhHocCanChinh.unit.test.ts",
+    "to": "./hinhHocCanChinh"
+  },
+  {
+    "from": "client/src/components/twin3d/hinhHocCanChinh.unit.test.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/hinhKhoiMay.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/hinhKhoiMay.unit.test.ts",
+    "to": "../../../../drizzle/schema/enums"
+  },
+  {
+    "from": "client/src/components/twin3d/hinhKhoiMay.unit.test.ts",
+    "to": "./hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/kiemTraAsset.unit.test.ts",
+    "to": "./kiemTraAsset"
+  },
+  {
+    "from": "client/src/components/twin3d/lichSuThaoTac.unit.test.ts",
+    "to": "./lichSuThaoTac"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/bamNenBoChon.dom.test.tsx",
+    "to": "./LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/bamNenBoChon.dom.test.tsx",
+    "to": "./chonVatThe"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/bamNenBoChon.dom.test.tsx",
+    "to": "./phanBietBamKeo"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/buocLuoi.unit.test.ts",
+    "to": "./buocLuoi"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "./useBuocLuoi"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "../../factory-scene/sceneTypes"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "../../factory-scene/useOptionalTheme"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "./KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "./LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "./LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "./dieuKhienQuay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "./vienNoiBat"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "./matDoKhungHinh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "./chonVatThe"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/CanhNhaMay.tsx",
+    "to": "./cheDoDo"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/catCanh.unit.test.ts",
+    "to": "./catCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/catCanhDongBo.dom.test.tsx",
+    "to": "./KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/catCanhDongBo.dom.test.tsx",
+    "to": "./catCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/cheDoDo.unit.test.ts",
+    "to": "./cheDoDo"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/chonNhatQuanChiHuy.dom.test.tsx",
+    "to": "./CanhNhaMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/chonNhatQuanChiHuy.dom.test.tsx",
+    "to": "../../factory-scene/sceneTypes"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/chonVatThe.unit.test.ts",
+    "to": "./chonVatThe"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/demDuoiChoChip.unit.test.ts",
+    "to": "./locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/dichQuaNhoKhaiRa.unit.test.ts",
+    "to": "./locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/hinhHocTuMoTa.ts",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/hinhHocTuMoTa.unit.test.ts",
+    "to": "./hinhHocTuMoTa"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/hinhHocTuMoTa.unit.test.ts",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/hopDaVe.ts",
+    "to": "./locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/hopDaVe.unit.test.ts",
+    "to": "./hopDaVe"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./catCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./CanhNhaMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./dieuKhienQuay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./matDoKhungHinh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./chonVatThe"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./vienNoiBat"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./giaiPhong"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./hinhHocTuMoTa"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./ModelErrorBoundary"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/index.ts",
+    "to": "./ModelMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/KhungCanh.tsx",
+    "to": "./catCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/KhungCanh.tsx",
+    "to": "./cheDoDo"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/KhungCanh.tsx",
+    "to": "./LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/KhungCanh.tsx",
+    "to": "./theoDoiDoiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/loBatchMay.dom.test.tsx",
+    "to": "./LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/loBatchMay.dom.test.tsx",
+    "to": "./chonVatThe"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LoBatchMay.tsx",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LoBatchMay.tsx",
+    "to": "./hinhHocTuMoTa"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LoBatchMay.tsx",
+    "to": "./chonVatThe"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LoBatchMay.tsx",
+    "to": "./phanBietBamKeo"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LoBatchMay.tsx",
+    "to": "./cheDoDo"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LoBatchMay.tsx",
+    "to": "./KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/locNhan.unit.test.ts",
+    "to": "./locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/locNhanKhoiMay.unit.test.ts",
+    "to": "./locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LopNhan.tsx",
+    "to": "./locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LopNhan.tsx",
+    "to": "./hopDaVe"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LopNhan.tsx",
+    "to": "./phanBietBamKeo"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LopNhan.tsx",
+    "to": "./cheDoDo"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LopNhan.tsx",
+    "to": "./LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/LopNhan.tsx",
+    "to": "./KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/lopNhanKhongVeLaiMoiKhung.dom.test.tsx",
+    "to": "./LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/lopNhanKhongVeLaiMoiKhung.dom.test.tsx",
+    "to": "./KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/matDoKhungHinh.unit.test.ts",
+    "to": "./matDoKhungHinh"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/modelErrorBoundary.dom.test.tsx",
+    "to": "./ModelErrorBoundary"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/modelErrorBoundary.dom.test.tsx",
+    "to": "./ModelMay"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/ModelMay.tsx",
+    "to": "./ModelErrorBoundary"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/phanBietBamKeo.unit.test.ts",
+    "to": "./phanBietBamKeo"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/theoDoiDoiCho.dom.test.tsx",
+    "to": "./theoDoiDoiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/theoDoiDoiCho.dom.test.tsx",
+    "to": "./LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/useBuocLuoi.ts",
+    "to": "./buocLuoi"
+  },
+  {
+    "from": "client/src/components/twin3d/loi/zFightingSanNhaMay.unit.test.ts",
+    "to": "./catCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/mauTrangThai.unit.test.ts",
+    "to": "./mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/mucChiTiet.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/mucChiTiet.unit.test.ts",
+    "to": "./mucChiTiet"
+  },
+  {
+    "from": "client/src/components/twin3d/napModel.ts",
+    "to": "./mucChiTiet"
+  },
+  {
+    "from": "client/src/components/twin3d/napModel.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/napModel.unit.test.ts",
+    "to": "./napModel"
+  },
+  {
+    "from": "client/src/components/twin3d/phamViLine.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/phamViLine.unit.test.ts",
+    "to": "./phamViLine"
+  },
+  {
+    "from": "client/src/components/twin3d/sinhBoCuc.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/sinhBoCuc.ts",
+    "to": "./hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/sinhBoCuc.unit.test.ts",
+    "to": "./sinhBoCuc"
+  },
+  {
+    "from": "client/src/components/twin3d/sinhBoCuc.unit.test.ts",
+    "to": "./hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/sinhBoCuc.unit.test.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/tachTangTuHinhHoc.ts",
+    "to": "./heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/tachTangTuHinhHoc.unit.test.ts",
+    "to": "./tachTangTuHinhHoc"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/AnhNenTang.tsx",
+    "to": "./tiLeAnhNen"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/banDoNho.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/banDoNho.unit.test.ts",
+    "to": "./banDoNho"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/banDoNhoCanh.unit.test.ts",
+    "to": "./banDoNho"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/banDoNhoCanh.unit.test.ts",
+    "to": "./khungNhin"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/banDoNhoCanh.unit.test.ts",
+    "to": "../loi/KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/BangThuocTinh.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/BangThuocTinh.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/BangThuocTinh.tsx",
+    "to": "../hinhHocCanChinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/BangThuocTinh.tsx",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "../loi"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "../napModel"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "./khungNhin"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "../loi/chonVatThe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "../loi/useBuocLuoi"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "../loi/buocLuoi"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "./GizmoBienDoi"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "./gizmoNoiLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "./xemTruocSinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "./CauNoiCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "./LopVung"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CanhThietKe.tsx",
+    "to": "./vungAnToan"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CauNoiCanh.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CauNoiCanh.tsx",
+    "to": "./khungNhin"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CayPhanCap.dom.test.tsx",
+    "to": "./CayPhanCap"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CayPhanCap.dom.test.tsx",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CayPhanCap.tsx",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/CayPhanCap.tsx",
+    "to": "./cayPhanCapLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/cayPhanCapLogic.ts",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/cayPhanCapLogic.unit.test.ts",
+    "to": "./cayPhanCapLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/cayPhanCapLogic.unit.test.ts",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/chonTrenCanhStudio.dom.test.tsx",
+    "to": "../loi/LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/chonTrenCanhStudio.dom.test.tsx",
+    "to": "../loi/chonVatThe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/chonTrenCanhStudio.dom.test.tsx",
+    "to": "../loi/phanBietBamKeo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/chonTrenCanhStudio.dom.test.tsx",
+    "to": "./GizmoBienDoi"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/chonTrenCanhStudio.dom.test.tsx",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/chonTrenCanhStudio.dom.test.tsx",
+    "to": "./GizmoBienDoi"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/DaiSucKhoe.tsx",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/DungNhaXuong.tsx",
+    "to": "../boCucTang"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/DungNhaXuong.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ganGizmoTheoTang.unit.test.ts",
+    "to": "./CanhThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/GizmoBienDoi.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/GizmoBienDoi.tsx",
+    "to": "../hinhHocCanChinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/GizmoBienDoi.tsx",
+    "to": "./gizmoNoiLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/gizmoNoiLogic.ts",
+    "to": "../hinhHocCanChinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/gizmoNoiLogic.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/gizmoNoiLogic.unit.test.ts",
+    "to": "../hinhHocCanChinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/gizmoNoiLogic.unit.test.ts",
+    "to": "./gizmoNoiLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/HopThoaiSinh.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/HopThoaiSinh.tsx",
+    "to": "../sinhBoCuc"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/HopThoaiSinh.tsx",
+    "to": "./xemTruocSinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/khungNhin.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/khungNhin.unit.test.ts",
+    "to": "./khungNhin"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/khungNhin.unit.test.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/LopVung.tsx",
+    "to": "./vungAnToan"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/napStudio.ts",
+    "to": "../van-hanh/boChonNap"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/napStudio.unit.test.ts",
+    "to": "./napStudio"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/napStudio.unit.test.ts",
+    "to": "../van-hanh/boChonNap"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/NhapBanVe.tsx",
+    "to": "../hieuChinhNhapModel"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/NhapBanVe.tsx",
+    "to": "../docBanVe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/NhapBanVe.tsx",
+    "to": "../tachTangTuHinhHoc"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/NhapBanVe.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/NhapBanVe.tsx",
+    "to": "../occtWorker"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/quyenXuong.unit.test.ts",
+    "to": "./quyenXuong"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ThanhCanChinh.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ThanhCanChinh.tsx",
+    "to": "../hinhHocCanChinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx",
+    "to": "./ThanhCongCuCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx",
+    "to": "./CauNoiCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx",
+    "to": "./banDoNho"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/thanhCongCuCanh.dom.test.tsx",
+    "to": "./khungNhin"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ThanhCongCuCanh.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ThanhCongCuCanh.tsx",
+    "to": "./banDoNho"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ThanhCongCuCanh.tsx",
+    "to": "./khungNhin"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ThanhCongCuCanh.tsx",
+    "to": "./xuatAnh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ThanhCongCuCanh.tsx",
+    "to": "./CauNoiCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ThuVienAsset.tsx",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/ThuVienAsset.tsx",
+    "to": "../kiemTraAsset"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/tiLeAnhNen.unit.test.ts",
+    "to": "./tiLeAnhNen"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/trangThaiThietKe.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/trangThaiThietKe.ts",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/trangThaiThietKe.ts",
+    "to": "../sinhBoCuc"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/trangThaiThietKe.unit.test.ts",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/trangThaiThietKe.unit.test.ts",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/VeVung.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/VeVung.tsx",
+    "to": "./vungAnToan"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/vungAnToan.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/vungAnToan.unit.test.ts",
+    "to": "./vungAnToan"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/xemTruocSinh.ts",
+    "to": "../sinhBoCuc"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/xemTruocSinh.ts",
+    "to": "../sinhBoCuc"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/xemTruocSinh.ts",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/xemTruocSinh.unit.test.ts",
+    "to": "../sinhBoCuc"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/xemTruocSinh.unit.test.ts",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/xemTruocSinh.unit.test.ts",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/xemTruocSinh.unit.test.ts",
+    "to": "./xemTruocSinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/xuatAnh.unit.test.ts",
+    "to": "./xuatAnh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "../hinhHocCanChinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "../lichSuThaoTac"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "../sinhBoCuc"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "../loi"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./BangThuocTinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./CanhThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./CayPhanCap"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./HopThoaiSinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./ThanhCanChinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./ThuVienAsset"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./DaiSucKhoe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./ThanhCongCuCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./CauNoiCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./vungAnToan"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./VeVung"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./AnhNenTang"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./BanGhiBoCuc"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./gizmoNoiLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./xemTruocSinh"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/XuongThietKe.tsx",
+    "to": "./quyenXuong"
+  },
+  {
+    "from": "client/src/components/twin3d/thiet-ke/zFightingSanStudio.unit.test.ts",
+    "to": "../loi/catCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/badgeKepRiaDeNhan.unit.test.ts",
+    "to": "../loi/locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/badgeKepRiaDeNhan.unit.test.ts",
+    "to": "./locBadge"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/badgeMoiMayVaoSo.unit.test.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/badgeMoiMayVaoSo.unit.test.ts",
+    "to": "../loi/locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/badgeMoiMayVaoSo.unit.test.ts",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/badgeMoiMayVaoSo.unit.test.ts",
+    "to": "./locBadge"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/bamBieuTuongToa.unit.test.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/bamBieuTuongToa.unit.test.ts",
+    "to": "./canhTapDoan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/BangKpiNoi.tsx",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/BangKpiNoi.tsx",
+    "to": "./kpiNoiLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/boChonNap.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/boChonNap.unit.test.ts",
+    "to": "./boChonNap"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/BoChonNapUI.tsx",
+    "to": "./boChonNap"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/boCucThanhCongCu.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/boCucThanhCongCu.unit.test.ts",
+    "to": "./boCucThanhCongCu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/boCucThanhCongCu.unit.test.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/boCucViewport.unit.test.ts",
+    "to": "./manMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/boCucViewport.unit.test.ts",
+    "to": "../loi/KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/boCucViewport.unit.test.ts",
+    "to": "./useTruDinhKhung"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/canhBaoAnToan.unit.test.ts",
+    "to": "./canhBaoAnToan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/canhLine.ts",
+    "to": "../phamViLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/canhLine.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/canhLine.unit.test.ts",
+    "to": "./canhLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/canhTapDoan.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/canhTapDoan.unit.test.ts",
+    "to": "./canhTapDoan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./onDinhTheoGiaTri"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "../loi"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./mauThree"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "../loi/LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "../loi/useBuocLuoi"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "../loi/buocLuoi"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./LopCanhBao"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./DongChayLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./sucKhoeMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "../thiet-ke/LopVung"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "../thiet-ke/vungAnToan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "../loi/cheDoDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./LopSaBan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./cumTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./nguongDonViVe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh.tsx",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "./cumTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "./nguongDonViVe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "./nhanSaBan2D"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "../loi"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "./khungNhinBan2D"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/CanhVanHanh2D.tsx",
+    "to": "../loi/LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cayVanHanh.ts",
+    "to": "../thiet-ke/trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cayVanHanh.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cayVanHanh.unit.test.ts",
+    "to": "./cayVanHanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cayVanHanh.unit.test.ts",
+    "to": "../thiet-ke/cayPhanCapLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cayVanHanh.unit.test.ts",
+    "to": "../thiet-ke/trangThaiThietKe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cheNhan.unit.test.ts",
+    "to": "../loi/LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/chinhSachNhan.unit.test.ts",
+    "to": "./chinhSachNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/chinhSachNhan.unit.test.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/chipCanhBaoAn.unit.test.ts",
+    "to": "./locBadge"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/chipCanhBaoAn.unit.test.ts",
+    "to": "../loi/hopDaVe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/chipTenBiChe.unit.test.ts",
+    "to": "../loi/locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/chongLanCumLaThuocSong.unit.test.ts",
+    "to": "./cumTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cotWipDungSanCuaTram.unit.test.ts",
+    "to": "./canhLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cotWipDungSanCuaTram.unit.test.ts",
+    "to": "./manLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cotWipDungSanCuaTram.unit.test.ts",
+    "to": "./wipTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cotWipDungSanCuaTram.unit.test.ts",
+    "to": "./soDoLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cumTram.ts",
+    "to": "./nguongDonViVe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cumTram.unit.test.ts",
+    "to": "./nguongDonViVe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/cumTram.unit.test.ts",
+    "to": "./cumTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DaiCanhBao.dom.test.tsx",
+    "to": "./DaiCanhBao"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DaiCanhBao.dom.test.tsx",
+    "to": "./daiCanhBaoLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DaiCanhBao.tsx",
+    "to": "./daiCanhBaoLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/daiCanhBaoDanhTinh.unit.test.ts",
+    "to": "./daiCanhBaoLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/daiCanhBaoLogic.unit.test.ts",
+    "to": "./daiCanhBaoLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/daiCanhBaoTieuDeVsDanhSach.dom.test.tsx",
+    "to": "./DaiCanhBao"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/daiCanhBaoTieuDeVsDanhSach.dom.test.tsx",
+    "to": "./daiCanhBaoLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DaiLine.tsx",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DaiLine.tsx",
+    "to": "./maNgan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DaiLine.tsx",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/daiLineWip.dom.test.tsx",
+    "to": "./DaiLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/daiLineWip.dom.test.tsx",
+    "to": "./DaiLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/daiLineWip.dom.test.tsx",
+    "to": "./wipTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DanhSachMay.tsx",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DanhSachMay.tsx",
+    "to": "./maNgan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DanhSachMay.tsx",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/danhSachMayAoHoa.dom.test.tsx",
+    "to": "./DanhSachMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/danhSachMayAoHoa.dom.test.tsx",
+    "to": "./DanhSachMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/danhSachMayAoHoa.dom.test.tsx",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/danhSachMayMaNgan.unit.test.ts",
+    "to": "./maNgan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/danhSachMayMaNgan.unit.test.ts",
+    "to": "./maNgan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/datNhanSaBan.unit.test.ts",
+    "to": "./datNhanSaBan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/datNhanSaBanTruotHaiNeo.unit.test.ts",
+    "to": "./datNhanSaBan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/datNhanSaBanTruotHaiNeo.unit.test.ts",
+    "to": "./CanhVanHanh2D"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/dichKhungDoc.unit.test.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DongChayLine.tsx",
+    "to": "./mauThree"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/DongChayLine.tsx",
+    "to": "./hoatAnhDongChay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/dongThoiGian.dom.test.tsx",
+    "to": "./DongThoiGian"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/dongThoiGian.unit.test.ts",
+    "to": "./DongThoiGian"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/duongDanTwin.unit.test.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/duongDanTwin.unit.test.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/giuDuLieuTruoc.unit.test.ts",
+    "to": "./giuDuLieuTruoc"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/hoatAnhDongChay.unit.test.ts",
+    "to": "./hoatAnhDongChay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/hopNhatCanh.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/hopNhatCanh.ts",
+    "to": "../hinhKhoiMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/hopNhatCanh.ts",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/hopNhatCanh.unit.test.ts",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/hopNhatCanh.unit.test.ts",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khoTrangThai.ts",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khoTrangThai.unit.test.ts",
+    "to": "./khoTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khoTrangThai.unit.test.ts",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khuChoVaNhanLine.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khuChoVaNhanLine.unit.test.ts",
+    "to": "./khuChoVaNhanLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khungNhinBan2D.dom.test.tsx",
+    "to": "./CanhVanHanh2D"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khungNhinBan2D.dom.test.tsx",
+    "to": "../loi/LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khungNhinBan2D.unit.test.ts",
+    "to": "./khungNhinBan2D"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khungNhinSoDoLine.unit.test.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/khungNhinSoDoLine.unit.test.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/kpiNoiLogic.unit.test.ts",
+    "to": "./kpiNoiLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/locBadge.ts",
+    "to": "../loi/locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/locBadge.unit.test.ts",
+    "to": "./locBadge"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/locBadge.unit.test.ts",
+    "to": "../loi/locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopCanhBao.tsx",
+    "to": "../../factory-scene/useOptionalTheme"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopCanhBao.tsx",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopCanhBao.tsx",
+    "to": "./mauChuTrenNen"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopCanhBao.tsx",
+    "to": "./mauThree"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopCanhBao.tsx",
+    "to": "../loi/LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopCanhBao.tsx",
+    "to": "../loi/hopDaVe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopCanhBao.tsx",
+    "to": "./locBadge"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/lopCanhBaoKhongVeLaiMoiKhung.dom.test.tsx",
+    "to": "../loi/hopDaVe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/lopCanhBaoKhongVeLaiMoiKhung.dom.test.tsx",
+    "to": "./LopCanhBao"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/lopPhuKhongChe.dom.test.tsx",
+    "to": "../bo-cuc/DaiHopNhat"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/lopPhuKhongChe.dom.test.tsx",
+    "to": "../bo-cuc/daiHopNhatLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/lopPhuKhongChe.dom.test.tsx",
+    "to": "./BangKpiNoi"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/lopPhuKhongChe.dom.test.tsx",
+    "to": "./kpiNoiLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopSaBan.tsx",
+    "to": "../loi/cheDoDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopSaBan.tsx",
+    "to": "../loi/phanBietBamKeo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopSaBan.tsx",
+    "to": "../loi/LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopSaBan.tsx",
+    "to": "../loi/KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopSaBan.tsx",
+    "to": "./datNhanSaBan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/LopSaBan.tsx",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/maNgan.unit.test.ts",
+    "to": "./maNgan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manLine.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manLine.ts",
+    "to": "../loi/locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manLine.ts",
+    "to": "./wipTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manLine.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manLine.unit.test.ts",
+    "to": "./manLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manLine.unit.test.ts",
+    "to": "./wipTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manLineNoiVaoTrang.unit.test.ts",
+    "to": "./manLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manLineNoiVaoTrang.unit.test.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.ts",
+    "to": "./manLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.ts",
+    "to": "./cayVanHanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.ts",
+    "to": "./sucKhoeMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.ts",
+    "to": "./nhungTaiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.unit.test.ts",
+    "to": "./manMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.unit.test.ts",
+    "to": "./manMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.unit.test.ts",
+    "to": "./manLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.unit.test.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.unit.test.ts",
+    "to": "./sucKhoeMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.unit.test.ts",
+    "to": "./nhungTaiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMay.unit.test.ts",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMayNoiVaoTrang.unit.test.ts",
+    "to": "./manMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/manMayNoiVaoTrang.unit.test.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mauChuTrenNen.ts",
+    "to": "./mauThree"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mauChuTrenNen.ts",
+    "to": "./byteMau"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mauChuTrenNen.unit.test.ts",
+    "to": "./mauChuTrenNen"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mauThree.dom.test.tsx",
+    "to": "./CanhVanHanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mauThree.dom.test.tsx",
+    "to": "./byteMau"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mauThree.ts",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mauThree.ts",
+    "to": "./byteMau"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/moPhongLogic.ts",
+    "to": "./wipTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/moPhongLogic.unit.test.ts",
+    "to": "./moPhongLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mucTuoiXinKhung.dom.test.tsx",
+    "to": "../loi/LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mucTuoiXinKhung.dom.test.tsx",
+    "to": "../loi/chonVatThe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mucTuoiXinKhung.dom.test.tsx",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mucTuoiXinKhung.dom.test.tsx",
+    "to": "./onDinhTheoGiaTri"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mucTuoiXinKhung.dom.test.tsx",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/mucTuoiXinKhung.dom.test.tsx",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/NganMoPhong.tsx",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/NganMoPhong.tsx",
+    "to": "./moPhongLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/NganNhung.tsx",
+    "to": "./nhungTaiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nganSachNhanTheoMan.unit.test.ts",
+    "to": "./manLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nganSachNhanTheoMan.unit.test.ts",
+    "to": "../loi/locNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/NganXuLy.tsx",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/NganXuLy.tsx",
+    "to": "./NganNhung"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/NganXuLy.tsx",
+    "to": "./nganXuLyLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/NganXuLy.tsx",
+    "to": "./nhungTaiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/NganXuLy.tsx",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nganXuLyLogic.unit.test.ts",
+    "to": "./nganXuLyLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nganXuLyNoiHanhDong.dom.test.tsx",
+    "to": "./DaiCanhBao"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nganXuLyNoiHanhDong.dom.test.tsx",
+    "to": "./NganXuLy"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nganXuLyNoiHanhDong.dom.test.tsx",
+    "to": "./daiCanhBaoLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nganXuLyNoiHanhDong.dom.test.tsx",
+    "to": "./nganXuLyLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nguonDuLieu.unit.test.ts",
+    "to": "./nguonDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nguonDuLieu.unit.test.ts",
+    "to": "./khoTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nguongDonViVe.unit.test.ts",
+    "to": "./nguongDonViVe"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhanSaBan2D.ts",
+    "to": "../loi/LopNhan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhanSaBan2D.ts",
+    "to": "../loi/theoDoiDoiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhanSaBan2D.ts",
+    "to": "./datNhanSaBan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhipAnToan.unit.test.ts",
+    "to": "./nguonDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhipAnToan.unit.test.ts",
+    "to": "./useTrangThaiSong"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhungTaiCho.dom.test.tsx",
+    "to": "./NganNhung"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhungTaiCho.dom.test.tsx",
+    "to": "./NganXuLy"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhungTaiCho.dom.test.tsx",
+    "to": "./nhungTaiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhungTaiCho.dom.test.tsx",
+    "to": "./nganXuLyLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhungTaiCho.dom.test.tsx",
+    "to": "./NganNhung"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/nhungTaiCho.unit.test.ts",
+    "to": "./nhungTaiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/noiLoD.dom.test.tsx",
+    "to": "./DaiCanhBao"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/noiLoD.dom.test.tsx",
+    "to": "./daiCanhBaoLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/noiThucTheTwin.unit.test.ts",
+    "to": "./noiThucTheTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/onDinhTheoGiaTri.ts",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/onDinhTheoGiaTri.unit.test.ts",
+    "to": "./onDinhTheoGiaTri"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/onDinhTheoGiaTri.unit.test.ts",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phamViCanh.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phamViCanh.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phamViCanh.ts",
+    "to": "./byteMau"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phamViCanh.unit.test.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phamViCanh.unit.test.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phamViCanh.unit.test.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phamViCanh.unit.test.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phaVeNen.dom.test.tsx",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phaVeNen.dom.test.tsx",
+    "to": "./mauThree"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phaVeNen.dom.test.tsx",
+    "to": "./byteMau"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phuUns.ts",
+    "to": "./khoTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/phuUns.unit.test.ts",
+    "to": "./phuUns"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/saBan2D.dom.test.tsx",
+    "to": "./CanhVanHanh2D"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/saBan2D.dom.test.tsx",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/saBan2D.dom.test.tsx",
+    "to": "../loi"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/soDoLine.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/soDoLine.ts",
+    "to": "./wipTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/soDoLine.ts",
+    "to": "../loi/LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/soDoLine.unit.test.ts",
+    "to": "./soDoLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/soDoLine.unit.test.ts",
+    "to": "../loi/LoBatchMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/sucKhoeMay.ts",
+    "to": "./wipTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/sucKhoeMay.unit.test.ts",
+    "to": "./sucKhoeMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tamTramCongGocToa.unit.test.ts",
+    "to": "./canhLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tamTramMotNoi.unit.test.ts",
+    "to": "./manLine"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/trangThaiNhieuNhaMay.unit.test.ts",
+    "to": "./canhTapDoan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/trungThucDuLieu.ts",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/trungThucDuLieu.ts",
+    "to": "./moPhongLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/trungThucDuLieu.unit.test.ts",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/trungThucDuLieu.unit.test.ts",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/trungThucDuLieu.unit.test.ts",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tuoiDuLieuBan2D.dom.test.tsx",
+    "to": "./CanhVanHanh2D"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tuoiDuLieuBan2D.dom.test.tsx",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tuoiDuLieuBan2D.dom.test.tsx",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tuoiDuLieuBan2D.dom.test.tsx",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tuoiDuLieuBan2D.dom.test.tsx",
+    "to": "../loi"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tuoiDuLieuVaoDuongVe.unit.test.ts",
+    "to": "../mauTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tuoiDuLieuVaoDuongVe.unit.test.ts",
+    "to": "./trungThucDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/tuoiDuLieuVaoDuongVe.unit.test.ts",
+    "to": "./hopNhatCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/useAnhLichSu.ts",
+    "to": "./useKhoTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/useKhoTrangThai.ts",
+    "to": "./khoTrangThai"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/useKhungHep.dom.test.tsx",
+    "to": "./useKhungHep"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/useMoPhongTwin.ts",
+    "to": "./moPhongLogic"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/usePhanTichLine.ts",
+    "to": "./nguonDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/useTrangThaiSong.ts",
+    "to": "./nguonDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/useTrangThaiTwin.ts",
+    "to": "./duongDanTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/useTrangThaiTwin.ts",
+    "to": "./nhungTaiCho"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/useTrangThaiTwin.unit.test.ts",
+    "to": "./useTrangThaiTwin"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/vienSucKhoe.dom.test.tsx",
+    "to": "./sucKhoeMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/vienSucKhoeDoDuoc.dom.test.tsx",
+    "to": "../loi/KhungCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/vienSucKhoeDoDuoc.dom.test.tsx",
+    "to": "./sucKhoeMay"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/vungDungCanh.unit.test.ts",
+    "to": "./canhTapDoan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/vungDungCanh.unit.test.ts",
+    "to": "./phamViCanh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/vungDungCanh.unit.test.ts",
+    "to": "../heToaDo"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/vungVanHanh.dom.test.tsx",
+    "to": "../thiet-ke/vungAnToan"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/wipTram.unit.test.ts",
+    "to": "./wipTram"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/xuatUsd.ts",
+    "to": "../thiet-ke/xuatAnh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/xuatUsd.unit.test.ts",
+    "to": "./xuatUsd"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/xuatUsd.unit.test.ts",
+    "to": "../thiet-ke/xuatAnh"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/xuatXuNhip.ts",
+    "to": "./nguonDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/xuatXuNhip.unit.test.ts",
+    "to": "./nguonDuLieu"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/xuatXuNhip.unit.test.ts",
+    "to": "./xuatXuNhip"
+  },
+  {
+    "from": "client/src/components/twin3d/van-hanh/zFightingSan.unit.test.ts",
+    "to": "../loi/catCanh"
+  },
+  {
+    "from": "client/src/components/ui/badge.smoke.dom.test.tsx",
+    "to": "./badge"
+  },
+  {
     "from": "client/src/components/workspace/HubLauncher.tsx",
     "to": "./WorkspaceShell"
   },
@@ -23504,8 +28224,20 @@
     "to": "./hubState"
   },
   {
+    "from": "client/src/hooks/dongHoHaiPha.unit.test.ts",
+    "to": "./dongHoHaiPha"
+  },
+  {
     "from": "client/src/hooks/useComposition.ts",
     "to": "./usePersistFn"
+  },
+  {
+    "from": "client/src/hooks/useKbChatStream.ts",
+    "to": "./dongHoHaiPha"
+  },
+  {
+    "from": "client/src/hooks/useKbChatStream.usage.unit.test.ts",
+    "to": "./useKbChatStream"
   },
   {
     "from": "client/src/hooks/useLicenseModules.ts",
@@ -23518,6 +28250,14 @@
   {
     "from": "client/src/i18n/index.ts",
     "to": "./locales/vi.json?url"
+  },
+  {
+    "from": "client/src/lib/aiCodingTabs.unit.test.ts",
+    "to": "./aiCodingTabs"
+  },
+  {
+    "from": "client/src/lib/aiCodingTimTep.unit.test.ts",
+    "to": "./aiCodingTimTep"
   },
   {
     "from": "client/src/lib/aiCodingWorkspaceUx.unit.test.ts",
@@ -23544,8 +28284,20 @@
     "to": "./navigation"
   },
   {
+    "from": "client/src/lib/apps.unit.test.ts",
+    "to": "./apps"
+  },
+  {
+    "from": "client/src/lib/apps.unit.test.ts",
+    "to": "./navigation"
+  },
+  {
     "from": "client/src/lib/authRedirect.unit.test.ts",
     "to": "./authRedirect"
+  },
+  {
+    "from": "client/src/lib/bongBongTheoTuyen.unit.test.ts",
+    "to": "./bongBongTheoTuyen"
   },
   {
     "from": "client/src/lib/breadcrumbs.ts",
@@ -23566,6 +28318,10 @@
   {
     "from": "client/src/lib/congDoiMatKhau.unit.test.ts",
     "to": "./components/CongDoiMatKhau"
+  },
+  {
+    "from": "client/src/lib/dauRaSong.unit.test.ts",
+    "to": "./dauRaSong"
   },
   {
     "from": "client/src/lib/diffHunks.unit.test.ts",
@@ -23628,6 +28384,10 @@
     "to": "./kinematics"
   },
   {
+    "from": "client/src/lib/kyHieuTep.unit.test.ts",
+    "to": "./kyHieuTep"
+  },
+  {
     "from": "client/src/lib/localStorageUserScan.unit.test.ts",
     "to": "./donKhoaNguoiDung"
   },
@@ -23662,6 +28422,10 @@
   {
     "from": "client/src/lib/rawErrorMessageCensus.unit.test.ts",
     "to": "../../../scripts/rawErrorMessageScan.mjs"
+  },
+  {
+    "from": "client/src/lib/repoPath.unit.test.ts",
+    "to": "./repoPath"
   },
   {
     "from": "client/src/lib/reportsData.unit.test.ts",
@@ -23780,6 +28544,18 @@
     "to": "./alarmKpiEmptyState"
   },
   {
+    "from": "client/src/pages/AOIPackages.tsx",
+    "to": "./aoiPackagesStatusPresentation"
+  },
+  {
+    "from": "client/src/pages/AOIPackages.tsx",
+    "to": "./ingestIntegrityScanPresentation"
+  },
+  {
+    "from": "client/src/pages/aoiPackagesStatusPresentation.unit.test.ts",
+    "to": "./aoiPackagesStatusPresentation"
+  },
+  {
     "from": "client/src/pages/CommandCenter.tsx",
     "to": "../../../server/routers"
   },
@@ -23832,10 +28608,6 @@
     "to": "./UnifiedDeviceMonitor"
   },
   {
-    "from": "client/src/pages/DigitalTwinCenter.tsx",
-    "to": "../../../server/routers"
-  },
-  {
     "from": "client/src/pages/DrillDownDashboard.tsx",
     "to": "../../../server/routers"
   },
@@ -23860,6 +28632,10 @@
     "to": "../../../server/routers"
   },
   {
+    "from": "client/src/pages/ingestIntegrityScanPresentation.unit.test.ts",
+    "to": "./ingestIntegrityScanPresentation"
+  },
+  {
     "from": "client/src/pages/IrEditor.tsx",
     "to": "../../../server/routers"
   },
@@ -23870,6 +28646,14 @@
   {
     "from": "client/src/pages/MachineCockpit.tsx",
     "to": "./ProcessAnalytics"
+  },
+  {
+    "from": "client/src/pages/MachineCockpit.tsx",
+    "to": "./nguyCoHongHienThi"
+  },
+  {
+    "from": "client/src/pages/MachineHealthMonitoring.tsx",
+    "to": "./nguyCoHongHienThi"
   },
   {
     "from": "client/src/pages/MachineWorkspace.tsx",
@@ -23898,6 +28682,10 @@
   {
     "from": "client/src/pages/MqttClientManagement.tsx",
     "to": "./SoftwareVersionsTab"
+  },
+  {
+    "from": "client/src/pages/nguyCoHongHienThi.unit.test.ts",
+    "to": "./nguyCoHongHienThi"
   },
   {
     "from": "client/src/pages/PouStudio.tsx",
@@ -23960,6 +28748,10 @@
     "to": "../../../server/routers"
   },
   {
+    "from": "client/src/pages/robotCockpitAnKhongDisable.dom.test.tsx",
+    "to": "./RobotCockpit"
+  },
+  {
     "from": "client/src/pages/RobotModelHealth.tsx",
     "to": "../../../server/routers"
   },
@@ -23984,32 +28776,28 @@
     "to": "./thresholdApprovalsBatch"
   },
   {
+    "from": "client/src/pages/thresholdApprovalsDeXuatDisplay.unit.test.ts",
+    "to": "./thresholdApprovalsDeXuatDisplay"
+  },
+  {
     "from": "client/src/pages/ThresholdApprovalsPage.tsx",
     "to": "./thresholdApprovalsBatch"
   },
   {
-    "from": "client/src/pages/TwinHub.tsx",
-    "to": "./DigitalTwinDashboard"
+    "from": "client/src/pages/ThresholdApprovalsPage.tsx",
+    "to": "./thresholdApprovalsDeXuatDisplay"
   },
   {
-    "from": "client/src/pages/TwinHub.tsx",
-    "to": "./DigitalTwinCenter"
+    "from": "client/src/pages/webglThamDoGiaiPhong.dom.test.tsx",
+    "to": "./TwinVanHanh"
   },
   {
-    "from": "client/src/pages/TwinHub.tsx",
-    "to": "./FactoryLiveMap3D"
+    "from": "client/src/pages/webglThamDoGiaiPhong.dom.test.tsx",
+    "to": "./MachineCockpit"
   },
   {
-    "from": "client/src/pages/TwinHub.tsx",
-    "to": "./FactoryFloorEditor"
-  },
-  {
-    "from": "client/src/pages/TwinHub.tsx",
-    "to": "./CellTwinPlayer"
-  },
-  {
-    "from": "client/src/pages/TwinHub.tsx",
-    "to": "./RfTestCellSim"
+    "from": "client/src/pages/webglThamDoGiaiPhong.dom.test.tsx",
+    "to": "./RobotCockpit"
   },
   {
     "from": "client/src/_core/hooks/usePermissions.ts",
@@ -24018,6 +28806,10 @@
   {
     "from": "shared/aiCodingLesson.ts",
     "to": "./aiCodingSession"
+  },
+  {
+    "from": "shared/aiCodingLoiViTri.test.ts",
+    "to": "./aiCodingLoiViTri"
   },
   {
     "from": "shared/aiCodingLoop.test.ts",
@@ -24046,6 +28838,22 @@
   {
     "from": "shared/module-registry.test.ts",
     "to": "./module-registry"
+  },
+  {
+    "from": "shared/pointLimitSpec.test.ts",
+    "to": "./pointLimitSpec"
+  },
+  {
+    "from": "shared/productColumnSpec.test.ts",
+    "to": "./productColumnSpec"
+  },
+  {
+    "from": "shared/productColumnSpec.ts",
+    "to": "./masterDataIO"
+  },
+  {
+    "from": "shared/rollupVerdict.test.ts",
+    "to": "./rollupVerdict"
   },
   {
     "from": "shared/types.ts",
@@ -24440,6 +29248,18 @@
     "to": "./aiRepoDuAn"
   },
   {
+    "from": "drizzle/schema/index.ts",
+    "to": "./productConfigTree"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./inspectionTree"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./twin3d"
+  },
+  {
     "from": "drizzle/schema/inspection.ts",
     "to": "./enums"
   },
@@ -24450,6 +29270,10 @@
   {
     "from": "drizzle/schema/inspection.ts",
     "to": "./product"
+  },
+  {
+    "from": "drizzle/schema/inspectionTree.ts",
+    "to": "./enums"
   },
   {
     "from": "drizzle/schema/integration.ts",
@@ -24532,6 +29356,10 @@
     "to": "./hierarchy"
   },
   {
+    "from": "drizzle/schema/productConfigTree.ts",
+    "to": "./product"
+  },
+  {
     "from": "drizzle/schema/production.ts",
     "to": "./enums"
   },
@@ -24574,5 +29402,9 @@
   {
     "from": "drizzle/schema/system.ts",
     "to": "./auth"
+  },
+  {
+    "from": "drizzle/schema/twin3d.ts",
+    "to": "./enums"
   }
 ]

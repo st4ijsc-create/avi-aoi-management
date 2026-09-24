@@ -146,9 +146,9 @@
     "navGroupId": "devices",
     "routes": [
       "Giám sát máy",
-      "s silently dropped).\r\n      ",
-      ",\r\n      // doc 44 W3-B4 (G5.10) — Line View HMI (LDS-L5 Ch.4.2): giám sát tuyến + lệnh tuyến\r\n      // (mutation tự gate actuationProcedure server-side) → app Giám sát máy.\r\n      ",
-      ",\r\n      ",
+      "s silently dropped).\n      ",
+      ",\n      // doc 44 W3-B4 (G5.10) — Line View HMI (LDS-L5 Ch.4.2): giám sát tuyến + lệnh tuyến\n      // (mutation tự gate actuationProcedure server-side) → app Giám sát máy.\n      ",
+      ",\n      ",
       ", "
     ],
     "permissionCategories": [

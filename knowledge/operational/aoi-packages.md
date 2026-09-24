@@ -26,5 +26,5 @@ Màn hình `/aoi-packages` (AOI Packages).
 - Module: `MOD_PRODUCTION` (OPTIONAL — cần license).
 
 ## Endpoint liên quan
-- Router tRPC: `aoiPackageRouter` (server/routers/aoiPackageRouter.ts, ~11 thủ tục query/mutation).
+- Router tRPC: `aoiPackageRouter` (server/routers/aoiPackageRouter.ts, ~13 thủ tục query/mutation).
 
