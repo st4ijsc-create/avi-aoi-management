@@ -43,6 +43,8 @@ RUN pnpm install --frozen-lockfile --prod && pnpm store prune
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts ./scripts
+# knowledge/: tệp KB SINH RA (chunks, catalog, operational/*.md, embeddings…) KHÔNG nằm trong git từ 2026-09-24 —
+# chạy `npm run kb:sync` trong context build TRƯỚC `docker build` (embeddings.jsonl vốn đã bị bỏ qua, nên không phải yêu cầu mới).
 COPY --from=build /app/knowledge ./knowledge
 
 RUN mkdir -p /app/uploads /app/backups && chown -R app:app /app

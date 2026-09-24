@@ -262,3 +262,30 @@ vscode-extension/.vscode-test/
 # ⚠ KHÔNG mất gì: lịch sử git vẫn giữ trọn (`git show <commit>:.qa-.../x.json` đọc lại được),
 #   và bản trích số liệu nằm ở `.do-luutru/`.
 .qa-*/
+
+# ── Tệp KB SINH RA bởi `npm run kb:sync` (autosync 03:00, KB_AUTOSYNC_ENABLED) — chủ dự án chốt 2026-09-24: KHÔNG theo
+#    dõi trong git (trước đây sáng nào cây cũng bẩn ~30.000 dòng và không ai biết kho ứng với commit nào).
+#    Danh sách NGUỒN SỰ THẬT: `KB_ARTIFACT_FILES` ở server/services/kbSyncScheduler.ts (+ thẻ sinh `operational/*.md`,
+#    kết quả cổng eval). Lưới `server/services/kbGitignoreArtifacts.test.ts` đỏ nếu hai nơi lệch nhau.
+#    Máy mới / build Docker: chạy `npm run kb:sync` TRƯỚC (embeddings.jsonl vốn đã bị bỏ qua từ trước, nên điều này
+#    không phải yêu cầu mới). Tệp NGƯỜI VIẾT (domain/ features/ operational-approved/ workflows/ studio-golden/
+#    api-ref/ golden-code/ drafts/) VẪN theo dõi.
+knowledge/routers-catalog.json
+knowledge/services-catalog.json
+knowledge/types-dictionary.json
+knowledge/code-graph.json
+knowledge/docs-catalog.json
+knowledge/patterns.json
+knowledge/routes-catalog.json
+knowledge/nav-catalog.json
+knowledge/schema-tables.json
+knowledge/modules-catalog.json
+knowledge/phase1-summary.json
+knowledge/operational-cards.json
+knowledge/operational-cards-stats.json
+knowledge/chunks.jsonl
+knowledge/chunks-stats.json
+knowledge/embeddings-meta.json
+knowledge/semantic-graph.json
+knowledge/rag-eval-results.json
+knowledge/operational/
