@@ -102,7 +102,7 @@ beforeEach(() => {
   process.env.AI_KB_CONG_LAC_DE = "0"; // chỉ đo lượt trả lời
   delete process.env.LLAMA_SERVER_MODEL;
   delete process.env.AI_KB_MODEL_TRA_LOI;
-  generateEmbedding.mockResolvedValue(unit(0));
+  generateEmbedding.mockResolvedValue({ embedding: unit(0) });
   isGgufAvailable.mockResolvedValue(true);
   tryExecuteToolLoop.mockResolvedValue({ result: null, decision: { tool: null, args: {}, reason: "NONE" }, loop: null });
   generateText.mockResolvedValue({ text: TRA_LOI, tokensPrompt: 10, tokensGenerated: 20 });

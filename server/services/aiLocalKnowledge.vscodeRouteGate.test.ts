@@ -144,7 +144,7 @@ function khoiDayBoNho(mucNho) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  generateEmbedding.mockResolvedValue(unit(0));
+  generateEmbedding.mockResolvedValue({ embedding: unit(0) });
   isGgufAvailable.mockResolvedValue(false); // đường extractive — không phụ thuộc model cục bộ
   tryExecuteToolLoop.mockResolvedValue({
     result: null,
@@ -386,6 +386,9 @@ describe("§F — TASK H6: shouldUseLlm bỏ ngưỡng độ tin KB cho route vs
     // 0,30 trên MỌI route — nên đối chứng B3 đúng nghĩa phải dùng câu hỏi THẬT trần trụi (đúng hình
     // dạng một request web thật), không phải bản đã bọc giáo cụ mà web không tạo ra được.
     datLlmThat("Vâng, tôi sẽ luôn trả lời trang trọng.");
+    // ⚠ 2026-09-24 (PDCA §15) — câu KHÔNG liên quan phải có vector TRỰC GIAO với đoạn OEE. Trước đây mock trả mảng trơn
+    //   (sai hình `{ embedding }`) ⇒ cosine = 0 im lặng ⇒ "độ tin thấp" có được nhờ LỖI mock, không nhờ tiền đề của ca.
+    generateEmbedding.mockResolvedValue({ embedding: unit(7) });
     const r = await chay(CAU_HOI_KHONG_LIEN_QUAN_KB, { route: "/factory-command" });
     expect(
       r.done && r.done.type === "done" && r.done.provider,

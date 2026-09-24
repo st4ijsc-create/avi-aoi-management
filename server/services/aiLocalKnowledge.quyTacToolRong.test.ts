@@ -100,7 +100,7 @@ beforeEach(() => {
   // các ca ở đây đếm lượt gọi model TRẢ LỜI ("không gọi LLM") — lượt dịch không phải lượt trả lời.
   process.env.AI_KB_DICH_TRUY_VAN = "0";
   vi.clearAllMocks();
-  generateEmbedding.mockResolvedValue(unit(0)); // trùng đoạn duy nhất ⇒ tin cậy cao
+  generateEmbedding.mockResolvedValue({ embedding: unit(0) }); // trùng đoạn duy nhất ⇒ tin cậy cao
   isGgufAvailable.mockResolvedValue(true);
   toolRong();
   llm(CAU_TAI_LIEU);

@@ -101,7 +101,7 @@ const soLanTuKiem = () => generateText.mock.calls.filter((c) => (c[0] as { maxTo
 beforeEach(() => {
   vi.clearAllMocks();
   delete process.env.AI_KB_CONG_LAC_DE;
-  generateEmbedding.mockResolvedValue(unit(0));
+  generateEmbedding.mockResolvedValue({ embedding: unit(0) });
   isGgufAvailable.mockResolvedValue(true);
   khongTool();
 });

@@ -101,7 +101,7 @@ function ketQuaTool(textSummary: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  generateEmbedding.mockResolvedValue(unit(0));
+  generateEmbedding.mockResolvedValue({ embedding: unit(0) });
   isGgufAvailable.mockResolvedValue(false); // đường extractive — không phụ thuộc model
   tryExecuteToolLoop.mockResolvedValue({
     result: null,
@@ -155,7 +155,7 @@ describe("G2-C §B — chỉ thị trong dữ liệu được NÓI RA, không im
   it("★ chunk KB mang chỉ thị cũng bị nêu (chunk KB TRƯỚC G2-C KHÔNG hề được quét)", async () => {
     // Không có tool nào — nguồn ô nhiễm là CHÍNH KHO TÀI LIỆU. Nhúng câu hỏi vào `unit(5)` để
     // chỉ chunk `c2` (bị đầu độc) được truy hồi; mọi ca khác dùng `unit(0)` nên không thấy nó.
-    generateEmbedding.mockResolvedValue(unit(5));
+    generateEmbedding.mockResolvedValue({ embedding: unit(5) });
     const r = await answerQuestion("quy trình tiếp theo là gì vậy", 3);
     expect(r.citations.map((c) => c.id)).toContain("c2");
     expect(r.answer).toContain("tài liệu tra cứu");

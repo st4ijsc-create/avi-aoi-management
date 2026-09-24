@@ -109,14 +109,14 @@ beforeEach(() => {
 
 describe("§1 — truy hồi TIN CẬY ⇒ tài liệu thắng câu hỏi lại", () => {
   it("★★★ answerQuestion: gọi LLM, trả câu trả lời, KHÔNG phải câu hỏi lại", async () => {
-    generateEmbedding.mockResolvedValue(unit(0)); // trùng hướng đoạn duy nhất ⇒ tin cậy cao
+    generateEmbedding.mockResolvedValue({ embedding: unit(0) }); // trùng hướng đoạn duy nhất ⇒ tin cậy cao
     const res = await answerQuestion("máy thống kê theo defectType ở đâu (a1)", 3);
     expect(res.answer, "câu có tài liệu liên quan vẫn bị chặn bằng câu hỏi lại").not.toContain(HOI_LAI);
     expect(generateText).toHaveBeenCalled();
     expect(res.answer).toContain(CAU_LLM);
   });
   it("★★★ streamAnswer: cùng luật", async () => {
-    generateEmbedding.mockResolvedValue(unit(0));
+    generateEmbedding.mockResolvedValue({ embedding: unit(0) });
     const chu = await gomToken(streamAnswer("máy thống kê theo defectType ở đâu (s1)", 3));
     expect(chu).not.toContain(HOI_LAI);
     expect(chu).toContain(CAU_LLM);
@@ -125,13 +125,13 @@ describe("§1 — truy hồi TIN CẬY ⇒ tài liệu thắng câu hỏi lại"
 
 describe("§2 — ĐỐI CHỨNG: truy hồi YẾU ⇒ hỏi lại như cũ, không gọi LLM", () => {
   it("★ answerQuestion", async () => {
-    generateEmbedding.mockResolvedValue(unit(7)); // trực giao ⇒ không đoạn nào liên quan
+    generateEmbedding.mockResolvedValue({ embedding: unit(7) }); // trực giao ⇒ không đoạn nào liên quan
     const res = await answerQuestion("máy số mấy (a2)", 3);
     expect(res.answer).toBe(HOI_LAI);
     expect(generateText).not.toHaveBeenCalled();
   });
   it("★ streamAnswer", async () => {
-    generateEmbedding.mockResolvedValue(unit(7));
+    generateEmbedding.mockResolvedValue({ embedding: unit(7) });
     const chu = await gomToken(streamAnswer("máy số mấy (s2)", 3));
     expect(chu).toBe(HOI_LAI);
     expect(generateTextStream).not.toHaveBeenCalled();
@@ -140,14 +140,14 @@ describe("§2 — ĐỐI CHỨNG: truy hồi YẾU ⇒ hỏi lại như cũ, kh�
 
 describe("§3 — tin cậy nhưng model TỪ CHỐI ⇒ vẫn đưa câu hỏi lại", () => {
   it("★ answerQuestion: từ chối + câu hỏi lại", async () => {
-    generateEmbedding.mockResolvedValue(unit(0));
+    generateEmbedding.mockResolvedValue({ embedding: unit(0) });
     traLoiLLM(TU_CHOI);
     const res = await answerQuestion("máy thống kê theo defectType ở đâu (a3)", 3);
     expect(res.answer).toContain(TU_CHOI);
     expect(res.answer.indexOf(HOI_LAI)).toBeGreaterThan(res.answer.indexOf(TU_CHOI));
   });
   it("★ streamAnswer: từ chối + câu hỏi lại", async () => {
-    generateEmbedding.mockResolvedValue(unit(0));
+    generateEmbedding.mockResolvedValue({ embedding: unit(0) });
     traLoiLLM(TU_CHOI);
     const chu = await gomToken(streamAnswer("máy thống kê theo defectType ở đâu (s3)", 3));
     expect(chu).toContain(TU_CHOI);

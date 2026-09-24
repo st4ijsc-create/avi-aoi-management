@@ -143,7 +143,7 @@ beforeEach(() => {
   // các ca ở đây đếm lượt gọi model TRẢ LỜI ("không gọi LLM") — lượt dịch không phải lượt trả lời.
   process.env.AI_KB_DICH_TRUY_VAN = "0";
   vi.clearAllMocks();
-  generateEmbedding.mockResolvedValue(unit(0));
+  generateEmbedding.mockResolvedValue({ embedding: unit(0) });
   isGgufAvailable.mockResolvedValue(true);
   generateText.mockResolvedValue({ text: CAU_LLM, tokensPrompt: 10, tokensGenerated: 20 });
   generateTextStream.mockImplementation(async function* () {
