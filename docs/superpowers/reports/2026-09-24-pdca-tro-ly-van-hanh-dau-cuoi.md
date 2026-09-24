@@ -166,3 +166,57 @@ Giữ đoạn con (7 câu đúng thêm) với giá 1 câu lạc đề cùng mi�
    truy hồi không tách được (vòng 1–2).
 2. T17 và T79 vẫn ngoài top‑20 (T79 chỉ có ở tài liệu schema/audit, không ở tài liệu miền).
 3. Kho Studio chưa có đoạn bảng/đoạn con.
+
+## 10. Vòng 5 — cổng câu lạc đề cùng miền (`bf42ae799`) và một tài liệu sai (`d39e67949`)
+
+### 10.1 Bước 0
+- Bộ GIỮ LẠI `scripts/ai-eval/st4i-giu-lai-lac-de.jsonl` (12 trong + 12 ngoài) commit TRƯỚC thiết kế (`d53a4ddd1`).
+- Bundle dựng lại từ mã có cổng (`dist/index.js` 15:28, chuỗi `AI_KB_CONG_LAC_DE` có trong bundle); :3000 = một PID;
+  `KB_QA_CACHE_TTL_MS=0` cho mọi lượt đo; ablation = restart với `AI_KB_CONG_LAC_DE=0` (log: 0 dòng "CHẶN").
+- Lưới rộng lộ một **hồi quy của chính vòng 2**: `e6d06cb1a` thêm `dapAnTraLoi` vào bộ vàng ST4I mà schema Studio `.strict()`
+  từ chối ⇒ EvalTab Studio đọc ra **0 câu**. Vá ở `fd2908ae4` (đột biến "bỏ trường khỏi schema" ⇒ đỏ).
+
+### 10.2 Thiết kế (đo trên bộ huấn luyện, xác nhận trên bộ giữ lại)
+Chặn ⇔ độ phủ từ nội dung (IDF) của câu hỏi trong các đoạn < 0,6 **VÀ** tự kiểm một từ (tắt nghĩ, 8 token) nói KHONG. Chỉ
+xét khi đường cũ SẼ gọi model (confidence ≥ 0,30), không tool, không route vscode; lỗi bất kỳ ⇒ không chặn. Tự kiểm thấy câu
+hỏi ĐÃ CHE (`plan.safeText`) — lưới an toàn cũ bắt được bản đầu gửi câu hỏi thô; nay kiểm MỌI lượt engine.
+
+### 10.3 Kết quả (bật vs tắt cổng, cùng bundle, cache tắt)
+
+| Bộ | Tắt cổng | Bật cổng |
+|---|---|---|
+| 111 câu — trong corpus đạt | 70/79 (vòng 4) | **71/79** |
+| 111 câu — ngoài corpus từ chối | 29/32 | **32/32** (thêm N04 N19 N22) |
+| Giữ lại — trong đạt* | 8/12 | 8/12 (0 câu mất) |
+| Giữ lại — ngoài từ chối | 10/12 | **11/12** (thêm HN02) |
+| Đối chứng sống (6) — bịa số | 0 | 0 |
+
+\* chấm máy; HT04 xem 10.4.
+- Theo câu (so với `v5tat-st4i-doi` chạy lại 10 câu đổi): **mất T58** ("phế phẩm" ↔ "Scrap Rate" — lệch ngôn ngữ, giá đã dự
+  báo cùng lớp); **T17 T46 từ SAI thành từ chối** (trung thực hơn, không tính là đạt); T54/T76 lên là nhiễu sinh chữ (cổng
+  chỉ có thể từ chối).
+- **Giá chưa trả hết:** đối chứng C01 "lô của tôi sao rồi?" và C03 "tình trạng thiết bị hiện tại ra sao?" trước đó được
+  hướng dẫn theo tài liệu (menu/API tra lô), nay nhận câu từ chối chuẩn. Cả hai vẫn đúng nhãn ("hỏi lại/từ chối/tool, KHÔNG
+  bịa số") nhưng kém hữu ích hơn.
+- Đột biến: tuKiemCo luôn CO · bỏ công tắc · gỡ cổng stream · gỡ cổng non-stream · ngưỡng 0,1 · tự kiểm dùng câu chưa che ⇒
+  ĐỎ. Vế `route !== "vscode"` SỐNG SÓT — route vscode truy hồi kho riêng (0 đoạn), vế đó là phòng thủ thừa.
+- Chưa đo: độ trễ thêm của lượt tự kiểm trên câu KHÔNG bị chặn (câu bị chặn trả lời ~0,6 s thay vì 2–40 s).
+
+### 10.4 Tài liệu sai, không phải model sai (HT04)
+Trợ lý trả lời Pareto mặc định **30 ngày**; tài liệu miền ghi 7; bộ chấm tính ĐÚNG chỉ vì chuỗi "7 ngày" nằm ở dòng dữ liệu
+sống. Đọc mã: `ParetoAnalysis.tsx getDefaultDateRange` và `QualityCockpit` đều −30 ngày; 7 ngày là mặc định của TOOL
+`get_top_defects`. Sửa bảng trong `howto-pareto-defects.md` và đáp án HT04 (`d39e67949`, có ghi chú đính chính); KB dựng lại
+(2 đoạn đổi) và kiểm lại trên server thường: HT04 đạt với câu "30 ngày".
+
+### 10.5 Phát hiện mới trên bộ giữ lại — tool rỗng cướp câu hỏi TÍNH NĂNG
+HT05 HT07 HT12 (vạch đỏ Pareto, cache bao lâu, bộ lọc severity) nhận nguyên dòng tool "Không có lỗi NG nào theo defectType
+trong 7 ngày qua." ở CẢ HAI lượt bật/tắt cổng. Điều kiện chính xác: tool top‑defects chạy, trả rỗng, `laCauHoiQuyTac` =
+false (không có dấu hiệu quy tắc: "đánh dấu … nào", "cache trong bao lâu", "có những giá trị nào") ⇒ nhánh 4488df827 không
+bật ⇒ câu trả lời là dòng tool. Cùng lớp nguyên nhân #4, lỗ ở bộ nhận dạng câu quy tắc.
+
+### 10.6 Còn mở
+1. Tool rỗng cướp câu hỏi tính năng (10.5) — 3/12 câu giữ lại.
+2. C01/C03: khi cổng chặn một câu hỏi SỐNG mơ hồ, nên hỏi lại (mã lô/máy) thay vì từ chối chuẩn.
+3. T58 và lớp lệch ngôn ngữ Việt ↔ Anh (T17 T79 cũng thế: "sửa lại/loại bỏ" ↔ "rework/scrap", "danh mục lỗi" ↔ "defect
+   catalog") — một bảng thuật ngữ mở rộng truy vấn sẽ chạm cả truy hồi lẫn độ phủ của cổng.
+4. Kho Studio chưa có đoạn bảng/đoạn con; bản Studio của tài liệu Pareto (nếu đã nạp) còn ghi 7 ngày — cần nạp lại.
