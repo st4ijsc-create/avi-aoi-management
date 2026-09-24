@@ -16,6 +16,11 @@
  */
 export const NGUONG_TIN_CAY_DUNG_LLM = 0.3;
 
+/** Câu trả lời là lời TỪ CHỐI chuẩn của model (luật 2). */
+export function laTuChoi(traLoi: string): boolean {
+  return TU_CHOI.test(traLoi ?? "");
+}
+
 const TU_CHOI = /không có thông tin chính xác|don't have accurate information|没有关于此问题的准确信息/i;
 
 /** `true` ⇔ tài liệu đủ liên quan để thử trả lời trước khi hỏi lại. */

@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { nhuongChoTaiLieu, phanHoiLaiSauTuChoi } from "./ai/hoiLaiSauTaiLieu";
+import { laCauHoiQuyTac, ghepQuyTacVoiDuLieuSong } from "./ai/cauHoiQuyTac";
+import { laTuChoi, nhuongChoTaiLieu, phanHoiLaiSauTuChoi } from "./ai/hoiLaiSauTaiLieu";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import {
@@ -3128,7 +3129,27 @@ export async function answerQuestion(
       khongCoGiDeNoi,
       tranDoDai: TOOL_SHORTCIRCUIT_MIN,
     });
-    if (qdDuongTat.dungDuongTat) {
+    // ★ PDCA #4 (2026-09-24) — tool RỖNG + câu hỏi QUY TẮC (`ai/cauHoiQuyTac.ts`, 0 câu sống lọt trên tập nhãn) + tài liệu
+    //   tin cậy ⇒ trả lời THEO TÀI LIỆU (LLM KHÔNG thấy khối tool rỗng), dòng tool giữ làm ghi chú. Model từ chối ⇒ như cũ.
+    const quyTacTaiLieuNS =
+      khongCoGiDeNoi && laCauHoiQuyTac(question) && nhuongChoTaiLieu(retrieve.confidence) && !toolExec.pendingAction;
+    let daTraLoiTheoTaiLieu = false;
+    if (quyTacTaiLieuNS) {
+      try {
+        const theoTaiLieu = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route);
+        const ghep = ghepQuyTacVoiDuLieuSong(theoTaiLieu, summary, laTuChoi);
+        if (ghep) {
+          provider = "ollama";
+          answer = ghep;
+          daTraLoiTheoTaiLieu = true;
+        }
+      } catch {
+        /* rơi về đường tool như cũ */
+      }
+    }
+    if (daTraLoiTheoTaiLieu) {
+      // đã có câu trả lời theo tài liệu
+    } else if (qdDuongTat.dungDuongTat) {
       provider = "tool";
       answer = appendNavHint(summary, retrieve);
     } else {
@@ -3612,7 +3633,32 @@ export async function* streamAnswer(
   const toolPromptBlock = loop?.promptBlock ?? bocMotVong.block;
   const toolInjRisk: InjectionRisk = loop ? (loop.injection ? "high" : "none") : bocMotVong.risk;
 
-  if (shouldUseLlm) {
+  // ★ PDCA #4 (2026-09-24) — cùng luật với `answerQuestion`: tool RỖNG + câu QUY TẮC + tài liệu tin cậy ⇒ trả lời theo tài
+  //   liệu, LLM KHÔNG thấy khối tool; ĐỆM toàn bộ (không phát từng mảnh) để một lời từ chối không lọt ra trước khi rơi về dòng tool.
+  const quyTacTaiLieu =
+    !!toolResult &&
+    toolKhongCoGiDeNoi(toolResult, loop?.rounds.length ?? 1) &&
+    laCauHoiQuyTac(cauHoiTruyVan) &&
+    nhuongChoTaiLieu(retrieve.confidence);
+  if (quyTacTaiLieu) {
+    try {
+      let dem = "";
+      for await (const piece of generateWithOllamaStream(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route)) {
+        if (piece) dem += piece;
+      }
+      const g = guardGeneratedText(dem);
+      const ghep = g.degraded ? null : ghepQuyTacVoiDuLieuSong(dem, toolResult!.textSummary ?? "", laTuChoi);
+      if (ghep) {
+        accumulated = ghep;
+        provider = "ollama";
+        yield { type: "token", token: ghep };
+      }
+    } catch (e) {
+      console.error(`[aiLocalKnowledge] lượt trả lời theo tài liệu (câu quy tắc, tool rỗng) HỎNG: ${(e as Error)?.message ?? e}`);
+    }
+  }
+
+  if (shouldUseLlm && !accumulated) {
     try {
       const iter = generateWithOllamaStream(
         question,

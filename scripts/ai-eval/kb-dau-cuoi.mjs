@@ -45,7 +45,7 @@ async function hoi(q) {
 const ra = [];
 for (const c of bo) {
   const r = await hoi(c.cauHoi);
-  const ngoai = c.nguon.length === 0;
+  const ngoai = (c.nguon ?? []).length === 0;
   const tuChoi = TU_CHOI.test(r.text);
   let kq;
   if (r.loi) kq = "loi";
