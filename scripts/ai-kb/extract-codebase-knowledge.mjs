@@ -74,8 +74,18 @@ function walkMarkdown(baseDir, out = []) {
 // any file from disk — it only keeps them out of the knowledge corpus.
 const DOC_DENOISE_RE =
   /I18N_AUDIT|_AUDIT_REPORT|SYSTEM_AUDIT|MODULE_AUDIT|_DELIVERABLE|_UPGRADE_REPORT|FRONTEND_AUDIT/i;
+/**
+ * ★ 2026-09-24 (PDCA truy hồi, backlog 1 của báo cáo 5776daa30) — NHẬT KÝ LÀM VIỆC của các phiên phát triển
+ * (`docs/superpowers/{plans,reports,specs,audits}`) ra khỏi kho VẬN HÀNH. Chúng là 3.044/9.357 đoạn (33 %) của kho
+ * — tên tệp thường, tiếng Việt, nên `DOC_DENOISE_RE` (viết cho tên HOA kiểu `_AUDIT_REPORT`) không bắt được. Đo:
+ * câu ST4I T05 ("bao lâu hiệu chỉnh camera") nhận 2 đoạn kế hoạch/báo cáo dev trong top‑5 thay cho tài liệu máy.
+ * ⚠ KHÔNG đụng `docs/ECOSYSTEM/**` — bộ ca kiến trúc (`scripts/ai-eval/rag-architecture-cases.json`) mong đợi đúng
+ * thư mục đó; `aiKbSourceWeights.DEV_JOURNAL_WEIGHT` ghi vì sao HẠ trọng số cả hai bị bác. Loại một thư mục ở đây
+ * là quyết định KHÁC (không có ca nào mong đợi `docs/superpowers/**`); số trước/sau ở commit.
+ */
+const DEV_JOURNAL_DIR_RE = /^docs\/superpowers\//;
 function isNoiseDoc(relativeFile) {
-  return DOC_DENOISE_RE.test(relativeFile);
+  return DOC_DENOISE_RE.test(relativeFile) || DEV_JOURNAL_DIR_RE.test(relativeFile);
 }
 
 function rel(file) {

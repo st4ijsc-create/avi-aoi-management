@@ -95,7 +95,7 @@
       "question": "API key vừa tạo gọi vào thì bị từ chối, cần kiểm tra những gì?",
       "expectPaths": ["knowledge/operational-approved/api-keys.md"],
       "distractors": [
-        "knowledge/operational/layout.md",
+        "knowledge/operational/twin.md",
         "knowledge/operational/comparison-studio.md",
         "knowledge/operational/operator-badges.md"
       ]
@@ -173,7 +173,7 @@
       "question": "Cần tra nhật ký kiểm toán để biết ai đã đổi ngưỡng cảnh báo thì làm thế nào?",
       "expectPaths": ["knowledge/operational-approved/audit-logs.md"],
       "distractors": [
-        "knowledge/operational/layout.md",
+        "knowledge/operational/twin.md",
         "knowledge/operational/component-library.md",
         "knowledge/operational/ai-gguf-models.md"
       ]
@@ -229,7 +229,7 @@
       "expectPaths": ["knowledge/operational-approved/anomaly-banks.md"],
       "distractors": [
         "knowledge/operational/backup-restore.md",
-        "knowledge/operational/layout.md",
+        "knowledge/operational/twin.md",
         "knowledge/operational/powerpoint-export.md"
       ]
     },

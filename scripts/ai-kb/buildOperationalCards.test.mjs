@@ -162,7 +162,24 @@ test("chunker ingests the new 'operational' sourceType: one chunk per card, rout
   const validSourcePaths = new Set(index.map((c) => c.sourcePath));
 
   const chunks = readChunksJsonl();
-  const operationalChunks = chunks.filter((c) => c.sourceType === "operational");
+  // G4-C: `knowledge/operational-approved/` (thẻ NGƯỜI duyệt) cùng hạng "operational" nhưng KHÔNG nằm trong
+  // operational-cards.json (chỉ mục của thẻ SINH RA) ⇒ đếm "một chunk mỗi thẻ" chỉ trên thư mục sinh ra. Trước
+  // 2026-09-24 ca này đỏ sẵn (188 ≠ 163) vì đếm lẫn thẻ duyệt.
+  const operationalChunks = chunks.filter(
+    (c) => c.sourceType === "operational" && c.sourcePath.startsWith("knowledge/operational/"),
+  );
+  assert.ok(
+    chunks.some((c) => c.sourceType === "operational" && c.sourcePath.startsWith("knowledge/operational-approved/")),
+    "thẻ vận hành ĐÃ DUYỆT (knowledge/operational-approved/) phải vào kho",
+  );
+  // 2026-09-24: tệp tiền tố `_` (mẫu, README, phiếu hỏi) là tệp làm việc — không bao giờ thành chunk.
+  const laTepLamViec = chunks.filter((c) => /\.md$/i.test(c.sourcePath) && c.sourcePath.split("/").pop().startsWith("_"));
+  assert.deepEqual(laTepLamViec.map((c) => c.sourcePath), [], "tệp .md tiền tố `_` lọt vào kho");
+  // 2026-09-24: nhật ký làm việc của phiên phát triển (docs/superpowers/**) ra khỏi kho vận hành (extract,
+  // `isNoiseDoc`); docs/ECOSYSTEM/** thì PHẢI còn (bộ ca kiến trúc mong đợi nó).
+  const nhatKyDev = chunks.filter((c) => c.sourcePath.startsWith("docs/superpowers/"));
+  assert.equal(nhatKyDev.length, 0, `docs/superpowers/** lọt vào kho (${nhatKyDev.length} đoạn) — chạy lại kb:extract?`);
+  assert.ok(chunks.some((c) => c.sourcePath.startsWith("docs/ECOSYSTEM/")), "docs/ECOSYSTEM/** phải còn trong kho");
 
   assert.ok(operationalChunks.length > 0, "no 'operational' sourceType chunks were produced");
   // Cards are short (well under KB_CHUNK_MAX_CHARS) -> exactly one chunk per card.

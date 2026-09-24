@@ -679,6 +679,13 @@ async function main() {
     // ── D. tổ hợp ứng viên ──
     { name: "D op=1.15·pb=1.15·dev=0.80", types: { ...OLD, operational: 1.15, playbook: 1.15 }, devJournal: 0.8 },
     { name: "D op=1.15·pb=1.30·dev=0.80", types: { ...OLD, operational: 1.15, playbook: 1.3 }, devJournal: 0.8 },
+    // ── E. (2026-09-24) chỉ đổi `domain`, mọi hạng khác = bảng ĐANG CHẠY — tài liệu máy AOI (knowledge/domain)
+    //    thua thẻ tính năng/vận hành cùng chủ đề cho 5 câu ST4I; một biến một dòng. ──
+    ...[1.08, 1.12, 1.18, 1.25, 1.35].map((d) => ({
+      name: `E dom=${d.toFixed(2)}${d === 1.08 ? " (đang chạy)" : ""}`,
+      types: { ...(W?.SOURCE_TYPE_WEIGHTS ?? OLD), domain: d },
+      devJournal: null,
+    })),
     { name: "ĐÃ CHỌN (mặc định trong mã)", types: null, devJournal: null },
   ];
 

@@ -71,6 +71,11 @@ function collectMarkdownFiles(baseDir, out = []) {
       collectMarkdownFiles(full, out);
       continue;
     }
+    // ★ 2026-09-24 — tệp tiền tố `_` là tệp LÀM VIỆC, không phải tri thức: `_TEMPLATE.md`, `_README.md`, và
+    // `operational-approved/_PHIEU_DIEN_7_O_TRONG.md` (phiếu hỏi chủ dự án, đầy "> **Trả lời:**" trống) — phiếu
+    // này đứng top‑2 cho câu ST4I T05 (0,513 · 0,499) trên cả tài liệu máy đúng. Trước đây chỉ khối `features`
+    // tự bỏ `_*`; nay mọi thư mục đi qua đây đều bỏ.
+    if (entry.name.startsWith("_")) continue;
     if (entry.name.toLowerCase().endsWith(".md")) out.push(full);
   }
   return out;
