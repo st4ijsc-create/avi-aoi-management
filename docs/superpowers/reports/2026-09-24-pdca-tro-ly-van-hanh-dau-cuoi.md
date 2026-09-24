@@ -338,3 +338,46 @@ nhưng có đáp án). `tom.ngoai.traLoi` từ nay CHỈ đếm trả lời th�
 - **Chấm lại** (`kb-dau-cuoi-cham-lai.mjs`, không gọi server): vòng 5–7 nhánh A không đổi câu nào; B/C chỉ N21/N31
   `tra-loi → tu-choi-mem` ⇒ ở 12.2, ngoài corpus **không trả lời thật: A 32/32 · B 32/32 · C 32/32**. Nền 0924 chấm lại: 38/79
   đạt, 17 câu trong corpus là `hoi-lai` (đúng chẩn đoán vòng 1: câu hỏi lại nuốt câu có tài liệu).
+
+## 14. Vòng 9 — lệch thuật ngữ Việt ↔ Anh: dịch câu hỏi để CHẤM ĐIỂM truy hồi (`4c83de2a6`)
+
+### 14.1 Bước 0 và chẩn đoán
+- TQ02 ("SPC tự làm mới sau bao lâu?") trượt không phải vì model: đoạn con chứa "Refresh: 1 phút" KHÔNG vào top‑20; câu
+  Việt "tự làm mới" không trùng chữ nào với "Refresh". Cùng lớp: T58 ("phế phẩm" ↔ "Scrap Rate" — cổng lạc đề chặn vì độ
+  phủ từ thấp), T17, T79.
+- Tập GIỮ LẠI mới `thuat-ngu-viet-anh-giu-lai.jsonl` (12 câu Việt cho dữ kiện viết chữ Anh) commit TRƯỚC thiết kế
+  (`c5a277bac`). Nền: 6/12 (lượt đầu, server thường) — 5 câu bị cổng lạc đề chặn (~0,5 s), 6 câu đoạn đáp án ngoài top‑20.
+- Bác phương án rẻ bằng số: bảng thuật ngữ ĐÀO từ các cặp "Anh (Việt)" có sẵn trong tài liệu ra 417 cặp nhiễu, phủ 0/19
+  thuật ngữ cần có ⇒ bỏ. Bảng thuật ngữ viết tay sau khi đã đọc tập giữ lại = nhiễm tập giữ lại ⇒ bỏ.
+
+### 14.2 Thiết kế
+Model của planner (4B in-process — không đụng slot duy nhất của :8091, §12.4) dịch câu Việt CÓ DẤU sang Anh (tắt nghĩ, 96
+token, đệm theo câu). Điểm mỗi đoạn = MAX(câu gốc, bản dịch) cho cosine VÀ từ khoá ⇒ bản dịch chỉ NÂNG; ngôn ngữ vẫn xác
+định trên câu GỐC (trọng số nguồn Việt/Anh không lật — lưu ý của phiên 1f). Cổng lạc đề: độ phủ = max(gốc, bản dịch), thêm
+từ chức năng tiếng Anh. Mọi lỗi ⇒ truy hồi như cũ. Công tắc `AI_KB_DICH_TRUY_VAN=0`.
+
+### 14.3 Kết quả — cùng bundle, chỉ đổi công tắc, cache tắt (`v9` bật · `v9tat` tắt)
+
+| Bộ | Tắt | Bật |
+|---|---|---|
+| Giữ lại Việt↔Anh (12) | 7 | **8** (LN11) |
+| TQ02 · HT09 | sai · từ chối | **đạt · đạt** |
+| 111 câu — trong / ngoài | 69 · 32/32 | 69 · **32/32** (T58 lên, T23 xuống) |
+| Endpoint: vận hành · thẻ duyệt · playbook · kiến trúc | 54 · 16 · 8 · 10 | 54 · **17** · 8 · 10 |
+| Trễ 111 câu: trung vị / p90 | 1.416 / 1.968 ms | 1.684 / 2.264 ms |
+
+- **Giá:** T23 — bản dịch "false call rate" kéo đoạn "False alarm rate > 30%" (tài liệu xử lý sự cố, ngữ cảnh khác) lên;
+  model trả 30 % thay vì 10 %. Đúng cảnh báo của phiên 1f: MAX nâng CẢ đoạn sai. Câu lạc đề: 32/32 cả hai ⇒ không lọt thêm.
+- **Chưa giải:** LN06 LN08 LN10 (và T17 T79) — đoạn đáp án vẫn ngoài top‑20 kể cả với bản dịch; LN12 lên hạng 6 (ngoài top‑5).
+- Đột biến 7/7 ĐỎ (bỏ cosine bản dịch · bỏ từ khoá bản dịch · cổng lạc đề bỏ bản dịch · bỏ đệm · đệm cả lỗi · bỏ công tắc ·
+  nhận bản dịch còn dấu Việt).
+- **Phát hiện phụ:** các lưới cũ mock `generateEmbedding` trả MẢNG trơn, trong khi `embedQuestionGguf` đọc `{ embedding }` ⇒
+  cosine = 0 IM LẶNG, các lưới đó chỉ đo từ khoá (đột biến "bỏ cosine bản dịch" sống sót cho tới khi sửa hình mock ở lưới mới).
+  Lưới cũ chưa sửa — ghi nợ.
+- Tệp thô: `kb-dau-cuoi-v9*.json`, `guard-v9/`.
+
+### 14.4 Còn mở
+1. T23 — hai tài liệu cùng nói "tỷ lệ báo giả" với hai ngưỡng khác ngữ cảnh (SOP NG 10 % · xử lý sự cố 30 %).
+2. LN06 LN08 LN10 T17 T79 — đoạn đáp án ngoài top‑20 kể cả khi có bản dịch.
+3. Nợ lưới: sửa hình mock `generateEmbedding` ở các lưới cũ (cosine đang = 0 im lặng).
+4. C01/C03 hỏi lại; kho Studio.

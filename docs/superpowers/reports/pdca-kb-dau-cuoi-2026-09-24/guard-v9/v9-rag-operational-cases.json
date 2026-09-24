@@ -1,0 +1,542 @@
+{
+ "OP01": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/aoi-troubleshooting.md",
+   "knowledge/domain/aoi-troubleshooting.md",
+   "aoi-troubleshooting.md",
+   "aoi-troubleshooting.md",
+   "knowledge/domain/aoi-defect-types.md"
+  ]
+ },
+ "OP02": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-lot-management.md",
+   "knowledge/domain/aoi-workflow.md",
+   "knowledge/features/production/production-orders.md",
+   "knowledge/domain/howto-lot-management.md",
+   "knowledge/features/production/production-orders.md"
+  ]
+ },
+ "OP03": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/monitoring/ng-rate-threshold.md",
+   "knowledge/features/monitoring/ng-rate-threshold.md",
+   "knowledge/domain/howto-ng-handling-sop.md",
+   "knowledge/domain/aoi-thresholds.md",
+   "knowledge/domain/howto-ng-handling-sop.md"
+  ]
+ },
+ "OP04": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational/oee-dashboard.md",
+   "knowledge/features/monitoring/oee-dashboard.md",
+   "knowledge/operational/realtime-report.md",
+   "knowledge/features/monitoring/oee-dashboard.md",
+   "knowledge/features/alerts/oee-targets.md"
+  ]
+ },
+ "OP05": {
+  "hang": 2,
+  "top": [
+   "knowledge/workflows/ng-handling.playbook.yaml",
+   "knowledge/domain/howto-ng-handling-sop.md",
+   "knowledge/workflows/ng-handling.playbook.yaml",
+   "knowledge/domain/howto-ng-handling-sop.md",
+   "howto-ng-handling-sop.md"
+  ]
+ },
+ "OP06": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-change-password.md",
+   "knowledge/domain/howto-change-password.md",
+   "knowledge/operational/change-password.md",
+   "knowledge/operational-approved/users.md",
+   "knowledge/features/admin/user-management.md"
+  ]
+ },
+ "OP07": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-export-pdf-report.md",
+   "knowledge/domain/howto-export-pdf-report.md",
+   "knowledge/domain/aoi-reports.md",
+   "knowledge/operational/pdf-reports.md",
+   "knowledge/features/analytics/reports.md"
+  ]
+ },
+ "OP08": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/analytics/pareto-analysis.md",
+   "knowledge/domain/howto-pareto-defects.md",
+   "knowledge/features/analytics/pareto-analysis.md",
+   "knowledge/domain/howto-pareto-defects.md",
+   "knowledge/domain/aoi-reports.md"
+  ]
+ },
+ "OP09": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-spc-control.md",
+   "knowledge/domain/howto-spc-control.md",
+   "howto-spc-control.md",
+   "knowledge/workflows/spc-critical-review.playbook.yaml",
+   "so-do-man-hinh-duyet-nguong.png"
+  ]
+ },
+ "OP10": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/settings/shift-config.md",
+   "knowledge/domain/howto-shift-change.md",
+   "knowledge/features/settings/shift-config.md",
+   "knowledge/domain/howto-shift-change.md",
+   "knowledge/operational/datasettings.md"
+  ]
+ },
+ "OP11": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-backup-restore.md",
+   "knowledge/domain/howto-backup-restore.md",
+   "knowledge/operational/backup-restore.md",
+   "knowledge/features/admin/backup-restore.md",
+   "knowledge/operational-approved/master-data.md"
+  ]
+ },
+ "OP12": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/admin/user-management.md",
+   "knowledge/features/admin/user-management.md",
+   "knowledge/operational/user-assignments.md",
+   "knowledge/features/admin/role-management.md",
+   "knowledge/features/admin/role-management.md"
+  ]
+ },
+ "OP13": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-sso-oauth.md",
+   "knowledge/domain/howto-sso-oauth.md",
+   "knowledge/operational/sessions.md",
+   "knowledge/operational/about-system.md",
+   "knowledge/features/settings/shift-config.md"
+  ]
+ },
+ "OP14": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/monitoring/machine-registration.md",
+   "knowledge/features/monitoring/machine-registration.md",
+   "knowledge/workflows/install-new-machine.playbook.yaml",
+   "docs/API_REFERENCE.md",
+   "knowledge/features/ai/ai-local-knowledge-base.md"
+  ]
+ },
+ "OP15": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/inspection/history.md",
+   "knowledge/features/inspection/history.md",
+   "knowledge/features/inspection/inspection-detail.md",
+   "knowledge/features/inspection/inspection-detail.md",
+   "knowledge/features/inspection/inspection-submit.md"
+  ]
+ },
+ "OP16": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/products/measurement-point-setup.md",
+   "knowledge/workflows/create-measurement-point.playbook.yaml",
+   "knowledge/workflows/create-measurement-point.playbook.yaml",
+   "knowledge/domain/howto-measurement-point-shapes.md",
+   "knowledge/features/products/measurement-point-setup.md"
+  ]
+ },
+ "OP17": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/commission-a-new-pcb.md",
+   "knowledge/domain/commission-a-new-pcb.md",
+   "commission-a-new-pcb.md",
+   "knowledge/domain/aoi-workflow.md",
+   "knowledge/domain/aoi-workflow.md"
+  ]
+ },
+ "OP18": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-edge-model-deploy.md",
+   "knowledge/domain/howto-edge-model-deploy.md",
+   "knowledge/features/ai/ai-model-management.md",
+   "knowledge/operational/ai-models.md",
+   "knowledge/features/ai/ai-model-management.md"
+  ]
+ },
+ "OP19": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/analytics/defect-heatmap.md",
+   "knowledge/operational/defect-heatmap.md",
+   "knowledge/features/analytics/defect-heatmap.md",
+   "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+   "knowledge/features/analytics/root-cause-analysis.md"
+  ]
+ },
+ "OP20": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/analytics/root-cause-analysis.md",
+   "knowledge/operational/root-cause-analysis.md",
+   "knowledge/features/analytics/root-cause-analysis.md",
+   "knowledge/domain/aoi-reports.md",
+   "knowledge/features/analytics/spc-analysis.md"
+  ]
+ },
+ "OP21": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/alerts/predictive-alerts.md",
+   "knowledge/features/alerts/predictive-alerts.md",
+   "knowledge/features/alerts/alerts-list.md",
+   "knowledge/features/analytics/defect-prediction.md",
+   "knowledge/operational/ops-console.md"
+  ]
+ },
+ "OP22": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/alerts/oee-targets.md",
+   "knowledge/features/alerts/oee-targets.md",
+   "knowledge/operational/oee-target-settings.md",
+   "knowledge/features/monitoring/oee-dashboard.md",
+   "knowledge/operational/oee-dashboard.md"
+  ]
+ },
+ "OP23": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational/alerts.md",
+   "knowledge/features/alerts/alerts-list.md",
+   "knowledge/operational-approved/alerts.md",
+   "knowledge/features/alerts/alerts-list.md",
+   "knowledge/operational-approved/alerts.md"
+  ]
+ },
+ "OP24": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/alerts/mqtt-alert-rules.md",
+   "knowledge/features/alerts/mqtt-alert-rules.md",
+   "knowledge/features/monitoring/mqtt-bulletin.md",
+   "knowledge/features/alerts/alerts-list.md",
+   "knowledge/features/monitoring/mqtt-dashboard.md"
+  ]
+ },
+ "OP25": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/aoi-defect-types.md",
+   "knowledge/domain/aoi-defect-types.md",
+   "aoi-defect-types.md",
+   "knowledge/domain/aoi-troubleshooting.md",
+   "knowledge/domain/aoi-troubleshooting.md"
+  ]
+ },
+ "OP26": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/aoi-workflow.md",
+   "knowledge/domain/aoi-workflow.md",
+   "aoi-workflow.md",
+   "knowledge/domain/howto-ng-handling-sop.md",
+   "knowledge/domain/aoi-troubleshooting.md"
+  ]
+ },
+ "OP27": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/aoi-reports.md",
+   "knowledge/domain/howto-export-pdf-report.md",
+   "knowledge/domain/howto-export-pdf-report.md",
+   "knowledge/domain/aoi-reports.md",
+   "aoi-reports.md"
+  ]
+ },
+ "OP28": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational/production-scheduling.md",
+   "knowledge/features/production/production-scheduling.md",
+   "knowledge/features/production/production-scheduling.md",
+   "knowledge/features/production/production-dashboard.md",
+   "knowledge/features/production/production-orders.md"
+  ]
+ },
+ "OP29": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/products/product-machine-mapping.md",
+   "knowledge/features/products/product-machine-mapping.md",
+   "knowledge/features/inspection/inspection-submit.md",
+   "knowledge/features/inspection/history.md",
+   "knowledge/features/products/product-management.md"
+  ]
+ },
+ "OP30": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/products/process-management.md",
+   "knowledge/operational/process-management.md",
+   "knowledge/operational/routing-master.md",
+   "knowledge/features/products/process-management.md",
+   "knowledge/operational/products.md"
+  ]
+ },
+ "OP31": {
+  "hang": 2,
+  "top": [
+   "knowledge/operational/master-data-audit.md",
+   "knowledge/features/admin/audit-logs.md",
+   "knowledge/operational-approved/audit-logs.md",
+   "knowledge/operational/audit-logs.md",
+   "knowledge/features/admin/audit-logs.md"
+  ]
+ },
+ "OP32": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational/api-keys.md",
+   "knowledge/operational-approved/api-keys.md",
+   "knowledge/features/admin/api-docs.md",
+   "apidocs/AUTHENTICATION.md",
+   "knowledge/features/admin/user-management.md"
+  ]
+ },
+ "OP33": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/admin/import-export.md",
+   "knowledge/features/ai/batch-inference.md",
+   "knowledge/features/inspection/history-export-scheduling.md",
+   "knowledge/operational/history-export-scheduling.md",
+   "knowledge/features/inspection/history-export-scheduling.md"
+  ]
+ },
+ "OP34": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational/license.md",
+   "knowledge/features/admin/license-mgmt.md",
+   "knowledge/features/admin/license-mgmt.md",
+   "knowledge/domain/howto-license-bypass-dev.md",
+   "knowledge/features/admin/permission-mgmt.md"
+  ]
+ },
+ "OP35": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational/andon.md",
+   "knowledge/operational-approved/andon.md",
+   "knowledge/operational-approved/andon.md",
+   "drizzle/schema/andon.ts",
+   "knowledge/features/production/production-dashboard.md"
+  ]
+ },
+ "OP36": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/ai/ai-hub.md",
+   "docs/AI_USAGE_GUIDE.md",
+   "knowledge/operational/ai-command-center.md",
+   "knowledge/operational/data-management.md",
+   "knowledge/operational/engineering-home.md"
+  ]
+ },
+ "OP37": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/ai/ai-model-management.md",
+   "knowledge/operational/ai-models.md",
+   "knowledge/operational/model-versions.md",
+   "apidocs/AI_MODEL_API.md",
+   "knowledge/features/ai/ai-model-management.md"
+  ]
+ },
+ "OP38": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/ai/ai-quality-gate.md",
+   "knowledge/features/analytics/quality-gates.md",
+   "knowledge/features/analytics/quality-gates.md",
+   "knowledge/operational/ai-quality-gate.md",
+   "knowledge/features/ai/ai-quality-gate.md"
+  ]
+ },
+ "OP39": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/ai/ai-image-search.md",
+   "knowledge/operational/ai-image-search.md",
+   "knowledge/features/ai/ai-image-search.md",
+   "docs/UPGRADE_REPORT_AI_FEATURES.md",
+   "docs/upgrade-2026/WS3-vector-search.md"
+  ]
+ },
+ "OP40": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/ai/ai-performance.md",
+   "knowledge/domain/howto-edge-model-deploy.md",
+   "knowledge/features/ai/ai-model-management.md",
+   "knowledge/operational/ai-models.md",
+   "knowledge/operational/ai-monitoring.md"
+  ]
+ },
+ "OP41": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/monitoring/machine-health.md",
+   "knowledge/features/monitoring/machine-health.md",
+   "knowledge/operational/system-health.md",
+   "knowledge/operational/device-monitor.md",
+   "knowledge/features/monitoring/machine-status-monitor.md"
+  ]
+ },
+ "OP42": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/analytics/correlation-analysis.md",
+   "knowledge/workflows/spc-critical-review.playbook.yaml",
+   "knowledge/features/analytics/spc-analysis.md",
+   "knowledge/operational/correlation-analysis.md",
+   "knowledge/features/analytics/pareto-analysis.md"
+  ]
+ },
+ "OP43": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/monitoring/mqtt-profiles.md",
+   "knowledge/features/monitoring/mqtt-client-mgmt.md",
+   "knowledge/features/monitoring/mqtt-profiles.md",
+   "knowledge/features/monitoring/mqtt-topics.md",
+   "knowledge/features/monitoring/mqtt-client-mgmt.md"
+  ]
+ },
+ "OP44": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/production/production-dashboard.md",
+   "knowledge/features/production/production-dashboard.md",
+   "knowledge/features/dashboard/dashboard-view.md",
+   "knowledge/operational/production-dashboard.md",
+   "knowledge/operational/mes-control-tower.md"
+  ]
+ },
+ "OP45": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/analytics/scheduled-reports.md",
+   "knowledge/features/analytics/scheduled-reports.md",
+   "knowledge/operational/scheduled-reports.md",
+   "knowledge/features/inspection/history-export-scheduling.md",
+   "knowledge/features/inspection/history-export-scheduling.md"
+  ]
+ },
+ "OP46": {
+  "hang": 1,
+  "top": [
+   "knowledge/features/admin/session-mgmt.md",
+   "knowledge/operational-approved/users.md",
+   "knowledge/operational/sessions.md",
+   "knowledge/features/admin/user-management.md",
+   "knowledge/features/admin/user-management.md"
+  ]
+ },
+ "OP47": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-license-bypass-dev.md",
+   "knowledge/domain/howto-license-bypass-dev.md",
+   "knowledge/features/admin/license-mgmt.md",
+   "knowledge/features/admin/license-mgmt.md",
+   "knowledge/domain/howto-backup-restore.md"
+  ]
+ },
+ "OP48": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational/traceability.md",
+   "knowledge/operational-approved/traceability.md",
+   "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+   "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+   "knowledge/operational/product-mapping.md"
+  ]
+ },
+ "OP49": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/aoi-troubleshooting.md",
+   "knowledge/domain/aoi-troubleshooting.md",
+   "aoi-troubleshooting.md",
+   "knowledge/domain/aoi-defect-types.md",
+   "knowledge/features/inspection/aoi-packages.md"
+  ]
+ },
+ "OP50": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-shift-change.md",
+   "knowledge/domain/aoi-workflow.md",
+   "knowledge/domain/howto-shift-change.md",
+   "knowledge/features/settings/shift-config.md",
+   "client/src/components/ShiftHandoverDialog.tsx"
+  ]
+ },
+ "OP51": {
+  "hang": 2,
+  "top": [
+   "knowledge/operational-approved/defect-catalog.md",
+   "knowledge/domain/howto-ng-handling-sop.md",
+   "knowledge/workflows/ng-handling.playbook.yaml",
+   "knowledge/workflows/ng-burst-response.playbook.yaml",
+   "knowledge/domain/aoi-defect-types.md"
+  ]
+ },
+ "OP52": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-lot-management.md",
+   "knowledge/operational-approved/production-orders.md",
+   "knowledge/features/production/production-orders.md",
+   "knowledge/features/production/production-orders.md",
+   "knowledge/domain/howto-lot-management.md"
+  ]
+ },
+ "OP53": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/howto-pareto-defects.md",
+   "knowledge/domain/howto-pareto-defects.md",
+   "knowledge/domain/aoi-reports.md",
+   "knowledge/domain/aoi-reports.md",
+   "knowledge/features/analytics/pareto-analysis.md"
+  ]
+ },
+ "OP54": {
+  "hang": 1,
+  "top": [
+   "knowledge/domain/commission-a-new-pcb.md",
+   "knowledge/domain/commission-a-new-pcb.md",
+   "knowledge/domain/aoi-workflow.md",
+   "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+   "knowledge/features/production/production-dashboard.md"
+  ]
+ }
+}

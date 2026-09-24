@@ -1,0 +1,114 @@
+{
+  "corpus": "scripts/ai-eval/kb-doi-chung-song.jsonl",
+  "label": "v9-song",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 6,
+      "tuChoi": 2,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 4
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "C01",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 760,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/operational/defect-catalog.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/lots/:orderCode`\n\nVí dụ:\n```\nplanned → running → (paused ⇄ running) → completed\n                                       ↘ cancelled\n```\n\nBạn muốn tra cứu lô sản xuất nào? Vui lòng cung cấp **mã lệnh sản xuất** (ví dụ `L20260505-001` hoặc `PO12345`).\nBạn cũng có thể vào *Menu › Sản xuất › Lệnh sản xuất* để chọn trực tiếp từ danh sách.",
+      "loi": null
+    },
+    {
+      "id": "C02",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1997,
+      "nguon": [
+        "knowledge/features/monitoring/machine-status-monitor.md",
+        "knowledge/features/monitoring/machine-status-monitor.md",
+        "knowledge/operational/machine-registration.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/features/monitoring/machine-sync.md"
+      ],
+      "traLoi": "(1) Trạng thái máy được theo dõi thời gian thực qua hệ thống Machine Status Monitor, hiển thị tỷ lệ hoạt động (uptime), lịch sử thay đổi trạng thái và nhịp tim MQTT.  \n(2) Bước 1: Mở URL `/machine-status` trong menu **Monitoring → Machine Status** để xem grid card với màu sắc phản ánh tình trạng: xanh ≥95%, vàng ≥60% (dưới 60% là cam/orange). Tại đây, thấy tổng cộng 1699 máy, tất cả đều offline (`0 online`, `1699 offline`), trong đó có 129 lỗi. Bước 2: Nhấn vào bất kỳ card nào để mở **Detail Dialog**, chọn time range (ví dụ 7 ngày) → xem tab **Status History** và **Heartbeat** để xác định thời điểm mất kết nối, ví dụ như các lần offline trong khoảng thời gian ban đêm [1]. Kết quả hiển thị uptime % khớp với thời gian\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`, `/api/machine/sync-points`, `/api/machine/:id/sync-logs`\n\n_Nguồn số liệu: `machines` · onlyOffline=false · 1699 hàng_",
+      "loi": null
+    },
+    {
+      "id": "C03",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 724,
+      "nguon": [
+        "knowledge/operational/device-monitor.md",
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational/equipment-standards.md",
+        "knowledge/operational/equipment-integration.md",
+        "knowledge/features/monitoring/machine-status-monitor.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "C04",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1829,
+      "nguon": [
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/today.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/feeder-verify.md"
+      ],
+      "traLoi": "(1) Line hôm nay đang hoạt động ổn định với tỷ lệ sản phẩm không đạt chuẩn (NG) là 0%.  \n(2) Bước 1: Truy cập Dashboard → thẻ **NG hôm nay** để xem tổng số sản phẩm NG. Kết quả hiện tại là 0, cho thấy không có lỗi phát sinh [1]. Bước 2: Nếu cần kiểm tra chi tiết, mở tab \"Sản phẩm NG\" trong menu `Menu › Sản xuất › AOI Inspection` → chọn line đang chạy → xác nhận danh sách sản phẩm bị lỗi. Kết quả hiện tại là OK=0, NG=0, NTF=0 [1].  \n(3) Lưu ý: Nếu có bất kỳ thông báo về lỗi vật tư hoặc sai recipe thì cần kiểm tra thêm qua `/feeder-verify` và `/machine-status`. Lỗi thường gặp khi không xác nhận đúng recipe trước khi chạy line (thiếu bước xác minh trong playbook `change-recipe-line-start`) [2].  \n(4) Liên quan đến\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "C05",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1900,
+      "nguon": [
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/features/monitoring/machine-health.md",
+        "knowledge/features/monitoring/machine-status-monitor.md"
+      ],
+      "traLoi": "(1) 129 máy đang gặp lỗi, trong đó có các thiết bị như ESP32-ENV-01 và FUYU-F-T1-L1-M1 đến M12.  \n(2) Bước 1: Truy cập màn hình **Machine Status Monitor** → chọn tab \"Máy offline\" để xem danh sách máy không hoạt động [5]. Kết quả hiển thị các thiết bị như ESP32-ENV-01, FUYU-F-T1-L1-M1, ..., M12. Bước 2: Kiểm tra thông tin chi tiết bằng API `getHeartbeats({ machineId })` để xác minh việc máy không gửi heartbeat → kết quả trả về trống hoặc lỗi \"no data\".  \n(3) Lỗi thường gặp: Máy chưa gửi heartbeat (do firmware lỗi hay mất kết nối MQTT). Nếu không thấy dữ liệu trong `heartbeat_logs`, cần kiểm tra cấu hình MQTT trên thiết bị. Lưu ý: Dữ liệu thời gian thực cho biết 16\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`, `/api/machines/:id/allowed-products`\nMàn hình liên quan: `/machines/5`\n\n_Nguồn số liệu: `machines` · onlyOffline=false · 1699 hàng_",
+      "loi": null
+    },
+    {
+      "id": "C06",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1591,
+      "nguon": [
+        "knowledge/features/ai/batch-inference.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "(1) Trạng thái lô hiện tại quyết định thời gian hoàn thành: nếu đang chạy (running), sẽ tiếp tục đến trạng thái completed; nếu đã bị hủy, thì không còn thời gian dự kiến.  \n(2) Bước 1: Xem tab **Job List** hoặc **Production → Close Lot**, tìm lô cần kiểm tra và xác định status hiện tại (`RUNNING`, `COMPLETED`, hay `CANCELLED`). Nếu đang ở trạng thái `RUNNING`, hệ thống sẽ cập nhật tiến trình theo thời gian thực. Bước 2: Trong UI, nếu thấy trạng thái là `running → completed` thì lô đã kết thúc khi đạt điểm cuối của vòng đời (xem mẫu vòng đời: `planned → running → (paused ⇄ running) → completed`). Thời gian hoàn thành được tính từ thời điểm bắt đầu (`plannedStart`) đến khi chuyển sang `completed`. Nếu chưa có trạng thái này, cần kiểm tra lại worker hoặc retry.  \n(3) Lưu ý: Lô không",
+      "loi": null
+    }
+  ]
+}
