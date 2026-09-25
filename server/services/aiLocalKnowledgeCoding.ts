@@ -769,7 +769,16 @@ export async function* streamCodingAnswer(
      * 6/9 tác vụ lập trình khó trả về 0 khối mã; đường ống 0 % trong khi model thuần 44–56 %.
      * Xem `ai/cauSinhMa.ts` cho đánh đổi sót/thừa (cố ý lệch về phía gọi model).
      */
-    if (answer.trim() !== "" && (laCauCanSuyLuan(question) || laCauSinhMa(question))) {
+    /**
+     * ★★★ 2026-09-25 (chủ dự án báo: *"Thêm chức năng chuyển đổi đơn vị"* ⇒ nhận về NGUYÊN VĂN cây thư mục + tệp
+     * `Calculator.cs`, 0 dòng mã) — THÊM VẾ CẤU TRÚC `quyetDinh.tool === null`.
+     * Hai vị từ chữ ở trên là DANH SÁCH TỪ và sẽ luôn sót ("thêm chức năng…", "bổ sung tính năng…", "cho phép đổi…").
+     * Dấu hiệu CẤU TRÚC thì không sót: đường DUMP chỉ đúng cho câu ĐỌC TƯỜNG MINH, và câu đọc tường minh là câu mà
+     * heuristic tất định (`classifyCodingToolIntent`, các `CODING_*_SHORTCUT`) đã khớp. Heuristic nói "không tool nào"
+     * mà vòng tool vẫn chạy ⇒ các tool do bộ chọn LLM gọi để GOM NGỮ CẢNH cho một yêu cầu KHÁC ⇒ kết quả phải quay lại
+     * model. Đường nhanh "đọc file X / liệt kê thư mục Y" (heuristic khớp) giữ nguyên.
+     */
+    if (answer.trim() !== "" && (laCauCanSuyLuan(question) || laCauSinhMa(question) || quyetDinh.tool === null)) {
       const sach = sanitizeUntrustedBlock(chuChoModel, { maxChars: TRAN_KY_TU_KET_QUA_TOOL });
       const khoiBoc = wrapUntrustedBlock(NHAN_NGUON_KET_QUA_TOOL, sach.text);
       const ketCucSuyLuan = yield* streamCodingGenerate(

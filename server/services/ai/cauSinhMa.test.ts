@@ -66,3 +66,11 @@ describe("laCauSinhMa — bản vá P11 (audit 2026-09-21)", () => {
     expect(laCauSinhMa("return only a code block")).toBe(true);
   });
 });
+
+describe("2026-09-25 — yêu cầu TÍNH NĂNG", () => {
+  it("★★★ 'thêm/bổ sung chức năng · tính năng' là câu sinh mã", () => {
+    for (const c of ["Thêm chức năng chuyển đổi đơn vị", "Bổ sung tính năng đổi độ C sang độ F", "add a unit conversion feature"]) {
+      expect(laCauSinhMa(c), c).toBe(true);
+    }
+  });
+});

@@ -491,6 +491,31 @@ describe("§4b (2.4) — ĐẦU–CUỐI: kết quả read tool quay lại model
     expect(r.chu).not.toContain("không bao giờ dùng");
   });
 
+  /**
+   * ★★★ 2026-09-25 — chủ dự án báo: "Thêm chức năng chuyển đổi đơn vị" ⇒ nhận NGUYÊN VĂN cây thư mục + Calculator.cs.
+   * Heuristic không khớp tool nào; bộ chọn LLM gọi read tool để GOM NGỮ CẢNH ⇒ kết quả phải quay lại model.
+   */
+  it("★★★ 4.8 YÊU CẦU TÍNH NĂNG, tool do LLM chọn ⇒ có lượt gọi model, không dump", async () => {
+    process.env.AI_CODING_REPO_CONTEXT = "0";
+    h.llmDoanTool = { tool: "read_file", args: { path: TEP_THI } };
+    h.manh = ["```csharp
+public static double CToF(double c) => c * 9 / 5 + 32;
+```"];
+    const r = await chay("Thêm chức năng chuyển đổi đơn vị", admin());
+    expect(h.goiEngine.length, "0 lượt model ⇒ đúng triệu chứng: dump cây thư mục + tệp").toBe(1);
+    expect(r.chu).toContain("CToF");
+    expect(r.events.some((e) => e.type === "tool")).toBe(true);
+  });
+
+  it("★★★ 4.9 VẾ CẤU TRÚC — câu KHÔNG có động từ/hiện vật trong danh sách từ, heuristic không khớp ⇒ vẫn gọi model", async () => {
+    process.env.AI_CODING_REPO_CONTEXT = "0";
+    h.llmDoanTool = { tool: "read_file", args: { path: TEP_THI } };
+    h.manh = ["văn xuôi có mã"];
+    const r = await chay("Cho phép máy tính đổi độ C sang độ F", admin());
+    expect(h.goiEngine.length).toBe(1);
+    expect(r.chu).toContain("văn xuôi có mã");
+  });
+
   it("★★★ 4.7 FAIL-SAFE — cờ sinh chữ TẮT ⇒ rơi về bản dump cũ, KHÔNG mất câu trả lời", async () => {
     process.env.AI_CODING_GEN = "0";
     h.manh = ["không bao giờ dùng"];

@@ -58,7 +58,7 @@ const DONG_TU_ZH = /(写|編写|编写|创建|实现|生成|重构|改写)/;
  * "thêm một máy vào danh sách"). Động từ RÕ RÀNG ("viet", "implement", "refactor"…) không cần vế này.
  */
 const HIEN_VAT_MA =
-  /(^|[^a-z])(ham|lop|class|function|method|phuong thuc|component|module|interface|type|struct|enum|hook|service|endpoint|api|unit test|test|script|chuong trinh|thuat toan|regex|query)([^a-z]|$)/;
+  /(^|[^a-z])(ham|lop|class|function|method|phuong thuc|component|module|interface|type|struct|enum|hook|service|endpoint|api|unit test|test|script|chuong trinh|thuat toan|regex|query|chuc nang|tinh nang|feature|functionality)([^a-z]|$)/;
 
 /** Động từ đủ RÕ để một mình nó đã đòi mã. */
 const DONG_TU_RO_VI = /(^|[^a-z])(viet|hien thuc|cai dat|trien khai|refactor|tai cau truc)([^a-z]|$)/;
