@@ -294,3 +294,36 @@ describe("estimateTokenCount", () => {
     expect(estimateTokenCount("a".repeat(40))).toBe(10);
   });
 });
+
+// ★ PDCA vòng 15 — Markdown nạp vào Studio có ĐOẠN BỔ SUNG (nhóm dòng bảng + đoạn con theo mục, `kbDoanBoSung.ts`).
+describe("ingestDocument — đoạn bổ sung cho Markdown", () => {
+  const MD = [
+    "# Máy AOI", "## Mã lỗi", "| Mã | Mô tả | Xử lý |", "|---|---|---|",
+    "| E021 | Board jam | Dừng máy |", "| E022 | Board not detected | Kiểm tra sensor |", "| E023 | Conveyor speed | Kiểm tra motor |",
+    "| E024 | Width fail | Kiểm tra motor |", "| E031 | Clamp error | Kiểm tra air pressure |", "",
+    "## Xử lý NG", "Bảng NG được đưa sang trạm sửa để kỹ thuật viên kiểm tra lại từng điểm lỗi theo danh mục đã định.",
+  ].join("\n");
+  const soDoan = () => (upsertChunksMock.mock.calls[0]?.[1] as unknown[] | undefined)?.length ?? 0;
+  beforeEach(() => {
+    parseDocumentMock.mockResolvedValue({ text: MD, meta: { sourceType: "md", charCount: MD.length, truncated: false } });
+    generateEmbeddingsMock.mockImplementation(async (ts: string[]) => embeddingsFor(ts.length));
+    upsertChunksMock.mockImplementation(async (_c: string, rows: unknown[]) => ({ tableAvailable: true, inserted: rows.length, skipped: 0 }));
+    delete process.env.KB_INGEST_DOAN_BO_SUNG;
+  });
+  it("★★★ .md ⇒ đoạn gốc + nhóm dòng bảng + đoạn con", async () => {
+    const r = await ingestDocument({ corpus: "c1", sourceType: "md", sourceRef: "a.md", text: MD });
+    expect(r.chunksAdded).toBeGreaterThan(1);
+    const van = (upsertChunksMock.mock.calls[0][1] as { text: string }[]).map((c) => c.text);
+    expect(van.some((t) => t.includes("E031") && t.length < 300)).toBe(true);
+  });
+  it("★ KB_INGEST_DOAN_BO_SUNG=0 ⇒ chỉ đoạn gốc (như cũ)", async () => {
+    process.env.KB_INGEST_DOAN_BO_SUNG = "0";
+    await ingestDocument({ corpus: "c1", sourceType: "md", sourceRef: "a.md", text: MD });
+    expect(soDoan()).toBe(1);
+  });
+  it("★ không phải Markdown ⇒ không bổ sung", async () => {
+    parseDocumentMock.mockResolvedValue({ text: MD, meta: { sourceType: "txt", charCount: MD.length, truncated: false } });
+    await ingestDocument({ corpus: "c1", sourceType: "txt", sourceRef: "a.txt", text: MD });
+    expect(soDoan()).toBe(1);
+  });
+});

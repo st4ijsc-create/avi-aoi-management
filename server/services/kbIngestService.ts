@@ -22,6 +22,7 @@
  */
 import { parseDocument, KbParseError, KbUnsupportedTypeError, type ParsedDocumentMeta } from "./kbDocParser";
 import { upsertChunks, type KbChunkInput } from "./kbVectorStore";
+import { doanBoSung, doanBoSungBat, laMarkdown } from "./kbDoanBoSung";
 
 export { KbParseError, KbUnsupportedTypeError };
 
@@ -199,6 +200,11 @@ export async function ingestDocument(input: IngestDocumentInput): Promise<Ingest
 
   // 2) Chunk — bounded size + overlap, hard-capped chunk count.
   let pieces = chunkTheoKyHieu(parsed.text) ?? chunkText(parsed.text);
+  // ★ PDCA vòng 15 — Markdown: BỔ SUNG nhóm dòng bảng + đoạn con theo mục (cùng thuật toán với kho hệ thống, `kbDoanBoSung.ts`).
+  //   Tắt: KB_INGEST_DOAN_BO_SUNG=0. Tài liệu tham chiếu ký hiệu (`chunkTheoKyHieu`) đã cắt theo mục ⇒ không bổ sung.
+  if (doanBoSungBat() && laMarkdown(input.sourceType, sourceRef) && !chunkTheoKyHieu(parsed.text)) {
+    pieces = [...pieces, ...doanBoSung(parsed.text, pieces)];
+  }
   if (pieces.length > MAX_CHUNKS_PER_DOC) {
     pieces = pieces.slice(0, MAX_CHUNKS_PER_DOC);
   }
