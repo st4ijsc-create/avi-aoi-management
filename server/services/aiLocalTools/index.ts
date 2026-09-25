@@ -109,7 +109,10 @@ async function chonToolVong1(question: string, context?: ToolContext) {
     const heuristicClarify = decision.clarifyMessage ?? null;
     const llm = await classifyToolIntentLLM(question);
     if (llm.tool) {
-      decision = llm;
+      // ★ PDCA vòng 13 (2026-09-25) — GIỮ câu hỏi lại của heuristic kể cả khi LLM chọn tool: tool LLM chọn cho câu thiếu
+      //   mã ("lô của tôi sao rồi?") thường KHÔNG ra kết quả; khi đó người gọi cần câu hỏi lại (mã lô/máy) thay vì chỉ một
+      //   lời từ chối chuẩn (đo: C01 C03). Tool CÓ kết quả thì người gọi bỏ qua câu hỏi lại như trước (`!toolResult && clarify`).
+      decision = { ...llm, clarifyMessage: llm.clarifyMessage ?? heuristicClarify };
     } else if (heuristicClarify) {
       // LLM also abstained — preserve the clarifying question from heuristic.
       decision = { ...llm, clarifyMessage: heuristicClarify };

@@ -1496,7 +1496,14 @@ export function classifyToolIntent(question: string, context?: ToolContext): Too
   }
   const parsed = tool.parameters.safeParse(args);
   if (!parsed.success) {
-    return { tool: null, args: {}, reason: `INVALID_ARGS:${parsed.error.message}` };
+    // ★ PDCA vòng 13 (2026-09-25) — thiếu tham số (vd `machineCode` cho "tình trạng thiết bị hiện tại ra sao?") ⇒ HỎI LẠI
+    //   như nhánh NO_TRIGGER_MATCH (mã lô / máy nào / chỉ số nào), thay vì im lặng rơi về lời từ chối chuẩn (đo: C03).
+    return {
+      tool: null,
+      args: {},
+      reason: `INVALID_ARGS:${parsed.error.message}`,
+      clarifyMessage: buildClarifyMessage("NO_TRIGGER_MATCH", question),
+    };
   }
 
   return { tool: matched.name, args: parsed.data as Record<string, unknown>, reason: "HEURISTIC_MATCH" };
