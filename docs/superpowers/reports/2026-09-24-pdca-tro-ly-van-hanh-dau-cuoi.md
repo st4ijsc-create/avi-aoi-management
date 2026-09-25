@@ -446,3 +446,52 @@ từ chức năng tiếng Anh. Mọi lỗi ⇒ truy hồi như cũ. Công tắc 
 - Muốn đi tiếp: nâng blend CÙNG LÚC hiệu chỉnh lại cổng lạc đề (vòng 5 thiết kế trên điểm của blend 0,20), đo trên một tập giữ
   lại MỚI chưa nhìn. Hoặc cải thiện bản dịch (4B dịch sai thuật ngữ) — mỗi hướng là một vòng riêng.
 - Máy chủ đã về cấu hình `.env` (bundle dựng lại sạch từ HEAD, `kiem:lai-lich` ĐẠT).
+
+## 19. Vòng 13 — câu hỏi sống thiếu mã: hỏi lại thay vì chỉ từ chối (`80e8e2aab`)
+
+- C01 "lô của tôi sao rồi?", C03 "tình trạng thiết bị hiện tại ra sao?" chỉ nhận lời từ chối chuẩn. Hai lỗ: (1)
+  `chonToolVong1` — LLM chọn tool ⇒ `decision = llm` ĐÁNH RƠI câu hỏi lại của heuristic; tool cho câu thiếu mã không ra gì
+  ⇒ không còn gì để hỏi lại; (2) heuristic khớp tool máy nhưng thiếu `machineCode` ⇒ nhánh `INVALID_ARGS` không có câu hỏi
+  lại. Sửa: giữ `llm.clarifyMessage ?? heuristicClarify`; `INVALID_ARGS` dùng chung `buildClarifyMessage("NO_TRIGGER_MATCH")`.
+  Người gọi vẫn chỉ dùng câu hỏi lại khi KHÔNG có kết quả tool (như cũ).
+- Đầu–cuối: C01, C03 nay kết thúc bằng câu hỏi mã lô / "máy nào". 111 câu 71/79 (T22 dao động), 32/32; các bộ khác và
+  endpoint không đổi. Đột biến 3/3 ĐỎ.
+
+## 20. Vòng 14 — ngữ cảnh miền cho lượt dịch: THỬ, KHÔNG áp dụng
+
+- Tập GIỮ LẠI Việt↔Anh THỨ HAI (`thuat-ngu-viet-anh-giu-lai-2.jsonl`, `135eeb64e`) viết TRƯỚC khi đổi lệnh dịch — tập thứ nhất
+  đã bị nhìn ở vòng 9/12. Nền: 7/12.
+- Thêm vào lệnh dịch ba quy tắc ngôn ngữ của miền ("bảng" = PCB board; "Máy báo X" = the machine reports X; căn chỉnh =
+  alignment). Bản dịch đẹp hơn rõ (MN02 "machine reports insufficient light", MN04 "field of view"). ⚠ Tôi đã NHÌN bản dịch
+  của tập 2 trước khi viết quy tắc ⇒ tập 2 nhiễm một phần.
+- Đầu–cuối: tập 2 7 → 8; tập 1 8 → **6** (LN05 LN11 thành từ chối); HT09 đạt → từ chối; 111 câu 71 = 71 (−T56 +T78);
+  ngoài corpus 32 → **31** (N21). ⇒ ròng ÂM ⇒ hoàn nguyên, không commit. Bản dịch "đẹp hơn" không đồng nghĩa truy hồi tốt hơn:
+  nó đổi độ phủ từ của cổng lạc đề (vòng 5) theo cả hai chiều.
+
+## 21. Vòng 15 — đoạn bổ sung cho kho Studio (`3cf50cedf`; chủ dự án đồng ý xoá + nạp lại)
+
+- `kbDoanBoSung.ts` = bản TS của `_bang-nhom-dong.mjs` + `_doan-con.mjs` (lưới PARITY trên mọi `knowledge/domain/*.md`);
+  `ingestDocument` BỔ SUNG (không thay) nhóm dòng bảng + đoạn con cho tài liệu Markdown. Tắt: `KB_INGEST_DOAN_BO_SUNG=0`.
+- Sao lưu `tmp/studio-sao-luu-st4i-may-aoi-2026-09-25T01-47-40-566Z.json` → `deleteCorpus` → nạp lại 10 tệp: 29 → 159 đoạn.
+- Eval Studio #42 → #43: MRR 0,807 → **0,869**; qua ngưỡng 83,5 → **94,9 %**; đáp án trong ngữ cảnh 86,1 → **91,1 %**; đường
+  ống 29 → **51/79** (0 câu mất); trúng nguồn 94,9 % =. **GIÁ:** "từ chối đúng" của Studio (ngưỡng 0,44) 19 → **12/32** —
+  đoạn nhỏ khớp câu lạc đề cùng miền dễ hơn; ngưỡng hiệu chỉnh trên đoạn cũ. Nhiễu chéo corpus (12 câu C# vào kho ST4I,
+  #44): ≥ 0,44 từ 1 → 2/12 (câu mới 0,444, sát ngưỡng) — ngưỡng này gác ngữ cảnh Studio cho route vscode.
+- Đầu–cuối trợ lý: 111 câu 71 → **73/79** (mất 0), ngoài 32/32; giữ lại Việt↔Anh 8 · 8/12; tính năng 12/12; lạc đề 12/12 + 11/12;
+  endpoint 54/17/8/10. Đột biến 5/5 ĐỎ.
+
+## 22. Trạng thái cuối và việc còn mở
+
+| Chỉ số | Nền (vòng 1) | Hiện tại |
+|---|---|---|
+| 111 câu ST4I — trong corpus đạt | 38/79 | **73/79** |
+| 111 câu — ngoài corpus không trả lời thật | 21/32 | **32/32** |
+| Câu sống đi nhánh tài liệu (52) | — | 0 |
+| Eval Studio MRR / đường ống | 0,815 / 30 | 0,869 / 51 |
+
+Còn mở:
+1. Trượt còn lại (111): T17 T46 T47 (từ chối — an toàn), T66 T76 T79 (sai). Giữ lại: LN06 LN08 LN10 LN12, MN02 MN03 MN09 MN10.
+   Gốc chung: bước chấm điểm đầu để thẻ tính năng thắng nhờ từ chung; tầng rerank gần như trơ (§18). Nâng blend phải đi cùng
+   hiệu chỉnh lại cổng lạc đề và một tập giữ lại MỚI — việc lớn, rủi ro bịa (N31 ở §18).
+2. Hiệu chỉnh lại `MIN_STUDIO_CITATION_SCORE` (0,44) cho đoạn Studio mới (§21) — cần mẫu nhiễu chéo corpus lớn hơn 12 câu.
+3. `createdAt` của đoạn Studio lệch −7 h (lớp lỗi timestamp naive đã biết).

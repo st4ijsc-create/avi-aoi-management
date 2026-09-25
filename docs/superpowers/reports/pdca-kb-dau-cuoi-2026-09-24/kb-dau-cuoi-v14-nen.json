@@ -1,0 +1,204 @@
+{
+  "corpus": "scripts/ai-eval/thuat-ngu-viet-anh-giu-lai-2.jsonl",
+  "label": "v14-nen",
+  "tom": {
+    "trong": {
+      "n": 12,
+      "dung": 7,
+      "tuChoi": 2,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 3
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "MN01",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2829,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "aoi-troubleshooting.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/features/monitoring/machine-registration.md"
+      ],
+      "traLoi": "(1) Khi camera của máy AOI không phản hồi, cần khởi động lại dịch vụ camera và kiểm tra kết nối cáp.  \n(2) Bước 1: *Khởi động lại dịch vụ camera* → thực hiện ở **Giao diện Quản lý Máy** > chọn thiết bị có mã lỗi E001 > nhấn nút \"Restart Camera Service\" → kết quả là trạng thái camera chuyển sang hoạt động bình thường trong vòng vài giây. Bước 2: *Kiểm tra cáp kết nối* → vào tab **Hardware Check** của máy AOI, xác minh các dây cáp từ camera đến nguồn và màn hình → nếu có lỗi vật lý (rạn nứt, bị gãy), cần thay thế hoặc sửa chữa. Kết quả là hệ thống báo trạng thái \"Connected\" sau khi kiểm tra xong.  \n(3) Lưu ý: Nếu không thấy phản hồi sau 10 giây khởi động, nên kiểm tra lại firmware camera và đảm bảo cáp được cắm đúng cổng (",
+      "loi": null
+    },
+    {
+      "id": "MN02",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 947,
+      "nguon": [
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/alerts/alerts-list.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/external/alerts`, `/api/external/alerts/:alertId/acknowledge`, `/api/external/alerts/:alertId/resolve`, `/api/sse/alerts`\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "MN03",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 2436,
+      "nguon": [
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/inspection/history.md"
+      ],
+      "traLoi": "(1) Khi chụp ảnh bị quá thời gian chờ, cần kiểm tra tính khả dụng của URL hình ảnh và trạng thái lưu trữ để xác định nguyên nhân.  \n(2) Bước 1: Truy cập **Chi tiết kiểm tra**, tìm measurement point có lỗi (ví dụ `MP-12`) → xem giá trị `imageUrl` trong bảng `measurement_results`. Nếu không tải được, kiểm tra URL này [1]. Bước 2: Xác minh kết nối storage bằng cách gọi REST API `GET /api/inspection/:id/images`, nếu trả về lỗi HTTP 404 hoặc timeout thì xác nhận storage bị hỏng. Bước 3: Kiểm tra cấu hình watermark trong thiết bị đo, vì nó có thể gây chậm tải ảnh [1]. Nếu vẫn không giải quyết được, tạm tắt watermark để test và quay lại kiểm tra. Kết quả là nếu ảnh không hiển thị rõ ràng hoặc mờ thì xác định lỗi ở layer capture/thời gian chờ.  \n\n(3) Lỗi thường gặp: ",
+      "loi": null
+    },
+    {
+      "id": "MN04",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1963,
+      "nguon": [
+        "knowledge/features/monitoring/machine-sync.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/alerts/alerts-list.md"
+      ],
+      "traLoi": "(1) Khi máy báo lệch vùng nhìn (FOV mismatch), cần điều chỉnh độ cao camera và thực hiện hiệu chỉnh lại.  \n(2) Bước 1: Vào **Program Edit** → chọn component liên quan, kiểm tra lỗi FOV tại mục `E011 – FOV (Field of View) mismatch` [3]. Bước 2: Kiểm tra độ cao camera và điều chỉnh nếu cần; thực hiện lại calibration sequence để cập nhật vị trí nhìn. Kết quả là vùng nhìn được đồng bộ chính xác, giảm lỗi phát hiện.  \n(3) Lỗi thường gặp: Nếu không kiểm tra đúng độ cao hoặc bỏ qua bước re-calibrate sẽ dẫn đến FOV sai lệch kéo dài [1]. Lưu ý: Không nên chỉ tăng threshold mà không điều chỉnh vật lý camera – có thể gây mất lỗi thực tế (miss defect).  \n\n(4) Liên quan chủ đề: Việc sửa chữa FOV mismatch liên hệ trực tiếp với **điều chỉnh ngưỡng AOI** và **\n\nAPI liên quan: `/api/machine/sync-points`, `/api/machine/:id/sync-logs`, `/api/external/alerts`, `/api/external/alerts/:alertId/acknowledge`",
+      "loi": null
+    },
+    {
+      "id": "MN05",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2049,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/anomaly-banks.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/features/inspection/aoi-packages.md"
+      ],
+      "traLoi": "(1) Lỗi bộ nhớ đệm ảnh bị tràn (Image buffer overflow) được mã hóa là E020, xử lý bằng cách giảm độ phân giải hình ảnh hoặc tăng dung lượng RAM.  \n(2) Bước 1: Xác nhận lỗi qua màn hình cảnh báo hệ thống; ở UI tại phần **Camera Status** → tìm thông báo `E020`. Kết quả: hiển thị trạng thái bộ đệm tràn và mức sử dụng hiện tại. Bước 2: Giảm độ phân giải ảnh đầu vào (ví dụ từ 1920x1080 xuống 1280x720) thông qua giao diện **Camera Settings** → `Image Resolution`. Kết quả: giảm tải bộ đệm, hệ thống phản hồi trạng thái ổn định. Bước 3: Nếu không có RAM đủ, tăng dung lượng RAM theo hướng dẫn kỹ thuật phần cứng (không nằm trong UI). Kết quả: bộ đệm hoạt động bình thường và lỗi E020 được loại",
+      "loi": null
+    },
+    {
+      "id": "MN06",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2492,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/features/inspection/inspection-detail.md"
+      ],
+      "traLoi": "(1) Lỗi tốc độ băng tải (Conveyor speed error) được mã hóa là E023, cần kiểm tra motor drive và encoder.  \n(2) Bước 1: Truy cập **Lịch sử kiểm tra** để tìm inspection có lỗi E023; ở đây thấy thông báo \"Conveyor speed error\" [1]. Bước 2: Vào **Chi tiết kiểm tra**, xem phần thiết bị (Equipment Section), xác minh trạng thái motor drive và encoder. Kết quả là phát hiện tín hiệu từ encoder không ổn định, cần thay thế hoặc điều chỉnh.  \n(3) Lưu ý: Nếu lỗi xảy ra liên tục, nên kiểm tra lại cài đặt tốc độ trong hệ thống control panel; thường gặp khi encoder bị bụi bẩn hay dây nối rò rỉ [1]. Lỗi này có thể gây kẹt bảng (E021), cần xử lý đồng thời.  \n(4) Liên quan đến: E025 (Board exit timeout – kiểm tra sensor xuất và máy tiếp theo); nếu băng tải chậm, sản phẩm không thoát kịp sẽ dẫn đến lỗi tại điểm ra [3]. Cả hai đều liên quan đến hệ thống vận chuyển và cần xử lý đồng bộ để tránh dồn tích.  \n\n```bash\n# Kiểm tra trạng thái motor drive qua log (trong tRPC inspection.detail)\ntRPC inspection.getById(id=123\n\nAPI liên quan: `/api/inspection/:id/images`, `/api/measurement-point/:pointDefId/reference-image`",
+      "loi": null
+    },
+    {
+      "id": "MN07",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1900,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/features/monitoring/machine-sync.md",
+        "knowledge/operational/connectivity.md",
+        "knowledge/features/monitoring/machine-sync.md"
+      ],
+      "traLoi": "(1) Lỗi mất kết nối mạng (mã E041) yêu cầu kiểm tra vật lý và cấu hình IP.  \n(2) Bước 1: Kiểm tra cáp mạng, switch tại vị trí thiết bị — ở tab **Kết nối (MQTT/UNS)** trong UI → xem trạng thái online; kết quả là máy không phản hồi ping hoặc MQTT heartbeat [4]. Bước 2: Xác minh cấu hình IP trên máy bằng cách truy cập `machines` trong DB, kiểm tra trường `ip_address`, nếu sai cần sửa lại qua firmware. Kết quả hiển thị đúng địa chỉ và trạng thái kết nối.  \n(3) Lỗi thường gặp: Máy vẫn báo online nhưng không gửi dữ liệu — nguyên nhân là firewall chặn hoặc IP thay đổi mà chưa cập nhật. Cần kiểm tra log server tại `machines.registrationStatus` nếu có lỗi đăng ký [2].  \n\n(4) Liên quan đến **đồng bộ máy** và **kết nối MQTT**: Khi mất mạng,\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`, `/api/machine/sync-points`, `/api/machine/:id/sync-logs`",
+      "loi": null
+    },
+    {
+      "id": "MN08",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1980,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/features/inspection/history-export-scheduling.md",
+        "knowledge/features/inspection/inspection-detail.md"
+      ],
+      "traLoi": "(1) Lỗi kết nối cơ sở dữ liệu thường được mã hóa là E042, yêu cầu kiểm tra dịch vụ SQL Server và tường lửa.  \n(2) Bước 1: Kiểm tra trạng thái dịch vụ SQL Server tại máy chủ thông qua `services.msc` hoặc lệnh `net start | findstr \"MSSQL\"` – kết quả hiển thị nếu đang chạy. Bước 2: Xác minh firewall có chặn cổng mặc định (TCP 1433) bằng lệnh `telnet <IP> 1433`, nếu không kết nối thì cần mở quy tắc inbound trong firewall – kết quả là thông báo lỗi hoặc thành công.  \n(3) Lưu ý: Nếu dùng cấu hình IP động, hãy kiểm tra lại file config như `db.conf` có chứa đúng host và port; lỗi thường gặp khi quên cập nhật password hoặc sai tên database. Lỗi \"database connection fail\" không chỉ do mạng mà còn do quyền truy cập (trong trường hợp sử dụng SQL Server Authentication).  \n(\n\nAPI liên quan: `/api/inspection/:id/images`, `/api/measurement-point/:pointDefId/reference-image`",
+      "loi": null
+    },
+    {
+      "id": "MN09",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 887,
+      "nguon": [
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/inspection/:id/images`, `/api/measurement-point/:pointDefId/reference-image`",
+      "loi": null
+    },
+    {
+      "id": "MN10",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 2080,
+      "nguon": [
+        "drizzle/schema/rulFailureMode.ts",
+        "knowledge/operational-approved/oee-dashboard.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/operational-approved/andon.md",
+        "knowledge/domain/aoi-thresholds.md"
+      ],
+      "traLoi": "(1) Căn chỉnh bảng thất bại (failure mode calibration) liên quan đến việc xác minh và điều chỉnh ngưỡng phát hiện lỗi trong hệ thống theo tiêu chuẩn đã biết.  \n(2) Bước 1: Truy cập bảng `rulFailureMode` qua API `/api/v1/rule/failure-mode`, lấy dữ liệu về các chế độ thất bại (`failureMode`) và nguyên nhân (`failureModeReason`). Kết quả trả về bao gồm thời gian xảy ra (occurredAt), số lượng sự cố, và mức độ tin cậy. Bước 2: So sánh với `features` trong bảng `failure_events`, kiểm tra xem có lỗi bị bỏ lỡ (miss) hay báo nhầm (false alarm). Nếu false alarm > 2 thì cần điều chỉnh ngưỡng phát hiện theo quy trình hiệu chỉnh [3]. Kết quả sau khi cập nhật được lưu vào trường `confidence` và ghi nhận trong log.  \n(3) Lỗi thường gặp: Thiếu dữ liệu về `features.json",
+      "loi": null
+    },
+    {
+      "id": "MN11",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 4634,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/operational/component-library.md",
+        "knowledge/operational-approved/oee-dashboard.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Thiếu linh kiện (Missing Component) là lỗi nghiêm trọng (Critical) do vị trí linh kiện trên bản vẽ bị trống, thường xuất phát từ feeder hết hàng, hút chân không yếu hoặc linh kiện bị thổi bay.\n\n(2) Các bước xử lý và xác định nguyên nhân:\n1. **Xác nhận lỗi**: Tại station AOI, xem hình ảnh lỗi. Hệ thống sẽ đánh dấu bảng NG với mã lỗi `MIS` hoặc `MC` (Missing Component) [1].\n2. **Kiểm tra nguyên nhân**:\n   - Kiểm tra feeder: Đảm bảo không hết linh kiện.\n   - Kiểm tra đầu hút: Xác định áp lực hút chân không có đủ mạnh không.\n   - Kiểm tra môi trường: Xem xét khả năng linh kiện bị thổi bay do luồng khí.\n3. **Khắc phục**:\n   - Đặt linh kiện bằng tay hoặc sử dụng máy BGA để rework [1].\n   - Nếu lỗi do kẹt bảng, nhấn **Emergency Stop**, đợi dừng hoàn toàn, mở nắp an",
+      "loi": null
+    },
+    {
+      "id": "MN12",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 2449,
+      "nguon": [
+        "knowledge/operational/component-library.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/operational-approved/defect-catalog.md"
+      ],
+      "traLoi": "(1) Máy báo lỗi thư viện linh kiện thông báo về các sai lệch trong dữ liệu linh kiện như thiếu hoặc đặt sai vị trí, thường liên quan đến mã lỗi WRG/WC (Sai Linh Kiện) hay MIS/MC (Thiếu Linh Kiện).  \n\n(2)  \n1. *Xem danh mục lỗi* → ở trang **Chất lượng › Danh mục lỗi** (`/defect-catalog`) → kết quả hiển thị các mã lỗi và mô tả, giúp xác định loại lỗi [5].  \n2. *Kiểm tra dữ liệu linh kiện trong thư viện* → vào menu **Quản lý dữ liệu › Thư viện linh kiện** (`/component-library`), so sánh marking code, package với bản vẽ để phát hiện sai lệch [1].  \n\n(3) Lưu ý: Lỗi thường gặp là trùng mã lỗi do nhập tay không thống nhất; cần kiểm tra trước khi tạo mới. Nếu dữ liệu lịch sử chưa được ghi lại (được đánh dấu \"CHƯA GHI LẠI\"), quy trình xử lý phải chốt với QA [5].  \n\n(4) Liên quan đến hai chủ đề: **Xử lý lỗi AOI** và **quản trị thư viện linh kiện**, vì khi máy phát hiện sai lệch (như thiếu hoặc đặt sai), cần dùng danh mục lỗi để phân loại, đồng thời",
+      "loi": null
+    }
+  ]
+}
