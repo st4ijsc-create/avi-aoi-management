@@ -498,9 +498,7 @@ describe("§4b (2.4) — ĐẦU–CUỐI: kết quả read tool quay lại model
   it("★★★ 4.8 YÊU CẦU TÍNH NĂNG, tool do LLM chọn ⇒ có lượt gọi model, không dump", async () => {
     process.env.AI_CODING_REPO_CONTEXT = "0";
     h.llmDoanTool = { tool: "read_file", args: { path: TEP_THI } };
-    h.manh = ["```csharp
-public static double CToF(double c) => c * 9 / 5 + 32;
-```"];
+    h.manh = ["```csharp\npublic static double CToF(double c) => c * 9 / 5 + 32;\n```"];
     const r = await chay("Thêm chức năng chuyển đổi đơn vị", admin());
     expect(h.goiEngine.length, "0 lượt model ⇒ đúng triệu chứng: dump cây thư mục + tệp").toBe(1);
     expect(r.chu).toContain("CToF");
