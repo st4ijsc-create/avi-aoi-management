@@ -1,0 +1,204 @@
+{
+  "corpus": "scripts/ai-eval/thuat-ngu-viet-anh-giu-lai.jsonl",
+  "label": "v12b50-thuatngu",
+  "tom": {
+    "trong": {
+      "n": 12,
+      "dung": 9,
+      "tuChoi": 2,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 1
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "LN01",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 38156,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/howto-ng-handling-sop.md"
+      ],
+      "traLoi": "(1) Hình ảnh bị nhòe (blur) trên máy AOI được mã lỗi E002, xử lý bằng cách vệ sinh bộ thu kính và kiểm tra độ tập trung.  \n(2) Bước 1: *Vệ sinh lens* → thực hiện tại màn hình UI của phần mềm AOI dưới mục \"Camera Status\" hoặc \"Image Quality\", sau khi làm sạch sẽ thấy thông báo “Lens cleaned successfully”. Kết quả là hình ảnh trở nên rõ hơn, giảm blur [1]. Bước 2: *Kiểm tra focus* → vào tab \"Focus Adjustment\" trong giao diện UI, điều chỉnh giá trị focus bằng tay hoặc tự động. Khi hoàn tất, hệ thống hiển thị thông báo “Focus adjusted successfully” và hình ảnh được cập nhật ngay lập tức [1].  \n(3) Lưu ý: Nếu không vệ sinh lens sau 2 tuần sử dụng, lỗi có thể tái phát. Lỗi thường gặp khi bụi bẩn tích tụ hoặc focus bị lệch do thay đổi nhiệt độ môi trường",
+      "loi": null
+    },
+    {
+      "id": "LN02",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3047,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "(1) Máy báo quá nhiều lỗi báo nhầm (false alarm) cần điều chỉnh ngưỡng cảnh báo và kiểm tra pattern hình ảnh để xác định nguyên nhân.  \n(2) Bước 1: Truy cập `/alerts`, lọc theo `severity` hoặc `status = resolved` để xem các cảnh báo bị lặp lại → tìm loại lỗi phổ biến nhất [3]. Bước 2: Xem ảnh của false alarm trong phần chi tiết (detail view), xác định pattern như bóng đổ, marking sai hay oxid hóa pad [1][4]. Bước 3: Vào `MQTT Alert Rules` để chỉnh tham số threshold – giảm độ nhạy nếu quá chặt. Ghi lý do điều chỉnh và lưu lại phiên bản mới [3]. Bước 4: Sau khi sửa đổi, chờ ít nhất **8 tiếng** (thường là 24 giờ) để kiểm tra xem cảnh báo tương tự có phát sinh hay không; nếu không thấy thì coi như đã ổn định [5].  \n\n(3) Lưu ý: Không nên chỉnh ngưỡng cho người ngoài vai quản lý hoặc kỹ sư AOI – chỉ được phép thay đổi bởi **quản lý và kỹ sư**. Nếu lỗi do chương trình quá nhạy, cần kiểm tra lại lighting condition và vùng detection trong thiết lập AOI [2]. Lỗi thường gặp là thiếu quyền `alerts_acknowledge` khiến nút xác nhận bị disable\n\nAPI liên quan: `/api/external/alerts`, `/api/external/alerts/:alertId/acknowledge`, `/api/external/alerts/:alertId/resolve`, `/api/sse/alerts`",
+      "loi": null
+    },
+    {
+      "id": "LN03",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3130,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-defect-types.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md"
+      ],
+      "traLoi": "(1) Hạt thiếc rải rác trên bảng mạch thuộc loại lỗi **Excess Solder / Solder Ball** với mức độ **Major**, có nguy cơ gây ngắn mạch.  \n(2) Bước 1: Trong UI, mở tab *Defect Types* tại menu AOI → tìm mã lỗi `SBL` (Solder Ball). Tại đây thấy mô tả \"hạt thiếc nhỏ rải rác trên bảng\" và mức độ được ghi là **Major**. Kết quả hiển thị rõ ràng trong danh sách lỗi phổ biến [1]. Bước 2: Dùng API `/defect-heatmap?product=XYZ` để kiểm tra vị trí các hạt thiếc, nếu có dữ liệu X/Y thì hover vùng đỏ sẽ hiện tooltip chứa loại lỗi và tần suất (ví dụ: \"Solder Ball – count: 3\"). Kết quả xác nhận mức độ là Major.  \n(3) Lưu ý: Lỗi này không phải Critical nên không cần dừng dây chuyền; tuy nhiên, nếu xuất hiện thường xuyên tại một vùng cụ thể thì có thể dùng bản đồ nhiệt để phân tích xu hướng (tham khảo `/defect-heatmap` [3]). Nếu dữ liệu vị trí chưa bật trong Product Setup → lỗi sẽ không hiển thị được.  \n(4) Liên quan đến: **Lỗi Bridging** và **lỗi Thiếc Thừa**, vì cả hai đều liên qu",
+      "loi": null
+    },
+    {
+      "id": "LN04",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 4704,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-defect-types.md",
+        "aoi-defect-types.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Chân linh kiện bị nổi lên không chạm pad có mã lỗi là OPN và LL (Lifted Lead).  \n(2) Bước 1: Trong UI của AOI, hệ thống hiển thị cảnh báo với mã lỗi `OPN` hoặc `LL`, được ghi nhận tại mục \"Defect Types\" trong bảng tổng hợp lỗi. Kết quả là màn hình hiện thông báo về mạch hở do chân linh kiện không tiếp xúc với pad. Bước 2: Kỹ sư xác minh bằng cách xem ảnh chi tiết của chân linh kiện và so sánh với tiêu chuẩn, phát hiện chiều cao hàn <75% hoặc góc wetting <45° → kết luận lỗi OPN/LL [1].  \n(3) Lưu ý: Lỗi này thuộc mức độ Critical (CR), cần dừng dây chuyền và xử lý bằng rework. Thường gặp khi linh kiện biến dạng, thiếc không đủ hay pad bị oxy hóa. Nếu sai lệch do bóng đổ hoặc chương trình threshold quá chặt có thể gây false alarm – cần kiểm tra lại cấu hình AOI [5].  \n(4) Liên quan đến: Lỗi \"Missing Component\" (MIS/MC), vì cả hai đều liên quan đến việc linh kiện không đúng vị trí và ảnh hưởng đến tính toàn vẹn mạch. Tuy nhiên, OPN/LL là lỗi về tiếp",
+      "loi": null
+    },
+    {
+      "id": "LN05",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2377,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/features/monitoring/machine-registration.md"
+      ],
+      "traLoi": "(1) Lỗi máy không nhận ra bảng đi vào được xử lý bằng cách kiểm tra cảm biến phát hiện bảng tại điểm nhập.  \n(2) Bước 1: Kiểm tra sensor phát hiện bảng (entry sensor) ở phần **Checklist đầu ca** trong UI [2]. Kết quả là xác định xem có lỗi về thiết bị hay tín hiệu cảm biến không. Nếu vẫn không nhận diện, thực hiện bước kiểm tra tiếp theo tại mã lỗi E022 – \"Board not detected\" như nêu trong bảng AOI Troubleshooting Guide [1], nơi chỉ ra cần kiểm tra sensor và kết nối điện.  \n(3) Lưu ý: Lỗi này thường xảy ra do cảm biến bị bẩn, mất tín hiệu hoặc sai định vị; nếu không thấy phản hồi từ entry sensor thì phải thay thế hoặc vệ sinh thiết bị. Không nên giả sử là lỗi phần mềm mà cần kiểm tra vật lý trước.  \n\n(4) Liên quan đến hai chủ đề:  \n- **Quản lý đăng ký máy**: Máy chỉ\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`",
+      "loi": null
+    },
+    {
+      "id": "LN06",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 3138,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/features/inspection/history.md"
+      ],
+      "traLoi": "(1) Lỗi kẹp bảng (Board jam) được báo cáo với mã lỗi E021, yêu cầu dừng máy và kiểm tra cơ cấu conveyor.  \n(2) Bước 1: *Xem cảnh báo lỗi trong giao diện thiết bị & giám sát → tìm mã E021 ở mục \"Lỗi vận chuyển/conveyor\"* [1]. Kết quả hiển thị thông báo kẹt bảng, yêu cầu hành động ngay lập tức. Bước 2: *Dừng máy tại vị trí hiện tại và kiểm tra cơ cấu conveyor belt (băng chuyền)* — thực hiện trực tiếp ở khu vực thiết bị vật lý. Kết quả là xác định có vật cản hay không; nếu có, cần loại bỏ bằng tay trước khi khởi động lại.  \n(3) Lưu ý: Lỗi này thường xảy ra do sản phẩm bị lệch hoặc rơi vào khe kẹp. Nếu không kiểm tra cơ cấu băng chuyền thì lỗi sẽ tái phát. Sai lầm phổ biến là chỉ dừng máy mà chưa xác minh vật cản cụ thể.  \n\n(4) Liên quan đến:  \n- **Xử lý sự cố vận chuyển (E021–E040)** [1]: mã E021 nằm trong nhóm lỗi cơ cấu băng chuyền, cần xử lý theo quy trình kiểm tra thiết bị vật lý như trên.  \n- **Lịch sử kiểm",
+      "loi": null
+    },
+    {
+      "id": "LN07",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3004,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/anomaly-banks.md",
+        "knowledge/domain/aoi-defect-types.md"
+      ],
+      "traLoi": "(1) Lỗi đầu đọc mã vạch (Barcode Reader Error) được mã hóa là E044, xử lý bằng cách kiểm tra kết nối USB và thay thế thiết bị nếu cần.  \n(2) Bước 1: Mở giao diện hệ thống → chọn mục \"Lỗi\" trong menu Maintenance → tìm mã lỗi `E044` ở phần Communication / Software [1]. Kết quả hiển thị mô tả lỗi và hướng dẫn xử lý cụ thể. Bước 2: Kiểm tra kết nối USB tại cổng thiết bị (ở vị trí bên cạnh máy kiểm thử) bằng cách nhấn nút \"Test Connection\" trên màn hình UI → nếu không thành công, thay đầu đọc mã vạch mới [1]. Kết quả là trạng thái lỗi được cập nhật và hệ thống chuyển sang chế độ hoạt động bình thường.  \n(3) Lỗi thường gặp: USB bị gãy hoặc thiết bị hỏng do va chạm; cần kiểm tra lại cắm đúng cổng (thường ở phía sau máy). Nếu không có kết nối vật lý, phải thay thế đầu đọc mới. Không thể xử lý bằng chỉ định phần mềm vì lỗi nằm ở tầng cứng [1].  \n(4) Liên quan đến: Lỗi E061 (Fiducial mark not found – kiểm tra chương trình và làm sạch fiducial), nhưng khác về bản chất — E061 liên quan đến",
+      "loi": null
+    },
+    {
+      "id": "LN08",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 1314,
+      "nguon": [
+        "knowledge/operational/datasettings.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/features/products/measurement-point-setup.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/machines/:id/refresh-config`, `/api/public/products/:productCode/measurement-points`\nMàn hình liên quan: `/settings/shifts`, `/products/PCB-A7-V2`, `/machines/5`\nBiến cấu hình: `SYSTEM_TZ=Asia/Ho_Chi_Minh`\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "LN09",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2276,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/features/inspection/inspection-submit.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Góc thấm ướt nhỏ hơn **45°** là dấu hiệu của mối hàn thiếu thiếc.  \n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:  \n\"Kiểm tra: Góc wetting < 45°, chiều cao hàn < 75% chiều cao chân.\" [1]  \n\n(4) Nguồn gốc (file/đường dẫn): knowledge/domain/aoi-defect-types.md",
+      "loi": null
+    },
+    {
+      "id": "LN10",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 1608,
+      "nguon": [
+        "knowledge/features/ai/ai-time-series.md",
+        "knowledge/features/ai/ai-inspection-analytics.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/features/inspection/inspection-submit.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/machine/submit-inspection`\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "LN11",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2290,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/workflows/create-measurement-point.playbook.yaml",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Nút \"Tính từ N mẫu gần nhất\" (mặc định N=30)\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có:  \n> Kỹ sư phải nhập, hoặc bấm **\"Tính từ N mẫu gần nhất\"** (mặc định N=30).\n\n(4) Nguồn gốc (file/đường dẫn): [1] SPC — Đường UCL / LCL / Cpk (đoạn con 4) | knowledge/domain/howto-spc-control.md",
+      "loi": null
+    },
+    {
+      "id": "LN12",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2816,
+      "nguon": [
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/dashboard/dashboard-drilldown.md"
+      ],
+      "traLoi": "(1) Phân bố kết quả đo bị trải rộng (spread rộng) cho thấy sự không ổn định trong quá trình sản xuất, có thể do drift của quy trình hoặc sai lệch thiết bị.  \n(2) *Bước 1*: Truy cập **Analysis → MR Data** để xem histogram phân phối các điểm đo [3]. *Ở đâu trong UI*: Màn hình phân tích dữ liệu MR (Measurement Result). *Kết quả*: Biểu đồ hiển thị sự trải rộng của giá trị đo. Nếu spread lớn, hệ thống cảnh báo \"process instability\" – quá trình không ổn định.  \n*Bước 2*: So sánh với spec (USL/LSL) để xác minh điểm lệch [4]. *Ở đâu trong UI*: Trong phần phân tích MR sau khi chọn component hoặc loại lỗi. *Kết quả*: Phát hiện các giá trị vượt ra ngoài giới hạn, dẫn đến cảnh báo về drift quy trình và cần điều chỉnh thiết bị hay tham số sản xuất.\n\n(3) Lưu ý: Nếu\n\nAPI liên quan: `/api/machine/submit-inspection`\nMàn hình liên quan: `/dashboard/drilldown`",
+      "loi": null
+    }
+  ]
+}

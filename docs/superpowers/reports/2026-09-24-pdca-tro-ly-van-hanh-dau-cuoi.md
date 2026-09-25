@@ -420,3 +420,29 @@ từ chức năng tiếng Anh. Mọi lỗi ⇒ truy hồi như cũ. Công tắc 
   ~400 ký tự) — T14 đầu–cuối trên kho hệ thống vẫn đạt (v10). Tệp thô: `v11-eval-truoc.txt`, `v11-eval-sau.txt`.
 - Thấy thêm: `createdAt` của đoạn Studio hiển thị lệch −7 h (lớp lỗi timestamp naive của postgres.js đã ghi trong bộ nhớ dự án).
 - Còn mở (mục 3 cũ): kho Studio vẫn dùng bộ cắt cố định 1.800 ký tự — chưa có đoạn nhóm dòng bảng / đoạn con theo mục.
+
+## 18. Năm câu không tìm thấy đoạn đáp án (LN06 LN08 LN10 T17 T79) — chẩn đoán + thử reranker, KHÔNG áp dụng
+
+### 18.1 Chẩn đoán (bản dựng gỡ lỗi tạm, đã gỡ; log thô `rerank-v12/dbg12.txt`)
+- Ở CẢ năm câu, đoạn đáp án không nằm trong top‑40 của bước chấm điểm đầu (cosine 0,72 + từ khoá 0,28): các thẻ tính năng
+  (`history.md`, `alerts.md`, `datasettings.md`…) thắng nhờ từ chung ("lỗi", "kiểm tra", "máy"). Đoạn đáp án: cosine ~0,5,
+  từ khoá 0,2–0,4.
+- Bản dịch 4B kém ở chính những câu này: "Cơ cấu kẹp bảng" → "error sheet clamp mechanism"; "Bảng sửa lại" → "Table fixed";
+  "hết thời gian kiểm tra" → "inspection time" (mất "timeout"); "danh mục lỗi" → "error category" (không phải "catalog").
+- Tầng rerank gần như TRƠ: `.env` `RAG_RERANKER_BLEND=0.20` (80 % là điểm cũ) và `aiReranker` cắt cứng
+  `RAG_RERANKER_MAX_CANDIDATES` = 20 — đặt `RAG_RERANKER_POOL=50` một mình KHÔNG có tác dụng (log vẫn `docs=20`).
+
+### 18.2 Thử (chỉ ENV, cùng bundle; ENV của từng lượt ghi ở đây vì BUILD-INFO không lưu)
+
+| ENV `POOL`/`MAX_CANDIDATES`/`BLEND` | Giữ lại Việt↔Anh | 111 câu trong | Ngoài corpus trả lời THẬT | Endpoint | Trễ trung vị |
+|---|---|---|---|---|---|
+| 20/20/0,20 (hiện hành, `v10`) | 8/12 | 72/79 | 0 | 54·17·8·10 | 1.844 ms |
+| 50/50/0,50 (`v12b50`) | 9/12 | 72/79 (không đổi câu nào) | **1** (N21) | 54·17·8·10 | 2.100 ms |
+| 50/50/0,85 (`v12b85`) | 10/12 | 72/79 (+T17 +T78 −T22 −T57*) | **2** (N21, **N31 BỊA**: "MES gửi lệnh qua MQTT") | 54·17·8·10 | 2.034 ms |
+
+\* T57 trả công thức FPY của tài liệu lô (`okQty/actualQty`) — tương đương, đáp án vàng chỉ nhận dạng của `aoi-reports.md`.
+- **Không áp dụng:** lợi +1/+2 trên tập giữ lại mà tôi đã NHÌN khi chẩn đoán (nhiễm một phần), đổi lấy câu lạc đề lọt —
+  một câu BỊA (N31) ở blend 0,85. Theo tiêu chí ĐÚNG hơn NHANH, một câu bịa nặng hơn hai câu tìm thấy thêm.
+- Muốn đi tiếp: nâng blend CÙNG LÚC hiệu chỉnh lại cổng lạc đề (vòng 5 thiết kế trên điểm của blend 0,20), đo trên một tập giữ
+  lại MỚI chưa nhìn. Hoặc cải thiện bản dịch (4B dịch sai thuật ngữ) — mỗi hướng là một vòng riêng.
+- Máy chủ đã về cấu hình `.env` (bundle dựng lại sạch từ HEAD, `kiem:lai-lich` ĐẠT).

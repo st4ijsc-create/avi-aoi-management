@@ -1,0 +1,114 @@
+{
+  "corpus": "scripts/ai-eval/kb-doi-chung-song.jsonl",
+  "label": "v12b50-song",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 6,
+      "tuChoi": 1,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 5
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "C01",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1141,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/operational/defect-catalog.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/lots/:orderCode`\n\nVí dụ:\n```\nplanned → running → (paused ⇄ running) → completed\n                                       ↘ cancelled\n```\n\nBạn muốn tra cứu lô sản xuất nào? Vui lòng cung cấp **mã lệnh sản xuất** (ví dụ `L20260505-001` hoặc `PO12345`).\nBạn cũng có thể vào *Menu › Sản xuất › Lệnh sản xuất* để chọn trực tiếp từ danh sách.",
+      "loi": null
+    },
+    {
+      "id": "C02",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2771,
+      "nguon": [
+        "knowledge/features/monitoring/machine-status-monitor.md",
+        "knowledge/features/monitoring/machine-status-monitor.md",
+        "knowledge/operational/machine-registration.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/features/monitoring/machine-sync.md"
+      ],
+      "traLoi": "(1) Trạng thái máy được theo dõi thời gian thực qua dashboard Machine Status, hiển thị tỷ lệ hoạt động (uptime), lịch sử thay đổi trạng thái và nhịp tim MQTT.  \n(2) Bước 1: Mở URL `/machine-status` trong menu **Monitoring → Machine Status** để xem grid card với màu sắc phản ánh tình trạng: xanh ≥95%, vàng ≥60% (dưới 60% là cam/orange). Tại đây, thấy tổng cộng 1699 máy, tất cả đều offline (0 online), trong đó có 129 lỗi. Bước 2: Nhấn vào bất kỳ card nào để mở **Detail Dialog**, chọn thời gian range (ví dụ 7 ngày) → xem tab **Status History** và **Heartbeat** để xác định các lần mất kết nối, ví dụ như tại khoảng thời gian 02:00–04:00 ban đêm [1]. Kết quả hiển thị uptime % khớp với time range\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`, `/api/machine/sync-points`, `/api/machine/:id/sync-logs`\n\n_Nguồn số liệu: `machines` · onlyOffline=false · 1699 hàng_",
+      "loi": null
+    },
+    {
+      "id": "C03",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2155,
+      "nguon": [
+        "knowledge/operational/device-monitor.md",
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational/equipment-standards.md",
+        "knowledge/operational/equipment-integration.md",
+        "docs/ECOSYSTEM/54_DEVICES_AND_ENGINEERING_LIVE_COMPLETION_AUDIT_2026-07-16.md"
+      ],
+      "traLoi": "(1) Tình trạng thiết bị hiện tại được giám sát qua màn hình `/device-monitor`, yêu cầu quyền `machine_status` để truy cập.  \n(2) Bước 1: Truy cập URL `/device-monitor` hoặc menu \"Thiết bị & Giám sát › Giám sát thiết bị\". Tại đây, hệ thống hiển thị trạng thái hoạt động của các thiết bị (ví dụ: đang chạy, lỗi, bảo trì). Nếu không thấy dữ liệu, có thể do thiếu quyền `machine_status`. Bước 2: Kiểm tra thông tin chi tiết bằng lệnh API `/device-monitor/status` (trong backend tRPC), trả về danh sách thiết bị với trạng thái hiện tại như \"operational\", \"alarm\", hoặc \"maintenance\". Kết quả là bảng tổng hợp thực tế, cập nhật theo thời gian.  \n(3) Lỗi thường gặp: Thiếu quyền `machine_status` khiến màn hình rỗng thay vì báo lỗi rõ ràng; chưa có tài liệu về các triệu chứng cụ thể do sự cố thiết bị [2].",
+      "loi": null
+    },
+    {
+      "id": "C04",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2486,
+      "nguon": [
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/today.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/feeder-verify.md"
+      ],
+      "traLoi": "(1) Line hôm nay đang hoạt động ổn định với tỷ lệ sản phẩm không đạt chuẩn (NG) là 0%.  \n(2) Bước 1: Truy cập **Menu › Sản xuất › AOI Inspection**, chọn line đang chạy, chuyển sang tab \"Sản phẩm NG\" để kiểm tra danh sách. Kết quả hiển thị số lượng NG = 0 → xác nhận hoạt động tốt [1]. Bước 2: Từ Dashboard, nhấn vào thẻ **NG hôm nay** và mở chi tiết nếu có thông báo; kết quả hiện tại là 0 sản phẩm lỗi (OK=0, NG=0) [DU_LIEU_KHONG_TIN_CAY].  \n(3) Lưu ý: Nếu số lượng NG tăng bất thường trong tương lai cần kiểm tra lại quy trình AOI hoặc cập nhật SOP xử lý. Lỗi phổ biến là không xác nhận đúng recipe trước khi chạy line, dẫn đến lỗi sản phẩm [2].  \n(4) Liên quan tới hai chủ đề: **xử lý sản phẩm\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "C05",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2364,
+      "nguon": [
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/features/monitoring/machine-health.md",
+        "knowledge/features/monitoring/machine-status-monitor.md",
+        "knowledge/operational-approved/machine-registration.md"
+      ],
+      "traLoi": "(1) 129 máy đang gặp lỗi, trong đó có các thiết bị như ESP32-ENV-01 và FUYU-F-T1-L1-M1 đến M12.  \n(2) Bước 1: Truy cập màn hình **Machine Status Monitor** → chọn tab \"Machines\" để xem danh sách toàn bộ máy [1]. Tại đây, các thiết bị offline sẽ được ghi nhận rõ ràng như ESP32-ENV-01 và FUYU-F-T1-L1-M1 đến M12. Kết quả: hiển thị trạng thái offline với số lượng 1699 máy không online. Bước 2: Kiểm tra thông tin chi tiết bằng API `machineStatus.listWithStatus` để xác minh dữ liệu [4]. Dữ liệu trả về sẽ bao gồm các trường như `status`, `lastHeartbeat`, và `uptime`. Kết quả cho thấy những thiết bị có trạng thái \"offline\" là lỗi.  \n(3) Lỗi thường gặp: Máy không\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`, `/api/machines/:id/allowed-products`\nMàn hình liên quan: `/machines/5`\n\n_Nguồn số liệu: `machines` · onlyOffline=false · 1699 hàng_",
+      "loi": null
+    },
+    {
+      "id": "C06",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2079,
+      "nguon": [
+        "knowledge/features/ai/batch-inference.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/aoi-workflow.md"
+      ],
+      "traLoi": "(1) Thời gian hoàn thành lô được xác định bởi trạng thái tiến trình và thời điểm kết thúc trong vòng đời lô.  \n(2) Bước 1: Truy cập tab **Production → Close Lot** để kiểm tra trạng thái hiện tại của lô, ở đây sẽ thấy các giá trị như `Total`, `Pass`, `NG` và tỷ lệ đạt (`Yield`). Bước 2: Xem vòng đời lô theo quy trình: `planned → running → (paused ⇄ running) → completed`. Khi trạng thái chuyển sang **completed**, thì lô đã kết thúc. Nếu đang ở trạng thái **running** hoặc bị tạm dừng, thời gian hoàn thành sẽ phụ thuộc vào tiến độ xử lý và không thể xác định chính xác mà cần theo dõi trong UI. Kết quả là hệ thống tự tính toán các chỉ số sau khi hoàn tất.  \n(3) Lưu ý: Lô chưa kết thúc nếu vẫn ở trạng thái `running` hoặc bị tạm dừng (`paused`). Nếu không thấy chuyển sang",
+      "loi": null
+    }
+  ]
+}

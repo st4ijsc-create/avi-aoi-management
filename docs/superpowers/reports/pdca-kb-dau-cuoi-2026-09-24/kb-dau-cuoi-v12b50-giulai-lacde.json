@@ -1,0 +1,384 @@
+{
+  "corpus": "scripts/ai-eval/st4i-giu-lai-lac-de.jsonl",
+  "label": "v12b50-giulai-lacde",
+  "tom": {
+    "trong": {
+      "n": 12,
+      "dung": 12,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 12,
+      "tuChoi": 11,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 1
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "HT01",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2334,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/inspection/history-export-scheduling.md",
+        "knowledge/domain/howto-export-pdf-report.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/domain/howto-export-pdf-report.md"
+      ],
+      "traLoi": "(1) Khi xuất báo cáo thủ công, người dùng có thể chọn định dạng PDF, Excel hoặc CSV.  \n(2) Bước 1: Vào `Reports → Export` trong giao diện UI [1]. Bước 2: Chọn loại báo cáo và khoảng thời gian cần xuất; ở đây, hệ thống cung cấp lựa chọn format là **PDF** (trình bày), **Excel** (phân tích) hoặc **CSV** (import hệ thống khác). Kết quả là file được tạo theo định dạng đã chọn và lưu tại thư mục người dùng chỉ định.  \n(3) Lưu ý: Nếu dữ liệu quá lớn, xuất PDF có thể mất thời gian (~2–10s), nên cần kiểm tra bộ lọc để hạn chế kích thước dataset. Lỗi thường gặp là không thấy file sau khi nhấn Export – do chưa chọn đúng format hoặc thư mục lưu bị sai [1].  \n(4) Liên quan đến chủ đề \"xuất báo cáo tự động\" (History Export Scheduling): cả\n\nAPI liên quan: `/api/reports/export`",
+      "loi": null
+    },
+    {
+      "id": "HT02",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2325,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/operational/mes-control-tower.md",
+        "docs/ECOSYSTEM/16_AUTOMATION_ORCHESTRATION_ECOSYSTEM_UNIFIED_DESIGN_2026-06.md",
+        "knowledge/operational/equipment-integration.md",
+        "docs/USER_GUIDE.md"
+      ],
+      "traLoi": "(1) Cấu hình tích hợp tự động với MES nằm ở mục **Settings → Integration → MES** trong giao diện người dùng.  \n(2) Bước 1: Truy cập menu **Sản xuất › Điều khiển MES**, sau đó chọn tab **Integration** để vào phần cấu hình liên kết. Tại đây, hệ thống yêu cầu quyền `analytics_oee`. Bước 2: Cấu hình các endpoint như `POST /api/v1/orders`, `POST /api/v1/bom` và `POST /api/v1/material-availability` với idempotency-key bắt buộc để đảm bảo dữ liệu không bị trùng lặp. Kết quả là MES nhận được dữ liệu real-time từ hệ thống qua API, đồng thời phản hồi ACK 202 kèm event \"order.accepted\" trong bảng outbox (xem luồng: `ERP POST /orders (idem-key) → validate(Zod+schemaVersion) → upsert production_orders ... → ACK 202 + outbox \"order.accepted\"`).  \n(",
+      "loi": null
+    },
+    {
+      "id": "HT03",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3263,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/inspection/inspection-detail.md"
+      ],
+      "traLoi": "(1) Để lấy kết quả kiểm tra theo serial number qua API, cần tham khảo tài liệu `apidocs/EXTERNAL_INSPECTION_API.md`.  \n(2) Trong tài liệu này nêu rõ: \"Lấy kết quả kiểm tra theo serial number\" là một trong các chức năng được liệt kê. Cụ thể, người dùng có thể truy cập vào tài liệu này để tìm hiểu chi tiết về endpoint và schema liên quan. Tuy nhiên, không cung cấp trực tiếp URL hoặc lệnh cụ thể cho việc lấy dữ liệu theo serial số tại thời điểm hiện tại. Việc thực hiện cần dựa trên nội dung trong `apidocs/EXTERNAL_INSPECTION_API.md`.  \n(3) Lưu ý: Tài liệu chỉ liệt kê chức năng mà chưa cung cấp endpoint chi tiết như `/inspection/by-serial` hoặc cú pháp request cụ thể. Lỗi thường gặp nếu không kiểm tra điều kiện serial tồn tại hay quyền truy cập (permission). Cần xác minh trước rằng serial đã được sử dụng trong lịch sử kiểm tra và có dữ liệu tương ứng ở bảng `product_inspections`.  \n(4) Liên quan đến hai chủ đề: việc lấy kết quả theo serial số liên hệ trực tiếp với chức năng **Submit Inspection** [3] (nộp kết quả), vì serial là một phần thiết yếu trong quá trình tạo và truy vấn dữ liệu kiểm tra. Đồng thời, nó cũng liên quan đến **Chi tiết Kiểm Tra** ([2]), nơi người dùng xem chi tiết từng lần kiểm tra theo ID hoặc serial thông qua URL `/inspection/:id`.  \n\nTài liệu tham khảo: `apidocs/\n\nAPI liên quan: `/api/machine/submit-inspection`",
+      "loi": null
+    },
+    {
+      "id": "HT04",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3073,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md"
+      ],
+      "traLoi": "(1) Biểu đồ Pareto lỗi mặc định lọc theo khoảng thời gian 30 ngày.  \n(2) Bước 1: Truy cập `Menu › Báo cáo chất lượng › Pareto NG` hoặc dùng lệnh AI Assistant như *\"top lỗi\"* (mặc định sử dụng 7 ngày nếu không nêu rõ). Tại đây, bộ lọc mặc định đặt khoảng thời gian là **30 ngày**. Kết quả hiển thị biểu đồ theo tần suất giảm dần của các loại lỗi với đường tích lũy %; vạch đỏ ở mức 80% đánh dấu nhóm \"Vital Few\". Bước 2: Nếu cần thay đổi, chọn tùy chọn trong bộ lọc (1, 7, hoặc 30 ngày) và áp dụng. Kết quả là biểu đồ được cập nhật theo khoảng thời gian mới.  \n(3) Lưu ý: Khi không chỉ định khoảng thời gian, hệ thống dùng mặc định **7 ngày** nếu yêu cầu từ AI Assistant như *\"top lỗi\"* [1]. Nếu dữ liệu rỗng do range quá hẹp hoặc thiếu inspection data, cần mở rộng thời gian hoặc bỏ bộ lọc máy.  \n(4) Liên quan đến: Phân tích theo nhóm thời gian (tab `By Time Period`) và phân loại lỗi theo mã (`defect_code`), cả hai đều dùng dữ liệu từ bảng `inspection_defect\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "HT05",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2777,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/aoi-reports.md"
+      ],
+      "traLoi": "(1) Vạch đỏ trên biểu đồ Pareto đánh dấu mức phần trăm tích lũy 80%, dùng để phân biệt nhóm lỗi \"Vital Few\" (gây ra 80% NG) và \"Trivial Many\".  \n(2) Bước 1: Truy cập `Menu › Báo cáo chất lượng › Pareto NG` hoặc hỏi AI Assistant *\"top lỗi 7 ngày qua\"* → hiển thị biểu đồ. Tại đây, vạch đỏ ở mức **80 %** được ghi rõ trong hướng dẫn [1]. Bước 2: Hover vào từng cột để xem count và phần trăm tích lũy; ví dụ như `Bridging` chiếm 38.4%, tổng cộng đạt đến 82.2% (xem mẫu dữ liệu). Kết quả là vạch đỏ ở mức 80% giúp xác định nhóm lỗi cần ưu tiên xử lý.  \n(3) Lỗi thường gặp: Nếu không thấy vạch đỏ, có thể do biểu đồ chưa được cập nhật hoặc thời\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "HT06",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3899,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/root-cause-analysis.md",
+        "knowledge/features/analytics/pareto-analysis.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1\n\n(2) Danh sách đầy đủ:\n*   **Ngưỡng kích hoạt RCA:** Một mã lỗi chiếm **> 40 %** thì phải mở RCA ngay (sử dụng Fishbone / 5-Why) [1].\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có:\n*   `> 40 %` [1]\n*   `Mở RCA ngay (Fishbone / 5-Why).` [1]\n\n(4) Nguồn gốc (file/đường dẫn):\n*   [1] `knowledge/domain/howto-pareto-defects.md` (Phân tích Pareto NG — Hướng dẫn, đoạn con 5)",
+      "loi": null
+    },
+    {
+      "id": "HT07",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3640,
+      "nguon": [
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/howto-pareto-defects.md"
+      ],
+      "traLoi": "(1) Dữ liệu biểu đồ Pareto lỗi được cache trong thời gian 5 phút.  \n(2) Bước 1: Truy cập `Menu › Báo cáo chất lượng › Pareto NG`, chọn khoảng thời gian và tab (ví dụ By Type). Hệ thống tự động tải dữ liệu từ bảng `inspection_defects` + `defect_catalog`. Kết quả hiển thị biểu đồ với cột lỗi theo tần suất giảm dần, đường tích lũy %, vạch đỏ ở 80% đánh dấu Vital Few. Bước 2: Khi thay đổi bộ lọc (ví dụ thời gian hoặc line), hệ thống kiểm tra cache trước; nếu quá hạn 5 phút sẽ tải lại dữ liệu mới từ nguồn gốc qua API `trpc.paretoAnalysis.byDefectType({ startDate, endDate, factoryId?, lineId? })`.  \n(3) Lưu ý: Nếu biểu đồ không cập nhật sau thay đổi bộ lọc, có thể do cache chưa hết hạn. Lỗi thường gặp là dữ liệu rỗng khi filter quá hẹp (ví dụ chỉ 1 máy), cần mở rộng range hoặc bỏ bộ lọc machine.  \n(4) Liên quan đến phân tích lỗi theo thời gian và heatmap overlay: Pareto giúp xác định \"Vital Few\" lỗi, trong khi heatmap hiển thị vị trí điểm nóng trên thiết bị để kiểm tra nguyên nhân cụ thể (ví dụ hot-spot → mở modal Pareto top-5). Cả hai công cụ hỗ trợ nhau trong việc phân tích hiệu quả cải tiến.  \n\n```ts\n// API gọi từ frontend\ntrpc.paretoAnalysis.byDefectType\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "HT08",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2326,
+      "nguon": [
+        "knowledge/domain/howto-backup-restore.md",
+        "knowledge/features/admin/backup-restore.md",
+        "knowledge/domain/howto-backup-restore.md",
+        "knowledge/features/admin/backup-restore.md",
+        "knowledge/features/inspection/history-export-scheduling.md"
+      ],
+      "traLoi": "(1) Sao lưu cơ sở dữ liệu hằng ngày sử dụng lệnh `pg_dump` với chế độ nén và định dạng `.dump`, thực hiện tự động theo lịch trình 02:00 mỗi ngày.  \n(2) Bước 1: Thực hiện lệnh `pg_dump -h localhost -U postgres -d avi_aoi_db -Fc -f /backup/avi_$(date +%F).dump` để sao lưu toàn bộ database [1]. Lệnh này chạy trong môi trường Linux/WSL, được cấu hình tại thư mục `/backup/`. Kết quả là file `.dump` nén với định dạng custom. Bước 2: Truy cập UI tại `Admin › Backup & Restore`, chọn tab \"Schedule\" để thiết lập cron `0 2 * * *` (2h sáng), giữ lại tối đa 30 ngày [2]. Khi chạy, hệ thống sẽ ghi nhận trạng thái từ `running → done`.  \n(3) Lưu ý: Nếu không có đủ dung lượng ổ đ",
+      "loi": null
+    },
+    {
+      "id": "HT09",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2299,
+      "nguon": [
+        "knowledge/domain/howto-backup-restore.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/inspection-detail.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/features/admin/backup-restore.md"
+      ],
+      "traLoi": "(1) Ảnh kiểm tra trong thư mục `uploads/` được sao lưu bằng công cụ `rsync`.  \n(2) Bước 1: Thực hiện lệnh `rsync -a --delete /apps/avi-aoi-management/uploads/ /backup/uploads/`, thực hiện ở môi trường Linux hoặc WSL, kết quả là bản sao cập nhật đầy đủ các file ảnh với chế độ incremental và xóa tệp đã bị xoá.  \n(3) Lưu ý: Lỗi thường gặp khi không có quyền truy cập vào thư mục `uploads/` hoặc đường dẫn sai sẽ gây thất bại trong việc sao lưu; cần kiểm tra cấu hình quyền và path đúng theo tài liệu [1].  \n(4) Liên quan đến chủ đề \"sao lưu & phục hồi dữ liệu\" (backup & restore), vì công cụ này đảm bảo tính toàn vẹn của ảnh sản phẩm, đồng thời hỗ trợ khôi phục khi mất dữ liệu. Đồng thời liên hệ với chức năng kiểm tra chi tiết (`inspection detail`)\n\nAPI liên quan: `/api/inspection/:id/images`, `/api/measurement-point/:pointDefId/reference-image`\n\nVí dụ:\n```bash\n# 1. Database — full custom dump (nén)\npg_dump -h localhost -U postgres -d avi_aoi_db -Fc -f /backup/avi_$(date +%F).dump\n\n# 2. Uploads — incremental\nrsync -a --delete /apps/avi-aoi-management/uploads/ /backup/uploads/\n\n# 3. Knowledge base\ntar -czf /backup/knowledge_$(date +%F).t\n…\n```",
+      "loi": null
+    },
+    {
+      "id": "HT10",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2210,
+      "nguon": [
+        "knowledge/domain/howto-license-bypass-dev.md",
+        "knowledge/domain/howto-license-bypass-dev.md",
+        "knowledge/features/admin/license-mgmt.md",
+        "docs/FIREBASE_PUSH_NOTIFICATIONS.md",
+        "knowledge/domain/howto-backup-restore.md"
+      ],
+      "traLoi": "(1) Không được đưa tệp `.env` và `license.lic` lên Git, dù trong quy trình sao lưu cấu hình.  \n(2) Trong bước sao lưu (theo [5]), chỉ nên copy các thành phần như `.env`, `license.lic` qua kênh bảo mật — không phải bằng cách commit vào git hoặc đưa trực tiếp vào backup hệ thống. Cụ thể: tệp `license.lic` cần được giữ riêng, không commit vì đã có trong `.gitignore`. Trong khi đó, biến môi trường như `NODE_ENV=development`, `LICENSE_BYPASS=true` chỉ nên đặt ở file `.env` (môi trường dev), và **không** nên đưa lên git [1]. Việc sao lưu cấu hình phải thực hiện bằng cách copy tệp này qua kênh bảo mật, không dùng Git. Nếu có lỗi như commit `license.lic`, hệ thống sẽ bị vi phạm quy tắc bảo mật và có thể gây rủi ro về kiểm soát bản quyền hoặc license hợp lệ.\n\n(3\n\nAPI liên quan: `/api/trpc/fcm.testConnection`\nMàn hình liên quan: `/admin/license`\n\nVí dụ:\n```ini\nNODE_ENV=development\nLICENSE_BYPASS=true            # bỏ qua kiểm tra license\nLICENSE_BYPASS_FEATURES=all    # bật toàn bộ feature flag\n```",
+      "loi": null
+    },
+    {
+      "id": "HT11",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2729,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/domain/howto-pareto-defects.md"
+      ],
+      "traLoi": "(1) Khi top 3 mã lỗi cùng tập trung ở một line, cần tiến hành audit cấu hình điểm đo của line đó để xác định nguyên nhân gốc rễ.  \n(2) Bước 1: Truy cập `Báo cáo chất lượng → Pareto NG`, chọn khoảng thời gian và lọc theo line cụ thể; xem biểu đồ với các mã lỗi có tần suất cao nhất (ví dụ):  \n```\nDefect Type     | Count | %      | Cumulative%\n----------------|-------|--------|-------------\nBridging        |  145  | 38.4%  | 38.4%\nMissing Part    |   98  | 26.0%  | 64.4%\nMisalignment    |   67  | 17.8%  | 82.2%\nOthers          |   67  | 17.8%  | 100%\n```  \nKết quả: xác định top 3 lỗi chiếm >50% tổng số NG, đồng thời phát hiện sự tập trung trên cùng một line → cần điều tra cấu hình điểm đo (measurement points). Bước 2: Truy cập `Products → Measurement Points`, kiểm tra xem các điểm đo có được thiết lập đúng vị trí và độ chính xác không. Nếu sai lệch hoặc thiếu, chỉnh sửa",
+      "loi": null
+    },
+    {
+      "id": "HT12",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 5798,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/aoi-reports.md"
+      ],
+      "traLoi": "(1) Bộ lọc mức độ lỗi trên biểu đồ Pareto có các giá trị: `critical`, `major`, `minor`.  \n(2) Bước 1: Truy cập menu **Báo cáo chất lượng → Pareto NG**. Tại đây, tìm mục bộ lọc \"Mức độ (severity)\" và chọn một trong ba giá trị trên UI. Kết quả hiển thị biểu đồ được sàng lọc theo từng mức độ lỗi. Bước 2: Nếu cần xem dữ liệu chi tiết hơn, có thể dùng lệnh API `trpc.paretoAnalysis.byDefectType({ ...filter, severity })` để lấy kết quả phân tích theo mức độ cụ thể (ví dụ: chỉ chọn `critical`). Kết quả trả về bao gồm cột Count, % tỷ lệ và phần trăm tích lũy.  \n(3) Lưu ý: Nếu không có dữ liệu khi lọc bằng `critical`, kiểm tra lại cấu hình phân loại lỗi ở module Inspection [1]. Lỗi thường gặp là nhóm \"Unknown\" chiếm nhiều → cần xác minh định danh lỗi trong hệ thống.  \n(4) Liên quan đến hai chủ đề: Phân tích Pareto và điều tra nguyên nhân gốc rễ (RCA). Khi phát hiện top 3 lỗi có mức độ `critical`, kỹ sư sẽ thực hiện **5-Why analysis** để xác minh nguyên nhân [2]. Đồng thời, dữ liệu này hỗ trợ đánh\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "HN01",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1541,
+      "nguon": [
+        "knowledge/features/monitoring/machine-health.md",
+        "knowledge/operational-approved/work-orders.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "HN02",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1242,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/workflows/install-new-machine.playbook.yaml",
+        "knowledge/operational/feeder-verify.md",
+        "knowledge/operational/component-library.md",
+        "knowledge/domain/commission-a-new-pcb.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN03",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1256,
+      "nguon": [
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "HN04",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1428,
+      "nguon": [
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/domain/howto-export-pdf-report.md",
+        "knowledge/domain/howto-export-pdf-report.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/features/ai/ai-reports.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nMàn hình liên quan: `/uploads/reports/Bao`\n\nVí dụ:\n```\nPhản hồi:\n```\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN05",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1256,
+      "nguon": [
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/domain/aoi-thresholds.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN06",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1235,
+      "nguon": [
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/features/ai/ai-reports.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN07",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1355,
+      "nguon": [
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/robot-control.md",
+        "knowledge/operational/robot-model-health.md",
+        "knowledge/domain/aoi-defect-types.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "HN08",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1254,
+      "nguon": [
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational-approved/edge-nodes.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/operational-approved/anomaly-banks.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN09",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1333,
+      "nguon": [
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "docs/ECOSYSTEM/29_COMPONENT_PANEL_OPERATOR_MASTER_DESIGN.md",
+        "drizzle/schema/productPanel.ts",
+        "knowledge/operational/engineering-changes.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN10",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1243,
+      "nguon": [
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/domain/commission-a-new-pcb.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/features/monitoring/machine-sync.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN11",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1223,
+      "nguon": [
+        "knowledge/features/monitoring/machine-sync.md",
+        "knowledge/features/monitoring/machine-sync.md",
+        "knowledge/workflows/install-new-machine.playbook.yaml",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/machine/sync-points`, `/api/machine/:id/sync-logs`\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "HN12",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2712,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml"
+      ],
+      "traLoi": "(1) Lỗi nhận dạng camera linh kiện (vision reject) liên tục thường do sai thiết lập ánh sáng, căn chỉnh hoặc lỗi trong chu kỳ chụp ảnh.  \n(2) Bước 1: Truy cập **Danh sách cảnh báo** tại `/alerts`, kiểm tra các cảnh báo có mã E015 (Multiple exposure error) hay E011 (FOV mismatch). Nếu thấy, thực hiện việc kiểm tra ánh sáng và độ cao camera. *Ở UI*: mở màn hình `/mqtt-alerts` để xem cảnh báo đang hoạt động; kết quả là xác định loại lỗi cụ thể [4]. Bước 2: Kiểm tra lại **căn chỉnh (calibration)** của máy bằng cách chạy lại sequence calibration nếu có mã E005 hoặc E011. *Ở UI*: truy cập màn hình `/ai-inspection-analytics` để tìm các ảnh bị từ chối và so sánh với mẫu chuẩn [5]. Kết quả: xác định lỗi là do sai FOV hay ánh sáng không ổn định. Bước 3: Nếu lỗi liên quan đến ánh sáng, kiểm tra LED ring hoặc thay bóng nếu cần (mã E003). *Ở UI*: trong phần thiết bị, xem trạng thái `registrationStatus` để đảm bảo máy đang hoạt động bình thường [3].  \n\n(3) Lỗi thường gặp: Cảnh báo không hiển\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`",
+      "loi": null
+    }
+  ]
+}
