@@ -100,13 +100,61 @@ function boDauGiuDoDai(s: string): string {
   return out;
 }
 
-function chuanHoa(s: string): string {
-  return String(s ?? "")
-    .normalize("NFC")
+/**
+ * Fix round 2 — ký tự VÔ HÌNH / định dạng (\p{Cf}: ZWSP, ZWNJ, ZWJ, word joiner, soft hyphen, BOM,
+ * dấu điều hướng…) và các "chữ lấp chỗ" vô hình khác. Đo được: "bypass the e\u200B-stop",
+ * "by\u00ADpass the e-stop", "dừng\u200B khẩn cấp" lọt MỌI lớp vì mẫu không thấy chúng.
+ */
+const KY_TU_VO_HINH_RE = /[\p{Cf}\u034F\u115F\u1160\u17B4\u17B5\u180E\u3164\uFFA0]/gu;
+
+/**
+ * Fix round 2 — chữ Kirin / Hy Lạp TRÔNG như chữ Latin ("bypass the \u0435-stop" với е Kirin lọt cổng).
+ * Bảng nhỏ đủ cho các chữ dùng trong từ điển cổng; KHÔNG động vào tiếng Việt / Trung.
+ */
+const GIA_LATIN: Readonly<Record<string, string>> = {
+  // Kirin thường
+  "\u0430": "a", "\u0432": "b", "\u0435": "e", "\u0451": "e", "\u043A": "k", "\u043C": "m", "\u043D": "h",
+  "\u043E": "o", "\u0440": "p", "\u0441": "c", "\u0442": "t", "\u0443": "y", "\u0445": "x", "\u0456": "i",
+  "\u0457": "i", "\u0458": "j", "\u0455": "s", "\u0501": "d", "\u04CF": "l", "\u0491": "r", "\u04BB": "h",
+  // Kirin hoa
+  "\u0410": "a", "\u0412": "b", "\u0415": "e", "\u041A": "k", "\u041C": "m", "\u041D": "h", "\u041E": "o",
+  "\u0420": "p", "\u0421": "c", "\u0422": "t", "\u0423": "y", "\u0425": "x", "\u0406": "i", "\u0408": "j",
+  "\u0405": "s",
+  // Hy Lạp
+  "\u03B1": "a", "\u03B5": "e", "\u03B9": "i", "\u03BA": "k", "\u03BD": "v", "\u03BF": "o", "\u03C1": "p",
+  "\u03C4": "t", "\u03C5": "u", "\u03C7": "x", "\u0391": "a", "\u0392": "b", "\u0395": "e", "\u0396": "z",
+  "\u0397": "h", "\u0399": "i", "\u039A": "k", "\u039C": "m", "\u039D": "n", "\u039F": "o", "\u03A1": "p",
+  "\u03A4": "t", "\u03A5": "y", "\u03A7": "x",
+};
+
+/** Gỡ ký tự vô hình (thay bằng `thay`), NFKC (chữ full-width → ASCII), đổi chữ giả Latin. */
+function goVoHinh(s: string, thay = ""): string {
+  const t = String(s ?? "").replace(KY_TU_VO_HINH_RE, thay).normalize("NFKC");
+  let out = "";
+  for (const ch of t) out += GIA_LATIN[ch] ?? ch;
+  return out.normalize("NFC");
+}
+
+function chuanHoa(s: string, thayVoHinh = ""): string {
+  return goVoHinh(s, thayVoHinh)
     .toLowerCase()
-    .replace(/[‐-―]/g, "-")
+    .replace(/[\u2010-\u2015\u2212\uFE63\uFF0D]/g, "-")
     .replace(/[’‘]/g, "'")
+    // Fix round 2 — dấu nối / gạch dưới / chấm / chấm giữa GIỮA HAI CHỮ là dấu ngăn từ ("noi-tat",
+    // "bo_qua", "rem.quang", "liên·động"). Mẫu có dấu nối tùy chọn ("e[- ]?stop") nên "e-stop" vẫn khớp.
+    .replace(/(?<=[\p{L}\p{N}])[-_.\u00B7\u2027\u30FB]+(?=[\p{L}\p{N}])/gu, " ")
     .replace(/\s+/g, " ");
+}
+
+/**
+ * Các BIẾN THỂ chuẩn hoá để quét: ký tự vô hình bị XOÁ ("by\u200Bpass" → "bypass") và bị THAY bằng
+ * khoảng trắng ("dung\u200Bkhan" → "dung khan"). Một khớp ở bất kỳ biến thể nào đều là khớp.
+ */
+function bienThe(text: string | undefined | null): string[] {
+  const raw = String(text ?? "");
+  const a = chuanHoa(raw, "");
+  const b = chuanHoa(raw, " ");
+  return a === b ? [a] : [a, b];
 }
 
 // ────────────────────────────────────────────────────────────────────────────────────────────
@@ -115,15 +163,15 @@ function chuanHoa(s: string): string {
 
 /** Động từ nguy hiểm (EN). "short" có \b nên "shorter" không khớp. */
 const EN_VERB =
-  "(?:by-?pass(?:es|ed|ing)?|disabl(?:e|es|ed|ing)|deactivat(?:e|es|ed|ing)|defeat(?:s|ed|ing)?|overrid(?:e|es|ing|den)|" +
-  "ignor(?:e|es|ed|ing)|skip(?:s|ped|ping)?|jumper(?:s|ed|ing)?(?: out)?|jump(?:s|ed|ing)? out|short(?:s|ed|ing)?(?: out)?|short-circuit(?:s|ed|ing)?|" +
+  "(?:by[- ]?pass(?:es|ed|ing)?|disabl(?:e|es|ed|ing)|deactivat(?:e|es|ed|ing)|defeat(?:s|ed|ing)?|overrid(?:e|es|ing|den)|" +
+  "ignor(?:e|es|ed|ing)|skip(?:s|ped|ping)?|jumper(?:s|ed|ing)?(?: out)?|jump(?:s|ed|ing)? out|short(?:s|ed|ing)?(?: out)?|short[- ]?circuit(?:s|ed|ing)?|" +
   "bridg(?:e|es|ed|ing)|mut(?:e|es|ed|ing)|forc(?:e|es|ed|ing)|remov(?:e|es|ed|ing)|delet(?:e|es|ed|ing)|comment(?:s|ed|ing)? out|" +
   "turn(?:s|ed|ing)? off|switch(?:es|ed|ing)? off|suppress(?:es|ed|ing)?|circumvent(?:s|ed|ing)?|cheat(?:s|ed|ing)?|spoof(?:s|ed|ing)?|" +
   "fak(?:e|es|ed|ing)|hack(?:s|ed|ing)?|get(?:s|ting)? around|work(?:s|ing)? around|neutrali[sz](?:e|es|ed|ing))";
 
 /** Đối tượng an toàn (EN) cho lớp 1 — GHÉP với động từ nên được phép rộng ("safety", "guard"). */
 const EN_OBJ_L1 =
-  "(?:e-?stops?|e\\.? ?stops?|estops?|emergency[- ]?stops?|emergency[- ]?off|(?:safety[- ]?)?interlocks?|light[- ]?curtains?|light[- ]?grids?|" +
+  "(?:e[- ]?stops?|e\\.? ?stops?|estops?|emergency[- ]?stops?|emergency[- ]?off|(?:safety[- ]?)?interlocks?|light[- ]?curtains?|light[- ]?grids?|" +
   "safety[- ]?(?:door|gate|guard|relay|plc|controller|function|circuit|switch|sensor|input|signal|mat|scanner|laser|edge|check|system|logic|chain|loop|stop|limit|zone|fence|device)s?|" +
   "guard[- ]?(?:door|switch|lock(?:ing)?|interlock|sensor)s?|door[- ]?(?:interlock|switch)(?:es)?|two[- ]?hand(?:ed)?(?:[- ]?control)?|" +
   "enabling[- ]?(?:switch|device)|dead[- ]?man(?:'s)?(?:[- ]?switch)?|safe[- ]?torque[- ]?off|protective[- ]?(?:stop|door|guard|device)s?|" +
@@ -131,15 +179,15 @@ const EN_OBJ_L1 =
 
 /** Đối tượng CHỨC NĂNG an toàn (EN) cho lớp 1b — chỉ đối tượng ghép cụ thể, không từ đơn. */
 const EN_OBJ_FUNC =
-  "(?:e-?stops?|e\\.? ?stops?|estops?|emergency[- ]?stops?|emergency[- ]?off|interlocks?|light[- ]?curtains?|light[- ]?grids?|" +
+  "(?:e[- ]?stops?|e\\.? ?stops?|estops?|emergency[- ]?stops?|emergency[- ]?off|interlocks?|light[- ]?curtains?|light[- ]?grids?|" +
   "safety[- ]?(?:door|gate|guard|relay|plc|controller|function|circuit|switch|sensor|mat|scanner|logic|chain|rated|muting|interlock)s?|" +
   "guard[- ]?(?:door|switch|lock(?:ing)?|interlock)s?|two[- ]?hand(?:ed)?|enabling[- ]?(?:switch|device)|safe[- ]?torque[- ]?off|" +
   "performance[- ]?level|lockout[-/ ]?tagout|\\bloto\\b|\\bsil[- ]?[1-4]\\b)";
 
 /** Dạng bị động / danh từ hậu tố (EN): "the e-stop is ignored", "interlock bypass". */
 const EN_POST =
-  "(?:(?:is|are|be|being|been|gets?|got)\\s+)?(?:by-?passed|disabled|deactivated|defeated|overridden|ignored|skipped|jumpered|shorted|bridged|muted|forced|removed|deleted|suppressed|circumvented|spoofed|faked)\\b|" +
-  "[- ](?:by-?pass|override|defeat|jumper)\\b";
+  "(?:(?:is|are|be|being|been|gets?|got)\\s+)?(?:by[- ]?passed|disabled|deactivated|defeated|overridden|ignored|skipped|jumpered|shorted|bridged|muted|forced|removed|deleted|suppressed|circumvented|spoofed|faked)\\b|" +
+  "[- ](?:by[- ]?pass|override|defeat|jumper)\\b";
 
 /** Gián tiếp (EN): máy vẫn chạy / không dừng. */
 const EN_CONT =
@@ -164,8 +212,8 @@ const VI_FILLER =
 
 /** Đối tượng an toàn (VI) — lớp 1 và lớp 1b dùng chung (đều là đối tượng GHÉP). */
 const VI_OBJ =
-  "(?:dừng khẩn(?: cấp)?|nút khẩn(?: cấp)?|e-?stop|estop|interlock|(?:khoá |khóa )?liên động|cửa bảo vệ|cửa an toàn|rèm quang|rèm an toàn|màn chắn sáng|" +
-  "(?:cảm biến|rơ-?le|relay|mạch|chức năng|công tắc|tín hiệu|thiết bị|hệ thống|khoá|khóa|bộ điều khiển|plc) an toàn|hai tay)";
+  "(?:dừng khẩn(?: cấp)?|nút khẩn(?: cấp)?|e[- ]?stop|estop|interlock|(?:khoá |khóa )?liên động|cửa bảo vệ|cửa an toàn|rèm quang|rèm an toàn|màn chắn sáng|" +
+  "(?:cảm biến|rơ[- ]?le|relay|mạch|chức năng|công tắc|tín hiệu|thiết bị|hệ thống|khoá|khóa|bộ điều khiển|plc) an toàn|hai tay)";
 
 /** Hậu tố bị động (VI) — BẮT BUỘC có "bị/được" ("dừng khẩn cấp tắt động cơ" là mô tả, không phải bypass). */
 const VI_POST = "\\s+(?:đã\\s+)?(?:bị|được)\\s+(?:bỏ qua|vô hiệu(?: hoá| hóa| hoa)?|nối tắt|tắt|gỡ(?: bỏ)?|vượt qua|lách|che|chặn|ngắt)";
@@ -176,7 +224,7 @@ const VI_CONT = "(?:vẫn|tiếp tục|cứ)\\s+(?:chạy|hoạt động|quay|l�
 /** Động từ SỬA/ĐỔI điều kiện (lớp 2 — đi cùng mã có tín hiệu an toàn). */
 const VI_MODIFY = "(?:gỡ|bỏ|xoá|xóa|sửa|đổi|thay đổi|vô hiệu|bỏ qua)\\s+(?:\\S+\\s+){0,2}(?:điều kiện|kiểm tra|dòng|lệnh|tín hiệu)|vẫn chạy|chạy tiếp|không dừng";
 const EN_MODIFY =
-  "(?:remov(?:e|ing)|delet(?:e|ing)|chang(?:e|ing)|modif(?:y|ying)|edit(?:ing)?|alter(?:ing)?|rewrit(?:e|ing)|invert(?:ing)?|negat(?:e|ing)|comment(?:ing)? out|by-?pass(?:ing)?|skip(?:ping)?|ignor(?:e|ing))\\s+(?:[\\w'-]+\\s+){0,3}(?:condition|check|stop|if|line|signal)|keep(?:s)? running|still run";
+  "(?:remov(?:e|ing)|delet(?:e|ing)|chang(?:e|ing)|modif(?:y|ying)|edit(?:ing)?|alter(?:ing)?|rewrit(?:e|ing)|invert(?:ing)?|negat(?:e|ing)|comment(?:ing)? out|by[- ]?pass(?:ing)?|skip(?:ping)?|ignor(?:e|ing))\\s+(?:[\\w'-]+\\s+){0,3}(?:condition|check|stop|if|line|signal)|keep(?:s)? running|still run";
 
 // ────────────────────────────────────────────────────────────────────────────────────────────
 // Từ điển — ZH (không có khoảng trắng ⇒ kề trong vài ký tự)
@@ -202,7 +250,7 @@ function re(src: string, flags = "iu"): RegExp {
 // EN
 const EN_L1_TRUOC = re(`\\b${EN_VERB}\\s+(?:[\\w'.-]+\\s+){0,3}?${EN_OBJ_L1}\\b`);
 const EN_L1_SAU = re(`\\b${EN_OBJ_L1}\\s*(?:[\\w-]+\\s+){0,2}?(?:${EN_POST})`);
-const EN_L1_SAU_NOUN = re(`\\b${EN_OBJ_L1}(?:[- ](?:by-?pass|override|defeat|jumper))\\b`);
+const EN_L1_SAU_NOUN = re(`\\b${EN_OBJ_L1}(?:[- ](?:by[- ]?pass|override|defeat|jumper))\\b`);
 const EN_CONT_RE = re(EN_CONT, "giu");
 const EN_OBJ_L1_RE = re(`\\b${EN_OBJ_L1}\\b`, "giu");
 const EN_FUNC_RE = re(`\\b${EN_OBJ_FUNC}`);
@@ -276,9 +324,16 @@ function ganNhau(text: string, a: RegExp, b: RegExp): string | null {
 // Lớp 1 — cụm động từ nguy hiểm × đối tượng an toàn
 // ────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Trả về cụm đã khớp (để chẩn đoán) hoặc null. Không phân biệt mode. */
+/** Trả về cụm đã khớp (để chẩn đoán) hoặc null. Không phân biệt mode. Quét MỌI biến thể chuẩn hoá. */
 export function matchBypassPhrase(text: string | undefined | null): string | null {
-  const s = chuanHoa(String(text ?? ""));
+  for (const s of bienThe(text)) {
+    const r = matchBypassPhraseMot(s);
+    if (r) return r;
+  }
+  return null;
+}
+
+function matchBypassPhraseMot(s: string): string | null {
   if (!s.trim()) return null;
   const hit = (r: RegExp) => {
     const m = s.match(r);
@@ -344,10 +399,18 @@ function ganNhauKiemDau(
 
 /** Lớp 1b — yêu cầu nêu một đối tượng CHỨC NĂNG an toàn cụ thể (chỉ dùng ở mode sinh mã/review). */
 export function matchSafetyFunctionObject(text: string | undefined | null): string | null {
-  const raw = String(text ?? "");
-  const s = chuanHoa(raw);
+  const pl = goVoHinh(String(text ?? "")).match(PL_RE); // "PL d" — phân biệt hoa/thường, không hạ chữ
+  if (pl) return pl[0];
+  for (const s of bienThe(text)) {
+    const r = matchSafetyFunctionObjectMot(s);
+    if (r) return r;
+  }
+  return null;
+}
+
+function matchSafetyFunctionObjectMot(s: string): string | null {
   if (!s.trim()) return null;
-  const m = s.match(EN_FUNC_RE) ?? raw.match(PL_RE);
+  const m = s.match(EN_FUNC_RE);
   if (m) return m[0];
   if (CJK_RE.test(s)) {
     const z = s.match(ZH_FUNC_RE);
@@ -369,13 +432,15 @@ export function matchSafetyFunctionObject(text: string | undefined | null): stri
 }
 
 function matchModifyVerb(text: string): string | null {
-  const s = chuanHoa(text);
-  // Fix round 1 — cả hai bản (chỉ dùng khi mã đã có tín hiệu an toàn ⇒ bảo thủ là đúng phía).
-  const m =
-    s.match(EN_MODIFY_RE) ??
-    (VI_DAU_RE.test(s) ? s.match(VI_MODIFY_RE) : null) ??
-    boDauGiuDoDai(s).match(VI_MODIFY_RE_KD);
-  return m ? m[0] : null;
+  for (const s of bienThe(text)) {
+    // Fix round 1 — cả hai bản (chỉ dùng khi mã đã có tín hiệu an toàn ⇒ bảo thủ là đúng phía).
+    const m =
+      s.match(EN_MODIFY_RE) ??
+      (VI_DAU_RE.test(s) ? s.match(VI_MODIFY_RE) : null) ??
+      boDauGiuDoDai(s).match(VI_MODIFY_RE_KD);
+    if (m) return m[0];
+  }
+  return null;
 }
 
 // ────────────────────────────────────────────────────────────────────────────────────────────
@@ -421,7 +486,8 @@ function laTinHieuAnToan(ident: string): boolean {
 
 /** Mã có định danh tín hiệu an toàn (sau khi bỏ chú thích)? */
 export function hasSafetySignalInCode(code: string | undefined | null): boolean {
-  const s = boChuThich(String(code ?? ""));
+  // Fix round 2 — định danh chèn ký tự vô hình / chữ giả Latin ("E\u200BSTOP", "\u0415STOP") vẫn là ESTOP.
+  const s = boChuThich(goVoHinh(String(code ?? "")));
   if (!s.trim()) return false;
   for (const m of s.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {
     if (laTinHieuAnToan(m[0])) return true;
