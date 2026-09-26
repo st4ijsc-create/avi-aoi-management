@@ -153,15 +153,18 @@ export const robotRouter = router({
       const [r] = await db.select().from(robots).where(eq(robots.id, input.id)).limit(1);
       if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
       const { createRobotDriver } = await import("../services/robot");
+      const { probeRobotConnection } = await import("../services/robot/probeRobotConnection");
       const driver = createRobotDriver(r.vendor);
+      // doc 81 Đợt 1B Task 2 (R8) — connect + getState + disconnect trong MỘT hạn tổng; robot im
+      // lặng / disconnect treo không giữ được request, kết nối muộn vẫn bị hạ.
       try {
-        await driver.connect({ endpoint: r.endpoint, options: r.connectionOptions ?? undefined });
-        const state = await driver.getState();
+        const state = await probeRobotConnection(driver, {
+          endpoint: r.endpoint,
+          options: r.connectionOptions ?? undefined,
+        });
         return { ok: true, state };
       } catch (err) {
         return { ok: false, error: (err as Error)?.message ?? String(err) };
-      } finally {
-        try { await driver.disconnect(); } catch { /* ignore */ }
       }
     }),
 

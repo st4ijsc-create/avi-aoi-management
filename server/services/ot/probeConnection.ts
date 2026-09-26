@@ -33,30 +33,69 @@ export async function probeOtConnection(
   cfg: OtConnectionConfig & { timeoutMs: number },
   overallMs: number = cfg.timeoutMs + PROBE_MARGIN_MS,
 ): Promise<ProbeResult> {
+  // doc 81 Đợt 1B Task 2 — cùng hợp đồng, nay đi qua dạng tổng quát probeWithDeadline.
+  const { latencyMs } = await probeWithDeadline(
+    {
+      label: driver.protocol,
+      connect: () => driver.connect(cfg),
+      disconnect: () => driver.disconnect(),
+    },
+    overallMs,
+  );
+  return { latencyMs };
+}
+
+/**
+ * doc 81 Đợt 1B Task 2 (R8) — dạng TỔNG QUÁT của phép dò có hạn, dùng chung cho mọi loại
+ * driver (OT, robot, mặt tiền thiết bị). Cùng hợp đồng với probeOtConnection:
+ *   - MỘT hạn tổng `overallMs` bao connect + afterConnect (vd health/getState) + disconnect;
+ *   - lỗi/hết hạn ⇒ reject với lỗi gốc (hoặc `${label} connect timeout after …ms`);
+ *   - LUÔN dọn: disconnect khi công việc settle (kể cả settle MUỘN sau hạn), và gọi ngay
+ *     lúc hết hạn nếu công việc còn treo.
+ */
+export interface ProbeSteps<T> {
+  /** Nhãn cho thông báo hết hạn (vd tên protocol/vendor). */
+  label: string;
+  connect: () => Promise<unknown>;
+  /** Chạy sau khi connect thành công, trong CÙNG hạn tổng (vd health(), getState()). */
+  afterConnect?: () => Promise<T>;
+  disconnect: () => Promise<unknown>;
+}
+
+export interface ProbeOutcome<T> {
+  /** Thời gian tới khi connect (+ afterConnect) xong (ms). */
+  latencyMs: number;
+  /** Kết quả afterConnect (undefined nếu không có). */
+  value: T | undefined;
+}
+
+export async function probeWithDeadline<T>(steps: ProbeSteps<T>, overallMs: number): Promise<ProbeOutcome<T>> {
   const t0 = Date.now();
   const deadlineAt = t0 + overallMs;
   const safeDisconnect = () =>
     Promise.resolve()
-      .then(() => driver.disconnect())
+      .then(() => steps.disconnect())
       .catch(() => undefined);
 
-  const connectP = Promise.resolve().then(() => driver.connect(cfg));
-  // Dọn khi connect settle — kể cả settle MUỘN sau hạn tổng (không await ngoài hạn).
-  const settledCleanup = connectP.then(safeDisconnect, safeDisconnect);
+  const workP: Promise<T | undefined> = Promise.resolve()
+    .then(() => steps.connect())
+    .then(() => (steps.afterConnect ? steps.afterConnect() : undefined));
+  // Dọn khi công việc settle — kể cả settle MUỘN sau hạn tổng (không await ngoài hạn).
+  const settledCleanup = workP.then(safeDisconnect, safeDisconnect);
 
-  let connectPending = true;
-  connectP.then(
-    () => (connectPending = false),
-    () => (connectPending = false),
+  let workPending = true;
+  workP.then(
+    () => (workPending = false),
+    () => (workPending = false),
   );
 
   try {
-    await withDeadline(connectP, overallMs, `${driver.protocol} connect`);
-    return { latencyMs: Date.now() - t0 };
+    const value = await withDeadline(workP, overallMs, `${steps.label} connect`);
+    return { latencyMs: Date.now() - t0, value };
   } finally {
-    // connect còn treo lúc hết hạn ⇒ hạ transport ngay (best-effort, không đợi).
-    if (connectPending) void safeDisconnect();
+    // công việc còn treo lúc hết hạn ⇒ hạ transport ngay (best-effort, không đợi).
+    if (workPending) void safeDisconnect();
     const remain = Math.max(0, deadlineAt - Date.now());
-    await withDeadline(settledCleanup, remain, `${driver.protocol} disconnect`).catch(() => undefined);
+    await withDeadline(settledCleanup, remain, `${steps.label} disconnect`).catch(() => undefined);
   }
 }
