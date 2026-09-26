@@ -49,6 +49,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShieldAlert, Plus, Pencil, Trash2, CheckCircle2, Play, Pause, FlaskConical, Info } from "lucide-react";
 import { toast } from "sonner";
+import { commandValueOrNull, serializeCommandValueForEdit } from "@/lib/interlockCommandValue";
 
 const SCOPES = ["line", "station", "machine"] as const;
 const SOURCE_TYPES = ["spc_violation", "ng_rate", "process_result", "telemetry_tag", "cpk"] as const;
@@ -95,19 +96,6 @@ function numOrNull(s: string): number | null {
   if (!v) return null;
   const n = Number(v);
   return Number.isNaN(n) ? null : n;
-}
-
-// ILK-05 (doc 80 Phụ lục D §7.4) — commandValue giờ được lưu thật (schema có
-// cột jsonb). Cho phép nhập JSON (true/42/"tag") hoặc rơi về chuỗi thô nếu
-// không parse được, thay vì luôn bỏ giá trị như trước.
-function commandValueOrNull(s: string): unknown {
-  const v = s.trim();
-  if (!v) return null;
-  try {
-    return JSON.parse(v);
-  } catch {
-    return v;
-  }
 }
 
 function actionVariant(action: string): "default" | "secondary" | "destructive" | "outline" {
@@ -218,7 +206,10 @@ export default function InterlockRuleManagement() {
       targetMachineId: r.targetMachineId != null ? String(r.targetMachineId) : "",
       targetAdapterId: r.targetAdapterId != null ? String(r.targetAdapterId) : "",
       commandTag: r.commandTag ?? "",
-      commandValue: r.commandValue != null ? String(r.commandValue) : "",
+      // Fix round 1 (doc 80 Task 2 review) — String(v) turned an object into
+      // the literal "[object Object]" (unparseable ⇒ corrupted on next save).
+      // See client/src/lib/interlockCommandValue.ts for the round-trip contract.
+      commandValue: serializeCommandValueForEdit(r.commandValue),
       cooldownSeconds: r.cooldownSeconds != null ? String(r.cooldownSeconds) : "300",
     });
     setRuleOpen(true);
