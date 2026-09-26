@@ -19,7 +19,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, gt, inArray } from "drizzle-orm";
 import {
   router,
   moduleProcedure,
@@ -41,7 +41,7 @@ const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 // replacing the old inline `role !== "admin"` check that BYPASSED 2FA).
 const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
 const adminProcedure = adminBase.use(moduleGate("MOD_OT_CONTROL"));
-import { interlockRules, interlockEvents } from "../../drizzle/schema";
+import { interlockRules, interlockEvents, controlAuditLog } from "../../drizzle/schema";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 
@@ -99,6 +99,39 @@ function assertTargetIfNotAlert(action: string, target: { targetMachineId?: numb
   }
 }
 
+/**
+ * Final review fix #5 — true khi `userId` là actor của một dòng control_audit_log `create`/`update`
+ * cho rule này KỂ TỪ dòng `approve` gần nhất (chưa từng duyệt ⇒ toàn bộ lịch sử). Chạy trong
+ * transaction của approve, SAU `SELECT … FOR UPDATE` trên rule — mọi update đồng thời đã commit
+ * (kèm dòng audit của nó) hoặc đang chờ khoá, nên không có lần sửa nào lọt khỏi cửa sổ này.
+ */
+async function isRecentAuthor(
+  tx: Parameters<Parameters<Awaited<ReturnType<typeof getDb>>["transaction"]>[0]>[0],
+  ruleId: number,
+  userId: number,
+): Promise<boolean> {
+  const scope = and(eq(controlAuditLog.entityType, "interlock_rule"), eq(controlAuditLog.entityId, String(ruleId)));
+  const [lastApproval] = await tx
+    .select({ id: controlAuditLog.id })
+    .from(controlAuditLog)
+    .where(and(scope, eq(controlAuditLog.action, "approve")))
+    .orderBy(desc(controlAuditLog.id))
+    .limit(1);
+  const [authored] = await tx
+    .select({ id: controlAuditLog.id })
+    .from(controlAuditLog)
+    .where(
+      and(
+        scope,
+        inArray(controlAuditLog.action, ["create", "update"]),
+        eq(controlAuditLog.actorId, userId),
+        lastApproval ? gt(controlAuditLog.id, lastApproval.id) : undefined,
+      ),
+    )
+    .limit(1);
+  return authored != null;
+}
+
 export const interlockRouter = router({
   list: protectedProcedure
     .use(requirePermission("interlock", "canView"))
@@ -153,7 +186,7 @@ export const interlockRouter = router({
       const { id, threshold, ...rest } = input;
       // ILK-10 — SELECT/UPDATE/audit-INSERT trong CÙNG một transaction.
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, id)).limit(1);
+        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
 
         // ILK-05 — merge patch lên existing rồi kiểm: một update KHÔNG được âm
@@ -200,7 +233,7 @@ export const interlockRouter = router({
       // ILK-10 — audit + hard-delete trong CÙNG transaction (before-audit vẫn
       // đứng trước DELETE, nay atomically: cả hai cùng đậu hoặc cùng rollback).
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
+        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "delete", actorId: ctx.user.id, before: existing, after: null, reason: input.reason });
         await tx.delete(interlockRules).where(eq(interlockRules.id, input.id));
@@ -217,7 +250,7 @@ export const interlockRouter = router({
       const db = await getDb();
       // ILK-10 — SELECT/UPDATE/audit trong CÙNG transaction.
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
+        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
         // ILK-02 (SoD) — người duyệt KHÔNG được là người tạo (createdBy) hay
         // người sửa cuối (updatedBy) của rule — MOC đòi một cặp mắt độc lập.
@@ -229,6 +262,21 @@ export const interlockRouter = router({
             "Tách biệt trách nhiệm (SoD): người tạo/sửa rule không được tự duyệt.",
           );
         }
+        // Final review fix #5 — `updatedBy` chỉ giữ người sửa CUỐI: A tạo, B sửa logic, A sửa mô tả
+        // ⇒ updatedBy=A và B tự duyệt thay đổi của chính mình lọt qua kiểm trên. Nguồn chân lý là sổ
+        // audit (không migration): mọi actor của dòng create/update cho rule này KỂ TỪ lần 'approve'
+        // gần nhất (mọi lần sửa sau duyệt đều đã reset duyệt — ILK-01) đều không được duyệt.
+        if (await isRecentAuthor(tx, input.id, ctx.user.id)) {
+          throw appError(
+            "FORBIDDEN",
+            "PERMISSION_DENIED",
+            { action: "selfApproveInterlockRule" },
+            "Tách biệt trách nhiệm (SoD): người tạo/sửa rule không được tự duyệt.",
+          );
+        }
+        // Final review fix #7 — ILK-05 cả ở approve: hàng do AI tool (propose_interlock_rule) / seed
+        // ghi thẳng bảng không đi qua create/update.
+        assertTargetIfNotAlert(existing.action, existing);
         const [row] = await tx
           .update(interlockRules)
           .set({ approvedBy: ctx.user.id, approvedAt: new Date(), updatedAt: new Date(), updatedBy: ctx.user.id })
@@ -247,12 +295,14 @@ export const interlockRouter = router({
       const db = await getDb();
       // ILK-10 — SELECT/UPDATE/audit trong CÙNG transaction.
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
+        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
         // SAFETY: cannot enable a rule that has not been approved.
         if (existing.approvedBy == null) {
           throw appError("FORBIDDEN", "OPERATION_FAILED", { operation: "activateInterlockRule" }, "Rule chưa được duyệt (approvedBy=null) — không thể bật.");
         }
+        // Final review fix #7 — ILK-05 cả ở enable (hàng seed có thể đã mang approvedBy sẵn).
+        assertTargetIfNotAlert(existing.action, existing);
         const [row] = await tx
           .update(interlockRules)
           .set({ enabled: true, updatedAt: new Date(), updatedBy: ctx.user.id })
@@ -272,7 +322,7 @@ export const interlockRouter = router({
       const db = await getDb();
       // ILK-10 — SELECT/UPDATE/audit trong CÙNG transaction.
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
+        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
         const [row] = await tx
           .update(interlockRules)
