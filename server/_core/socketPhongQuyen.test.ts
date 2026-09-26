@@ -27,6 +27,9 @@ const NGUOI_DUNG: Record<number, { id: number; role: string; name: string }> = {
   8: { id: 8, role: "user", name: "operator-khong-hang-quyen" },
   9: { id: 9, role: "user", name: "operator-hang-quyen-false" },
   10: { id: 10, role: "user", name: "engineer-co-quyen-db-cham" },
+  // Task 11 — non-admin được cấp permission bit machine_registration (chỉ có tác dụng khi
+  // MACHINE_APPROVE_RBAC_OPEN_ENABLED=true; mặc định cờ tắt nên user này KHÔNG khác gì user 8).
+  11: { id: 11, role: "user", name: "registrar-co-quyen-machine_registration" },
 };
 vi.mock("./sdk", () => ({
   sdk: {
@@ -42,6 +45,8 @@ const HANG_QUYEN = [
   { userId: 7, moduleName: "machine_status", canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false, expiresAt: null },
   { userId: 9, moduleName: "machine_status", canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false, expiresAt: null },
   { userId: 10, moduleName: "machine_status", canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false, expiresAt: null },
+  // Task 11 — hàng quyền machine_registration (chỉ đọc khi cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED=true).
+  { userId: 11, moduleName: "machine_registration", canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false, expiresAt: null },
 ];
 /** userId có câu hỏi quyền CHẬM (mô phỏng DB chậm) — để đo cuộc đua subscribe→unsubscribe. */
 const HOI_CHAM_MS: Record<number, number> = { 10: 200 };
@@ -116,7 +121,11 @@ let socketMod: SocketMod;
 let http: HttpServer;
 let url: string;
 const clients: ClientSocket[] = [];
-const ENV_GOC = { SOCKET_MACHINE_AUTH_MODE: process.env.SOCKET_MACHINE_AUTH_MODE, RBAC_SCOPED_ADMIN: process.env.RBAC_SCOPED_ADMIN };
+const ENV_GOC = {
+  SOCKET_MACHINE_AUTH_MODE: process.env.SOCKET_MACHINE_AUTH_MODE,
+  RBAC_SCOPED_ADMIN: process.env.RBAC_SCOPED_ADMIN,
+  MACHINE_APPROVE_RBAC_OPEN_ENABLED: process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED,
+};
 
 function ketNoi(opts: { may?: boolean; phien?: number }): Promise<ClientSocket> {
   const c = ioClient(url, {
@@ -156,6 +165,7 @@ const cho = (ms: number) => new Promise((r) => setTimeout(r, ms));
 beforeAll(async () => {
   delete process.env.SOCKET_MACHINE_AUTH_MODE; // luồng máy ở chế độ mặc định `off` (hợp đồng doc 56 giữ nguyên)
   delete process.env.RBAC_SCOPED_ADMIN;
+  delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED; // Task 11 — mặc định TẮT (admin:* mirror role admin)
   socketMod = await import("./socket");
   http = createServer();
   socketMod.initializeSocket(http);
@@ -309,34 +319,191 @@ describe("★★★ PLT-01 — subscribe chung / admin / user room", () => {
     await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(may.id!) && /subscribe/.test(s))).toBe(true));
   });
 
-  it("(6) socket máy gửi admin:join ⇒ KHÔNG vào phòng admin, không nhận pending registrations; user trình duyệt ⇒ vào (hành vi cũ)", async () => {
+  it("(6) admin:join — máy vẫn KHÔNG vào phòng admin (Task 7, không đổi); Task 11: operator KHÔNG có quyền quản trị đăng ký máy ⇒ TỪ CHỐI, không nhận pending; admin (positive control) ⇒ vào & nhận pending", async () => {
     const may = await ketNoi({ may: true });
-    const nd = await ketNoi({ phien: 8 });
+    const nd8 = await ketNoi({ phien: 8 }); // operator — không role admin, không hàng quyền machine_registration
+    const ad = await ketNoi({ phien: 1 }); // admin — positive control CÙNG test
     const mayPending = ghiNhan(may, "admin:pending_registrations");
-    const ndPending = ghiNhan(nd, "admin:pending_registrations");
+    const nd8Pending = ghiNhan(nd8, "admin:pending_registrations");
+    const adPending = ghiNhan(ad, "admin:pending_registrations");
     may.emit("admin:join");
-    nd.emit("admin:join");
-    await vi.waitFor(() => expect(ndPending.length).toBe(1));
+    nd8.emit("admin:join");
+    ad.emit("admin:join");
+    await vi.waitFor(() => expect(adPending.length).toBe(1));
     await cho(100);
-    expect(phongCua(nd)).toContain("admin");
+    expect(phongCua(ad)).toContain("admin");
     expect(phongCua(may)).not.toContain("admin");
+    expect(phongCua(nd8)).not.toContain("admin");
     expect(mayPending).toEqual([]);
+    expect(nd8Pending).toEqual([]);
     await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(may.id!) && s.includes("admin"))).toBe(true));
+    await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(nd8.id!) && s.includes("admin"))).toBe(true));
   });
 
-  it("(7) socket máy tự duyệt đăng ký của chính nó (admin:approve_registration) ⇒ BỊ TỪ CHỐI: không ghi DB, không nhận apiKey", async () => {
+  it("(6b) admin:get_online_machines — operator KHÔNG có quyền ⇒ TỪ CHỐI, không nhận danh sách; admin (positive control) ⇒ nhận", async () => {
+    const nd8 = await ketNoi({ phien: 8 });
+    const ad = await ketNoi({ phien: 1 });
+    const nd8List = ghiNhan(nd8, "machine:online_list");
+    const adList = ghiNhan(ad, "machine:online_list");
+    nd8.emit("admin:get_online_machines");
+    ad.emit("admin:get_online_machines");
+    await vi.waitFor(() => expect(adList.length).toBe(1));
+    await cho(100);
+    expect(nd8List).toEqual([]);
+    await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(nd8.id!) && s.includes("admin:get_online_machines"))).toBe(true));
+  });
+
+  it("(7) admin:approve_registration — máy tự duyệt chính nó BỊ TỪ CHỐI (Task 7); Task 11: operator (không quyền) CÙNG lượt đăng ký cũng BỊ TỪ CHỐI (không ghi DB, không apiKey, không cả nhánh 'not found'); admin (positive control) DUYỆT ĐƯỢC", async () => {
     const may = await ketNoi({ may: true });
     const ackDangKy = new Promise((r) => may.once("machine:register_ack", r));
     may.emit("machine:register", { code: "ROGUE", name: "rogue", type: "AOI" });
     await ackDangKy;
-    const duyet = ghiNhan(may, "machine:registration_approved");
-    const ok = ghiNhan(may, "admin:approve_success");
+
+    // (7a) máy vô danh tự duyệt chính nó — vẫn từ chối như Task 7 (không phải socket người dùng).
+    const duyetMay = ghiNhan(may, "machine:registration_approved");
+    const okMay = ghiNhan(may, "admin:approve_success");
     may.emit("admin:approve_registration", { socketId: may.id, machineId: MAY.id });
     await cho(150);
     expect(updateMachine).not.toHaveBeenCalled();
-    expect(duyet).toEqual([]);
-    expect(ok).toEqual([]);
+    expect(duyetMay).toEqual([]);
+    expect(okMay).toEqual([]);
     await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(may.id!) && s.includes("admin:approve_registration"))).toBe(true));
+
+    // (7b) Task 11 — operator trình duyệt đã đăng nhập, KHÔNG role admin, KHÔNG hàng quyền
+    // machine_registration ⇒ từ chối ở CỔNG QUYỀN, trước khi chạm pendingRegistrations: không
+    // updateMachine, không admin:approve_success, và KHÔNG CẢ admin:approve_error ("not found") —
+    // chứng minh cổng chặn TRƯỚC mọi tác dụng phụ, đăng ký ROGUE vẫn còn nguyên cho (7c).
+    const nd8 = await ketNoi({ phien: 8 });
+    const okNd8 = ghiNhan(nd8, "admin:approve_success");
+    const loiNd8 = ghiNhan(nd8, "admin:approve_error");
+    nd8.emit("admin:approve_registration", { socketId: may.id, machineId: MAY.id });
+    await cho(150);
+    expect(updateMachine).not.toHaveBeenCalled();
+    expect(okNd8).toEqual([]);
+    expect(loiNd8).toEqual([]);
+    await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(nd8.id!) && s.includes("admin:approve_registration"))).toBe(true));
+
+    // (7c) positive control CÙNG test — admin duyệt được ĐÚNG lượt đăng ký còn nguyên từ (7b).
+    const ad = await ketNoi({ phien: 1 });
+    const okAd = new Promise<any>((r) => ad.once("admin:approve_success", r));
+    ad.emit("admin:approve_registration", { socketId: may.id, machineId: MAY.id });
+    const ket = await okAd;
+    expect(updateMachine).toHaveBeenCalledTimes(1);
+    expect(updateMachine).toHaveBeenCalledWith(MAY.id, expect.objectContaining({ registrationStatus: "approved" }));
+    expect(ket.apiKey).toBeTruthy();
+  });
+
+  it("(7d) admin:reject_registration — operator (không role admin) BỊ TỪ CHỐI, đăng ký KHÔNG bị đổi trạng thái; admin (positive control) TỪ CHỐI ĐƯỢC (mirror machine.reject = adminProcedure THẲNG, không qua cờ)", async () => {
+    const may = await ketNoi({ may: true });
+    const ackDangKy = new Promise((r) => may.once("machine:register_ack", r));
+    may.emit("machine:register", { code: "ROGUE-REJECT", name: "rogue2", type: "AOI" });
+    await ackDangKy;
+    const biTuChoiO = new Promise((r) => may.once("machine:registration_rejected", r));
+
+    const nd8 = await ketNoi({ phien: 8 });
+    nd8.emit("admin:reject_registration", { socketId: may.id, reason: "operator thu" });
+    await cho(150);
+    await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(nd8.id!) && s.includes("admin:reject_registration"))).toBe(true));
+
+    const ad = await ketNoi({ phien: 1 });
+    ad.emit("admin:reject_registration", { socketId: may.id, reason: "admin tu choi" });
+    const goi = (await biTuChoiO) as { reason: string };
+    expect(goi.reason).toBe("admin tu choi"); // KHÔNG phải lượt của operator ⇒ chứng minh lượt operator không có tác dụng
+  });
+
+  it("(7f) admin:reject_registration KHÔNG đọc cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED — non-admin có hàng quyền machine_registration/canEdit=true (đủ để approve khi cờ bật, xem 7e) VẪN bị từ chối reject, vì tRPC machine.reject là adminProcedure THẲNG", async () => {
+    process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED = "true";
+    try {
+      const may = await ketNoi({ may: true });
+      const ackDangKy = new Promise((r) => may.once("machine:register_ack", r));
+      may.emit("machine:register", { code: "ROGUE-REJECT-FLAG", name: "rogue4", type: "AOI" });
+      await ackDangKy;
+
+      const nd11 = await ketNoi({ phien: 11 }); // canEdit=true trên machine_registration, KHÔNG phải admin
+      nd11.emit("admin:reject_registration", { socketId: may.id, reason: "nd11 thu" });
+      await cho(150);
+      await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(nd11.id!) && s.includes("admin:reject_registration"))).toBe(true));
+
+      // Đối chứng: admin vẫn reject được đúng đăng ký (còn nguyên vì nd11 không có tác dụng).
+      const biTuChoi = new Promise((r) => may.once("machine:registration_rejected", r));
+      const ad = await ketNoi({ phien: 1 });
+      ad.emit("admin:reject_registration", { socketId: may.id, reason: "admin thu that" });
+      const goi = (await biTuChoi) as { reason: string };
+      expect(goi.reason).toBe("admin thu that");
+    } finally {
+      delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED;
+    }
+  });
+
+  it("(7e) cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED=true — admin:approve_registration đi qua checkPermission THẬT trên module machine_registration: non-admin CÓ hàng quyền canEdit ⇒ duyệt được; operator KHÔNG hàng quyền ⇒ vẫn từ chối dù cờ bật", async () => {
+    process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED = "true";
+    try {
+      const may = await ketNoi({ may: true });
+      const ackDangKy = new Promise((r) => may.once("machine:register_ack", r));
+      may.emit("machine:register", { code: "ROGUE-FLAG", name: "rogue3", type: "AOI" });
+      await ackDangKy;
+
+      // operator (user 8) vẫn không có hàng quyền machine_registration ⇒ từ chối dù cờ bật.
+      const nd8 = await ketNoi({ phien: 8 });
+      const okNd8 = ghiNhan(nd8, "admin:approve_success");
+      nd8.emit("admin:approve_registration", { socketId: may.id, machineId: MAY.id });
+      await cho(150);
+      expect(updateMachine).not.toHaveBeenCalled();
+      expect(okNd8).toEqual([]);
+      expect(cacLanHoiQuyen).toContainEqual([8, "machine_registration"]);
+
+      // user 11 — non-admin, CÓ hàng quyền machine_registration/canEdit=true ⇒ duyệt được.
+      const nd11 = await ketNoi({ phien: 11 });
+      const okNd11 = new Promise<any>((r) => nd11.once("admin:approve_success", r));
+      nd11.emit("admin:approve_registration", { socketId: may.id, machineId: MAY.id });
+      const ket = await okNd11;
+      expect(updateMachine).toHaveBeenCalledTimes(1);
+      expect(ket.apiKey).toBeTruthy();
+      expect(cacLanHoiQuyen).toContainEqual([11, "machine_registration"]);
+    } finally {
+      delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED;
+    }
+  });
+
+  it("(7g) cờ TẮT (mặc định) — user 11 dù CÓ hàng quyền machine_registration/canEdit=true (đủ để duyệt khi cờ BẬT, xem 7e) VẪN bị từ chối admin:join/admin:approve_registration, vì cờ tắt mirror ĐÚNG machineRegistrationGate: chỉ role admin, bỏ qua permission bit", async () => {
+    expect(process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED).toBeUndefined(); // đảm bảo đang ở mặc định
+    const nd11Join = await ketNoi({ phien: 11 });
+    const pendingNd11 = ghiNhan(nd11Join, "admin:pending_registrations");
+    nd11Join.emit("admin:join");
+    await cho(150);
+    expect(phongCua(nd11Join)).not.toContain("admin");
+    expect(pendingNd11).toEqual([]);
+    await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(nd11Join.id!) && s.includes("admin"))).toBe(true));
+
+    const may = await ketNoi({ may: true });
+    const ackDangKy = new Promise((r) => may.once("machine:register_ack", r));
+    may.emit("machine:register", { code: "ROGUE-FLAGOFF", name: "rogue5", type: "AOI" });
+    await ackDangKy;
+    const nd11Approve = await ketNoi({ phien: 11 });
+    const okNd11 = ghiNhan(nd11Approve, "admin:approve_success");
+    nd11Approve.emit("admin:approve_registration", { socketId: may.id, machineId: MAY.id });
+    await cho(150);
+    expect(updateMachine).not.toHaveBeenCalled();
+    expect(okNd11).toEqual([]);
+  });
+
+  it("(7h) log từ chối admin:approve_registration ép kiểu/escape payload — socketId/machineId cố tình chứa ký tự xuống dòng + văn bản GIẢ DẠNG log khác KHÔNG tạo được dòng log riêng (chống giả dòng log)", async () => {
+    const nd8 = await ketNoi({ phien: 8 });
+    const socketIdAcY = 'X\n[Socket.io] FAKE admin:approve_success machineId=999 apiKey=STOLEN-KEY';
+    nd8.emit("admin:approve_registration", { socketId: socketIdAcY, machineId: "khong-phai-so" as any });
+    await cho(150);
+    const dong = await vi.waitFor(() => {
+      const d = tuChoiLog().find((s: string) => s.includes(nd8.id!) && s.includes("admin:approve_registration"));
+      expect(d).toBeDefined();
+      return d!;
+    });
+    // Ép kiểu đúng: Number("khong-phai-so") ⇒ NaN (không phải chuỗi lọt nguyên văn vào log).
+    expect(dong).toContain("machineId=NaN");
+    // Escape đúng: JSON.stringify biến ký tự xuống dòng thật thành hai ký tự "\n" trong chuỗi —
+    // toàn bộ dòng log vẫn nằm trên MỘT dòng vật lý, "dòng log giả" không tách ra được.
+    expect(dong).toContain(JSON.stringify(socketIdAcY));
+    expect(dong.split("\n")).toHaveLength(1);
+    expect(updateMachine).not.toHaveBeenCalled();
   });
 
   it("(8) auth:user — socket máy không vào được user:<id>; user trình duyệt chỉ vào phòng CỦA MÌNH", async () => {
@@ -355,7 +522,10 @@ describe("★★★ PLT-01 — subscribe chung / admin / user room", () => {
 
 describe("★★★ PLT-01 — luồng máy hợp lệ KHÔNG đổi (SOCKET_MACHINE_AUTH_MODE=off mặc định)", () => {
   it("(9) confirm_mapping ⇒ máy vào machine:<id> và NHẬN inspection:alert của mình; heartbeat ⇒ user trong global nhận machine:status_update; admin nhận machine:connected", async () => {
-    const nd = await ketNoi({ phien: 7 });
+    // Task 11 — admin:join giờ đòi quyền quản trị đăng ký máy (mirror machine.listPending); dùng
+    // socket admin (phien 1) làm người quan sát phòng admin/global — không đổi ý nghĩa của ca này
+    // (luồng máy confirm_mapping/heartbeat), chỉ đổi observer cho khớp cổng mới.
+    const nd = await ketNoi({ phien: 1 });
     nd.emit("subscribe", {});
     nd.emit("admin:join");
     await vi.waitFor(() => expect(phongCua(nd)).toEqual(["admin", "global"]));

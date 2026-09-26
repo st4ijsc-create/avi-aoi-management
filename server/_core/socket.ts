@@ -30,7 +30,13 @@ import {
 // Test import ĐÚNG các hàm này (không chép lại biểu thức sang tệp test — G20).
 import { coDanhTinhNguoiDung, nguoiXemDuocNhan } from "./twinPhamViQuyen";
 // ── doc 80 PLT-01 (Task 7 Đợt 0) — phân quyền vào phòng socket, MỘT nơi duy nhất.
-import { laSocketNguoiDung, duocVaoPhongEngineering, moTaSocket } from "./socketPhongQuyen";
+import {
+  laSocketNguoiDung,
+  duocVaoPhongEngineering,
+  duocQuanLyDangKyMay,
+  duocTuChoiDangKyMay,
+  moTaSocket,
+} from "./socketPhongQuyen";
 
 let io: Server | null = null;
 
@@ -618,10 +624,12 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Admin joins admin room for machine management
     socket.on("admin:join", async () => {
-      // ★ doc 80 PLT-01 — phòng `admin` nhận yêu cầu đăng ký máy + trạng thái kết nối: chỉ socket
-      // người dùng. (Phân quyền theo vai cho user trình duyệt KHÔNG đổi ở task này.)
-      if (!laSocketNguoiDung(socket.data)) {
-        console.warn(`[Socket.io] ${socket.id} TU CHOI join admin - ${moTaSocket(socket.data)} khong phai socket nguoi dung`);
+      // ★ doc 80 PLT-01 (Task 11 — phát hiện khi làm Task 7) — phòng `admin` nhận yêu cầu đăng ký
+      // máy + trạng thái kết nối: mirror ĐÚNG quyền tRPC `machine.listPending`
+      // (`machineRegistrationGate("canView")`, hierarchyRouters.ts) — trước bản vá MỌI socket
+      // trình duyệt đã đăng nhập (kể cả operator) vào được, không chỉ admin/người có quyền.
+      if (!(await duocQuanLyDangKyMay(socket.data, "canView"))) {
+        console.warn(`[Socket.io] ${socket.id} TU CHOI join admin - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may`);
         return;
       }
       socket.join("admin");
@@ -663,8 +671,9 @@ export function initializeSocket(server: HttpServer): Server {
     // Dashboard requests online machines list — UNION across all instances via
     // the shared presence store (doc 51 §5.3 P2). Falls back to the local Map.
     socket.on("admin:get_online_machines", async () => {
-      if (!laSocketNguoiDung(socket.data)) {
-        console.warn(`[Socket.io] ${socket.id} TU CHOI admin:get_online_machines - ${moTaSocket(socket.data)} khong phai socket nguoi dung`);
+      // ★ doc 80 PLT-01 (Task 11) — cùng quyền `admin:join` (mirror `machine.listPending`).
+      if (!(await duocQuanLyDangKyMay(socket.data, "canView"))) {
+        console.warn(`[Socket.io] ${socket.id} TU CHOI admin:get_online_machines - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may`);
         return;
       }
       let onlineMachineCodes: string[];
@@ -680,10 +689,21 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Admin approves registration
     socket.on("admin:approve_registration", async (data: { socketId: string; machineId: number; apiKey?: string }) => {
-      // ★★★ doc 80 PLT-01 — trước bản vá, socket `machine` vô danh gửi `machine:register` rồi TỰ
-      // duyệt chính nó với machineId bất kỳ ⇒ nhận apiKey của máy đó (hoặc ghi đè apiKey trong DB).
-      if (!laSocketNguoiDung(socket.data)) {
-        console.warn(`[Socket.io] ${socket.id} TU CHOI admin:approve_registration - ${moTaSocket(socket.data)} khong phai socket nguoi dung`);
+      // ★★★ doc 80 PLT-01 — trước bản vá Task 7, socket `machine` vô danh gửi `machine:register`
+      // rồi TỰ duyệt chính nó với machineId bất kỳ ⇒ nhận apiKey của máy đó (hoặc ghi đè apiKey
+      // trong DB). Task 7 chặn máy; Task 11 (phát hiện khi làm Task 7) siết tiếp: MỌI socket
+      // trình duyệt đã đăng nhập (kể cả operator) vẫn gọi được và NHẬN apiKey — mirror ĐÚNG
+      // quyền tRPC `machine.approve` (`machineRegistrationGate("canEdit")`, hierarchyRouters.ts).
+      if (!(await duocQuanLyDangKyMay(socket.data, "canEdit"))) {
+        // Giá trị trong payload (`data`) do CHÍNH socket bị từ chối gửi lên — ép kiểu/escape
+        // trước khi ghép vào dòng log để một chuỗi machineId/socketId cố tình chứa "\n..." không
+        // giả được thành một dòng log khác (log forging). Number() trung hoà machineId (NaN nếu
+        // không phải số, không phải chuỗi); JSON.stringify đóng khung + escape ký tự điều khiển
+        // trong socketId.
+        console.warn(
+          `[Socket.io] ${socket.id} TU CHOI admin:approve_registration - ${moTaSocket(socket.data)} khong du quyen duyet dang ky may; ` +
+          `machineId=${Number((data as any)?.machineId)} socketId=${JSON.stringify((data as any)?.socketId ?? null)}`,
+        );
         return;
       }
       const registration = pendingRegistrations.get(data.socketId);
@@ -775,8 +795,15 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Admin rejects registration
     socket.on("admin:reject_registration", (data: { socketId: string; reason: string }) => {
-      if (!laSocketNguoiDung(socket.data)) {
-        console.warn(`[Socket.io] ${socket.id} TU CHOI admin:reject_registration - ${moTaSocket(socket.data)} khong phai socket nguoi dung`);
+      // ★ doc 80 PLT-01 (Task 11) — mirror ĐÚNG quyền tRPC `machine.reject`: `adminProcedure`
+      // THẲNG (`_shared.ts`), không qua cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED ⇒ luôn luôn role
+      // admin (xem `duocTuChoiDangKyMay`).
+      if (!duocTuChoiDangKyMay(socket.data)) {
+        // Ép kiểu/escape trước khi ghi log — cùng lý do như admin:approve_registration.
+        console.warn(
+          `[Socket.io] ${socket.id} TU CHOI admin:reject_registration - ${moTaSocket(socket.data)} khong phai admin; ` +
+          `socketId=${JSON.stringify((data as any)?.socketId ?? null)} reason=${JSON.stringify((data as any)?.reason ?? null)}`,
+        );
         return;
       }
       const registration = pendingRegistrations.get(data.socketId);

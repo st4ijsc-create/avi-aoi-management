@@ -58,6 +58,59 @@ export async function duocVaoPhongEngineering(data: DuLieuSocket | null | undefi
 }
 
 /**
+ * ★★★ Task 11 (doc 80 PLT-01 tiếp — phát hiện khi làm Task 7) — cờ mở RBAC duyệt máy.
+ *
+ * Mirror Y HỆT `machineApproveRbacOpenEnabled()` (`hierarchyRouters.ts`, doc 56 Đ2a Việc 7):
+ * tắt (mặc định) ⇒ `machine.listPending`/`machine.approve` chỉ role admin (byte-identical với
+ * `adminProcedure`); bật ⇒ uỷ quyền cho permission bit `machine_registration`. Khai lại (không
+ * import từ `hierarchyRouters.ts`) vì lý do như `duocVaoPhongEngineering`: giữ `socket.ts` không
+ * kéo cây router/trpc vào lúc khởi động. Đổi tên biến môi trường thì sửa CẢ HAI nơi.
+ */
+function coMoRbacDuyetMay(): boolean {
+  return process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED === "true";
+}
+
+/**
+ * Được vào/thao tác quản trị đăng ký máy không — `admin:join`, `admin:get_online_machines`
+ * (action `"canView"`), `admin:approve_registration` (action `"canEdit"`)?
+ *
+ * Mirror ĐÚNG quyền mà tRPC tương đương đòi (`machine.listPending`/`machine.approve` qua
+ * `machineRegistrationGate(action)`): cờ tắt ⇒ y hệt role admin; cờ bật ⇒ `checkPermission`
+ * THẬT trên module `machine_registration`. Lỗi (DB, import…) ⇒ false — fail-closed, như
+ * `duocVaoPhongEngineering`.
+ */
+export async function duocQuanLyDangKyMay(
+  data: DuLieuSocket | null | undefined,
+  action: "canView" | "canEdit",
+): Promise<boolean> {
+  if (!laSocketNguoiDung(data)) return false;
+  const user = data!.user!;
+  const role = String(user.role ?? "");
+  if (!coMoRbacDuyetMay()) return role === "admin";
+  try {
+    const { checkPermission } = await import("./accessControl");
+    return await checkPermission(user.id as number, role, "machine_registration", action);
+  } catch (err) {
+    console.error("[Socket.io] loi kiem quyen quan tri dang ky may:", (err as Error)?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * Được từ chối đăng ký máy không — `admin:reject_registration`?
+ *
+ * tRPC `machine.reject` dùng `adminProcedure` THẲNG (`_shared.ts`), KHÔNG qua
+ * `machineRegistrationGate` ⇒ không đọc cờ, không có nhánh permission bit, luôn luôn chỉ role
+ * admin. Mirror ĐÚNG: không gọi `checkPermission` (một non-admin được cấp permission bit
+ * `machine_registration/canEdit` qua nhánh cờ bật của `approve` VẪN không được `reject` ở tRPC —
+ * đưa hàm này qua `checkPermission` sẽ mở rộng quyền reject sai với hợp đồng tRPC).
+ */
+export function duocTuChoiDangKyMay(data: DuLieuSocket | null | undefined): boolean {
+  if (!laSocketNguoiDung(data)) return false;
+  return String(data!.user!.role ?? "") === "admin";
+}
+
+/**
  * Phòng thông báo `user:{userId}` — chỉ socket người dùng, và chỉ phòng CỦA CHÍNH người đó.
  */
 export function duocVaoPhongNguoiDung(data: DuLieuSocket | null | undefined, userId: unknown): boolean {
