@@ -29,6 +29,8 @@ import {
 // ── ĐỢT 6 VÁ CHẶN-1 — phép quyết định phân quyền twin, MỘT nơi duy nhất.
 // Test import ĐÚNG các hàm này (không chép lại biểu thức sang tệp test — G20).
 import { coDanhTinhNguoiDung, nguoiXemDuocNhan } from "./twinPhamViQuyen";
+// ── doc 80 PLT-01 (Task 7 Đợt 0) — phân quyền vào phòng socket, MỘT nơi duy nhất.
+import { laSocketNguoiDung, duocVaoPhongEngineering, moTaSocket } from "./socketPhongQuyen";
 
 let io: Server | null = null;
 
@@ -227,6 +229,17 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Join room for specific factory/workshop/machine updates
     socket.on("subscribe", (data: { factoryId?: number; workshopId?: number; machineId?: number; lineId?: number }) => {
+      // ★★★ doc 80 PLT-01 — mọi phòng dưới đây là phòng HƯỚNG NGƯỜI DÙNG (kể cả `global`).
+      // Socket `machine` qua handshake KHÔNG cần cookie (xác thực từng sự kiện bằng apiKey) ⇒ không
+      // có danh tính người dùng ⇒ KHÔNG được vào phòng nào qua handler này. Luồng máy hợp lệ vào
+      // `machine:${id}` qua confirm_mapping / sync_started (không đi qua đây). Browser: không đổi.
+      if (!laSocketNguoiDung(socket.data)) {
+        const khoa = data && typeof data === "object" ? Object.keys(data).join(",") : "";
+        console.warn(
+          `[Socket.io] ${socket.id} TU CHOI subscribe {${khoa}} - ${moTaSocket(socket.data)} khong phai socket nguoi dung`,
+        );
+        return;
+      }
       if (data.factoryId) {
         socket.join(`factory:${data.factoryId}`);
         console.log(`[Socket.io] ${socket.id} joined factory:${data.factoryId}`);
@@ -378,11 +391,35 @@ export function initializeSocket(server: HttpServer): Server {
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins
     // `engineering:{machineId}` to receive high-rate symbol-watch samples (separate from
     // the DB-persisted telemetry stream). Gated by DPC_STREAMING_ENABLED on the producer.
+    //
+    // ★★★ doc 80 PLT-01 — phòng này mang GIÁ TRỊ PLC LIVE. Chỉ socket người dùng có quyền
+    // `machine_monitoring/canView` (cùng quyền `programming.startWatch` đòi) mới được vào; socket
+    // `machine` vô danh và user không quyền ⇒ từ chối + log. Kiểm quyền là bất đồng bộ (hỏi DB):
+    // `luotEngineering` là vé theo machineId — một `unsubscribe` (hoặc `subscribe` mới) đến TRƯỚC
+    // khi kiểm xong làm vé cũ hết hạn, để lượt kiểm chậm không join lại phòng người dùng đã rời.
+    const luotEngineering = new Map<string, number>();
     socket.on("engineering:subscribe", (data: { machineId: number }) => {
-      if (data?.machineId) socket.join(`engineering:${data.machineId}`);
+      if (!data?.machineId) return;
+      const phong = `engineering:${data.machineId}`;
+      const ve = (luotEngineering.get(phong) ?? 0) + 1;
+      luotEngineering.set(phong, ve);
+      void (async () => {
+        const duoc = await duocVaoPhongEngineering(socket.data);
+        if (!duoc) {
+          console.warn(
+            `[Socket.io] ${socket.id} TU CHOI join ${phong} - ${moTaSocket(socket.data)} khong co quyen machine_monitoring/canView`,
+          );
+          return;
+        }
+        if (luotEngineering.get(phong) !== ve || socket.disconnected) return;
+        socket.join(phong);
+      })();
     });
     socket.on("engineering:unsubscribe", (data: { machineId: number }) => {
-      if (data?.machineId) socket.leave(`engineering:${data.machineId}`);
+      if (!data?.machineId) return;
+      const phong = `engineering:${data.machineId}`;
+      luotEngineering.set(phong, (luotEngineering.get(phong) ?? 0) + 1);
+      socket.leave(phong);
     });
 
     socket.on("disconnect", () => {
@@ -581,6 +618,12 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Admin joins admin room for machine management
     socket.on("admin:join", async () => {
+      // ★ doc 80 PLT-01 — phòng `admin` nhận yêu cầu đăng ký máy + trạng thái kết nối: chỉ socket
+      // người dùng. (Phân quyền theo vai cho user trình duyệt KHÔNG đổi ở task này.)
+      if (!laSocketNguoiDung(socket.data)) {
+        console.warn(`[Socket.io] ${socket.id} TU CHOI join admin - ${moTaSocket(socket.data)} khong phai socket nguoi dung`);
+        return;
+      }
       socket.join("admin");
       console.log(`[Socket.io] Admin ${socket.id} joined admin room`);
 
@@ -620,6 +663,10 @@ export function initializeSocket(server: HttpServer): Server {
     // Dashboard requests online machines list — UNION across all instances via
     // the shared presence store (doc 51 §5.3 P2). Falls back to the local Map.
     socket.on("admin:get_online_machines", async () => {
+      if (!laSocketNguoiDung(socket.data)) {
+        console.warn(`[Socket.io] ${socket.id} TU CHOI admin:get_online_machines - ${moTaSocket(socket.data)} khong phai socket nguoi dung`);
+        return;
+      }
       let onlineMachineCodes: string[];
       try {
         onlineMachineCodes = await presence.listOnlineCodes();
@@ -633,6 +680,12 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Admin approves registration
     socket.on("admin:approve_registration", async (data: { socketId: string; machineId: number; apiKey?: string }) => {
+      // ★★★ doc 80 PLT-01 — trước bản vá, socket `machine` vô danh gửi `machine:register` rồi TỰ
+      // duyệt chính nó với machineId bất kỳ ⇒ nhận apiKey của máy đó (hoặc ghi đè apiKey trong DB).
+      if (!laSocketNguoiDung(socket.data)) {
+        console.warn(`[Socket.io] ${socket.id} TU CHOI admin:approve_registration - ${moTaSocket(socket.data)} khong phai socket nguoi dung`);
+        return;
+      }
       const registration = pendingRegistrations.get(data.socketId);
       if (!registration) {
         socket.emit("admin:approve_error", { message: "Registration not found or expired" });
@@ -722,6 +775,10 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Admin rejects registration
     socket.on("admin:reject_registration", (data: { socketId: string; reason: string }) => {
+      if (!laSocketNguoiDung(socket.data)) {
+        console.warn(`[Socket.io] ${socket.id} TU CHOI admin:reject_registration - ${moTaSocket(socket.data)} khong phai socket nguoi dung`);
+        return;
+      }
       const registration = pendingRegistrations.get(data.socketId);
       if (registration) {
         registration.status = "rejected";

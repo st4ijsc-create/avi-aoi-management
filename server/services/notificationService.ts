@@ -14,6 +14,8 @@ import {
 import { resolveLogicalModel } from './ai/modelResolver';
 // ★ G5-E — bộ cắt chuỗi suy luận (module LÁ, import TĨNH ⇒ hàng rào vô điều kiện theo cấu tạo).
 import { stripThinking } from './ai/thinkingStrip';
+// ★ doc 80 PLT-01 — phân quyền vào phòng socket (một nơi duy nhất, dùng chung với socket.ts).
+import { duocVaoPhongNguoiDung, moTaSocket } from '../_core/socketPhongQuyen';
 
 // Store Socket.io server instance
 let io: SocketIOServer | null = null;
@@ -28,6 +30,12 @@ export function initNotificationService(socketServer: SocketIOServer) {
     // Handle user authentication
     socket.on('auth:user', (userId: number) => {
       if (!userId) return;
+      // ★ doc 80 PLT-01 — trước bản vá MỌI socket (kể cả `machine` vô danh) tự khai userId bất kỳ
+      // là vào `user:{id}` và đọc thông báo của người khác. Chỉ socket người dùng, chỉ phòng của mình.
+      if (!duocVaoPhongNguoiDung(socket.data, userId)) {
+        console.warn(`[Notification] ${socket.id} TU CHOI join user:${userId} - ${moTaSocket(socket.data)}`);
+        return;
+      }
       
       // Add socket to user's set
       if (!userSockets.has(userId)) {
