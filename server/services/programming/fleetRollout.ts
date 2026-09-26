@@ -120,7 +120,7 @@ export interface FleetRolloutDeps {
     user: DpcUser,
     hitl: { actionId: string; requestedBy: number; confirmedBy?: number },
     idempotencyKey: string,
-  ) => Promise<DeploymentRow & { rolledBackFromId?: number }>;
+  ) => Promise<DeploymentRow & { rolledBackFromId?: number; targetRolledBack?: boolean }>;
 }
 
 /** Có phải một forward-write xuống HW (đã/ sẽ chạy trên máy) — để rollback. */
@@ -243,7 +243,7 @@ export async function deployToFleet(
       for (const r of results) {
         if (!r.forwardWrite || r.deploymentId == null) continue;
         try {
-          await rollbackFn(
+          const rb = await rollbackFn(
             r.deploymentId,
             user,
             {
@@ -253,7 +253,11 @@ export async function deployToFleet(
             },
             `${input.idempotencyKeyPrefix}-rollback-dev${r.deviceId}`,
           );
-          r.rolledBack = true;
+          // doc 80 WS-03 — rollbackDeployment KHÔNG còn ném khi lượt lùi failed/simulated; nó
+          // trả status thật + `targetRolledBack`. Chỉ báo "đã khôi phục" khi server thật sự
+          // đánh đích rolled_back — nếu không, lỗi/trạng thái thật lên kết quả máy này.
+          r.rolledBack = rb.targetRolledBack === true;
+          if (!r.rolledBack) r.rollbackError = rb.error ?? rb.status;
         } catch (e) {
           r.rolledBack = false;
           r.rollbackError = (e as Error).message;
