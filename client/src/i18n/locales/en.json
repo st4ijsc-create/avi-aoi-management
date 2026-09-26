@@ -661,6 +661,10 @@
     "rejectTitle": "Reject engineering change",
     "rejectPrompt": "State the reason for rejecting {{key}}. The reason is recorded in the decision log.",
     "rejectPlaceholder": "e.g. Missing impact analysis; risk needs re-assessment…",
+    "approveTitle": "Approve engineering change",
+    "approvePrompt": "Confirm approval of {{key}}. You may add a comment (optional) — it is recorded in the decision log.",
+    "approveComment": "Comment (optional):",
+    "approvePlaceholder": "e.g. Reviewed attached documents, meets requirements…",
     "emptyFiltered": "No changes match the filter.",
     "userFallback": "User #{{id}}",
     "field": {

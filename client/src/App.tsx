@@ -578,7 +578,10 @@ function Router() {
       <Route path="/robot-control"><RouteGuard requirePermission="machine_control"><AIPageWrapper><RobotControl /></AIPageWrapper></RouteGuard></Route>
       {/* ENG-F1 (doc 40): gated command console — actuation qua HITL dispatcher (mode/commissioning/interlock gate giữ nguyên). */}
       <Route path="/command-console"><RouteGuard requirePermission="machine_control"><AIPageWrapper><CommandConsole /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/fleet-orchestration"><RouteGuard requirePermission="machine_control"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 80 Task 8 (RBAC-01, XC-02) — nav khai machine_status (đọc); trang có
+          chế độ chỉ-xem đã thiết kế sẵn, nút ghi vẫn gate machine_control tại
+          trang/server. navHref tự tra ĐÚNG quyền của mục nav — không thể lệch. */}
+      <Route path="/fleet-orchestration"><RouteGuard navHref="/fleet-orchestration"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/control-plane"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
       <Route path="/safety-workforce"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
       <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status" requireModule="MOD_AI"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
@@ -589,8 +592,11 @@ function Router() {
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ir-editor"><RouteGuard requirePermission="machine_control"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/pou-studio"><RouteGuard requirePermission="machine_control"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 80 Task 8 (RBAC-01, XC-02) — nav khai machine_status (đọc); trang có
+          chế độ chỉ-xem đã thiết kế sẵn, nút ghi vẫn gate machine_control tại
+          trang/server. navHref tự tra ĐÚNG quyền của mục nav — không thể lệch. */}
+      <Route path="/ir-editor"><RouteGuard navHref="/ir-editor"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/pou-studio"><RouteGuard navHref="/pou-studio"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
       <Route path="/programming-copilot"><RouteGuard requirePermission="machine_status"><AIPageWrapper><ProgrammingCopilot /></AIPageWrapper></RouteGuard></Route>
       <Route path="/factory-floor-editor"><Redirect to="/twin-studio" /></Route>
       {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo được 0 lời gọi tRPC trong 792 dòng):

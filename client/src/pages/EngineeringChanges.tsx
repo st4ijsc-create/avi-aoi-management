@@ -171,6 +171,13 @@ export default function EngineeringChanges() {
   const [rejectTarget, setRejectTarget] = useState<Ecn | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
+  // ── Approve confirmation dialog state (doc 80 Task 8, ECN-05) ──────────
+  // Approve is a maker-checker DECISION exactly like reject — it must not fire
+  // on a bare button click. Comment is optional here (mandatory only for
+  // reject, per task-8-brief.md ECN-05).
+  const [approveTarget, setApproveTarget] = useState<Ecn | null>(null);
+  const [approveComment, setApproveComment] = useState("");
+
   // ── Detail dialog state ────────────────────────────────────────────────
   const [detail, setDetail] = useState<Ecn | null>(null);
 
@@ -207,7 +214,17 @@ export default function EngineeringChanges() {
       setRejectTarget(ecn);
       return;
     }
-    transitionM.mutate({ id: ecn.id, action: action as any });
+    // doc 80 Task 8 (ECN-05) — approve is a maker-checker decision: open a
+    // confirmation dialog (comment optional) instead of firing on one click.
+    if (action === "approve") {
+      setApproveComment("");
+      setApproveTarget(ecn);
+      return;
+    }
+    // doc 80 Task 8 (ECN-03) — every transition carries the status this row is
+    // CURRENTLY showing on screen; the server CAS-updates `WHERE status =
+    // expectedStatus` and returns CONFLICT if someone else moved it first.
+    transitionM.mutate({ id: ecn.id, action: action as any, expectedStatus: ecn.status as any });
   };
 
   const confirmReject = () => {
@@ -215,8 +232,22 @@ export default function EngineeringChanges() {
     if (!comment) { toast.error(t("ecn.rejectReasonRequired", "Bắt buộc nhập lý do từ chối")); return; }
     if (!rejectTarget) return;
     transitionM.mutate(
-      { id: rejectTarget.id, action: "reject", comment },
+      { id: rejectTarget.id, action: "reject", comment, expectedStatus: rejectTarget.status as any },
       { onSuccess: () => setRejectTarget(null) },
+    );
+  };
+
+  const confirmApprove = () => {
+    if (!approveTarget) return;
+    const comment = approveComment.trim();
+    transitionM.mutate(
+      {
+        id: approveTarget.id,
+        action: "approve",
+        expectedStatus: approveTarget.status as any,
+        ...(comment ? { comment } : {}),
+      },
+      { onSuccess: () => setApproveTarget(null) },
     );
   };
 
@@ -417,6 +448,36 @@ export default function EngineeringChanges() {
             <Button variant="outline" onClick={() => setRejectTarget(null)}>{t("common.cancel", "Hủy")}</Button>
             <Button variant="destructive" disabled={transitionM.isPending || !rejectReason.trim()} onClick={confirmReject}>
               {t("ecn.action.reject", "Từ chối")}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Approve confirmation dialog (doc 80 Task 8, ECN-05) ─────────── */}
+      <AlertDialog open={approveTarget != null} onOpenChange={(o) => { if (!o) setApproveTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("ecn.approveTitle", "Phê duyệt thay đổi kỹ thuật")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {approveTarget
+                ? t("ecn.approvePrompt", "Xác nhận phê duyệt {{key}}. Có thể thêm ý kiến (không bắt buộc) — ý kiến được ghi vào nhật ký quyết định.", { key: approveTarget.ecnKey })
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1">
+            <Label>{t("ecn.approveComment", "Ý kiến (tùy chọn):")}</Label>
+            <Textarea
+              rows={3}
+              autoFocus
+              value={approveComment}
+              onChange={(e) => setApproveComment(e.target.value)}
+              placeholder={t("ecn.approvePlaceholder", "VD: Đã kiểm tra tài liệu đính kèm, đạt yêu cầu…")}
+            />
+          </div>
+          <AlertDialogFooter>
+            <Button variant="outline" onClick={() => setApproveTarget(null)}>{t("common.cancel", "Hủy")}</Button>
+            <Button disabled={transitionM.isPending} onClick={confirmApprove}>
+              {t("ecn.action.approve", "Phê duyệt")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

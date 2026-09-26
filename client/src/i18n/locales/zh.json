@@ -661,6 +661,10 @@
     "rejectTitle": "拒绝工程变更",
     "rejectPrompt": "请说明拒绝 {{key}} 的原因。该原因将记录到决策日志中。",
     "rejectPlaceholder": "例如：缺少影响分析；风险需重新评估…",
+    "approveTitle": "批准工程变更",
+    "approvePrompt": "确认批准 {{key}}。可添加意见（非必填）——意见将记录到决策日志中。",
+    "approveComment": "意见（非必填）：",
+    "approvePlaceholder": "例如：已检查附件文档，符合要求…",
     "emptyFiltered": "没有符合筛选条件的变更。",
     "userFallback": "用户 #{{id}}",
     "field": {

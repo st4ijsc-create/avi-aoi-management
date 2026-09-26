@@ -661,6 +661,10 @@
     "rejectTitle": "Từ chối thay đổi kỹ thuật",
     "rejectPrompt": "Nêu rõ lý do từ chối {{key}}. Lý do được ghi vào nhật ký quyết định.",
     "rejectPlaceholder": "VD: Thiếu phân tích tác động; cần đánh giá lại rủi ro…",
+    "approveTitle": "Phê duyệt thay đổi kỹ thuật",
+    "approvePrompt": "Xác nhận phê duyệt {{key}}. Có thể thêm ý kiến (không bắt buộc) — ý kiến được ghi vào nhật ký quyết định.",
+    "approveComment": "Ý kiến (tùy chọn):",
+    "approvePlaceholder": "VD: Đã kiểm tra tài liệu đính kèm, đạt yêu cầu…",
     "emptyFiltered": "Không có thay đổi nào khớp bộ lọc.",
     "userFallback": "Người dùng #{{id}}",
     "field": {
