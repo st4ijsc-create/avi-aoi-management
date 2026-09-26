@@ -173,7 +173,7 @@ export function newBlock(type: BlockType): IrBlock {
   const id = nextId();
   switch (type) {
     case "move_linear":
-      return { id, type, target_pose: { x: 0, y: 0, z: 200, rx: 0, ry: 0, rz: 0 }, speed_mms: 100, acceleration: 200, blend_radius: 0 };
+      return { id, type, target_pose: { x: 0, y: 0, z: 200, rx: 0, ry: 0, rz: 0 }, speed_mms: 100, acceleration: 500, blend_radius: 0 }; // accel mm/s² (IR unit) ⇒ URScript a=0.5 m/s²
     case "move_joint":
       return { id, type, joints: [0, 0, 0, 0, 0, 0], speed_pct: 50 };
     case "grip":
@@ -336,7 +336,7 @@ export function moveBlock(blocks: IrBlock[], id: string, dir: -1 | 1): IrBlock[]
  * Reorder `sourceId` to sit immediately AFTER `targetId` when they share the same list
  * (top-level or a slot). No-op if they are not siblings (cross-list re-parenting is out
  * of scope — this keeps the round-trip lossless and avoids ambiguous slot moves). Pure /
- * immutable. Used by the graph canvas when a user reconnects a `next` edge.
+ * immutable. The graph canvas reaches it through applyNextEdge (which maps edge direction).
  */
 export function reorderRelativeToSibling(blocks: IrBlock[], sourceId: string, targetId: string): IrBlock[] {
   const reorderList = (list: IrBlock[]): IrBlock[] => {
@@ -361,6 +361,17 @@ export function reorderRelativeToSibling(blocks: IrBlock[], sourceId: string, ta
     });
   };
   return walk(blocks);
+}
+
+/**
+ * Doc 80 IR-05 — apply a graph `next` edge drawn edgeSource → edgeTarget between SIBLINGS:
+ * the edge means "edgeTarget runs right after edgeSource", so the TARGET is moved to sit
+ * immediately after the SOURCE ([A,B,C] + A→C ⇒ [A,C,B]). The canvas used to pass the edge
+ * straight into reorderRelativeToSibling(source, target), which moves the SOURCE after the
+ * target ⇒ [B,C,A] (reversed). No-op across different lists. Pure / immutable.
+ */
+export function applyNextEdge(blocks: IrBlock[], edgeSource: string, edgeTarget: string): IrBlock[] {
+  return reorderRelativeToSibling(blocks, edgeTarget, edgeSource);
 }
 
 /** Append a child block into a container's slot. */
