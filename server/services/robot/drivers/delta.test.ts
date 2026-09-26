@@ -267,12 +267,15 @@ describe("DeltaDriver — motion gate + fail-safe", () => {
   // doc 81 Đợt 1B Task 5 fix round 1 — hàng rào abort trong cửa sổ nối lại.
   it("job đang chờ nối lại khi abort() được gọi ⇒ kết nối mới chỉ nhận STOP, không SERVO/MOVL", async () => {
     process.env.ROBOT_CONTROL_ENABLED = "true";
-    nextSocket = makeController((cmd) => (cmd === "MOVL" ? null : defaultResponder(cmd, "1", [])));
+    // Fix round 4: cửa sổ nối lại được tạo bằng một POLL hết hạn (RDPOS im lặng) — một chuyển động hết
+    // hạn nay KHOÁ chuyển động và job kế tiếp bị từ chối trước khi tới hàng rào; ca này đo HÀNG RÀO.
+    nextSocket = makeController((cmd) => (cmd === "RDPOS" ? null : defaultResponder(cmd, "1", [])));
     const { DeltaDriver } = await import("./deltaRobotDriver");
     const d = new DeltaDriver();
     await d.connect({ endpoint: "tcp://192.168.0.40:5000", timeoutMs: 100 });
-    const first = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
-    expect(first.detail?.reasonCode).toBe("line_reply_timeout"); // kết nối cũ bị huỷ
+    const st = await d.getState(); // RDPOS hết hạn (best-effort) ⇒ kết nối cũ bị huỷ, không khoá
+    expect(st.pose).toBeUndefined();
+    expect(d.getMotionLock().locked).toBe(false);
     const fresh = makeController(defaultResponder);
     nextSocket = fresh; // lần nối lại nhận bộ điều khiển mới
     const job = d.runJob({ jobType: "move", params: { x: 2, y: 2, z: 2 } });
@@ -302,5 +305,115 @@ describe("DeltaDriver — motion gate + fail-safe", () => {
     const h = await fresh.health();
     expect(h.connected).toBe(false);
     expect(h.vendor).toBe("delta");
+  });
+});
+
+// doc 81 Đợt 1B Task 5 fix round 4 (R13 / N4) — tách "vận chuyển đã lên" khỏi "được phép chuyển động":
+// peer drop ⇒ poll chỉ đọc nối lại được, nhưng KHOÁ CHUYỂN ĐỘNG giữ tới khi một STOP được xác nhận
+// hoặc người vận hành gỡ (clearMotionLock). Bộ điều khiển giả = auto-responder ở đầu tệp.
+describe("DeltaDriver — rớt kết nối + KHOÁ CHUYỂN ĐỘNG (fix round 4, R13)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    nextSocket = null;
+    connectCalls = 0;
+    delete process.env.ROBOT_CONTROL_ENABLED;
+    process.env.ROBOT_MOCK_VENDORS_ENABLED = "true";
+  });
+  afterEach(() => { delete process.env.ROBOT_CONTROL_ENABLED; delete process.env.ROBOT_MOCK_VENDORS_ENABLED; });
+
+  it("peer đóng khi RẢNH ⇒ không 'connected', khoá (line_connection_closed); chuyển động bị từ chối motion_locked_after_link_loss, 0 byte, không kết nối mới", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { d, sock } = await connectedDriver();
+    const conns = connectCalls;
+    sock.destroy(); // robot đóng socket, không lệnh nào đang chờ
+    expect(d.isConnected()).toBe(false);
+    expect(d.getMotionLock()).toMatchObject({ locked: true, reasonCode: "line_connection_closed" });
+    const before = sock.written.length;
+    const r = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("motion_locked_after_link_loss");
+    expect(sock.written.length).toBe(before);
+    expect(connectCalls).toBe(conns);
+  });
+
+  it("poll chỉ đọc (getState) nối lại vận chuyển sau peer drop; khoá VẪN giữ ⇒ chuyển động bị từ chối trên kết nối mới (0 byte); STOP xác nhận ⇒ gỡ khoá ⇒ chuyển động chạy", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { d, sock } = await connectedDriver();
+    sock.destroy();
+    const fresh = makeController(defaultResponder);
+    nextSocket = fresh; // lần nối lại nhận bộ điều khiển mới
+    const s = await d.getState();
+    expect(s.mode).toBe("auto");
+    expect(fresh.written.map(cmdOf)).toEqual(["RDSTS", "RDPOS"]);
+    expect(d.isConnected()).toBe(true); // vận chuyển đã lên
+    expect(d.getMotionLock().locked).toBe(true); // nhưng chuyển động vẫn khoá
+    const r = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("motion_locked_after_link_loss");
+    expect(fresh.written.map(cmdOf)).toEqual(["RDSTS", "RDPOS"]); // không SERVO / MOVL
+    await expect(d.abort()).resolves.toBeUndefined();
+    expect(fresh.written.map(cmdOf)).toEqual(["RDSTS", "RDPOS", "STOP"]);
+    expect(d.getMotionLock()).toMatchObject({ locked: false, clearedBy: "stop_confirmed" });
+    const ok = await d.runJob({ jobType: "move", params: { x: 2, y: 2, z: 2 } });
+    expect(ok.ok).toBe(true);
+    expect(fresh.written.map(cmdOf)).toEqual(["RDSTS", "RDPOS", "STOP", "SERVO", "MOVL"]);
+  });
+
+  it("STOP bị robot TỪ CHỐI (ERR) ⇒ khoá KHÔNG được gỡ", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const refuseStop = (cmd: string) => (cmd === "STOP" ? "ERR,9" : defaultResponder(cmd, "1", []));
+    const { d, sock } = await connectedDriver(refuseStop);
+    sock.destroy();
+    nextSocket = makeController(refuseStop);
+    await expect(d.abort()).rejects.toThrow(/Delta abort failed/);
+    expect(d.getMotionLock()).toMatchObject({ locked: true, reasonCode: "line_connection_closed" });
+  });
+
+  it("chuyển động hết hạn giờ (MOVL im lặng ⇒ line_reply_timeout) ⇒ khoá; abort() xác nhận ⇒ gỡ", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    nextSocket = makeController((cmd) => (cmd === "MOVL" ? null : defaultResponder(cmd, "1", [])));
+    const { DeltaDriver } = await import("./deltaRobotDriver");
+    const d = new DeltaDriver();
+    await d.connect({ endpoint: "tcp://192.168.0.40:5000", timeoutMs: 100 });
+    nextSocket = null; // kết nối lại nhận bộ điều khiển lành
+    const r = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
+    expect(r.detail?.reasonCode).toBe("line_reply_timeout");
+    expect(d.getMotionLock()).toMatchObject({ locked: true, reasonCode: "line_reply_timeout" });
+    await expect(d.abort()).resolves.toBeUndefined();
+    expect(d.getMotionLock().locked).toBe(false);
+  });
+
+  it("poll hết hạn giờ khi KHÔNG có chuyển động đang chạy ⇒ KHÔNG khoá (chỉ kết cục CHUYỂN ĐỘNG không rõ hoặc peer drop mới khoá)", async () => {
+    nextSocket = makeController((cmd) => (cmd === "RDPOS" ? null : defaultResponder(cmd, "1", [])));
+    const { DeltaDriver } = await import("./deltaRobotDriver");
+    const d = new DeltaDriver();
+    await d.connect({ endpoint: "tcp://192.168.0.40:5000", timeoutMs: 100 });
+    nextSocket = null;
+    const s = await d.getState(); // RDPOS (best-effort) hết hạn ⇒ reset kết nối, không có chuyển động nào bị cắt
+    expect(s.pose).toBeUndefined();
+    expect(d.getMotionLock().locked).toBe(false);
+  });
+
+  it("clearMotionLock({reason,userId}) — người vận hành gỡ ⇒ trạng thái mới ghi clearedBy operator + lý do + người; chuyển động chạy lại", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { d, sock } = await connectedDriver();
+    sock.destroy();
+    nextSocket = makeController(defaultResponder);
+    await d.getState(); // vận chuyển lên lại
+    expect(d.getMotionLock().locked).toBe(true);
+    const st = d.clearMotionLock({ reason: "robot checked on site, area clear", userId: 42 });
+    expect(st).toMatchObject({ locked: false, clearedBy: "operator", clearedByUserId: 42, clearReason: "robot checked on site, area clear" });
+    expect(d.getMotionLock()).toMatchObject({ locked: false, clearedBy: "operator" });
+    const ok = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
+    expect(ok.ok).toBe(true);
+  });
+
+  it("khoá chuyển động chặn cả nhánh dry-run (không 'done' giả) khi ROBOT_CONTROL_ENABLED tắt", async () => {
+    const { d, sock } = await connectedDriver();
+    sock.destroy();
+    const r = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("motion_locked_after_link_loss");
+    expect(r.detail?.sent).toBe(false);
   });
 });

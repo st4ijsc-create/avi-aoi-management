@@ -31,6 +31,18 @@
  * `resetConnection()` does the same on demand — a driver's abort uses it so a STOP
  * never queues behind (and steals the reply of) an in-flight motion request.
  *
+ * Fix round 4 (ruling R13) — TWO KINDS OF LINK LOSS, TWO RECONNECT RULES:
+ *   • after a request TIMEOUT / `resetConnection()` (we dropped the socket ourselves) any
+ *     send reconnects transparently — round-1 behaviour, unchanged;
+ *   • after a PEER drop (close/error, idle or under a request) or a FAILED reconnect, only a
+ *     PRIVILEGED send (`allowAfterPeerDrop`: the driver's STOP and its read-only polls) may
+ *     reconnect; ordinary sends are refused before any byte until a privileged send has
+ *     COMPLETED on the new connection. A failed reconnect is not terminal any more: the next
+ *     privileged send (typically the next telemetry poll) tries again, so a robot that was
+ *     unreachable for a while comes back without a server restart.
+ *   Whether MOTION is allowed again once the transport is back is NOT decided here: that is
+ *   the driver's motion lock (see robotDriver.ts MotionLock), fed by `onLinkLoss`.
+ *
  * This module opens NO connection at import time (pure) and adds no dependency —
  * it uses only node:net, exactly like the FANUC and Techman drivers.
  */
@@ -100,20 +112,52 @@ export interface TcpLineSendOptions {
    */
   guard?: () => void;
   /**
-   * Fix round 3 — after a PEER drop only a stop may reconnect: pass true for the STOP frame.
-   * Without it a send on a peer-dropped client is refused (TcpLineNotConnectedError), so a job
-   * gated before the drop can never run CNTLON/SRVON/EXEC on a fresh session.
+   * doc 81 Đợt 1B Task 5 fix round 3 / fix round 4 — a PRIVILEGED send.
+   *
+   * After a PEER drop (or a failed reconnect) an ordinary send is refused before any byte
+   * (TcpLineNotConnectedError, reasonCode line_not_connected). A send carrying this flag — the
+   * driver passes it for its STOP frame AND for its read-only polls (ruling R13: a poll may
+   * bring the transport back up) — re-establishes the connection through the same path as after
+   * a timeout (running `onReconnect`, e.g. MELFA `OPEN=`) and then writes. Ordinary sends stay
+   * refused until such a send has COMPLETED (handshake finished AND its own reply received) on
+   * the new connection, so nothing can slip onto the fresh socket ahead of, or between, the
+   * handshake and the STOP (fix round 4, N2). The handshake itself writes through a scoped
+   * sender, not through this bypass.
+   *
+   * What this flag does NOT do (honest scope):
+   *   • It is a TRANSPORT rule only. Whether MOTION may run again once the link is back is the
+   *     driver's motion lock (MotionLock in robotDriver.ts): a motion job is refused there until
+   *     a STOP is confirmed or an authorised operator clears the lock.
+   *   • A user STOP issued through dispatchRobotJob({jobType:"abort"}) still does not bump the
+   *     driver's abort fence, so a motion job that had already passed its checks before that
+   *     STOP is not fenced by this layer. That item remains DEFERRED (task-5-report.md).
    */
   allowAfterPeerDrop?: boolean;
 }
 
+/**
+ * What `onReconnect` receives: a sender scoped to the session handshake. It may write on the
+ * fresh socket while the peer-drop refusal is still in force — ONLY for the frames the handshake
+ * itself issues; no other caller gets that bypass (fix round 4, N2).
+ */
+export interface TcpLineHandshakeSender {
+  send(frame: string, timeoutMs: number): Promise<string>;
+}
+
 export interface TcpLineClientOptions {
   /**
-   * Session handshake run on a NEW connection after a timeout/reset, BEFORE the
-   * queued request is written (e.g. MELFA `OPEN=<client>`). Throwing fails the
-   * request and marks the client disconnected.
+   * Session handshake run on a NEW connection after a timeout/reset/peer drop, BEFORE the
+   * queued request is written (e.g. MELFA `OPEN=<client>`). Throwing fails the request; the
+   * client then reports NOT connected until a later privileged send reconnects successfully.
    */
-  onReconnect?: (client: TcpLineClient) => Promise<void>;
+  onReconnect?: (client: TcpLineHandshakeSender) => Promise<void>;
+  /**
+   * Fix round 4 (R13) — called synchronously when the PEER closed/errored the socket (idle or
+   * under a request) or when a reconnect attempt failed. Drivers set their motion lock here.
+   * Never called for close() or for a reset we performed ourselves (timeout / abort preempt) —
+   * those are reported to the caller of the affected send through its rejection reason code.
+   */
+  onLinkLoss?: (reasonCode: typeof LINE_CONNECTION_CLOSED, detail: string) => void;
 }
 
 /**
@@ -132,6 +176,14 @@ export function splitLineFrames(buffer: string): { frames: string[]; rest: strin
   return { frames, rest };
 }
 
+interface Waiter {
+  resolve: (v: string) => void;
+  reject: (e: Error) => void;
+  timer: NodeJS.Timeout;
+  /** A privileged send (STOP / poll): its completion ends the peer-drop state. */
+  privileged: boolean;
+}
+
 /**
  * FIFO line client: write a fully-framed request string (terminator included) and
  * await the next complete response line. One socket, one in-flight-ordered queue.
@@ -139,15 +191,18 @@ export function splitLineFrames(buffer: string): { frames: string[]; rest: strin
 export class TcpLineClient {
   private socket: NetSocket | null = null;
   private rxBuf = "";
-  private pending: Array<{ resolve: (v: string) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }> = [];
+  private pending: Waiter[] = [];
+  /** open() succeeded and close() has not been called (the logical session). */
   private connected = false;
-  /** Endpoint of the last successful open(), used to reconnect after a timeout/reset. */
+  /** Endpoint of the last successful open(), used to reconnect after a timeout/reset/drop. */
   private endpoint: { host: string; port: number; timeoutMs: number } | null = null;
-  /** true ⇒ the socket was dropped on purpose (timeout/reset); the next send() reconnects. */
+  /** true ⇒ no live socket (timeout / reset / peer drop / failed reconnect); an eligible send() reconnects. */
   private stale = false;
   private reconnecting: Promise<void> | null = null;
-  private handshaking = false;
-  /** Fix round 3 — the PEER closed / errored: not connected for anything but a stop. */
+  /**
+   * Fix round 3/4 — the PEER dropped the link, or a reconnect failed: only privileged sends may
+   * reconnect; cleared when a privileged send completes on the new connection.
+   */
   private peerDropped = false;
 
   constructor(
@@ -156,10 +211,9 @@ export class TcpLineClient {
   ) {}
 
   /**
-   * True after open() until close(), a failed reconnect, or a PEER drop. A connection dropped by
-   * a request timeout still counts (re-established lazily). Fix round 3: after a peer drop the
-   * client reports NOT connected (dispatcher gate 3 refuses motion); only a send with
-   * `allowAfterPeerDrop` (the STOP) reconnects through the stale path, which clears the drop.
+   * True after open() until close(), except while the link is LOST (peer drop / failed reconnect)
+   * and no privileged send has completed on a new connection yet. A connection we dropped
+   * ourselves on a request timeout still counts (re-established lazily by any send).
    */
   isConnected(): boolean {
     return this.connected && !this.peerDropped;
@@ -219,20 +273,28 @@ export class TcpLineClient {
   }
 
   /**
-   * doc 81 Đợt 1B Task 5 fix round 2 — the peer closed / the socket errored. The client stays
-   * LOGICALLY open but STALE: every pending request fails (line_connection_closed ⇒ outcome
-   * unknown), and the next send() — typically the abort's STOP — reconnects first through the
-   * same path as after a timeout (MELFA re-sends OPEN=). Only a failed reconnect makes the
-   * client disconnected. (It used to go dead here, so the STOP could never be delivered.)
+   * doc 81 Đợt 1B Task 5 fix round 2/3/4 — the peer closed / the socket errored. The client stays
+   * LOGICALLY open: every pending request fails (line_connection_closed ⇒ outcome unknown), the
+   * driver is told (`onLinkLoss` ⇒ motion lock), and the client reports NOT connected until a
+   * privileged send (STOP / read-only poll) has re-established the session.
    */
-  private dropByPeer(err: Error): void {
+  private dropByPeer(err: TcpLineClosedError): void {
     this.socket = null;
     this.rxBuf = "";
     if (this.connected) {
       this.stale = true;
       this.peerDropped = true;
+      this.notifyLinkLoss(err.message);
     }
     this.failAllPending(err);
+  }
+
+  private notifyLinkLoss(detail: string): void {
+    try {
+      this.opts.onLinkLoss?.(LINE_CONNECTION_CLOSED, detail);
+    } catch {
+      /* a driver hook must never break the transport */
+    }
   }
 
   private onData(buf: Buffer | string): void {
@@ -243,6 +305,8 @@ export class TcpLineClient {
       const waiter = this.pending.shift();
       if (!waiter) continue; // unsolicited line with no pending request → ignore
       clearTimeout(waiter.timer);
+      // Fix round 4 — a PRIVILEGED send completed on the current (new) connection: the link is back.
+      if (waiter.privileged && this.peerDropped) this.peerDropped = false;
       waiter.resolve(frame);
     }
   }
@@ -283,22 +347,24 @@ export class TcpLineClient {
         try {
           await this.connectSocket();
           this.stale = false;
-          this.peerDropped = false; // a fresh transport exists (the handshake below may still fail)
           if (this.opts.onReconnect) {
-            this.handshaking = true;
-            try {
-              await this.opts.onReconnect(this);
-            } finally {
-              this.handshaking = false;
-            }
+            // The handshake writes through a SCOPED sender: only its own frames bypass the
+            // peer-drop refusal; `peerDropped` stays set until a privileged send completes.
+            await this.opts.onReconnect({ send: (frame, timeoutMs) => this.write(frame, timeoutMs, {}, true) });
           }
         } catch (err) {
-          // Could not re-establish the session ⇒ honest disconnected state.
-          this.connected = false;
+          // Could not re-establish the session. Fix round 4: NOT terminal — the link is reported
+          // lost (isConnected() false, ordinary sends refused) and the next PRIVILEGED send
+          // (typically the next telemetry poll, or a STOP) tries again.
+          this.stale = true;
           const s = this.socket;
           this.socket = null;
           if (s) {
             try { s.destroy(); } catch { /* ignore */ }
+          }
+          if (this.connected) {
+            this.peerDropped = true;
+            this.notifyLinkLoss(`${this.name} reconnect failed: ${(err as Error)?.message ?? String(err)}`);
           }
           throw err;
         }
@@ -310,18 +376,27 @@ export class TcpLineClient {
   }
 
   /** Write one fully-framed line (terminator already included) and await the next reply line. */
-  async send(frame: string, timeoutMs: number, sendOpts: TcpLineSendOptions = {}): Promise<string> {
+  send(frame: string, timeoutMs: number, sendOpts: TcpLineSendOptions = {}): Promise<string> {
+    return this.write(frame, timeoutMs, sendOpts, false);
+  }
+
+  private async write(frame: string, timeoutMs: number, sendOpts: TcpLineSendOptions, handshake: boolean): Promise<string> {
     if (!this.connected) throw new TcpLineNotConnectedError(`${this.name}: not connected`);
-    if (this.peerDropped && !sendOpts.allowAfterPeerDrop && !this.handshaking) {
-      throw new TcpLineNotConnectedError(`${this.name}: peer dropped the connection — only a stop may reconnect`);
+    const privileged = sendOpts.allowAfterPeerDrop === true;
+    if (this.peerDropped && !privileged && !handshake) {
+      throw new TcpLineNotConnectedError(
+        `${this.name}: link lost (peer dropped the connection) — only a stop or a read-only poll may reconnect`,
+      );
     }
-    if (this.stale || (this.reconnecting && !this.handshaking)) {
+    // A handshake frame never waits for (or starts) a reconnect: it IS the reconnect. Every other
+    // send waits for the in-progress reconnect, so it is written strictly after the handshake.
+    if (!handshake && (this.stale || this.reconnecting)) {
       await this.reconnect();
     }
     return new Promise<string>((resolve, reject) => {
       const socket = this.socket;
       if (!socket || !this.connected) {
-        reject(new Error(`${this.name}: not connected`));
+        reject(new TcpLineNotConnectedError(`${this.name}: not connected`));
         return;
       }
       try {
@@ -339,7 +414,7 @@ export class TcpLineClient {
         if (this.socket === socket) this.resetConnection(`request timeout after ${timeoutMs}ms`);
       }, timeoutMs);
       if (typeof timer.unref === "function") timer.unref();
-      this.pending.push({ resolve, reject, timer });
+      this.pending.push({ resolve, reject, timer, privileged });
       try {
         socket.write(frame);
       } catch (err) {

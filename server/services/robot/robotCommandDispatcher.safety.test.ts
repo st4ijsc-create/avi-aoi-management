@@ -526,10 +526,13 @@ describe("fix round 1 — idempotency không ép 'running' vào union kết qu�
 describe("fix round 1 — hàng rào abort MELFA: không lệnh chuyển động nào sau STOP (cửa sổ nối lại)", () => {
   it("job đang chờ nối lại khi abort() được gọi ⇒ kết nối mới chỉ nhận OPEN= rồi STOP, KHÔNG CNTLON/SRVON/EXEC", async () => {
     await connectDriver(300);
-    // 1) một lệnh hết hạn giờ ở tầng driver ⇒ kết nối bị huỷ, lần gửi sau phải nối lại.
-    fake.respond = (cmd) => (cmd.startsWith("EXEC") ? null : healthy(cmd));
-    const first = await within(driver.runJob({ jobType: "home" }), 5000);
-    expect(first.detail?.reasonCode).toBe("line_reply_timeout");
+    // 1) một POLL hết hạn giờ ở tầng driver ⇒ kết nối bị huỷ, lần gửi sau phải nối lại. (Fix round 4:
+    //    dùng poll chứ không dùng lệnh chuyển động — một chuyển động hết hạn nay KHOÁ chuyển động và job
+    //    kế tiếp bị từ chối ngay, không còn đi tới hàng rào; ca này đo HÀNG RÀO nên cửa sổ nối lại phải
+    //    được tạo bởi thứ không khoá.)
+    fake.respond = (cmd) => (cmd === "STATE" ? null : healthy(cmd));
+    await expect(within(driver.getState(), 5000)).rejects.toBeTruthy();
+    expect(driver.getMotionLock().locked).toBe(false);
     fake.respond = healthy;
     const before = fake.conns.length;
     // 2) job mới bắt đầu (đang chờ nối lại), abort() tới ngay sau — như hạn dispatcher rơi giữa chừng.
@@ -571,9 +574,8 @@ describe("fix round 1 — đóng kết nối giữa lệnh chuyển động = k�
 describe("fix round 2 — abort thứ hai KHÔNG rào STOP của abort thứ nhất", () => {
   it("hai abort() liên tiếp khi đang chờ nối lại ⇒ cả hai STOP tới robot, cả hai resolve (không job_fenced_by_abort)", async () => {
     await connectDriver(300);
-    fake.respond = (cmd) => (cmd.startsWith("EXEC") ? null : healthy(cmd));
-    const first = await within(driver.runJob({ jobType: "home" }), 5000);
-    expect(first.detail?.reasonCode).toBe("line_reply_timeout"); // client giờ "cũ" ⇒ lần gửi sau phải nối lại
+    fake.respond = (cmd) => (cmd === "STATE" ? null : healthy(cmd));
+    await expect(within(driver.getState(), 5000)).rejects.toBeTruthy(); // poll hết hạn ⇒ client "cũ" ⇒ lần gửi sau phải nối lại
     fake.respond = healthy;
     const before = fake.conns.length;
     const a1 = driver.abort().then(() => "ok", (e: Error) => e.message);
@@ -595,14 +597,14 @@ describe("fix round 3 — MELFA rớt kết nối khi rảnh: cổng 3 chặn ch
     const before = fake.conns.length;
     const r = await within(dispatchRobotJob(HOME), 10_000);
     expect(r.status).toBe("rejected");
-    expect(r.error).toBe("robot not active/connected");
+    expect(r.error).toBe("MOTION_LOCKED"); // fix round 4: khoá chuyển động (đặt ngay khi rớt) đứng TRƯỚC kiểm kết nối
     expect(fake.conns.slice(before).flat()).toEqual([]);
     const stop = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
     expect(stop.status).toBe("done");
     expect(fake.conns.slice(before)).toEqual([["OPEN=AOICTRL", "STOP"]]);
   });
 
-  it("job đã qua cổng 3 TRƯỚC khi robot rớt (gọi runJob trực tiếp) ⇒ bị từ chối line_not_connected, KHÔNG mở kết nối mới, 0 byte", async () => {
+  it("job đã qua cổng 3 TRƯỚC khi robot rớt (gọi runJob trực tiếp) ⇒ bị từ chối motion_locked_after_link_loss (fix round 4: khoá đặt ngay khi rớt; lớp vận chuyển line_not_connected đo ở tcpLineClient.test.ts), KHÔNG mở kết nối mới, 0 byte", async () => {
     await connectDriver(2000);
     fake.respond = (cmd) => (cmd === "STATE" ? "__DROP_ALL__" : healthy(cmd));
     await driver.getState().catch(() => undefined);
@@ -610,7 +612,7 @@ describe("fix round 3 — MELFA rớt kết nối khi rảnh: cổng 3 chặn ch
     const before = fake.conns.length;
     const r = await within(driver.runJob({ jobType: "home" }), 5000);
     expect(r.ok).toBe(false);
-    expect(r.detail?.reasonCode).toBe("line_not_connected");
+    expect(r.detail?.reasonCode).toBe("motion_locked_after_link_loss");
     await sleep(100);
     expect(fake.conns.length).toBe(before);
   });
@@ -633,3 +635,110 @@ describe("fix round 3 — MELFA rớt kết nối khi rảnh: cổng 3 chặn ch
   });
 });
 
+// ── doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) ────────────────────────────
+// Tách "vận chuyển đã lên" khỏi "được phép chuyển động": poll chỉ đọc nối lại được sau peer drop; KHOÁ
+// CHUYỂN ĐỘNG của driver giữ tới khi một STOP được driver xác nhận hoặc người vận hành gỡ. Cổng 3 của
+// dispatcher từ chối chuyển động khi khoá (MOTION_LOCKED); STOP vẫn đi.
+describe("fix round 4 (R13) — poll nối lại vận chuyển; KHOÁ CHUYỂN ĐỘNG giữ tới STOP xác nhận / người vận hành gỡ", () => {
+  it("drop khi rảnh ⇒ getState nối lại (OPEN=, STATE, PPOSF) ⇒ isConnected; dispatch home ⇒ MOTION_LOCKED, 0 byte chuyển động, sổ ghi reasonCode; abort ⇒ STOP trên kết nối đã lên ⇒ gỡ khoá ⇒ home chạy", async () => {
+    await connectDriver(2000);
+    fake.respond = (cmd) => (cmd === "STATE" ? "__DROP_ALL__" : healthy(cmd));
+    await driver.getState().catch(() => undefined);
+    fake.respond = healthy;
+    expect(driver.isConnected()).toBe(false);
+    expect(driver.getMotionLock()).toMatchObject({ locked: true, reasonCode: "line_connection_closed" });
+    const before = fake.conns.length;
+    const s = await within(driver.getState(), 5000); // poll chỉ đọc (tick của subscribeState) nối lại
+    expect(s.mode).toBe("auto");
+    expect(fake.conns.slice(before)).toEqual([["OPEN=AOICTRL", "STATE", "PPOSF"]]);
+    expect(driver.isConnected()).toBe(true); // vận chuyển đã lên
+    expect(driver.getMotionLock().locked).toBe(true); // chuyển động vẫn khoá
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r).toMatchObject({ ok: false, status: "rejected", error: "MOTION_LOCKED" });
+    expect(motionCmds(fake)).toEqual([]);
+    expect(ledger.rows[0]).toMatchObject({ status: "rejected" });
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "motion_locked_after_link_loss" });
+    const stop = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(stop.status).toBe("done");
+    expect(fake.conns[fake.conns.length - 1]).toEqual(["OPEN=AOICTRL", "STATE", "PPOSF", "STOP"]); // cùng kết nối đã lên lại
+    expect(driver.getMotionLock()).toMatchObject({ locked: false, clearedBy: "stop_confirmed" });
+    const home = await within(dispatchRobotJob(HOME), 10_000);
+    expect(home.status).toBe("done");
+    expect(motionCmds(fake)).toEqual(["CNTLON", "SRVON", "EXECMOV J=(0,0,0,0,0,0)"]);
+  });
+
+  it("N1: ROBOT_CONTROL_ENABLED tắt (STOP không bao giờ tới driver) ⇒ poll vẫn nối lại (telemetry sống); khoá giữ ⇒ dispatch home MOTION_LOCKED (không 'simulated'); người vận hành gỡ ⇒ simulated", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "false";
+    await connectDriver(2000);
+    fake.respond = (cmd) => (cmd === "STATE" ? "__DROP_ALL__" : healthy(cmd));
+    await driver.getState().catch(() => undefined);
+    fake.respond = healthy;
+    expect(driver.isConnected()).toBe(false);
+    const s = await within(driver.getState(), 5000);
+    expect(s.mode).toBe("auto");
+    expect(driver.isConnected()).toBe(true);
+    const stop = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(stop.status).toBe("simulated"); // dry-run: STOP không tới driver
+    expect(allCmds(fake)).not.toContain("STOP");
+    expect(driver.getMotionLock().locked).toBe(true);
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r).toMatchObject({ status: "rejected", error: "MOTION_LOCKED" });
+    driver.clearMotionLock({ reason: "checked on site", userId: 3 });
+    const r2 = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r2.status).toBe("simulated");
+  });
+
+  it("STOP bị robot từ chối (Qe) ⇒ khoá KHÔNG gỡ; STOP kế tiếp thành công ⇒ gỡ", async () => {
+    await connectDriver(2000);
+    fake.respond = (cmd) => (cmd === "STATE" ? "__DROP_ALL__" : healthy(cmd));
+    await driver.getState().catch(() => undefined);
+    fake.respond = (cmd) => (cmd === "STOP" ? "QeR0001" : healthy(cmd));
+    const first = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(first.status).toBe("failed");
+    expect(driver.getMotionLock().locked).toBe(true);
+    fake.respond = healthy;
+    const second = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(second.status).toBe("done");
+    expect(driver.getMotionLock().locked).toBe(false);
+  });
+
+  it("poll nối lại THẤT BẠI (robot vẫn tắt) ⇒ poll kế tiếp vẫn THỬ LẠI (không chết tới khi restart); robot lành ⇒ nối được", async () => {
+    await connectDriver(500);
+    fake.respond = (cmd) => (cmd === "STATE" ? "__DROP_ALL__" : healthy(cmd));
+    await driver.getState().catch(() => undefined);
+    // robot vẫn "tắt": mọi kết nối mới bị đóng ngay khi nhận OPEN= (bắt tay hỏng)
+    fake.respond = (cmd) => (cmd.startsWith("OPEN=") ? "__CLOSE__" : healthy(cmd));
+    const c0 = fake.conns.length;
+    await expect(within(driver.getState(), 5000)).rejects.toBeTruthy();
+    expect(driver.isConnected()).toBe(false);
+    await expect(within(driver.getState(), 5000)).rejects.toBeTruthy();
+    expect(fake.conns.length).toBe(c0 + 2); // mỗi poll một lần thử nối
+    fake.respond = healthy;
+    const s = await within(driver.getState(), 5000);
+    expect(s.mode).toBe("auto");
+    expect(fake.conns.length).toBe(c0 + 3);
+    expect(driver.isConnected()).toBe(true);
+  });
+});
+
+describe("fix round 4 (R13) — MELFA: chuyển động hết hạn giờ KHOÁ; chỉ STOP được xác nhận mới gỡ", () => {
+  it("EXEC im lặng ⇒ khoá line_reply_timeout; STOP bị từ chối (Qe) ⇒ khoá GIỮ ⇒ home kế tiếp MOTION_LOCKED (0 byte chuyển động); STOP tốt ⇒ gỡ", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    await connectDriver(300); // driver hết hạn trước dispatcher
+    fake.respond = (cmd) => (cmd.startsWith("EXEC") ? null : cmd === "STOP" ? "QeR0001" : healthy(cmd));
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "line_reply_timeout", abort: "abort_failed" });
+    expect(driver.getMotionLock()).toMatchObject({ locked: true, reasonCode: "line_reply_timeout" });
+    fake.respond = healthy;
+    const before = allCmds(fake).length;
+    const r2 = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r2).toMatchObject({ status: "rejected", error: "MOTION_LOCKED" });
+    expect(allCmds(fake).length).toBe(before); // không byte nào
+    const stop = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(stop.status).toBe("done");
+    expect(driver.getMotionLock()).toMatchObject({ locked: false, clearedBy: "stop_confirmed" });
+    const r3 = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r3.status).toBe("done");
+  });
+});

@@ -3813,6 +3813,7 @@
       "kbGoldenSet": "黄金问题集"
     },
     "operation": {
+      "clearRobotMotionLock": "解除机器人的运动锁定",
       "deployBuild": "部署程序构建",
       "requestDeployApproval": "提交部署审批请求",
       "approveDeployment": "审批程序部署",
@@ -4185,6 +4186,8 @@
     "cannotDisplayChart": "无法显示图表",
     "analyticsRenderError": "分析render错误",
     "reason": {
+      "robotNotActive": "本进程的机器人网关尚未加载该机器人（已禁用或 ROBOT_GATEWAY_ENABLED 未开启），因此没有可解除的实时运动锁定。",
+      "motionLockUnsupported": "该厂商的驱动每条指令使用一次性连接，没有运动锁定；无可解除内容。",
       "deploymentNotAwaitingApproval": "该请求已不再处于待审批状态（已被他人审批/拒绝或正在处理）。请刷新列表查看当前状态。",
       "deployApprovalRecordMissing": "未找到与此请求关联的审批记录——无法审批；请重新提交部署请求。",
       "deployApprovalRecordInvalid": "审批记录已失效（已执行、已取消或已过期）——无法再次审批。",
@@ -14281,7 +14284,23 @@
     "openConsoleTip": "打开指令控制台以发出带闸门的指令（人工确认 + 试运行）",
     "controlTip": "为此机器人打开指令控制台（带闸门的指令）",
     "control": "控制",
-    "adminRequired": "只有管理员可以启用/停用设备或测试其连接"
+    "adminRequired": "只有管理员可以启用/停用设备或测试其连接",
+    "live": {
+      "linkLost": "连接丢失",
+      "connected": "已连接"
+    },
+    "motionLock": {
+      "badge": "运动已锁定",
+      "tip": "连接丢失/指令结果未知后运动已锁定（{{reason}}，自 {{since}}）。只有机器人确认的停止指令或受控解除才能重新启用。",
+      "clear": "解除锁定",
+      "clearTitle": "解除 {{code}} 的运动锁定？",
+      "clearDesc": "锁定原因：{{reason}}（自 {{since}}）。解除前请在现场确认机器人已停止且区域安全。此操作连同您的原因写入审计日志；不会向机器人发送任何字节。",
+      "reasonLabel": "原因（必填，至少 3 个字符）",
+      "reasonPlaceholder": "例如：已现场检查，机器人静止，区域无人",
+      "confirm": "确认解除",
+      "cleared": "已解除 {{code}} 的运动锁定",
+      "notLocked": "机器人 {{code}} 未被运动锁定"
+    }
   },
   "controlPlane": {
     "title": "工厂控制平面",

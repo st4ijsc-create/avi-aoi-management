@@ -30,7 +30,7 @@ import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions } from "../../../drizzle/schema";
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotDriver } from "./robotDriver";
-import { MOTION_OUTCOME_UNKNOWN_REASON_CODES, RobotAbortUnsupportedError } from "./robotDriver";
+import { MOTION_OUTCOME_UNKNOWN_REASON_CODES, MOTION_LOCKED_REASON_CODE, RobotAbortUnsupportedError } from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
 
 /**
@@ -430,10 +430,31 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   //    Fix round 3 — isConnected() is false after a peer drop (MELFA/Delta/FANUC); that refuses
   //    MOTION here. A STOP (abort) is not refused on that ground: its driver path is the only
   //    one allowed to re-establish the session to deliver the stop.
+  //    Fix round 4 (ruling R13) — "transport up" ≠ "motion allowed": a read-only poll may bring the
+  //    link back, but the driver's MOTION LOCK (set on a peer drop / outcome-unknown motion) keeps
+  //    motion refused until a STOP is confirmed or an authorised operator clears it
+  //    (robot.clearMotionLock). Checked BEFORE the connectivity test so the ledger names the cause;
+  //    a STOP is never refused on this ground.
   const robot = getActiveRobot(input.robotId);
-  if (!robot || (motion && !robot.driver.isConnected())) {
+  if (!robot) {
     const jobId = await record(input, "rejected", undefined, "robot not active/connected");
     return { ok: false, status: "rejected", jobId, error: "robot not active/connected" };
+  }
+  if (motion) {
+    const lock = robot.driver.getMotionLock?.();
+    if (lock?.locked) {
+      const jobId = await record(
+        input,
+        "rejected",
+        { reasonCode: MOTION_LOCKED_REASON_CODE, motionLock: lock },
+        `MOTION_LOCKED: ${MOTION_LOCKED_REASON_CODE} since ${lock.since ?? "?"} (${lock.reasonCode ?? "link loss"}) — motion refused before any driver call; a confirmed STOP or robot.clearMotionLock clears it`,
+      );
+      return { ok: false, status: "rejected", jobId, error: "MOTION_LOCKED" };
+    }
+    if (!robot.driver.isConnected()) {
+      const jobId = await record(input, "rejected", undefined, "robot not active/connected");
+      return { ok: false, status: "rejected", jobId, error: "robot not active/connected" };
+    }
   }
 
   // 4) MODE GATE — dry-run by default.

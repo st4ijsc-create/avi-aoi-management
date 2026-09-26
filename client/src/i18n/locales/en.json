@@ -3821,6 +3821,7 @@
       "kbGoldenSet": "golden question set"
     },
     "operation": {
+      "clearRobotMotionLock": "clear the robot's motion lock",
       "deployBuild": "deploy the program build",
       "requestDeployApproval": "request deploy approval",
       "approveDeployment": "approve the program deployment",
@@ -4193,6 +4194,8 @@
     "cannotDisplayChart": "Cannot display chart",
     "analyticsRenderError": "Analytics render error",
     "reason": {
+      "robotNotActive": "This robot is not loaded by this process's robot gateway (disabled, or ROBOT_GATEWAY_ENABLED is off), so there is no live motion lock to clear.",
+      "motionLockUnsupported": "This vendor's driver opens one connection per command and has no motion lock; there is nothing to clear.",
       "deploymentNotAwaitingApproval": "This request is no longer awaiting approval (someone else approved/rejected it or it is being processed). Reload the list to see its current status.",
       "deployApprovalRecordMissing": "The approval record for this request was not found — it cannot be approved; submit the deploy request again.",
       "deployApprovalRecordInvalid": "The approval record is no longer valid (executed, cancelled or expired) — it cannot be approved again.",
@@ -14498,7 +14501,23 @@
     "openConsoleTip": "Open the Command Console to issue gated commands (HITL + dry-run)",
     "controlTip": "Open the Command Console for this robot (gated commands)",
     "control": "Control",
-    "adminRequired": "Only an administrator can enable/disable a device or test its connection"
+    "adminRequired": "Only an administrator can enable/disable a device or test its connection",
+    "live": {
+      "linkLost": "Link lost",
+      "connected": "Connected"
+    },
+    "motionLock": {
+      "badge": "Motion locked",
+      "tip": "Motion is locked after a link loss / unknown command outcome ({{reason}}, since {{since}}). Only a STOP confirmed by the robot or a controlled clear re-enables it.",
+      "clear": "Clear lock",
+      "clearTitle": "Clear the motion lock on {{code}}?",
+      "clearDesc": "The lock was set because of {{reason}} (since {{since}}). Before clearing, confirm on site that the robot is stopped and the area is safe. This action is written to the audit log with your reason; no byte is sent to the robot.",
+      "reasonLabel": "Reason (required, at least 3 characters)",
+      "reasonPlaceholder": "e.g. checked on site, robot stationary, area clear",
+      "confirm": "Confirm clear",
+      "cleared": "Motion lock cleared on {{code}}",
+      "notLocked": "Robot {{code}} is not motion-locked"
+    }
   },
   "controlPlane": {
     "title": "Factory Control Plane",

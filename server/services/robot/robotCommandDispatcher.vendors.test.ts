@@ -155,6 +155,10 @@ function rmiHealthy(pkt: RmiPkt): RmiAnswer {
   if (pkt.Command === "FRC_GetStatus")
     return { reply: { Command: "FRC_GetStatus", ErrorID: 0, ServoReady: 1, TPMode: 0, RMIMotionStatus: 0, ProgramStatus: 0, NextSequenceID: 1 } };
   if (pkt.Command === "FRC_Initialize") return { reply: { Command: "FRC_Initialize", ErrorID: 0, GroupMask: 1 } };
+  // Fix round 4 — getState() also reads the live pose [RMI §2.3.14]; the reply echoes the Command name
+  // (without it the correlated client discards the reply and the pose read times out ⇒ session reset).
+  if (pkt.Command === "FRC_ReadCartesianPosition")
+    return { reply: { Command: "FRC_ReadCartesianPosition", ErrorID: 0, Configuration: { UToolNumber: 1, UFrameNumber: 1 }, Position: { X: 100.5, Y: -20, Z: 300, W: 180, P: 0, R: 90 } } };
   if (pkt.Command === "FRC_Abort") return { reply: { Command: "FRC_Abort", ErrorID: 0 } };
   if (typeof pkt.Instruction === "string") return { reply: { Instruction: pkt.Instruction, ErrorID: 0, SequenceID: pkt.SequenceID } };
   return { reply: { ErrorID: 0 } };
@@ -225,10 +229,11 @@ async function fanucOn(fake: FakeRmi, driverTimeoutMs: number): Promise<FanucDri
 }
 
 describe("FANUC RMI — reply timeout ⇒ FRC_Abort TRƯỚC khi chốt failed (rmi_reply_timeout)", () => {
-  it("gói chuyển động không được trả lời ⇒ server giả nhận FRC_Abort; sổ failed + reasonCode rmi_reply_timeout + abort_sent", async () => {
+  it("gói chuyển động không được trả lời ⇒ FRC_Abort trên CÙNG phiên (không FRC_Connect); sổ failed + reasonCode rmi_reply_timeout + abort_sent; sau STOP phiên nhiễm bị hạ, poll mở phiên mới", async () => {
     process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000"; // driver (300 ms) hết hạn trước dispatcher
     const fake = await startFakeRmi();
-    await fanucOn(fake, 300);
+    const d = await fanucOn(fake, 300);
+    const connsBefore = fake.conns.length;
     fake.respond = (pkt) => (typeof pkt.Instruction === "string" ? { reply: null } : rmiHealthy(pkt));
     let atFinalize: string[] | null = null;
     ledger.snapshotAtFinalize = () => {
@@ -236,12 +241,47 @@ describe("FANUC RMI — reply timeout ⇒ FRC_Abort TRƯỚC khi chốt failed (
     };
     const r = await within(dispatchRobotJob(HOME), 10_000);
     expect(r.status).toBe("failed");
-    // Fix round 3 — timeout ⇒ phiên RMI bị reset ⇒ FRC_Abort đi trên phiên MỚI (FRC_Connect trước).
-    expect(fake.received).toEqual(["FRC_GetStatus", "FRC_Initialize", "FRC_JointMotionJRep", "FRC_Connect", "FRC_Abort"]);
-    expect(fake.conns[fake.conns.length - 1]).toEqual(["FRC_Connect", "FRC_Abort"]);
+    // Fix round 4 (R13) — Instruction timeout KHÔNG reset phiên: FRC_Abort đi ngay trên socket hiện có.
+    expect(fake.received).toEqual(["FRC_GetStatus", "FRC_Initialize", "FRC_JointMotionJRep", "FRC_Abort"]);
+    expect(fake.conns.length).toBe(connsBefore);
     expect(atFinalize).toContain("FRC_Abort"); // dừng ĐÃ tới robot trước lúc sổ chốt
     expect(ledger.rows[0].status).toBe("failed");
     expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout", abort: "abort_sent" });
+    expect(d.getMotionLock()).toMatchObject({ locked: false, clearedBy: "stop_confirmed" });
+    // Sau STOP đã xác nhận: phiên còn mang một Instruction chưa có reply bị HẠ (SequenceID khởi động lại sau
+    // FRC_Initialize kế tiếp ⇒ reply muộn không được phép gặp waiter mới cùng khoá). Poll chỉ đọc mở phiên mới.
+    expect(d.isConnected()).toBe(false);
+    fake.received.length = 0;
+    const s = await within(d.getState(), 5000);
+    expect(s.mode).toBe("auto");
+    expect(fake.received).toEqual(["FRC_Connect", "FRC_GetStatus", "FRC_ReadCartesianPosition"]);
+    expect(d.isConnected()).toBe(true);
+  });
+
+  it("fix round 4 — reply MUỘN của Instruction đã hết hạn KHÔNG được làm ack cho Instruction kế tiếp mang CÙNG SequenceID (phiên nhiễm bị hạ sau STOP)", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 1000);
+    fake.sequential = false;
+    let instructions = 0;
+    fake.respond = (pkt) => {
+      if (typeof pkt.Instruction === "string") {
+        instructions++;
+        // #1: trả RẤT muộn (1600 ms > hạn driver 1000 ms); #2: không bao giờ trả lời
+        return instructions === 1
+          ? { reply: { Instruction: pkt.Instruction, ErrorID: 0, SequenceID: pkt.SequenceID }, delayMs: 1600 }
+          : { reply: null };
+      }
+      return rmiHealthy(pkt);
+    };
+    const first = await within(dispatchRobotJob(HOME), 10_000);
+    expect(first.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout", abort: "abort_sent" });
+    await within(d.getState(), 5000); // poll mở phiên mới (phiên cũ đã bị hạ sau STOP)
+    const second = await within(dispatchRobotJob(HOME), 10_000); // Instruction #2 lại mang SequenceID 1 sau Initialize
+    expect(instructions).toBe(2);
+    expect(second.status).not.toBe("done"); // reply muộn của #1 chết cùng socket cũ, không thành ack của #2
+    expect(second.status).toBe("failed");
   });
 });
 
@@ -480,7 +520,7 @@ describe("FANUC RMI — rớt kết nối khi rảnh ⇒ cổng 3 chặn chuyể
     expect(fake.received).toEqual(["FRC_Connect", "FRC_Abort"]);
   });
 
-  it("job chuyển động đã qua cổng 3 TRƯỚC khi rớt (runJob trực tiếp) ⇒ rmi_not_connected, KHÔNG mở phiên mới, 0 gói", async () => {
+  it("job chuyển động đã qua cổng 3 TRƯỚC khi rớt (runJob trực tiếp) ⇒ motion_locked_after_link_loss (fix round 4), KHÔNG mở phiên mới, 0 gói", async () => {
     process.env.ROBOT_CONTROL_ENABLED = "true";
     const fake = await startFakeRmi();
     const d = await fanucOn(fake, 1000);
@@ -491,10 +531,107 @@ describe("FANUC RMI — rớt kết nối khi rảnh ⇒ cổng 3 chặn chuyể
     const before = fake.conns.length;
     const r = await within(d.runJob({ jobType: "home" }), 5000);
     expect(r.ok).toBe(false);
-    expect(r.detail?.reasonCode).toBe("rmi_not_connected");
+    expect(r.detail?.reasonCode).toBe("motion_locked_after_link_loss"); // fix round 4: khoá đặt ngay khi rớt đứng trước rmi_not_connected
     await sleep(100);
     expect(fake.conns.length).toBe(before);
     expect(fake.received).toEqual([]);
+  });
+});
+
+describe("FANUC RMI — fix round 4 (R13): poll mở lại phiên sau rớt; KHOÁ CHUYỂN ĐỘNG giữ tới STOP xác nhận / người vận hành gỡ", () => {
+  it("drop khi rảnh ⇒ getState mở phiên mới (FRC_Connect) ⇒ isConnected; dispatch home ⇒ MOTION_LOCKED, 0 gói; abort ⇒ FRC_Abort trên phiên đã mở ⇒ gỡ khoá ⇒ home chạy trọn", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 1000);
+    fake.respond = (pkt) => (pkt.Command === "FRC_GetStatus" ? { reply: null, drop: true } : rmiHealthy(pkt));
+    await d.getState().catch(() => undefined);
+    fake.respond = rmiHealthy;
+    expect(d.isConnected()).toBe(false);
+    expect(d.getMotionLock()).toMatchObject({ locked: true, reasonCode: "rmi_connection_closed" });
+    fake.received.length = 0;
+    const before = fake.conns.length;
+    const s = await within(d.getState(), 5000);
+    expect(s.mode).toBe("auto");
+    expect(fake.conns.slice(before)).toEqual([["FRC_Connect", "FRC_GetStatus", "FRC_ReadCartesianPosition"]]);
+    expect(d.isConnected()).toBe(true);
+    expect(d.getMotionLock().locked).toBe(true);
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r).toMatchObject({ ok: false, status: "rejected", error: "MOTION_LOCKED" });
+    expect(fake.received).toEqual(["FRC_Connect", "FRC_GetStatus", "FRC_ReadCartesianPosition"]); // không thêm gói nào
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "motion_locked_after_link_loss" });
+    const stop = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(stop.status).toBe("done");
+    expect(fake.conns[fake.conns.length - 1]).toEqual(["FRC_Connect", "FRC_GetStatus", "FRC_ReadCartesianPosition", "FRC_Abort"]);
+    expect(d.getMotionLock()).toMatchObject({ locked: false, clearedBy: "stop_confirmed" });
+    const home = await within(dispatchRobotJob(HOME), 10_000);
+    expect(home.status).toBe("done");
+    expect(fake.received.slice(-3)).toEqual(["FRC_GetStatus", "FRC_Initialize", "FRC_JointMotionJRep"]);
+  });
+
+  it("N1: ROBOT_CONTROL_ENABLED tắt ⇒ STOP không tới driver, nhưng poll vẫn mở lại phiên (telemetry sống); khoá giữ ⇒ MOTION_LOCKED; người vận hành gỡ ⇒ simulated", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "false";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 1000);
+    fake.respond = (pkt) => (pkt.Command === "FRC_GetStatus" ? { reply: null, drop: true } : rmiHealthy(pkt));
+    await d.getState().catch(() => undefined);
+    fake.respond = rmiHealthy;
+    const s = await within(d.getState(), 5000);
+    expect(s.mode).toBe("auto");
+    expect(d.isConnected()).toBe(true);
+    const stop = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(stop.status).toBe("simulated");
+    expect(fake.received).not.toContain("FRC_Abort");
+    expect(d.getMotionLock().locked).toBe(true);
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r).toMatchObject({ status: "rejected", error: "MOTION_LOCKED" });
+    d.clearMotionLock({ reason: "checked on site", userId: 3 });
+    const r2 = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r2.status).toBe("simulated");
+  });
+
+  it("Command (poll GetStatus) hết hạn khi KHÔNG có chuyển động ⇒ phiên reset (Command timeout) nhưng KHÔNG khoá; poll kế tiếp mở phiên mới", async () => {
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 300);
+    let statuses = 0;
+    fake.respond = (pkt) => {
+      if (pkt.Command === "FRC_GetStatus") {
+        statuses++;
+        if (statuses === 1) return { reply: null };
+      }
+      return rmiHealthy(pkt);
+    };
+    await expect(within(d.getState(), 5000)).rejects.toThrow(/timeout/);
+    expect(d.isConnected()).toBe(false); // phiên bị reset (Command timeout)
+    expect(d.getMotionLock().locked).toBe(false);
+    fake.received.length = 0;
+    const s = await within(d.getState(), 5000);
+    expect(s.mode).toBe("auto");
+    expect(fake.received).toEqual(["FRC_Connect", "FRC_GetStatus", "FRC_ReadCartesianPosition"]);
+  });
+
+  it("người vận hành gỡ khoá trên phiên NHIỄM (Instruction chưa có reply, STOP bị ErrorID) ⇒ phiên bị hạ ngay; poll mở phiên mới", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 300);
+    fake.respond = (pkt) =>
+      typeof pkt.Instruction === "string"
+        ? { reply: null }
+        : pkt.Command === "FRC_Abort"
+          ? { reply: { Command: "FRC_Abort", ErrorID: 9 } }
+          : rmiHealthy(pkt);
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout", abort: "abort_failed" });
+    expect(d.getMotionLock().locked).toBe(true);
+    expect(d.isConnected()).toBe(true); // không Command nào timeout ⇒ phiên còn, nhưng NHIỄM
+    const before = fake.conns.length;
+    d.clearMotionLock({ reason: "checked on site", userId: 3 });
+    expect(d.isConnected()).toBe(false); // phiên nhiễm bị hạ ngay khi gỡ khoá
+    fake.respond = rmiHealthy;
+    fake.received.length = 0;
+    await within(d.getState(), 5000);
+    expect(fake.conns.length).toBe(before + 1);
+    expect(fake.received).toEqual(["FRC_Connect", "FRC_GetStatus", "FRC_ReadCartesianPosition"]);
   });
 });
 

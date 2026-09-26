@@ -91,6 +91,97 @@ export interface RobotDriver {
    */
   abort(): Promise<void>;
   health(): Promise<RobotHealth>;
+  /**
+   * doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) — MOTION LOCK. Drivers with a persistent
+   * transport session (MELFA / Delta / FANUC) set it on a peer drop and on any reset that leaves a
+   * motion's outcome unknown; while set, MOTION jobs are refused before any byte is written even
+   * once the transport is up again. It clears ONLY when a STOP is delivered and confirmed by the
+   * driver, or when an authorised operator clears it (`robot.clearMotionLock`, audited). Optional:
+   * one-shot-socket drivers (Techman / UR) and sim/AGV drivers have no session to lose.
+   */
+  getMotionLock?(): MotionLockState;
+  clearMotionLock?(input: { reason: string; userId: number }): MotionLockState;
+}
+
+/** Snapshot of a driver's motion lock (also what the UI reads through robot.list `live`). */
+export interface MotionLockState {
+  locked: boolean;
+  /** Reason code that set the lock (e.g. line_connection_closed, rmi_reply_timeout). */
+  reasonCode?: string;
+  detail?: string;
+  /** ISO time the lock was set. */
+  since?: string;
+  clearedBy?: "stop_confirmed" | "operator";
+  clearedAt?: string;
+  clearedByUserId?: number;
+  clearReason?: string;
+}
+
+/** Stable reason code: a motion job refused because the driver's motion lock is set. */
+export const MOTION_LOCKED_REASON_CODE = "motion_locked_after_link_loss" as const;
+
+export class RobotMotionLockedError extends Error {
+  readonly reasonCode = MOTION_LOCKED_REASON_CODE;
+  constructor(readonly lock: MotionLockState) {
+    super(
+      `${MOTION_LOCKED_REASON_CODE}: motion is locked since ${lock.since ?? "?"} (${lock.reasonCode ?? "link loss"}) — ` +
+        "a confirmed STOP or an authorised operator must clear it before any motion is sent",
+    );
+    this.name = "RobotMotionLockedError";
+  }
+}
+
+/**
+ * doc 81 Đợt 1B Task 5 fix round 4 (R13) — per-driver motion lock. Separate from "transport up":
+ * a read-only poll may re-establish the session, but motion stays refused until `clearByStop()`
+ * (a STOP delivered AND confirmed by the driver) or `clearByOperator()` (audited tRPC mutation).
+ * `lock()` keeps the FIRST cause while already locked (repeated link-loss events do not rewrite it).
+ */
+export class MotionLock {
+  private state: MotionLockState = { locked: false };
+
+  lock(reasonCode: string, detail?: string): void {
+    if (this.state.locked) return;
+    this.state = { locked: true, reasonCode, detail, since: new Date().toISOString() };
+  }
+
+  clearByStop(): void {
+    if (!this.state.locked) return;
+    this.state = { locked: false, reasonCode: this.state.reasonCode, since: this.state.since, clearedBy: "stop_confirmed", clearedAt: new Date().toISOString() };
+  }
+
+  clearByOperator(input: { reason: string; userId: number }): MotionLockState {
+    this.state = {
+      locked: false,
+      reasonCode: this.state.reasonCode,
+      since: this.state.since,
+      clearedBy: "operator",
+      clearedAt: new Date().toISOString(),
+      clearedByUserId: input.userId,
+      clearReason: input.reason,
+    };
+    return this.snapshot();
+  }
+
+  isLocked(): boolean {
+    return this.state.locked;
+  }
+
+  snapshot(): MotionLockState {
+    return { ...this.state };
+  }
+
+  /** The RobotJobResult a driver returns for a MOTION job while locked; null when the job may proceed. */
+  refusal(job: RobotJobSpec): RobotJobResult | null {
+    if (!this.state.locked || job.jobType === "abort") return null;
+    const err = new RobotMotionLockedError(this.snapshot());
+    return {
+      ok: false,
+      status: "failed",
+      error: err.message,
+      detail: { jobType: job.jobType, reasonCode: MOTION_LOCKED_REASON_CODE, motionLock: this.snapshot(), sent: false },
+    };
+  }
 }
 
 /** Driver has no stop/abort command at all (dispatcher records `abort_unsupported`). */

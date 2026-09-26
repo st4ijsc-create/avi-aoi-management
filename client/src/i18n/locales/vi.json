@@ -3821,6 +3821,7 @@
       "kbGoldenSet": "bộ câu hỏi vàng"
     },
     "operation": {
+      "clearRobotMotionLock": "gỡ khoá chuyển động của robot",
       "deployBuild": "deploy build chương trình",
       "requestDeployApproval": "gửi yêu cầu duyệt deploy",
       "approveDeployment": "duyệt deploy chương trình",
@@ -4185,6 +4186,8 @@
       "overrideUrHome": "tự đặt vị trí home cho robot UR"
     },
     "reason": {
+      "robotNotActive": "Robot này chưa được cổng robot của tiến trình nạp (đang tắt hoặc ROBOT_GATEWAY_ENABLED chưa bật) nên không có khoá chuyển động sống để gỡ.",
+      "motionLockUnsupported": "Driver của hãng này dùng kết nối một lần cho mỗi lệnh nên không có khoá chuyển động; không có gì để gỡ.",
       "deploymentNotAwaitingApproval": "Yêu cầu này không còn ở trạng thái chờ duyệt (đã được người khác duyệt/từ chối hoặc đang xử lý). Tải lại danh sách để xem trạng thái hiện tại.",
       "deployApprovalRecordMissing": "Không tìm thấy bản ghi phê duyệt gắn với yêu cầu này — không thể duyệt; hãy gửi lại yêu cầu deploy.",
       "deployApprovalRecordInvalid": "Bản ghi phê duyệt đã hết hiệu lực (đã thực thi, bị huỷ hoặc hết hạn) — không thể duyệt lại.",
@@ -14478,7 +14481,23 @@
     "openConsoleTip": "Mở Command Console để phát lệnh có gate (HITL + dry-run)",
     "controlTip": "Mở Command Console cho robot này (phát lệnh có gate)",
     "control": "Điều khiển",
-    "adminRequired": "Chỉ quản trị viên (admin) mới bật/tắt hoặc kiểm tra kết nối thiết bị"
+    "adminRequired": "Chỉ quản trị viên (admin) mới bật/tắt hoặc kiểm tra kết nối thiết bị",
+    "live": {
+      "linkLost": "Mất kết nối",
+      "connected": "Đang kết nối"
+    },
+    "motionLock": {
+      "badge": "Khoá chuyển động",
+      "tip": "Chuyển động bị khoá sau khi mất kết nối / kết cục lệnh không rõ ({{reason}}, từ {{since}}). Chỉ một lệnh DỪNG được robot xác nhận hoặc thao tác gỡ khoá có kiểm soát mới mở lại.",
+      "clear": "Gỡ khoá",
+      "clearTitle": "Gỡ khoá chuyển động cho {{code}}?",
+      "clearDesc": "Khoá được đặt vì {{reason}} (từ {{since}}). Trước khi gỡ, hãy xác nhận tại chỗ rằng robot đã dừng và khu vực an toàn. Thao tác này được ghi vào nhật ký kiểm toán kèm lý do của bạn; không có byte nào được gửi tới robot.",
+      "reasonLabel": "Lý do (bắt buộc, ít nhất 3 ký tự)",
+      "reasonPlaceholder": "Ví dụ: đã kiểm tra tại chỗ, robot đứng yên, khu vực trống",
+      "confirm": "Xác nhận gỡ khoá",
+      "cleared": "Đã gỡ khoá chuyển động cho {{code}}",
+      "notLocked": "Robot {{code}} không bị khoá chuyển động"
+    }
   },
   "controlPlane": {
     "title": "Factory Control Plane",

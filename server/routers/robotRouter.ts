@@ -8,11 +8,36 @@ import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure, actuationProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
+import { createAuditLog } from "../db";
 import { robots, robotTelemetry, robotJobs } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/robot";
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
-import type { RobotJobType } from "../services/robot/robotDriver";
+import { getActiveRobot } from "../services/robot/robotManager";
+import type { MotionLockState, RobotJobType } from "../services/robot/robotDriver";
+
+/**
+ * doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) — the LIVE state of a robot in THIS process (what
+ * robotManager holds), attached to robot.list / robot.get so the UI that already reads them can
+ * show "link lost" and the MOTION LOCK. `active=false` ⇒ the gateway has not loaded this robot
+ * (disabled, or ROBOT_GATEWAY_ENABLED off) and there is nothing live to report.
+ */
+export interface RobotLiveState {
+  active: boolean;
+  connected: boolean;
+  motionLock: MotionLockState | null;
+}
+function robotLiveState(robotId: number): RobotLiveState {
+  const rt = getActiveRobot(robotId);
+  if (!rt) return { active: false, connected: false, motionLock: null };
+  let connected = false;
+  try {
+    connected = rt.driver.isConnected();
+  } catch {
+    connected = false;
+  }
+  return { active: true, connected, motionLock: rt.driver.getMotionLock?.() ?? null };
+}
 import {
   isTechmanScriptAllowed,
   isTechmanUnvalidatedConsoleVerb,
@@ -55,7 +80,8 @@ export const robotRouter = router({
       if (!db) return [];
       const rows = await db.select().from(robots).orderBy(desc(robots.updatedAt));
       // CTL-05 — kèm validationStatus per-vendor để UI badge (spec-verified/assumed/mock).
-      return rows.map((r) => ({ ...r, validationStatus: getRobotVendorValidation(r.vendor) }));
+      // Fix round 4 (R13) — kèm `live` (kết nối + khoá chuyển động của tiến trình này).
+      return rows.map((r) => ({ ...r, validationStatus: getRobotVendorValidation(r.vendor), live: robotLiveState(r.id) }));
     }),
 
   get: protectedProcedure
@@ -66,7 +92,67 @@ export const robotRouter = router({
       if (!db) return null;
       const [row] = await db.select().from(robots).where(eq(robots.id, input.id)).limit(1);
       if (!row) return null;
-      return { ...row, validationStatus: getRobotVendorValidation(row.vendor) };
+      return { ...row, validationStatus: getRobotVendorValidation(row.vendor), live: robotLiveState(row.id) };
+    }),
+
+  // doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) — NGƯỜI VẬN HÀNH GỠ KHOÁ CHUYỂN ĐỘNG.
+  // Sau một lần rớt kết nối / kết cục chuyển động không rõ, driver (MELFA/Delta/FANUC) KHOÁ chuyển
+  // động; poll chỉ đọc vẫn nối lại được nhưng chuyển động bị cổng 3 của dispatcher từ chối
+  // (MOTION_LOCKED). Khoá tự gỡ khi một STOP được driver xác nhận; đường còn lại là mutation này:
+  //   • sàn vai actuation (admin/supervisor/engineer + 2FA theo cấu hình) + machine_control/canEdit,
+  //   • ghi audit (createAuditLog) TRƯỚC khi gỡ — không ghi được thì KHÔNG gỡ (fail-closed),
+  //   • trả trạng thái mới. Không gửi byte nào tới robot.
+  clearMotionLock: actuationProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({
+      robotId: z.number().int().positive(),
+      reason: z.string().trim().min(3).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const rt = getActiveRobot(input.robotId);
+      if (!rt) {
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "clearRobotMotionLock", reason: "robotNotActive" },
+          `robot ${input.robotId} is not active in this process (not loaded by the robot gateway) — there is no live motion lock to clear`,
+        );
+      }
+      const driver = rt.driver;
+      if (typeof driver.getMotionLock !== "function" || typeof driver.clearMotionLock !== "function") {
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "clearRobotMotionLock", reason: "motionLockUnsupported" },
+          `${rt.vendor} driver has no motion lock (one-shot transport) — nothing to clear`,
+        );
+      }
+      const connectedNow = () => {
+        try {
+          return driver.isConnected();
+        } catch {
+          return false;
+        }
+      };
+      const before = driver.getMotionLock();
+      if (!before.locked) {
+        return { robotId: input.robotId, changed: false, connected: connectedNow(), motionLock: before };
+      }
+      // Audit FIRST: if the trail cannot be written the lock stays set.
+      await createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name ?? null,
+        action: "robot.clearMotionLock",
+        entityType: "robot",
+        entityId: input.robotId,
+        entityName: rt.code,
+        details: { reason: input.reason, vendor: rt.vendor, before },
+        ipAddress: ctx.req?.ip ?? null,
+        userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+      });
+      const after = driver.clearMotionLock({ reason: input.reason, userId: ctx.user.id });
+      console.warn(`[Robot] motion lock cleared by user ${ctx.user.id} on robot ${input.robotId} (${rt.code}): ${input.reason}`);
+      return { robotId: input.robotId, changed: true, connected: connectedNow(), motionLock: after };
     }),
 
   // CTL-05 — bản đồ vendor → validationStatus (spec-verified/assumed/mock) cho UI badge.

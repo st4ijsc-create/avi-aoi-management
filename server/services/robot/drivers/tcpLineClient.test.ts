@@ -20,12 +20,17 @@ interface FakeLineServer {
   port: number;
   /** Mỗi phần tử = các dòng đã nhận trên MỘT kết nối, theo thứ tự. */
   perConnection: string[][];
+  /** Fix round 4 — a line in this set makes the server DESTROY the socket instead of replying (peer kills the handshake). */
+  killOn: Set<string>;
+  /** Destroy every open socket (robot drops while idle) but keep listening. */
+  dropAll(): void;
   close(): Promise<void>;
 }
 
 async function startSequentialLineServer(delays: Record<string, number>): Promise<FakeLineServer> {
   const perConnection: string[][] = [];
   const socks = new Set<net.Socket>();
+  const killOn = new Set<string>();
   const srv = net.createServer((sock) => {
     socks.add(sock);
     sock.on("close", () => socks.delete(sock));
@@ -42,7 +47,7 @@ async function startSequentialLineServer(delays: Record<string, number>): Promis
         buf = buf.slice(i + (buf.startsWith("\r\n", i) ? 2 : 1));
         if (!line) continue;
         lines.push(line);
-        if (line === "DIE") {
+        if (line === "DIE" || killOn.has(line)) {
           sock.destroy(); // peer đóng kết nối khi lệnh đang chờ trả lời
           return;
         }
@@ -64,6 +69,10 @@ async function startSequentialLineServer(delays: Record<string, number>): Promis
   return {
     port,
     perConnection,
+    killOn,
+    dropAll: () => {
+      for (const s of socks) s.destroy();
+    },
     close: async () => {
       for (const s of socks) s.destroy();
       await new Promise<void>((r) => srv.close(() => r()));
@@ -97,6 +106,7 @@ afterAll(async () => {
 afterEach(() => {
   for (const c of clients.splice(0)) c.close();
   server.perConnection.length = 0;
+  server.killOn.clear();
 });
 
 async function openClient(opts?: ConstructorParameters<typeof TcpLineClient>[1]): Promise<TcpLineClient> {
@@ -186,8 +196,9 @@ describe("TcpLineClient — đóng kết nối khi lệnh đang chờ mang reaso
 });
 
 describe("TcpLineClient — peer đóng ⇒ client 'cũ' (nối lại được), không chết (fix round 2)", () => {
-  // Fix round 3 — sau peer drop: isConnected() = false; lệnh thường bị TỪ CHỐI (0 byte, không nối
-  // lại); CHỈ lần gửi mang allowAfterPeerDrop (lệnh dừng) được nối lại (chạy onReconnect).
+  // Fix round 3 — sau peer drop: isConnected() = false; lệnh thường bị TỪ CHỐI (0 byte, không nối lại).
+  // Fix round 4 (R13) — lệnh ĐẶC QUYỀN (`allowAfterPeerDrop`: lệnh dừng VÀ poll chỉ đọc) được nối lại (chạy
+  // onReconnect); lệnh thường chỉ đi được khi MỘT lệnh đặc quyền đã HOÀN TẤT (bắt tay + reply) trên kết nối mới.
   it("sau khi peer đóng giữa lệnh: không còn 'connected', lệnh thường bị từ chối; chỉ STOP (allowAfterPeerDrop) nối lại", async () => {
     const c = await openClient({
       onReconnect: async (client) => {
@@ -209,16 +220,139 @@ describe("TcpLineClient — peer đóng ⇒ client 'cũ' (nối lại được),
     expect(c.isConnected()).toBe(true);
   });
 
-  it("nối lại THẤT BẠI (server tắt) ⇒ lúc đó mới báo mất kết nối", async () => {
+  it("fix round 4 (R13) — poll chỉ đọc (allowAfterPeerDrop) cũng nối lại được sau khi robot rớt lúc RẢNH; lệnh thường trước đó bị từ chối", async () => {
+    const c = await openClient({
+      onReconnect: async (client) => {
+        await client.send("HELLO\r", 1000);
+      },
+    });
+    expect(await within(c.send("X\r", 1000), 2000)).toBe("X-REPLY");
+    server.dropAll(); // robot rớt khi rảnh (không lệnh nào đang chờ)
+    await sleep(50);
+    expect(c.isConnected()).toBe(false);
+    const refused = await within(c.send("MOVE\r", 1000), 3000).then(
+      () => null,
+      (e) => e,
+    );
+    expect(refused).toBeInstanceOf(TcpLineNotConnectedError);
+    expect(server.perConnection.length).toBe(1);
+    const st = await within(c.send("STATE\r", 1000, { allowAfterPeerDrop: true }), 3000);
+    expect(st).toBe("STATE-REPLY");
+    expect(server.perConnection[1]).toEqual(["HELLO", "STATE"]);
+    expect(c.isConnected()).toBe(true);
+    // Vận chuyển đã lên lại ⇒ lệnh thường đi được ở TẦNG NÀY (chuyển động bị từ chối ở tầng driver: khoá chuyển động).
+    expect(await within(c.send("Y\r", 1000), 2000)).toBe("Y-REPLY");
+    expect(server.perConnection[1]).toEqual(["HELLO", "STATE", "Y"]);
+  });
+
+  it("fix round 4 (N2) — trong lúc STOP đang bắt tay (OPEN= chậm), lệnh thường đồng thời bị TỪ CHỐI, không chen lên kết nối mới trước STOP; STOP thứ hai xếp SAU", async () => {
+    // Bắt tay = "SLOW" (server trả sau 300 ms) ⇒ cửa sổ bắt tay đủ rộng để chen một lệnh thường vào.
+    const c = await openClient({
+      onReconnect: async (client) => {
+        const r = await client.send("SLOW\r", 2000);
+        if (r !== "SLOW-REPLY") throw new Error("handshake failed");
+      },
+    });
+    await within(c.send("DIE\r", 2000), 3000).catch(() => undefined);
+    const stop = c.send("STOP\r", 2000, { allowAfterPeerDrop: true });
+    await sleep(100); // đang trong bắt tay SLOW (300 ms)
+    const refused = await within(c.send("MOVE\r", 1000), 3000).then(
+      () => null,
+      (e) => e,
+    );
+    expect(refused).toBeInstanceOf(TcpLineNotConnectedError);
+    const stop2 = c.send("STOP\r", 2000, { allowAfterPeerDrop: true }); // đặc quyền: đợi bắt tay, đi SAU STOP 1
+    expect(await within(stop, 3000)).toBe("STOP-REPLY");
+    expect(await within(stop2, 3000)).toBe("STOP-REPLY");
+    expect(server.perConnection.length).toBe(2);
+    expect(server.perConnection[1]).toEqual(["SLOW", "STOP", "STOP"]);
+    // Sau khi STOP hoàn tất: lệnh thường đi được (tầng vận chuyển); khoá chuyển động là tầng driver.
+    expect(await within(c.send("MOVE\r", 1000), 2000)).toBe("MOVE-REPLY");
+    expect(server.perConnection[1]).toEqual(["SLOW", "STOP", "STOP", "MOVE"]);
+  });
+
+  it("fix round 4 (N2) — lệnh thường tới SAU khi bắt tay xong nhưng TRƯỚC khi STOP có reply vẫn bị từ chối", async () => {
+    // Bắt tay nhanh (HELLO), "STOP" chậm (dùng dòng SLOW: server trả sau 300 ms) ⇒ cửa sổ [bắt tay xong, STOP xong).
+    const c = await openClient({
+      onReconnect: async (client) => {
+        await client.send("HELLO\r", 1000);
+      },
+    });
+    await within(c.send("DIE\r", 2000), 3000).catch(() => undefined);
+    const stop = c.send("SLOW\r", 2000, { allowAfterPeerDrop: true });
+    await sleep(120); // HELLO đã xong (tức thì), SLOW còn chờ
+    expect(server.perConnection[1]).toEqual(["HELLO", "SLOW"]);
+    const refused = await within(c.send("MOVE\r", 1000), 3000).then(
+      () => null,
+      (e) => e,
+    );
+    expect(refused).toBeInstanceOf(TcpLineNotConnectedError);
+    expect(await within(stop, 3000)).toBe("SLOW-REPLY");
+    expect(server.perConnection[1]).toEqual(["HELLO", "SLOW"]); // MOVE chưa bao giờ chạm dây
+  });
+
+  it("fix round 4 (N3) — nối lại của STOP THẤT BẠI (server tắt hẳn) ⇒ reject (đã thật sự thử), isConnected() false, không kết nối mới", async () => {
     const lone = await startSequentialLineServer({});
     const c = new TcpLineClient("lone");
     clients.push(c);
     await c.open("127.0.0.1", lone.port, 500);
     await lone.close();
-    // server tắt (đóng socket đang mở) ⇒ client "cũ"; lần gửi sau phải thử nối lại và thất bại
-    await new Promise((r) => setTimeout(r, 50));
-    await expect(within(c.send("X\r", 500), 3000)).rejects.toBeTruthy();
+    await sleep(50);
     expect(c.isConnected()).toBe(false);
+    const err = await within(c.send("STOP\r", 500, { allowAfterPeerDrop: true }), 3000).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(TcpLineNotConnectedError); // không phải từ chối trước: đã thử nối (ECONNREFUSED)
+    expect(c.isConnected()).toBe(false);
+    expect(lone.perConnection.length).toBe(1);
+  });
+
+  it("fix round 4 (N3) — bắt tay của STOP bị peer giết ⇒ reject + không 'connected'; poll KẾ TIẾP thử lại và nối được khi server lành", async () => {
+    const c = await openClient({
+      onReconnect: async (client) => {
+        const r = await client.send("HELLO\r", 1000);
+        if (r !== "HELLO-REPLY") throw new Error("handshake failed");
+      },
+    });
+    await within(c.send("DIE\r", 2000), 3000).catch(() => undefined);
+    server.killOn.add("HELLO"); // server nhận HELLO rồi đóng socket ⇒ bắt tay thất bại
+    const err = await within(c.send("STOP\r", 1000, { allowAfterPeerDrop: true }), 3000).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(c.isConnected()).toBe(false);
+    expect(server.perConnection[1]).toEqual(["HELLO"]);
+    // Lệnh thường vẫn bị từ chối, không tạo kết nối.
+    const refused = await within(c.send("MOVE\r", 1000), 3000).then(
+      () => null,
+      (e) => e,
+    );
+    expect(refused).toBeInstanceOf(TcpLineNotConnectedError);
+    expect(server.perConnection.length).toBe(2);
+    // Server lành lại ⇒ poll đặc quyền THỬ LẠI (không chết sau một lần nối lại hỏng): bắt tay + reply ⇒ connected.
+    server.killOn.clear();
+    expect(await within(c.send("STATE\r", 1000, { allowAfterPeerDrop: true }), 3000)).toBe("STATE-REPLY");
+    expect(server.perConnection[2]).toEqual(["HELLO", "STATE"]);
+    expect(c.isConnected()).toBe(true);
+  });
+
+  it("fix round 4 — onLinkLoss được gọi khi peer đóng (kể cả lúc rảnh) với mã line_connection_closed; không gọi khi close() chủ động", async () => {
+    const losses: string[] = [];
+    const c = await openClient({
+      onLinkLoss: (code) => {
+        losses.push(code);
+      },
+    });
+    expect(await within(c.send("X\r", 1000), 2000)).toBe("X-REPLY");
+    server.dropAll();
+    await sleep(50);
+    expect(losses).toEqual(["line_connection_closed"]);
+    c.close();
+    await sleep(20);
+    expect(losses).toEqual(["line_connection_closed"]);
   });
 });
 
@@ -236,4 +370,3 @@ describe("TcpLineClient — reset kết nối dưới lệnh đang bay mang reas
     expect((errA as TcpLineResetError).reasonCode).toBe("line_connection_reset");
   });
 });
-

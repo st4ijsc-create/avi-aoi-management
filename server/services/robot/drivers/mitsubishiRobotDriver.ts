@@ -96,7 +96,8 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth, RobotPose,
 } from "../robotDriver";
-import { abortThroughRunJob, AbortFence } from "../robotDriver";
+import type { MotionLockState } from "../robotDriver";
+import { abortThroughRunJob, AbortFence, MotionLock, MOTION_OUTCOME_UNKNOWN_REASON_CODES } from "../robotDriver";
 import { TcpLineClient } from "./tcpLineClient";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
@@ -245,6 +246,11 @@ export class MitsubishiDriver implements RobotDriver {
   private slotNo = DEFAULT_SLOT_NO;
   private clientName = DEFAULT_CLIENT_NAME;
   private readonly fence = new AbortFence();
+  /**
+   * doc 81 Đợt 1B Task 5 fix round 4 (R13) — set on a peer drop (transport hook) and when a MOTION
+   * job ends with an outcome-unknown reason code; cleared by a confirmed STOP or an operator.
+   */
+  private readonly motionLock = new MotionLock();
 
   /** Parse "tcp://host:port" | "host:port" | "host" → {host,port}. */
   private parseEndpoint(endpoint: string, defaultPort: number): { host: string; port: number } {
@@ -258,11 +264,15 @@ export class MitsubishiDriver implements RobotDriver {
     return { host: s || "127.0.0.1", port: defaultPort };
   }
 
-  /** Send one command, await the reply, and throw if it is a MELFA error. */
-  private async command(cmd: string, guard?: () => void, allowAfterPeerDrop = false): Promise<MelfaReply> {
+  /**
+   * Send one command, await the reply, and throw if it is a MELFA error. `privileged` = the frame
+   * may re-establish the transport after a peer drop (fix round 3: the STOP; fix round 4 / R13:
+   * also the read-only polls STATE/PPOSF). Motion frames are never privileged.
+   */
+  private async command(cmd: string, guard?: () => void, privileged = false): Promise<MelfaReply> {
     if (!this.client) throw new DeviceUnreachableError("mitsubishiRobot");
     const reply = parseMelfaResponse(
-      await this.client.send(frameMelfaCommand(cmd, this.robotNo, this.slotNo), this.timeoutMs, { guard, allowAfterPeerDrop }),
+      await this.client.send(frameMelfaCommand(cmd, this.robotNo, this.slotNo), this.timeoutMs, { guard, allowAfterPeerDrop: privileged }),
     );
     if (!reply.ok) throw new Error(`MELFA ${cmd.split(/[ (]/)[0]} failed: error ${reply.errorNo ?? "?"}`);
     return reply;
@@ -290,6 +300,9 @@ export class MitsubishiDriver implements RobotDriver {
         );
         if (!r.ok) throw new Error(`MELFA OPEN failed on reconnect: error ${r.errorNo ?? "?"}`);
       },
+      // Fix round 4 (R13) — a peer drop (idle or under a command) locks motion until a STOP is
+      // confirmed or an operator clears it; a later poll may bring the transport back regardless.
+      onLinkLoss: (reasonCode, detail) => this.motionLock.lock(reasonCode, detail),
     });
     try {
       await client.open(this.host, this.port, this.timeoutMs);
@@ -334,11 +347,13 @@ export class MitsubishiDriver implements RobotDriver {
   async getState(): Promise<RobotState> {
     if (!this.connected || !this.client) throw new DeviceUnreachableError("mitsubishiRobot");
     try {
-      const state = decodeMelfaState((await this.command("STATE")).payload);
+      // Read-only polls are PRIVILEGED (fix round 4 / R13): after a peer drop they re-open the
+      // session (OPEN= again) so telemetry recovers on its own; motion stays behind the lock.
+      const state = decodeMelfaState((await this.command("STATE", undefined, true)).payload);
 
       let pose: RobotPose | undefined;
       try {
-        pose = decodeMelfaPosition((await this.command("PPOSF")).payload);
+        pose = decodeMelfaPosition((await this.command("PPOSF", undefined, true)).payload);
       } catch (err) {
         // Pose read is best-effort; never fail the whole poll on it.
         this.lastError = (err as Error)?.message || String(err);
@@ -384,6 +399,10 @@ export class MitsubishiDriver implements RobotDriver {
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
+    // Fix round 4 (R13) — MOTION LOCK: a motion job is refused here, before the dry-run branch and
+    // before any byte, while the lock is set (peer drop / outcome-unknown motion). A STOP passes.
+    const refused = this.motionLock.refusal(job);
+    if (refused) return refused;
     // doc 81 Đợt 1B Task 5 fix round 1 — abort fence: checked right before EVERY write
     // (inside TcpLineClient.send, after any reconnect), so nothing follows a STOP.
     const guard = this.fence.capture(job);
@@ -407,9 +426,12 @@ export class MitsubishiDriver implements RobotDriver {
         await this.command("CNTLON", guard);
         await this.command("SRVON", guard);
       }
-      // Fix round 3 — only the STOP may reconnect after a peer drop.
+      // Fix round 3/4 — the STOP is privileged (may reconnect after a peer drop); motion is not.
       const reply = await this.command(motionCmd, guard, isAbort);
       this.lastOkAt = new Date();
+      // Fix round 4 (R13) — a STOP delivered AND acknowledged (Qok) is the only automatic way out
+      // of the motion lock. (A dry-run "abort" never reaches this line.)
+      if (isAbort) this.motionLock.clearByStop();
       return { ok: true, status: "done", detail: { jobType: job.jobType, command: framed, sent: true, reply: reply.payload } };
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
@@ -417,6 +439,11 @@ export class MitsubishiDriver implements RobotDriver {
       // doc 81 Đợt 1B Task 5 — keep the transport's reason code (e.g. line_reply_timeout ⇒
       // the command may be executing; the dispatcher then sends a stop).
       const reasonCode = (err as { reasonCode?: unknown })?.reasonCode;
+      // Fix round 4 (R13) — a MOTION whose outcome is unknown (timeout / reset / close under it)
+      // locks further motion until that stop is confirmed (or an operator clears the lock).
+      if (!isAbort && typeof reasonCode === "string" && MOTION_OUTCOME_UNKNOWN_REASON_CODES.has(reasonCode)) {
+        this.motionLock.lock(reasonCode, msg);
+      }
       return {
         ok: false,
         status: "failed",
@@ -436,6 +463,16 @@ export class MitsubishiDriver implements RobotDriver {
     this.fence.bump(); // FIRST: any job started before this abort can write nothing more
     if (this.client && this.client.inFlight() > 0) this.client.resetConnection("abort preempts in-flight request");
     await abortThroughRunJob((job) => this.runJob(job), "MELFA");
+  }
+
+  /** Fix round 4 (R13) — motion lock snapshot (dispatcher gate 3, robot.list `live`). */
+  getMotionLock(): MotionLockState {
+    return this.motionLock.snapshot();
+  }
+
+  /** Fix round 4 (R13) — operator clear; the caller (robot.clearMotionLock) has already audited it. */
+  clearMotionLock(input: { reason: string; userId: number }): MotionLockState {
+    return this.motionLock.clearByOperator(input);
   }
 
   async health(): Promise<RobotHealth> {
