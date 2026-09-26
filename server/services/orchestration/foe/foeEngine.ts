@@ -1301,7 +1301,8 @@ export async function startRun(
           } catch (err) {
             // FAIL-SAFE — drive nền không được ném ra ngoài (không có ai await).
             const message = err instanceof Error ? err.message : String(err);
-            await setRunStatus(asyncRunId, "failed", { finishedAt: new Date(), error: message }).catch(() => undefined);
+            // doc 80 ORC-01 (fix round 1) — conditional: an exception AFTER an abort never turns 'aborted' into 'failed'.
+            await setRunStatusUnlessAborted(asyncRunId, "failed", { finishedAt: new Date(), error: message }).catch(() => undefined);
           }
         })();
       });
@@ -1314,10 +1315,13 @@ export async function startRun(
   } catch (err) {
     // FAIL-SAFE — never throw to the caller; mark the run failed if we created it.
     const message = err instanceof Error ? err.message : String(err);
+    // doc 80 ORC-01 (fix round 1) — conditional write: an exception AFTER an abort (e.g. persistContext
+    // throwing) must not overwrite 'aborted' with 'failed'. 0 rows written ⇒ report 'aborted'.
+    let wroteFailed = true;
     if (runId != null) {
-      await setRunStatus(runId, "failed", { finishedAt: new Date(), error: message }).catch(() => undefined);
+      wroteFailed = await setRunStatusUnlessAborted(runId, "failed", { finishedAt: new Date(), error: message }).catch(() => true);
     }
-    return { ok: false, enabled: true, runId, status: "failed", message };
+    return { ok: false, enabled: true, runId, status: wroteFailed ? "failed" : "aborted", message };
   }
 }
 
@@ -1424,8 +1428,9 @@ export async function resumeRun(
     // state change — surface them as-is; never mark the run failed for them.
     if (err instanceof TRPCError) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    await setRunStatus(runId, "failed", { finishedAt: new Date(), error: message }).catch(() => undefined);
-    return { ok: false, enabled: true, runId, status: "failed", message };
+    // doc 80 ORC-01 (fix round 1) — conditional write (see startRun): never 'aborted' → 'failed'.
+    const wroteFailed = await setRunStatusUnlessAborted(runId, "failed", { finishedAt: new Date(), error: message }).catch(() => true);
+    return { ok: false, enabled: true, runId, status: wroteFailed ? "failed" : "aborted", message };
   }
 }
 

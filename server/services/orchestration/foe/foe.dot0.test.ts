@@ -398,5 +398,101 @@ describe("ORC-06 — workflow draft phải qua deploy mới chạy", () => {
   });
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
+// ORC-01 fix round 1 — một exception SAU abort (persistContext/upsertStep ném) đi vào các nhánh
+// catch "failed" của startRun (sync + async) / resumeRun ⇒ các lệnh ghi ấy cũng phải có điều kiện.
+// ════════════════════════════════════════════════════════════════════════════════
+describe("ORC-01 (fix round 1) — lỗi SAU abort không được ghi đè `aborted` thành `failed`", () => {
+  /** Sau khi `arm()`, mọi UPDATE mang `contextJson` (persistContext) sẽ NÉM. */
+  function armPersistBoom() {
+    let armed = false;
+    const orig = fake.update.bind(fake);
+    const spy = vi.spyOn(fake, "update").mockImplementation((t: any) => {
+      const b = orig(t);
+      const origSet = b.set;
+      b.set = (p: Record<string, unknown>) => {
+        if (armed && "contextJson" in p) throw new Error("persist boom after abort");
+        return origSet(p);
+      };
+      return b;
+    });
+    return { arm: () => { armed = true; }, restore: () => spy.mockRestore() };
+  }
+  const DELAY_DEF: WorkflowDefinition = {
+    ref: "abort-boom",
+    name: "AbortBoom",
+    steps: [
+      { id: "d", type: "delay", ms: 1500 },
+      { id: "b", type: "command", machineId: 1, command: "stop" },
+    ],
+  };
+
+  it("startRun ĐỒNG BỘ: abort rồi persistContext ném ⇒ vẫn `aborted`", async () => {
+    await deployWorkflow(DELAY_DEF, ENGINEER);
+    const boom = armPersistBoom();
+    try {
+      const pending = startRun("abort-boom", {}, ENGINEER);
+      await waitFor(() => runRows().length === 1 && stepRow(runRows()[0].id, "d")?.status === "running");
+      const runId = runRows()[0].id as number;
+      boom.arm();
+      expect((await abortRun(runId, SUP, "dung")).ok).toBe(true);
+      await pending;
+      expect(runRow(runId).status).toBe("aborted");
+      expect(String(runRow(runId).error)).toContain("dung");
+      expect(dispatched()).toEqual([]);
+    } finally {
+      boom.restore();
+    }
+  });
+
+  it("startRun ASYNC: abort rồi persistContext ném ⇒ vẫn `aborted`", async () => {
+    await deployWorkflow(DELAY_DEF, ENGINEER);
+    const boom = armPersistBoom();
+    try {
+      const res = await startRun("abort-boom", {}, ENGINEER, { async: true });
+      const runId = res.runId!;
+      await waitFor(() => stepRow(runId, "d")?.status === "running");
+      boom.arm();
+      expect((await abortRun(runId, SUP, "dung")).ok).toBe(true);
+      // chờ drive nền kết thúc (nhánh catch nền chạy xong)
+      await new Promise((r) => setTimeout(r, 100));
+      expect(runRow(runId).status).toBe("aborted");
+      expect(String(runRow(runId).error)).toContain("dung");
+      expect(dispatched()).toEqual([]);
+    } finally {
+      boom.restore();
+    }
+  });
+
+  it("resumeRun: abort giữa lúc resume đang chạy rồi persistContext ném ⇒ vẫn `aborted`", async () => {
+    const def: WorkflowDefinition = {
+      ref: "abort-boom-resume",
+      name: "AbortBoomResume",
+      steps: [
+        { id: "g", type: "hitl_gate", prompt: "Duyệt?" },
+        { id: "d", type: "delay", ms: 1500 },
+        { id: "b", type: "command", machineId: 1, command: "stop" },
+      ],
+    };
+    await deployWorkflow(def, ENGINEER);
+    const started = await startRun("abort-boom-resume", {}, ENGINEER);
+    expect(started.status).toBe("awaiting_confirm");
+    const runId = started.runId!;
+    const boom = armPersistBoom();
+    try {
+      const pending = resumeRun(runId, { approved: true }, SUP);
+      await waitFor(() => stepRow(runId, "d")?.status === "running");
+      boom.arm();
+      expect((await abortRun(runId, SUP_B, "dung")).ok).toBe(true);
+      await pending;
+      expect(runRow(runId).status).toBe("aborted");
+      expect(String(runRow(runId).error)).toContain("dung");
+      expect(dispatched()).toEqual([]);
+    } finally {
+      boom.restore();
+    }
+  });
+});
+
 // giữ tham chiếu để tsc không cảnh báo import không dùng
 void orchestrationRuns;
