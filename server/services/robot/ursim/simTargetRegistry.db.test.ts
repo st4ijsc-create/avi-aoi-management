@@ -74,9 +74,11 @@ describe("simTargetRegistry trên CSDL thật", () => {
     expect(await codeOf(resolveSimTarget("default"))).toBe("PRECONDITION_FAILED");
   });
 
-  it("URSIM_HOST không trùng thiết bị nào ⇒ trả đích 'default' (ảo)", async () => {
+  it("URSIM_HOST không trùng thiết bị nào (mọi tên máy trong CSDL phân giải được) ⇒ trả đích 'default' (ảo)", async () => {
     process.env.URSIM_HOST = "192.0.2.200";
-    const t = await resolveSimTarget("default");
+    // R9: tên máy thiết bị KHÔNG phân giải được + sim không loopback ⇒ từ chối. CSDL `_test` có
+    // endpoint dạng tên (vd "stub://x"), nên ca đạt dùng resolver tiêm: mọi tên ⇒ TEST-NET-2.
+    const t = await resolveSimTarget("default", { resolveAddresses: async () => ["198.51.100.250"] });
     expect(t.targetId).toBe("default");
     expect(t.kind).toBe("ursim-virtual");
     expect(t.endpoint.host).toBe("192.0.2.200");

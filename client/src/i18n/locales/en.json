@@ -4195,6 +4195,8 @@
       "rollbackTargetNotDeployed": "Only a deployment that was carried out can be rolled back; this one was rejected, is awaiting approval or is still running.",
       "simTargetUnknown": "This simulation target is not in the server's registered list (only the \"default\" target configured by URSIM_HOST exists).",
       "simTargetIsRealDevice": "The simulation target address matches a registered real robot or device adapter — the system refuses to send power on, brake release and a script to a real device. Point URSIM_HOST at the machine running URSim.",
+      "simTargetUnresolvable": "URSIM_HOST could not be resolved to an IP address — the simulation target cannot be proven not to be a real device, so it is refused.",
+      "deviceHostUnresolvable": "A robot or device adapter is registered under a host name that could not be resolved, so URSIM_HOST cannot be proven not to be that device — refused (only a local loopback URSim is exempt).",
       "noPriorDeploymentToRollBack": "There is no earlier successful deployment on the same device/stage to roll back to.",
       "idempotencyKeyUnreadable": "The idempotency key is already in use but its record could not be read back — retry with a new attempt.",
       "owner-not-in-local-ledger": "This owner isn't in the responding process's LOCAL ledger; it may be held by another process (see state.ledger.foreign.holders) — issue vram.preempt against the process that actually holds it.",

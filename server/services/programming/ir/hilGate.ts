@@ -125,6 +125,8 @@ export async function runHilStage(
       ? `URSim virtual controller accepted + ran the program (robotMode=${validation.robotMode ?? "?"}, programState=${validation.programState ?? "?"}).`
       : validation.error
         ? `URSim HIL error: ${validation.error}`
-        : "URSim virtual controller did not accept/run the program — a broken transpile is rejected here (HIL fail).",
+        : validation.reasonCode === "not_observed_running"
+          ? "URSim virtual controller: program not observed running within the observation window (compile error, or the program ended/stopped before it could be observed) — HIL fail."
+          : "URSim virtual controller did not accept the program (HIL fail).",
   };
 }

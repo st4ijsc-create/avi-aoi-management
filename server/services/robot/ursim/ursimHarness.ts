@@ -24,6 +24,8 @@
  */
 import { UrsimClient, type UrsimEndpoint } from "./ursimClient";
 
+export type UrsimValidationReasonCode = "not_observed_running" | "safety_abnormal" | "safety_unreadable";
+
 export interface UrsimValidationResult {
   /** The URScript reached the controller over the primary/secondary socket. */
   sent: boolean;
@@ -41,6 +43,14 @@ export interface UrsimValidationResult {
   programState?: string;
   /** Last safety status read in the observation window (NORMAL, REDUCED, PROTECTIVE_STOP, …). */
   safetyStatus?: string;
+  /**
+   * fix round 1 — machine-readable why-not-accepted (absent when accepted or on transport error):
+   *   • not_observed_running — the controller never reported "Program running: true" in the
+   *     window: a compile error, OR a program that ended/stopped before it could be observed.
+   *     It does NOT by itself prove the script is broken.
+   *   • safety_abnormal / safety_unreadable — see `error`.
+   */
+  reasonCode?: UrsimValidationReasonCode;
   /** Present ⇔ something failed (unreachable / power / send). Honest, never faked. */
   error?: string;
   /** How long the harness spent (ms). */
@@ -134,6 +144,7 @@ export async function validateUrscriptOnUrsim(
         robotMode,
         programState,
         safetyStatus,
+        reasonCode: s == null ? "safety_unreadable" : "safety_abnormal",
         error: s == null
           ? "safety status unreadable (dashboard answered neither `safetystatus` nor `safetymode`) — cannot confirm a healthy run"
           : `safety status ${s} during the observation window — program not accepted`,
@@ -142,11 +153,14 @@ export async function validateUrscriptOnUrsim(
     do {
       let safety: string | null;
       try {
+        // fix round 1 — `running` FIRST: each dashboard query is its own socket round trip, so
+        // a short valid program could end while robotmode/programState were being read and
+        // never be sampled as running. Safety is read right after, then the informational pair.
+        const running = await client.isProgramRunning();
+        if (running) observedRunning = true;
+        safety = await readSafety();
         robotMode = await client.robotMode();
         programState = await client.programState();
-        const running = await client.isProgramRunning();
-        safety = await readSafety();
-        if (running) observedRunning = true;
       } catch (err) {
         return done({ sent, accepted: false, running: false, robotMode, programState, safetyStatus, error: `state poll failed: ${(err as Error)?.message ?? err}` });
       }
@@ -170,7 +184,15 @@ export async function validateUrscriptOnUrsim(
     }
 
     const accepted = observedRunning;
-    return done({ sent, accepted, running: observedRunning, robotMode, programState, safetyStatus });
+    return done({
+      sent,
+      accepted,
+      running: observedRunning,
+      robotMode,
+      programState,
+      safetyStatus,
+      ...(observedRunning ? {} : { reasonCode: "not_observed_running" as const }),
+    });
   } catch (err) {
     return done({ sent: false, accepted: false, running: false, error: (err as Error)?.message ?? String(err) });
   }

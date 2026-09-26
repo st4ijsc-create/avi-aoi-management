@@ -345,14 +345,24 @@ describe("doc 81 Đợt 1B Task 3 — canary 'simulated' KHÔNG được promote
     expect(rollbacks).toEqual([]);
   });
 
-  it("canary 'failed' + 'simulated' ⇒ haltCode canary_failed (lỗi thật ưu tiên), rollback như cũ", async () => {
+  it("canary 'deployed' + 'failed' + 'simulated' ⇒ haltCode canary_failed (lỗi thật ưu tiên) VÀ canary thật VẪN được rollback", async () => {
     process.env.DPC_DEPLOY_ENABLED = "true";
     const calls: number[] = [];
     const rollbacks: number[] = [];
-    const deps = makeDeps({ 1: "failed", 2: "simulated" }, calls, rollbacks);
-    const res = await deployToFleet(baseInput({ confirmedBy: 8 }), USER, deps);
+    const deps = makeDeps({ 1: "deployed", 2: "failed", 3: "simulated" }, calls, rollbacks);
+    const res = await deployToFleet(
+      baseInput({ confirmedBy: 8, strategy: { canaryCount: 3, promoteOnVerified: false, autoRollbackOnMismatch: true } }),
+      USER,
+      deps,
+    );
+    expect(calls).toEqual([1, 2, 3]); // máy 4 không được promote
     expect(res.halted).toBe(true);
     expect(res.haltCode).toBe("canary_failed");
+    const m1 = res.results.find((r) => r.deviceId === 1)!;
+    expect(m1.forwardWrite).toBe(true);
+    expect(m1.rolledBack).toBe(true);
+    expect(rollbacks).toEqual([m1.deploymentId]); // chỉ canary ghi thật được lùi
+    expect(res.summary.rolledBack).toBe(1);
   });
 
   it("canary 'verified' thật (promote ghi thật) ⇒ promote bình thường (đường hợp lệ không bị chặn oan)", async () => {

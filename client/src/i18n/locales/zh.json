@@ -4187,6 +4187,8 @@
       "rollbackTargetNotDeployed": "只能回滚已执行的部署；该部署已被拒绝、正在等待审批或仍在运行。",
       "simTargetUnknown": "该仿真目标不在服务器已登记的列表中（目前只有由URSIM_HOST配置的\"default\"目标）。",
       "simTargetIsRealDevice": "仿真目标地址与已登记的真实机器人或设备适配器相同——系统拒绝向真实设备发送上电、松开制动和脚本。请将URSIM_HOST指向运行URSim的机器。",
+      "simTargetUnresolvable": "无法将URSIM_HOST解析为IP地址——无法证明仿真目标不是真实设备，因此系统拒绝。",
+      "deviceHostUnresolvable": "有机器人或设备适配器以无法解析的主机名登记，因此无法证明URSIM_HOST不是该设备——系统拒绝（仅本地回环URSim例外）。",
       "noPriorDeploymentToRollBack": "同一设备/阶段上没有更早的成功部署可回滚。",
       "idempotencyKeyUnreadable": "幂等键已被使用但无法读回其记录——请发起新的尝试重试。",
       "owner-not-in-local-ledger": "此持有者不在应答进程的本地台账中——它可能由另一个进程持有（参见 state.ledger.foreign.holders）。请在真正持有它的那个进程上执行 vram.preempt。",

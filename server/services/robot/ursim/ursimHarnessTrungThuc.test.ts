@@ -54,6 +54,17 @@ describe("validateUrscriptOnUrsim — accepted chỉ khi chương trình THẬT 
     expect(r.robotMode).toBe("Robotmode: RUNNING");
     expect(r.running).toBe(false);
     expect(r.accepted).toBe(false);
+    // fix round 1: lý do riêng — không quan sát được chương trình chạy (không đổ cho "transpile hỏng").
+    expect(r.reasonCode).toBe("not_observed_running");
+  });
+
+  it("fix round 1 — chương trình HỢP LỆ nhưng NGẮN (chỉ còn chạy trong 1 lệnh dashboard sau khi bắt đầu) ⇒ `running` được đọc TRƯỚC nên vẫn accepted", async () => {
+    const fake = new FakeUrController({ programRunDashboardCommands: 1 });
+    const r = await run(fake, GOOD);
+    expect(fake.programs.length).toBe(1);
+    expect(r.running).toBe(true);
+    expect(r.accepted).toBe(true);
+    expect(r.reasonCode).toBeUndefined();
   });
 
   it("script HỢP LỆ chạy thật ('Program running: true', an toàn NORMAL) ⇒ accepted=true", async () => {

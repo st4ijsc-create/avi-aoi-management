@@ -50,6 +50,12 @@ export interface FakeUrOptions {
    * hỏi đầu. Hết danh sách ⇒ dùng `safety` hiện hành.
    */
   safetyRepliesAfterStart?: string[];
+  /**
+   * Chương trình NGẮN, đo bằng số lệnh dashboard (tất định, không phụ thuộc đồng hồ): chương
+   * trình chỉ còn chạy trong N lệnh dashboard đầu tiên kể từ khi bắt đầu; lệnh thứ N+1 thấy
+   * nó đã kết thúc bình thường (Program running: false, an toàn NORMAL).
+   */
+  programRunDashboardCommands?: number;
 }
 
 /** Gói trạng thái nhị phân tối thiểu (≥ 79 byte — tài liệu URScript §2 yêu cầu client đọc ≥ 79 byte). */
@@ -125,6 +131,7 @@ export class FakeUrController {
   }
 
   private programStarted = false;
+  private commandsSinceStart = 0;
 
   private reply(cmd: string): string {
     switch (cmd) {
@@ -197,6 +204,10 @@ export class FakeUrController {
           buf = buf.slice(nl + 1);
           if (!cmd) continue;
           this.dashboardLog.push(cmd);
+          if (this.programRunning && this.opts.programRunDashboardCommands != null) {
+            this.commandsSinceStart += 1;
+            if (this.commandsSinceStart > this.opts.programRunDashboardCommands) this.programRunning = false;
+          }
           sock.write(this.reply(cmd) + "\n");
         }
       });

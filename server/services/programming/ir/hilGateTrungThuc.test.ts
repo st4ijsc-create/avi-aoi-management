@@ -94,6 +94,10 @@ describe("HIL e2e — harness THẬT + bộ điều khiển UR giả", () => {
     expect(r.validation?.robotMode).toBe("Robotmode: RUNNING");
     expect(r.validation?.running).toBe(false);
     expect(r.pass).toBe(false);
+    // fix round 1: lý do trung thực — "không quan sát được chạy", không khẳng định "transpile hỏng".
+    expect(r.validation?.reasonCode).toBe("not_observed_running");
+    expect(r.reason).toMatch(/not observed running/i);
+    expect(r.reason).not.toMatch(/broken transpile/i);
   });
 
   it("script transpile HỢP LỆ chạy thật trên bộ điều khiển giả ⇒ HIL PASS", async () => {

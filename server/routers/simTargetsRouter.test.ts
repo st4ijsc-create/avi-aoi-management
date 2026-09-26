@@ -41,6 +41,19 @@ vi.mock("../db/connection", async () => {
   };
 });
 
+// DNS giả (fix round 1, R9): CHỈ một tên sim được phân giải, về 127.0.0.1; tên khác ⇒ ENOTFOUND.
+// `net.connect` dùng `node:dns` (callback) — KHÔNG bị mock này chạm tới ⇒ nếu harness còn nối bằng
+// TÊN ".invalid" thay vì IP đã kiểm, kết nối sẽ hỏng (RFC 6761: .invalid không bao giờ phân giải).
+const dnsCalls = vi.hoisted(() => ({ list: [] as string[] }));
+vi.mock("node:dns/promises", () => {
+  const lookup = async (host: string) => {
+    dnsCalls.list.push(host);
+    if (host === "ursim-sim.example.invalid") return [{ address: "127.0.0.1", family: 4 }];
+    throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND" });
+  };
+  return { lookup, default: { lookup } };
+});
+
 // RBAC: cấp theo cặp module/action để chứng minh ursimPing đòi machine_control/canCreate.
 const granted = vi.hoisted(() => ({ set: new Set<string>() }));
 vi.mock("../_core/accessControl", () => ({
@@ -163,6 +176,27 @@ describe("validateUrscript — không nhận host/cổng tuỳ ý", () => {
     expect(r.accepted).toBe(true);
     expect(fake.dashboardLog.slice(0, 2)).toEqual(["power on", "brake release"]);
     expect(fake.programs.length).toBe(1);
+  });
+});
+
+describe("fix round 1 (R9) — KIỂM = DÙNG: harness nối tới IP đã phân giải, không phải tên", () => {
+  it("URSIM_HOST là TÊN (chỉ mock DNS phân giải được) ⇒ validateUrscript chạy trên 127.0.0.1, tên được phân giải đúng MỘT lần", async () => {
+    const fake = await fakeAsDefaultTarget();
+    process.env.URSIM_HOST = "ursim-sim.example.invalid";
+    dnsCalls.list = [];
+    const r = await withTimeout(caller.validateUrscript({ targetId: "default", urscript: GOOD }), 10000);
+    expect(r.error).toBeUndefined();
+    expect(r.sent).toBe(true);
+    expect(r.accepted).toBe(true);
+    expect(fake.programs.length).toBe(1);
+    expect(dnsCalls.list.filter((h) => h === "ursim-sim.example.invalid")).toHaveLength(1);
+  });
+
+  it("URSIM_HOST không phân giải được ⇒ PRECONDITION_FAILED, không lệnh nào tới bộ điều khiển", async () => {
+    const fake = await fakeAsDefaultTarget();
+    process.env.URSIM_HOST = "no-such-ursim.example.invalid";
+    expect(await codeOf(caller.validateUrscript({ targetId: "default", urscript: GOOD }))).toBe("PRECONDITION_FAILED");
+    expect(fake.dashboardLog).toEqual([]);
   });
 });
 

@@ -14,8 +14,18 @@
  * kể cả endpoint dự phòng HA / tuỳ chọn host trong `connectionOptions`) có trong CSDL —
  * đọc-chỉ, không ghi gì. Không đọc được CSDL ⇒ từ chối (fail-closed).
  *
- * Mọi đường gửi `power on`/`brake release` của harness (router + HIL) lấy endpoint TỪ ĐÂY,
- * không bao giờ từ tham số client.
+ * Mọi đường gửi `power on`/`brake release` của harness (router + HIL + deploy URSim) lấy
+ * endpoint TỪ ĐÂY, không bao giờ từ tham số client.
+ *
+ * Fix round 1 (Ruling R9) — kiểm FAIL-CLOSED và KIỂM = DÙNG:
+ *   • mọi IP literal được CHUẨN HOÁ (IPv4-mapped ⇒ IPv4, IPv6 đầy đủ ⇔ rút gọn, ngoặc, hoa/
+ *     thường, dấu chấm cuối) trước khi so;
+ *   • URSIM_HOST không phân giải được (lỗi / hết giờ / rỗng) ⇒ TỪ CHỐI;
+ *   • URSIM_HOST được phân giải MỘT lần và endpoint trả về mang ĐỊA CHỈ IP đó (không phải tên)
+ *     ⇒ UrsimClient nối đúng địa chỉ đã kiểm, không tự phân giải lại;
+ *   • một tên máy thiết bị không phân giải được ⇒ TỪ CHỐI, TRỪ KHI mọi địa chỉ của sim đều là
+ *     loopback (127.0.0.0/8, ::1): cánh tay thật đăng ký dưới một tên không phân giải được
+ *     không thể là URSim loopback cục bộ — giữ HIL dev chạy được với CSDL `_test`.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import net from "node:net";
@@ -31,7 +41,10 @@ export const DEFAULT_SIM_TARGET_ID = "default";
 
 export interface RegisteredSimTarget {
   targetId: string;
+  /** `endpoint.host` là ĐỊA CHỈ IP đã phân giải + đã kiểm (không phải tên máy). */
   endpoint: UrsimEndpoint;
+  /** Giá trị URSIM_HOST như cấu hình (chỉ để hiển thị / log). */
+  configuredHost: string;
   /** Luôn là đích ẢO (URSim) — đã kiểm không trùng robot/adapter thật trong CSDL. */
   kind: "ursim-virtual";
 }
@@ -39,8 +52,46 @@ export interface RegisteredSimTarget {
 export interface SimTargetRegistryDeps {
   /** Danh sách chuỗi endpoint/host của robot + adapter thiết bị thật (mặc định: đọc CSDL). */
   listRealDeviceEndpoints?: () => Promise<string[]>;
-  /** Phân giải tên máy → địa chỉ IP (mặc định: dns.lookup có hạn giờ). */
+  /**
+   * Phân giải tên máy → địa chỉ IP (mặc định: dns.lookup). Ném / treo / trả rỗng ⇒ "không phân
+   * giải được" (fail-closed). Mỗi lượt gọi bị bọc hạn `dnsTimeoutMs`.
+   */
   resolveAddresses?: (host: string) => Promise<string[]>;
+  /** Hạn cho MỖI lượt phân giải (ms). Mặc định 1500. */
+  dnsTimeoutMs?: number;
+}
+
+/**
+ * Dạng CHUẨN của một IP literal, hoặc null nếu không phải IP. IPv4-mapped (::ffff:a.b.c.d /
+ * ::ffff:XXXX:XXXX) ⇒ IPv4 chấm; IPv6 ⇒ dạng rút gọn chữ thường (WHATWG URL); bỏ ngoặc,
+ * zone id, dấu chấm cuối.
+ */
+export function canonicalIp(raw: string): string | null {
+  let h = String(raw ?? "").trim().toLowerCase();
+  if (h.startsWith("[") && h.endsWith("]")) h = h.slice(1, -1);
+  h = h.replace(/\.$/, "");
+  const zone = h.indexOf("%");
+  if (zone >= 0) h = h.slice(0, zone);
+  if (net.isIPv4(h)) return h.split(".").map((o) => String(Number(o))).join(".");
+  if (!net.isIPv6(h)) return null;
+  let c: string;
+  try {
+    c = new URL(`http://[${h}]`).hostname.slice(1, -1);
+  } catch {
+    return null;
+  }
+  const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(c);
+  if (mapped) {
+    const a = parseInt(mapped[1], 16);
+    const b = parseInt(mapped[2], 16);
+    return `${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`;
+  }
+  return c;
+}
+
+/** Loopback: 127.0.0.0/8 hoặc ::1 (đầu vào đã chuẩn hoá). */
+function isLoopback(ip: string): boolean {
+  return ip === "::1" || /^127\./.test(ip);
 }
 
 /**
@@ -104,34 +155,82 @@ export async function listRealDeviceEndpointsFromDb(): Promise<string[]> {
 }
 
 async function defaultResolveAddresses(host: string): Promise<string[]> {
-  if (net.isIP(host)) return [host];
+  const res = await lookup(host, { all: true });
+  return res.map((a) => a.address);
+}
+
+const DEFAULT_DNS_TIMEOUT_MS = 1500;
+
+/** Địa chỉ CHUẨN của một host: literal ⇒ chính nó; tên ⇒ phân giải (có hạn). null = không phân giải được. */
+async function canonicalAddresses(
+  host: string,
+  resolve: (host: string) => Promise<string[]>,
+  timeoutMs: number,
+): Promise<string[] | null> {
+  const lit = canonicalIp(host);
+  if (lit) return [lit];
+  let timer: NodeJS.Timeout | undefined;
   try {
-    const res = await Promise.race([
-      lookup(host, { all: true }),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("dns timeout")), 1500).unref?.()),
+    const addrs = await Promise.race([
+      resolve(host),
+      new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new Error("dns timeout")), timeoutMs);
+        timer.unref?.();
+      }),
     ]);
-    return res.map((a) => a.address.toLowerCase());
+    const out = [...new Set((addrs ?? []).map(canonicalIp).filter((a): a is string => !!a))];
+    return out.length > 0 ? out : null;
   } catch {
-    return [];
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
+type SimHostCheck =
+  | { ok: true; address: string }
+  | { ok: false; reason: "simTargetUnresolvable" | "simTargetIsRealDevice" | "deviceHostUnresolvable"; detail: string };
+
 /**
- * True ⇔ `simHost` trùng host của một thiết bị thật: so chữ (chuẩn hoá) và so địa chỉ đã
- * phân giải (tên máy ↔ IP). Không phân giải được thì chỉ so chữ.
+ * Kiểm URSIM_HOST với mọi host thiết bị thật (R9). Trả địa chỉ IP sẽ DÙNG khi đạt.
  */
-export async function hostMatchesRealDevice(
+export async function checkSimHost(
   simHost: string,
   deviceEndpoints: string[],
-  resolveAddresses: (host: string) => Promise<string[]> = defaultResolveAddresses,
-): Promise<boolean> {
-  const sim = hostOfEndpoint(simHost);
-  if (!sim) return false;
-  const simKeys = new Set([sim, ...(await resolveAddresses(sim))]);
+  resolve: (host: string) => Promise<string[]> = defaultResolveAddresses,
+  timeoutMs: number = DEFAULT_DNS_TIMEOUT_MS,
+): Promise<SimHostCheck> {
+  const simName = hostOfEndpoint(simHost);
+  const simAddrs = simName ? await canonicalAddresses(simName, resolve, timeoutMs) : null;
+  if (!simName || !simAddrs) {
+    return { ok: false, reason: "simTargetUnresolvable", detail: `URSIM_HOST "${simHost}" could not be resolved to an IP address` };
+  }
+  const simSet = new Set(simAddrs);
   const deviceHosts = [...new Set(deviceEndpoints.map(hostOfEndpoint).filter((h): h is string => !!h))];
-  if (deviceHosts.some((h) => simKeys.has(h))) return true;
-  const resolved = await Promise.all(deviceHosts.filter((h) => !net.isIP(h)).map((h) => resolveAddresses(h)));
-  return resolved.some((addrs) => addrs.some((a) => simKeys.has(a)));
+  const unresolved: string[] = [];
+  const matches: string[] = [];
+  await Promise.all(
+    deviceHosts.map(async (h) => {
+      if (h === simName) {
+        matches.push(h);
+        return;
+      }
+      const addrs = await canonicalAddresses(h, resolve, timeoutMs);
+      if (!addrs) unresolved.push(h);
+      else if (addrs.some((a) => simSet.has(a))) matches.push(h);
+    }),
+  );
+  if (matches.length > 0) {
+    return { ok: false, reason: "simTargetIsRealDevice", detail: `URSIM_HOST matches device host(s): ${matches.slice(0, 5).join(", ")}` };
+  }
+  if (unresolved.length > 0 && !simAddrs.every(isLoopback)) {
+    return {
+      ok: false,
+      reason: "deviceHostUnresolvable",
+      detail: `device host(s) could not be resolved, so URSIM_HOST cannot be proven not to be one of them: ${unresolved.slice(0, 5).join(", ")}`,
+    };
+  }
+  return { ok: true, address: simAddrs[0] };
 }
 
 /**
@@ -171,13 +270,20 @@ export async function resolveSimTarget(
       `Cannot verify the URSim target is not a real device (${(e as Error)?.message ?? e}) — refusing.`,
     );
   }
-  if (await hostMatchesRealDevice(endpoint.host, deviceEndpoints, deps.resolveAddresses)) {
+  const check = await checkSimHost(
+    endpoint.host,
+    deviceEndpoints,
+    deps.resolveAddresses ?? defaultResolveAddresses,
+    deps.dnsTimeoutMs ?? DEFAULT_DNS_TIMEOUT_MS,
+  );
+  if (!check.ok) {
     throw appError(
       "PRECONDITION_FAILED",
       "OPERATION_FAILED",
-      { operation: "resolveSimTarget", reason: "simTargetIsRealDevice" },
-      "URSIM_HOST matches a registered robot / device adapter host — refusing to send power on / brake release / script to a real device.",
+      { operation: "resolveSimTarget", reason: check.reason },
+      `${check.detail} — refusing to send power on / brake release / script (sim target must be provably virtual).`,
     );
   }
-  return { targetId, endpoint, kind: "ursim-virtual" };
+  // KIỂM = DÙNG: nối tới đúng địa chỉ đã kiểm, không để UrsimClient phân giải lại tên.
+  return { targetId, endpoint: { ...endpoint, host: check.address }, configuredHost: endpoint.host, kind: "ursim-virtual" };
 }
