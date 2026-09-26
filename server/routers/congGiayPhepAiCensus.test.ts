@@ -244,7 +244,10 @@ const GHIM = { tong: 2223, beMatAi: 357, aiCoCong: 295, aiMienTru: 62, ngoaiAiCo
 const GHIM_MODULE_KHAC = {
   MOD_PRODUCTION: 62,
   MOD_QUALITY: 67,
-  MOD_ENGINEERING: 68,
+  // ★ 2026-09-26 doc 80 Đợt 0 Task 1 (ORC-11) — 68 → 73: 5 thủ tục `orchestrationGov.*` (trước là
+  //   `protectedProcedure` trần, IDOR nhật ký run) nay đi qua `moduleProcedure("MOD_ENGINEERING")`
+  //   như `orchestrationRouter`. Cố ý — lời khai ở `server/routers/orchestrationGovRouter.ts`.
+  MOD_ENGINEERING: 73,
   MOD_FEDERATION: 8,
   MOD_OT_CONTROL: 105,
 } as const;

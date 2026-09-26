@@ -25,7 +25,9 @@
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { DbUnavailableError } from "../../../_core/dbErrors";
-import { eq, inArray } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+import { appError } from "../../../_core/appError";
+import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
 import {
@@ -42,6 +44,7 @@ import {
   evaluateCondition,
   type WorkflowDefinition,
   type WorkflowStep,
+  type HitlGateStep,
   type Condition,
   type EvalContext,
   type ValidationError,
@@ -225,7 +228,20 @@ export interface GateDecision {
 
 // ── Internal exec context (in-memory; mirrors run.contextJson) ──────────────────
 
-interface RunContext {
+/**
+ * doc 80 ORC-01 — handle of a run whose driver is ALIVE in THIS process. `abortRun` flips
+ * `aborting` + fires `controller.abort()`; the walker checks the flag between steps and every
+ * wait (`delay` / `wait_*` poll) receives the AbortSignal so it wakes up immediately.
+ */
+export interface LiveRunHandle {
+  aborting: boolean;
+  controller: AbortController;
+}
+
+/** runId → live driver handle (the RunContext itself). Entry removed when the driver returns. */
+const liveRuns = new Map<number, LiveRunHandle>();
+
+interface RunContext extends LiveRunHandle {
   runId: number;
   def: WorkflowDefinition;
   params: Record<string, unknown>;
@@ -239,8 +255,6 @@ interface RunContext {
   states: Map<number, string>;
   /** When set, the walk pauses (a hitl_gate reached) at this step id. */
   pausedAtStepId?: string;
-  /** True once an abort/fatal interlock has been requested — unwind toward 'failed'. */
-  aborting?: boolean;
   /**
    * Doc 25 T1 — RESUME idempotent: stepId đã 'completed'/'skipped' ở lần chạy trước
    * (nguồn chân lý = bảng _run_steps). execStep BỎ QUA mọi bước trong tập này nên khi
@@ -313,6 +327,31 @@ async function setRunStatus(
   // doc 33 D1 (F8 §5.1.2) — durable RunEvent log: terminal run transitions (FOE_DURABLE, best-effort).
   if (status === "completed") void appendRunEvent(runId, "RUN_COMPLETED", { ts: Date.now() });
   else if (status === "failed" || status === "aborted") void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status } });
+}
+
+/**
+ * doc 80 ORC-01 — status write used by the DRIVER: a conditional UPDATE
+ * `… WHERE id = $1 AND status <> 'aborted'`, so a run aborted meanwhile (by abortRun in this
+ * process, or by any other instance straight in the DB) is NEVER overwritten back to
+ * completed / failed / awaiting_confirm / compensating. Returns true iff the row was written.
+ * DB unavailable → false (nothing written; the caller treats the run as not-its-to-finish).
+ */
+async function setRunStatusUnlessAborted(
+  runId: number,
+  status: OrchestrationRun["status"],
+  patch: Partial<OrchestrationRun> = {},
+): Promise<boolean> {
+  const d = await getDb();
+  if (!d) return false;
+  const written = await d
+    .update(orchestrationRuns)
+    .set({ status, updatedAt: new Date(), ...patch })
+    .where(and(eq(orchestrationRuns.id, runId), ne(orchestrationRuns.status, "aborted")))
+    .returning({ id: orchestrationRuns.id });
+  if (written.length === 0) return false;
+  if (status === "completed") void appendRunEvent(runId, "RUN_COMPLETED", { ts: Date.now() });
+  else if (status === "failed" || status === "aborted") void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status } });
+  return true;
 }
 
 async function upsertStep(
@@ -515,7 +554,24 @@ function buildEquipmentCommand(
 
 // ── the step walker ───────────────────────────────────────────────────────────
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, Math.max(0, ms)));
+/**
+ * Sleep that WAKES EARLY when `signal` aborts (doc 80 ORC-01). Resolves (never rejects) — the
+ * caller re-checks `rc.aborting` right after, so an abort turns into an 'aborted' outcome.
+ */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted) return resolve();
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, Math.max(0, ms));
+    signal?.addEventListener("abort", done, { once: true });
+  });
+}
+
+const ABORTED_OUTCOME: StepOutcome = { kind: "aborted", error: "Run is aborting." };
 
 /** Run a precondition/interlock for a step. Returns null if it holds, else an outcome. */
 async function checkPrecondition(rc: RunContext, step: WorkflowStep): Promise<StepOutcome | null> {
@@ -604,7 +660,9 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
       error: "error" in outcome ? outcome.error : null,
       finishedAt: new Date(),
     });
-    if (step.compensation) {
+    // doc 80 ORC-01 — a USER abort must not dispatch anything after the abort instant, so the
+    // saga compensation (which issues commands) is NOT run while the run is aborting.
+    if (step.compensation && !rc.aborting) {
       await runCompensation(rc, step);
     }
   }
@@ -618,7 +676,8 @@ async function runStepBody(rc: RunContext, step: WorkflowStep, attempt: number):
       case "command":
         return await execCommand(rc, step, attempt);
       case "delay":
-        await sleep(step.ms);
+        await sleep(step.ms, rc.controller.signal);
+        if (rc.aborting) return ABORTED_OUTCOME;
         return { kind: "ok" };
       case "sequence":
         return await execSequence(rc, step.steps);
@@ -721,6 +780,9 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   await ensureOrchestrationAction(rc.user, idempotencyKey, step, step.args ?? {});
   const cmd = buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, idempotencyKey, rc.user);
 
+  // doc 80 ORC-01 — last check before the command leaves the engine (the awaits above can span an abort).
+  if (rc.aborting) return ABORTED_OUTCOME;
+
   // ROUTE THROUGH E0 → existing HITL/dry-run dispatcher. NEVER a direct device path.
   const adapter = equipmentRegistry.getAdapter(cap.adapterKind);
   const result: EquipmentCommandResult = await adapter.sendCommand(cmd);
@@ -776,6 +838,7 @@ async function execWaitState(rc: RunContext, step: Extract<WorkflowStep, { type:
   const targets = new Set<string>(step.targetStates as string[]);
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    if (rc.aborting) return ABORTED_OUTCOME;
     await refreshReadbacks(rc, step.machineId);
     const current = rc.states.get(step.machineId);
     if (current && targets.has(current)) {
@@ -785,7 +848,7 @@ async function execWaitState(rc: RunContext, step: Extract<WorkflowStep, { type:
     if (Date.now() >= deadline) {
       return { kind: "failed", error: `wait_state timeout (machine ${step.machineId} state="${current ?? "?"}").` };
     }
-    await sleep(pollMs);
+    await sleep(pollMs, rc.controller.signal);
   }
 }
 
@@ -794,6 +857,7 @@ async function execWaitTelemetry(rc: RunContext, step: Extract<WorkflowStep, { t
   const pollMs = Math.max(1, step.pollMs ?? Math.min(250, step.timeoutMs));
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    if (rc.aborting) return ABORTED_OUTCOME;
     await refreshConditionReadbacks(rc, step.condition);
     if (evaluateCondition(step.condition, evalCtxOf(rc))) {
       await upsertStep(rc.runId, step.id, step.type, { status: "running", result: { satisfied: true } });
@@ -802,7 +866,7 @@ async function execWaitTelemetry(rc: RunContext, step: Extract<WorkflowStep, { t
     if (Date.now() >= deadline) {
       return { kind: "failed", error: `wait_telemetry timeout for step "${step.id}".` };
     }
-    await sleep(pollMs);
+    await sleep(pollMs, rc.controller.signal);
   }
 }
 
@@ -810,7 +874,8 @@ async function execWaitTelemetry(rc: RunContext, step: Extract<WorkflowStep, { t
 async function runCompensation(rc: RunContext, step: WorkflowStep): Promise<void> {
   if (!step.compensation) return;
   try {
-    await setRunStatus(rc.runId, "compensating");
+    // doc 80 ORC-01 — never flip an ABORTED run back to 'compensating'.
+    await setRunStatusUnlessAborted(rc.runId, "compensating");
     const comp = step.compensation;
     // run the compensation step body once (no nested compensation cascade)
     await upsertStep(rc.runId, comp.id, comp.type, { status: "running", startedAt: new Date() });
@@ -833,27 +898,59 @@ async function runCompensation(rc: RunContext, step: WorkflowStep): Promise<void
  * and the walk continues PAST it (the gate's id is recorded as resolved in context).
  */
 async function driveRun(rc: RunContext): Promise<OrchestrationRun["status"]> {
-  await setRunStatus(rc.runId, "running", { startedAt: new Date() });
-  const out = await execSequence(rc, rc.def.steps);
+  return withLiveRun(rc, async () => {
+    // Guarded: a run aborted while still 'queued' (e.g. async mode) is never revived.
+    const started = await setRunStatusUnlessAborted(rc.runId, "running", { startedAt: new Date() });
+    if (!started) return "aborted";
+    const out = await execSequence(rc, rc.def.steps);
+    return finishWalk(rc, out);
+  });
+}
 
-  if (out.kind === "paused") {
-    await setRunStatus(rc.runId, "awaiting_confirm", { currentStepId: out.stepId });
-    await persistContext(rc);
-    return "awaiting_confirm";
+/**
+ * doc 80 ORC-01 — register the driver in `liveRuns` for the duration of the walk so abortRun
+ * can reach it; always unregister (only our own entry) when the walk returns or throws.
+ */
+async function withLiveRun(
+  rc: RunContext,
+  walk: () => Promise<OrchestrationRun["status"]>,
+): Promise<OrchestrationRun["status"]> {
+  liveRuns.set(rc.runId, rc);
+  try {
+    return await walk();
+  } finally {
+    if (liveRuns.get(rc.runId) === rc) liveRuns.delete(rc.runId);
   }
-  if (out.kind === "aborted") {
-    await setRunStatus(rc.runId, "aborted", { finishedAt: new Date(), error: "error" in out ? out.error : null });
+}
+
+/**
+ * Persist the walk's outcome. Every write is `setRunStatusUnlessAborted` (UPDATE … WHERE
+ * status <> 'aborted'): if the run was aborted meanwhile the write is refused and the driver
+ * reports 'aborted' — the abort is NEVER overwritten by completed/failed/awaiting_confirm.
+ */
+async function finishWalk(rc: RunContext, out: StepOutcome): Promise<OrchestrationRun["status"]> {
+  if (rc.aborting) {
+    // abortRun owns the terminal write (with the user's reason). This guarded write only
+    // matters if abortRun's own DB write failed — the run must not stay 'running' with no driver.
+    await setRunStatusUnlessAborted(rc.runId, "aborted", { finishedAt: new Date(), error: "Run aborted by request." });
     await persistContext(rc);
     return "aborted";
   }
-  if (out.kind === "failed") {
-    await setRunStatus(rc.runId, "failed", { finishedAt: new Date(), error: "error" in out ? out.error : null });
-    await persistContext(rc);
-    return "failed";
+  let status: OrchestrationRun["status"];
+  let patch: Partial<OrchestrationRun>;
+  if (out.kind === "paused") {
+    status = "awaiting_confirm";
+    patch = { currentStepId: out.stepId };
+  } else if (out.kind === "aborted" || out.kind === "failed") {
+    status = out.kind;
+    patch = { finishedAt: new Date(), error: out.error };
+  } else {
+    status = "completed";
+    patch = { finishedAt: new Date() };
   }
-  await setRunStatus(rc.runId, "completed", { finishedAt: new Date() });
+  const written = await setRunStatusUnlessAborted(rc.runId, status, patch);
   await persistContext(rc);
-  return "completed";
+  return written ? status : "aborted";
 }
 
 /**
@@ -886,7 +983,52 @@ async function buildRunContext(
     telemetry,
     states,
     completed,
+    aborting: false,
+    controller: new AbortController(),
   };
+}
+
+/** Depth-first lookup of a step by id anywhere in the tree (children, branches, compensation). */
+function findStepDeep(steps: WorkflowStep[] | undefined, id: string): WorkflowStep | undefined {
+  for (const s of steps ?? []) {
+    if (s.id === id) return s;
+    const node = s as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
+    const hit =
+      findStepDeep(node.steps, id) ??
+      findStepDeep(node.then, id) ??
+      findStepDeep(node.else, id) ??
+      (s.compensation ? findStepDeep([s.compensation], id) : undefined);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/**
+ * doc 80 ORC-03 — ENFORCE the gate's approver policy on APPROVAL (throws FORBIDDEN):
+ *   • approverRoles declared ⇒ the approver's role must be listed (admin is always allowed);
+ *   • fourEyes ⇒ the approver must not be the user who started the run (no admin exemption).
+ */
+function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, user: FoeUser): void {
+  const role = String(user.role ?? "").trim().toLowerCase();
+  const roles = (Array.isArray(gate.approverRoles) ? gate.approverRoles : [])
+    .map((r) => String(r).trim().toLowerCase())
+    .filter(Boolean);
+  if (roles.length > 0 && role !== "admin" && !roles.includes(role)) {
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "approveOrchestrationGate" },
+      `Gate "${gate.id}" may only be approved by: ${roles.join(", ")} (your role: ${role || "?"}).`,
+    );
+  }
+  if (gate.fourEyes === true && run.startedBy != null && run.startedBy === user.id) {
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "selfApproveOrchestrationGate" },
+      `Gate "${gate.id}" requires four-eyes: the user who started run ${run.id} cannot approve it.`,
+    );
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -1031,9 +1173,15 @@ export async function rollbackWorkflow(
   workflowId: number,
   version: number,
   user: FoeUser,
+  reason: string,
 ): Promise<DeployResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
+  }
+  // doc 80 ORC-05 — a rollback is a deploy: it needs a HUMAN reason (≥3 chars), recorded in audit.
+  const why = typeof reason === "string" ? reason.trim() : "";
+  if (why.length < 3) {
+    return { ok: false, enabled: true, message: "A rollback reason (at least 3 characters) is required." };
   }
   const d = await db();
   const snaps = await d
@@ -1045,11 +1193,42 @@ export async function rollbackWorkflow(
     return { ok: false, enabled: true, message: `No snapshot for workflow ${workflowId} version ${version}.` };
   }
   // Re-deploy the old definition → bumps to a fresh version with the old content.
-  // doc 40 ENG-F4 — rollback re-deploy nội dung ĐÃ từng deploy+validate → qua sim-gate bằng
-  // override có lý do (được ghi audit), không buộc mô phỏng lại một bản đã biết-tốt.
-  return deployWorkflow(target.definitionJson as WorkflowDefinition, user, {
-    overrideReason: `rollback to v${version} (previously deployed, validated content)`,
+  // doc 80 ORC-05 — the sim-gate override is NO LONGER auto-filled by the engine: when the gate is
+  // on, the override carries the HUMAN's mandatory reason (audited by auditDeploySimGate).
+  const def = target.definitionJson as WorkflowDefinition;
+  const res = await deployWorkflow(def, user, {
+    overrideReason: `rollback to v${version}: ${why}`,
   });
+  if (res.ok) void auditRollback(user, def, version, res.version ?? null, why);
+  return res;
+}
+
+/** doc 80 ORC-05 — audit the rollback itself with the human reason (best-effort). */
+async function auditRollback(
+  user: FoeUser,
+  def: WorkflowDefinition,
+  fromVersion: number,
+  newVersion: number | null,
+  reason: string,
+): Promise<void> {
+  try {
+    const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+    await logCrudOperation(
+      createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }),
+      {
+        action: "config_change",
+        entityType: "orchestration_workflow",
+        entityName: def.ref,
+        details: {
+          operation: "foe_workflow_rollback",
+          metadata: { ref: def.ref, rolledBackTo: fromVersion, newVersion, reason },
+        },
+        status: "success",
+      },
+    );
+  } catch {
+    /* audit best-effort */
+  }
 }
 
 /**
@@ -1084,6 +1263,15 @@ export async function startRun(
       .where(eq(orchestrationWorkflows.ref, workflowRef))
       .limit(1);
     if (!wf) return { ok: false, enabled: true, message: `Workflow "${workflowRef}" not found.` };
+    // doc 80 ORC-06 — only a DEPLOYED ('active') workflow runs. A duplicate is created 'draft'
+    // and must pass deployWorkflow (validation + sim-gate + version snapshot) before running.
+    if (wf.status !== "active") {
+      return {
+        ok: false,
+        enabled: true,
+        message: `Workflow "${workflowRef}" is ${wf.status} — deploy it before running.`,
+      };
+    }
 
     const def = wf.definitionJson as WorkflowDefinition;
     const [run] = await d
@@ -1184,19 +1372,19 @@ export async function resumeRun(
     if (!decision.approved) {
       // U6 (doc 26) — kèm lý do từ chối (note) vào audit của run + bước để truy vết.
       const reason = decision.note?.trim();
-      await setRunStatus(runId, "aborted", {
+      // doc 80 ORC-02 — CAS: only ONE decision (approve OR reject) may claim the paused run.
+      await claimPausedRun(runId, "aborted", {
         finishedAt: new Date(),
         error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
       });
+      void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status: "aborted" } });
       if (gateStepId) {
-        const [wf2] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
         await upsertStep(runId, gateStepId, "hitl_gate", {
           status: "failed",
           error: reason ? `Rejected: ${reason}` : "Rejected",
           result: { approved: false, note: reason ?? null, rejectedBy: user.id },
           finishedAt: new Date(),
         }).catch(() => undefined);
-        void wf2;
       }
       return { ok: false, enabled: true, runId, status: "aborted" };
     }
@@ -1204,6 +1392,18 @@ export async function resumeRun(
     const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
     if (!wf) return { ok: false, enabled: true, message: `Workflow ${run.workflowId} not found.` };
     const def = wf.definitionJson as WorkflowDefinition;
+
+    // doc 80 ORC-03 — approving a hitl_gate enforces its approverRoles / fourEyes (FORBIDDEN).
+    // Only a run paused AT a gate ('awaiting_confirm'); an interrupted 'held' run has no open gate.
+    if (run.status === "awaiting_confirm" && gateStepId) {
+      const gate = findStepDeep(def.steps, gateStepId);
+      if (gate && gate.type === "hitl_gate") assertGateApprover(gate, run, user);
+    }
+
+    // doc 80 ORC-02 — CAS `UPDATE … SET status='running' WHERE id=$1 AND status IN
+    // ('awaiting_confirm','held') RETURNING *`: 0 rows ⇒ another resume already claimed it ⇒ CONFLICT.
+    // Exactly one caller proceeds to drive the run.
+    await claimPausedRun(runId, "running");
 
     // mark the gate resolved (completed) so the re-walk skips it
     if (gateStepId) {
@@ -1220,10 +1420,43 @@ export async function resumeRun(
     const status = await driveRunFromResume(rc);
     return { ok: status !== "failed" && status !== "aborted", enabled: true, runId, status };
   } catch (err) {
+    // CONFLICT (lost the CAS) / FORBIDDEN (gate policy) are business refusals raised BEFORE any
+    // state change — surface them as-is; never mark the run failed for them.
+    if (err instanceof TRPCError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     await setRunStatus(runId, "failed", { finishedAt: new Date(), error: message }).catch(() => undefined);
     return { ok: false, enabled: true, runId, status: "failed", message };
   }
+}
+
+/** Statuses a human/auto resume may claim (doc 80 ORC-02). */
+const RESUMABLE_STATUSES: OrchestrationRun["status"][] = ["awaiting_confirm", "held"];
+
+/**
+ * doc 80 ORC-02 — compare-and-set claim of a paused run:
+ * `UPDATE orchestration_runs SET status=$2 … WHERE id=$1 AND status IN ('awaiting_confirm','held')
+ * RETURNING *`. 0 rows ⇒ someone else resumed / rejected / aborted it first ⇒ CONFLICT.
+ */
+async function claimPausedRun(
+  runId: number,
+  status: OrchestrationRun["status"],
+  patch: Partial<OrchestrationRun> = {},
+): Promise<OrchestrationRun> {
+  const d = await db();
+  const claimed = await d
+    .update(orchestrationRuns)
+    .set({ status, updatedAt: new Date(), ...patch })
+    .where(and(eq(orchestrationRuns.id, runId), inArray(orchestrationRuns.status, RESUMABLE_STATUSES)))
+    .returning();
+  if (claimed.length === 0) {
+    throw appError(
+      "CONFLICT",
+      "OPERATION_FAILED",
+      { operation: "resumeOrchestrationRun", reason: "runAlreadyClaimed" },
+      `Run ${runId} was already resumed, rejected or aborted by another request.`,
+    );
+  }
+  return claimed[0];
 }
 
 /**
@@ -1233,27 +1466,14 @@ export async function resumeRun(
  * Gate CHƯA duyệt (nếu có) sẽ pause lại như thường.
  */
 async function driveRunFromResume(rc: RunContext): Promise<OrchestrationRun["status"]> {
-  await setRunStatus(rc.runId, "running");
-  const out = await execSequence(rc, rc.def.steps);
-
-  if (out.kind === "paused") {
-    await setRunStatus(rc.runId, "awaiting_confirm", { currentStepId: out.stepId });
-    await persistContext(rc);
-    return "awaiting_confirm";
-  }
-  if (out.kind === "aborted") {
-    await setRunStatus(rc.runId, "aborted", { finishedAt: new Date(), error: "error" in out ? out.error : null });
-    await persistContext(rc);
-    return "aborted";
-  }
-  if (out.kind === "failed") {
-    await setRunStatus(rc.runId, "failed", { finishedAt: new Date(), error: "error" in out ? out.error : null });
-    await persistContext(rc);
-    return "failed";
-  }
-  await setRunStatus(rc.runId, "completed", { finishedAt: new Date() });
-  await persistContext(rc);
-  return "completed";
+  return withLiveRun(rc, async () => {
+    // The CAS already set 'running'. Re-assert it GUARDED: an abort that landed between the CAS
+    // and this registration (abortRun could not reach a live handle yet) must stop the walk here.
+    const stillOurs = await setRunStatusUnlessAborted(rc.runId, "running");
+    if (!stillOurs) return "aborted";
+    const out = await execSequence(rc, rc.def.steps);
+    return finishWalk(rc, out);
+  });
 }
 
 // ── W4-17 — DURABLE EXECUTION: rehydrate-on-boot ─────────────────────────────────
@@ -1289,8 +1509,15 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
       if (!run || run.status !== "held") continue; // skip failed/terminal
       const ctx = (run.contextJson as Record<string, unknown>) ?? {};
       if (ctx.interrupted !== true) continue; // NEVER auto-resume a human gate
-      const res = await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, SYSTEM_FOE_USER);
-      if (res.ok) resumed.push(runId);
+      // doc 80 ORC-02 — resumeRun may now THROW (CONFLICT when a human resumed it first); one
+      // refusal must not stop the sweep over the remaining interrupted runs.
+      const res = await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, SYSTEM_FOE_USER).catch(
+        (err: unknown) => {
+          console.error(`[FOE] auto-resume run ${runId} skipped:`, err instanceof Error ? err.message : String(err));
+          return null;
+        },
+      );
+      if (res?.ok) resumed.push(runId);
     }
   } catch (err) {
     console.error("[FOE] autoResumeInterruptedRuns failed:", err instanceof Error ? err.message : String(err));
@@ -1372,7 +1599,16 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
   return result;
 }
 
-/** Abort a run (terminal). Records the reason; does not crash on a missing run. */
+/**
+ * Abort a run (terminal). Records the reason; does not crash on a missing run.
+ *
+ * doc 80 ORC-01 — a REAL abort: if the run's driver is alive in this process, its handle is
+ * flagged + its AbortController fired FIRST (so no further step / command is issued and any
+ * `delay` / `wait_*` wakes up at once), THEN the DB row is written 'aborted'. The driver's own
+ * terminal writes are conditional (`status <> 'aborted'`), so it can never overwrite this.
+ * The DB write itself is conditional too (`status NOT IN ('completed','failed')`): a run that
+ * finished first stays finished and the caller is told so.
+ */
 export async function abortRun(runId: number, user: FoeUser, reason?: string): Promise<StartRunResult> {
   try {
     const d = await getDb();
@@ -1382,10 +1618,25 @@ export async function abortRun(runId: number, user: FoeUser, reason?: string): P
     if (["completed", "failed", "aborted"].includes(run.status)) {
       return { ok: false, enabled: foeEnabled(), runId, status: run.status, message: `Run ${runId} already terminal.` };
     }
-    await setRunStatus(runId, "aborted", {
-      finishedAt: new Date(),
-      error: reason ? `Aborted by user ${user.id}: ${reason}` : `Aborted by user ${user.id}.`,
-    });
+    const live = liveRuns.get(runId);
+    if (live) {
+      live.aborting = true;
+      live.controller.abort();
+    }
+    const written = await d
+      .update(orchestrationRuns)
+      .set({
+        status: "aborted",
+        updatedAt: new Date(),
+        finishedAt: new Date(),
+        error: reason ? `Aborted by user ${user.id}: ${reason}` : `Aborted by user ${user.id}.`,
+      })
+      .where(and(eq(orchestrationRuns.id, runId), notInArray(orchestrationRuns.status, ["completed", "failed"])))
+      .returning({ id: orchestrationRuns.id });
+    if (written.length === 0) {
+      return { ok: false, enabled: foeEnabled(), runId, message: `Run ${runId} already terminal.` };
+    }
+    void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status: "aborted" } });
     return { ok: true, enabled: foeEnabled(), runId, status: "aborted" };
   } catch (err) {
     // data-raw-ok: như trên — lỗi một bước trong bộ thực thi quy trình.

@@ -19,7 +19,7 @@ import { z } from "zod";
 import { desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase, deployProcedure as deployBase } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, writeProcedure as writeBase, actuationProcedure as actuationBase, deployProcedure as deployBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 // Doc 37 P0-3 — gate the Orchestration Studio surface behind MOD_ENGINEERING
@@ -43,6 +43,8 @@ const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
 // input TRƯỚC zod và fail-closed, nên zod không phải cổng an ninh — nó là cổng **hợp đồng**.
 // Lưới: `server/routers/deployStepUpFreshness.test.ts` · `client/src/lib/vramPanelStepUp.unit.test.ts`.
 const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
+// doc 80 ORC-06 — write floor (not a read-only role) + the same MOD_ENGINEERING license gate.
+const writeProcedure = writeBase.use(moduleGate("MOD_ENGINEERING"));
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import {
   deployWorkflow,
@@ -167,12 +169,22 @@ export const orchestrationRouter = router({
   /**
    * W3-11 — ROLL BACK a workflow to an earlier version by re-deploying that version's
    * definition as a NEW version (append-only). Flag-gated; machine_control/canCreate.
+   * doc 80 ORC-05 — a rollback IS a deploy: `deployProcedure` (fresh per-call OTP `totpCode`)
+   * and a mandatory human `reason` (≥3 chars, audited; it is also the sim-gate override reason —
+   * the engine no longer auto-fills one).
    */
-  rollbackWorkflow: actuationProcedure
+  rollbackWorkflow: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
-    .input(z.object({ workflowId: z.number().int().positive(), version: z.number().int().positive() }))
+    .input(
+      z.object({
+        workflowId: z.number().int().positive(),
+        version: z.number().int().positive(),
+        reason: z.string().trim().min(3).max(1000),
+        totpCode: z.string().max(16),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
-      return rollbackWorkflow(input.workflowId, input.version, toFoeUser(ctx.user));
+      return rollbackWorkflow(input.workflowId, input.version, toFoeUser(ctx.user), input.reason);
     }),
 
   /** List runs (optionally filtered by workflowId), newest first. */
@@ -384,9 +396,11 @@ export const orchestrationRouter = router({
   /**
    * DUPLICATE a workflow (by id OR ref) under a NEW unique ref. Copies the definition
    * (re-stamping its `ref`), resets version to 1, and creates a fresh row with NO runs.
-   * RBAC: machine_control / canCreate.
+   * RBAC: write floor + machine_control / canCreate.
+   * doc 80 ORC-06 — the copy is created `draft` (NOT runnable): startRun refuses it until it
+   * passes deployWorkflow (validation + sim-gate + version snapshot), which sets it `active`.
    */
-  duplicateWorkflow: protectedProcedure
+  duplicateWorkflow: writeProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z
@@ -429,10 +443,10 @@ export const orchestrationRouter = router({
           version: 1,
           description: src.description,
           definitionJson: def,
-          status: "active",
+          status: "draft",
           createdBy: ctx.user?.id ?? null,
         })
         .returning();
-      return { ok: true, id: row.id, ref: row.ref };
+      return { ok: true, id: row.id, ref: row.ref, status: row.status };
     }),
 });

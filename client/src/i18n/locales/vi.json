@@ -3951,7 +3951,8 @@
       "commitTemplateImage": "chốt ảnh mẫu",
       "taiAnhNenTang": "tải ảnh nền của tầng lên",
       "dungNhaXuong": "dựng nhà xưởng",
-      "runKbEval": "chạy đánh giá corpus"
+      "runKbEval": "chạy đánh giá corpus",
+      "resumeOrchestrationRun": "tiếp tục lượt chạy điều phối"
     },
     "field": {
       "changeReason": "lý do thay đổi",
@@ -4156,7 +4157,9 @@
       "viewAiAnalytics": "xem phân tích AI",
       "generateAiReport": "tạo báo cáo AI",
       "viewGlobalAiReport": "xem báo cáo AI toàn hệ thống",
-      "viewAiTimeSeries": "xem chuỗi thời gian AI"
+      "viewAiTimeSeries": "xem chuỗi thời gian AI",
+      "approveOrchestrationGate": "duyệt cổng này của quy trình điều phối",
+      "selfApproveOrchestrationGate": "tự duyệt cổng 4 mắt của lượt chạy do chính mình khởi động"
     },
     "reason": {
       "owner-not-in-local-ledger": "Hộ này không có trong SỔ CỤC BỘ của tiến trình đang trả lời; nó có thể do một tiến trình khác giữ (xem state.ledger.foreign.holders) — hãy ra lệnh vram.preempt ở ĐÚNG tiến trình đang giữ hộ đó.",
@@ -4204,7 +4207,8 @@
       "faiNotPassed": "Cần First-Article Inspection (FAI) đạt PASS cho sản phẩm #{{productModelId}} trước khi phát hành/chấp nhận sản xuất.",
       "releasedProgramRequiresApproval": "Sản phẩm đã có chương trình kiểm tra được phát hành — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals).",
       "productLifecycleRequiresApproval": "Sản phẩm đang ở trạng thái vòng đời '{{lifecycleStatus}}' — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals).",
-      "evalAlreadyRunning": "Đang có một lượt đánh giá chạy — chờ lượt đó xong."
+      "evalAlreadyRunning": "Đang có một lượt đánh giá chạy — chờ lượt đó xong.",
+      "runAlreadyClaimed": "Lượt chạy đã được người khác duyệt, từ chối hoặc dừng — hãy tải lại danh sách."
     },
     "client": {
       "generic": "Lỗi hệ thống, vui lòng thử lại",
@@ -11674,12 +11678,12 @@
     },
     "duplicate": "Nhân bản",
     "duplicateTitle": "Nhân bản quy trình",
-    "duplicateDesc": "Tạo một bản sao với mã (ref) mới. Bản sao không kèm lượt chạy nào.",
+    "duplicateDesc": "Tạo một bản sao NHÁP với mã (ref) mới. Bản sao không kèm lượt chạy nào và phải được Deploy trước khi chạy.",
     "duplicateNewRef": "Mã quy trình mới (ref) *",
     "deleteWfTitle": "Xoá quy trình?",
     "deleteWfDesc": "Quy trình \"{{ref}}\" cùng lịch sử lượt chạy đã kết thúc sẽ bị xoá. Nếu còn lượt chạy đang hoạt động, thao tác sẽ bị từ chối.",
     "wfDeleted": "Đã xoá quy trình",
-    "wfDuplicated": "Đã nhân bản quy trình",
+    "wfDuplicated": "Đã nhân bản quy trình (bản nháp — Deploy trước khi chạy)",
     "versions": "Phiên bản",
     "versionsTitle": "Lịch sử phiên bản",
     "versionsDesc": "Mỗi lần deploy lưu một phiên bản. So sánh 2 phiên bản hoặc khôi phục (khôi phục = deploy lại định nghĩa cũ thành phiên bản MỚI).",
@@ -11705,8 +11709,8 @@
     "paletteHint": "Bấm để thêm ở cấp cao nhất, hoặc kéo thả lên một container để lồng vào",
     "editorNote": "Soạn trên cây bước lồng nhau, hoặc chuyển sang sơ đồ node để hình dung tuần tự / song song / rẽ nhánh.",
     "pollMs": "Chu kỳ hỏi vòng (ms, tùy chọn)",
-    "approverRoles": "Vai trò được duyệt (tư vấn, cách nhau dấu phẩy)",
-    "approverRolesHint": "Chỉ mang tính tư vấn — RBAC được thực thi ở API.",
+    "approverRoles": "Vai trò được phép duyệt (cách nhau dấu phẩy)",
+    "approverRolesHint": "Máy chủ ÉP: chỉ vai trong danh sách (hoặc admin) mới duyệt được cổng này; để trống = ai có quyền điều khiển máy cũng duyệt được.",
     "failFast": "Lỗi là dừng ngay",
     "failFastHint": "Nhánh song song lỗi ĐẦU TIÊN làm hỏng cả khối (nếu tắt: chỉ hỏng khi tất cả nhánh lỗi).",
     "advanced": "Nâng cao",
@@ -11736,7 +11740,18 @@
     "argOption": "Không phải giá trị hợp lệ",
     "simRequired": "Chưa mô phỏng đạt — hãy Simulate đến khi feasible trước khi Deploy",
     "simGateOk": "Mô phỏng đã ĐẠT cho định nghĩa hiện tại — có thể Deploy.",
-    "simGateRequiredHint": "Sim-gate BẬT: phải Simulate ĐẠT (feasible) định nghĩa hiện tại trước khi Deploy. Mọi chỉnh sửa sẽ yêu cầu mô phỏng lại."
+    "simGateRequiredHint": "Sim-gate BẬT: phải Simulate ĐẠT (feasible) định nghĩa hiện tại trước khi Deploy. Mọi chỉnh sửa sẽ yêu cầu mô phỏng lại.",
+    "fourEyes": "Bắt buộc 4 mắt",
+    "fourEyesHint": "Người khởi động lượt chạy không được tự duyệt cổng này (kể cả admin).",
+    "interruptedRuns": "Bị gián đoạn",
+    "interruptedHint": "Lượt chạy bị ngắt do máy chủ khởi động lại — đây KHÔNG phải cổng chờ duyệt. Kiểm tra hiện trường trước khi tiếp tục; các bước đã xong sẽ không chạy lại.",
+    "continueRun": "Tiếp tục…",
+    "cancelRun": "Huỷ",
+    "continueRunTitle": "Tiếp tục lượt chạy #{{id}}?",
+    "continueRunDesc": "Lượt chạy sẽ đi tiếp từ điểm bị ngắt và có thể gửi lệnh thật tới máy. Các bước đã hoàn tất được bỏ qua.",
+    "continueRunConfirm": "Tiếp tục chạy",
+    "rollbackImpact": "Cần mã OTP và lý do; lý do được ghi vào nhật ký kiểm toán.",
+    "runFail": "Không bắt đầu được lượt chạy"
   },
   "aiHub": {
     "subtitle": "Các tính năng AI cho trí tuệ kiểm tra",

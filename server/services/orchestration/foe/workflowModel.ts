@@ -149,8 +149,16 @@ export interface HitlGateStep extends BaseStep {
   type: "hitl_gate";
   /** Operator-facing prompt. */
   prompt: string;
-  /** Optional roles allowed to resolve the gate (advisory — RBAC is enforced at the API). */
+  /**
+   * Optional roles allowed to APPROVE the gate. doc 80 ORC-03 — ENFORCED by foeEngine.resumeRun:
+   * an approver whose role is not listed is refused FORBIDDEN (admin is always allowed).
+   */
   approverRoles?: string[];
+  /**
+   * doc 80 ORC-03 — four-eyes: when true, the user who STARTED the run may not approve this gate
+   * (no admin exemption — four-eyes means a second person). Default false (unchanged behavior).
+   */
+  fourEyes?: boolean;
 }
 
 /** A fixed delay. */

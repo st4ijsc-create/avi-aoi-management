@@ -310,15 +310,19 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", async () 
       QUET.ungVien.some((f) => !f.startsWith("server/routers/")),
       "không ứng viên nào ngoài `server/routers/` ⇒ bộ quét đã thôi đệ quy (đúng lỗ R1b)",
     ).toBe(true);
-    // ⚠ GHIM SỐ: 5 (programming ×4 + orchestration ×1) + 2 (vram) = 7. Một thủ tục deploy thứ 8
+    // ⚠ GHIM SỐ: 6 (programming ×4 + orchestration ×2) + 2 (vram) = 8. Một thủ tục deploy thứ 9
     //   **được che tự động** (phép siết ở gốc), nhưng con số này ĐỎ ⇒ nó là một **quyết định phải
     //   nói ra**, không phải một lượt trôi im lặng.
+    // ⚠ doc 80 Đợt 0 Task 1 (ORC-05, 2026-09-26) — QUYẾT ĐỊNH NÓI RA: `orchestration.rollbackWorkflow`
+    //   chuyển từ `actuationProcedure` sang `deployProcedure` (rollback = re-deploy một bản cũ ⇒ OTP
+    //   tươi mỗi lượt + lý do bắt buộc). 7 → 8, lưới gọi thật 5 → 6.
     expect(
       DEPLOY_THU_TUC.map((t) => `${t.file}#${t.ten}`).sort().join(" · "),
       "danh sách thủ tục đứng trên `deployProcedure` đã đổi",
     ).toBe(
       [
         "server/routers/orchestrationRouter.ts#deployWorkflow",
+        "server/routers/orchestrationRouter.ts#rollbackWorkflow",
         "server/routers/programmingRouter.ts#approveDeployment",
         "server/routers/programmingRouter.ts#deployBuild",
         "server/routers/programmingRouter.ts#deployToFleet",
@@ -327,7 +331,7 @@ describe("★★★ Pha 6 Task 1b — cầu chì của lượng từ", async () 
         "server/routers/vramRouter.ts#releaseStale",
       ].join(" · "),
     );
-    expect(GOI_DUOC.length, "lưới này phải gọi THẬT được 5 thủ tục — 0 ⇒ mọi ca ∀ là chân lý rỗng").toBe(5);
+    expect(GOI_DUOC.length, "lưới này phải gọi THẬT được 6 thủ tục — 0 ⇒ mọi ca ∀ là chân lý rỗng").toBe(6);
   });
 
   it("★★★ cầu chì của PHÉP PHÂN ĐÔI — phép thử M3 của cả hai lưới còn SỐNG, và 0 lưới nào bị nhập vào sản xuất", () => {

@@ -3951,7 +3951,8 @@
       "commitTemplateImage": "commit template image",
       "taiAnhNenTang": "upload floor background image",
       "dungNhaXuong": "build factory layout",
-      "runKbEval": "run the corpus evaluation"
+      "runKbEval": "run the corpus evaluation",
+      "resumeOrchestrationRun": "resume the orchestration run"
     },
     "field": {
       "changeReason": "change reason",
@@ -4156,7 +4157,9 @@
       "viewAiAnalytics": "view AI analytics",
       "generateAiReport": "generate AI report",
       "viewGlobalAiReport": "view system-wide AI report",
-      "viewAiTimeSeries": "view AI time-series"
+      "viewAiTimeSeries": "view AI time-series",
+      "approveOrchestrationGate": "approve this orchestration gate",
+      "selfApproveOrchestrationGate": "approve a four-eyes gate of a run you started yourself"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4212,7 +4215,8 @@
       "faiNotPassed": "A passing First-Article Inspection (FAI) is required for product #{{productModelId}} before releasing/accepting production.",
       "releasedProgramRequiresApproval": "The product already has a released inspection program — threshold changes require approval via the queue (Threshold Approvals).",
       "productLifecycleRequiresApproval": "The product is in lifecycle status '{{lifecycleStatus}}' — threshold changes require approval via the queue (Threshold Approvals).",
-      "evalAlreadyRunning": "An evaluation is already running — wait for it to finish."
+      "evalAlreadyRunning": "An evaluation is already running — wait for it to finish.",
+      "runAlreadyClaimed": "The run was already approved, rejected or stopped by someone else — reload the list."
     },
     "client": {
       "generic": "System error, please try again",
@@ -11694,12 +11698,12 @@
     },
     "duplicate": "Duplicate",
     "duplicateTitle": "Duplicate workflow",
-    "duplicateDesc": "Create a copy with a new ref. The copy has no runs.",
+    "duplicateDesc": "Create a DRAFT copy with a new ref. The copy has no runs and must be deployed before it can run.",
     "duplicateNewRef": "New workflow ref *",
     "deleteWfTitle": "Delete workflow?",
     "deleteWfDesc": "Workflow \"{{ref}}\" and its terminated run history will be deleted. If active runs remain, the operation is refused.",
     "wfDeleted": "Workflow deleted",
-    "wfDuplicated": "Workflow duplicated",
+    "wfDuplicated": "Workflow duplicated (draft — deploy it before running)",
     "versions": "Versions",
     "versionsTitle": "Version history",
     "versionsDesc": "Each deploy snapshots a version. Compare two versions or roll back (rollback re-deploys the old definition as a NEW version).",
@@ -11725,8 +11729,8 @@
     "paletteHint": "Click to add at top level, or drag onto a container to nest",
     "editorNote": "Author on the nested step tree, or switch to the node-graph diagram to visualize sequence / parallel / branch.",
     "pollMs": "Poll interval (ms, optional)",
-    "approverRoles": "Approver roles (advisory, comma-separated)",
-    "approverRolesHint": "Advisory only — RBAC is enforced at the API.",
+    "approverRoles": "Approver roles (comma-separated)",
+    "approverRolesHint": "Enforced by the server: only these roles (or admin) can approve this gate; empty = anyone with machine-control permission.",
     "failFast": "Fail fast",
     "failFastHint": "Fail the parallel on the FIRST failing branch (else only if all fail).",
     "advanced": "Advanced",
@@ -11756,7 +11760,18 @@
     "argOption": "Not an allowed value",
     "simRequired": "Simulation has not passed — run Simulate until it is feasible before you Deploy",
     "simGateOk": "Simulation PASSED for the current definition — you may Deploy.",
-    "simGateRequiredHint": "Sim-gate ON: the current definition must PASS simulation (feasible) before Deploy. Any edit requires re-simulating."
+    "simGateRequiredHint": "Sim-gate ON: the current definition must PASS simulation (feasible) before Deploy. Any edit requires re-simulating.",
+    "fourEyes": "Four-eyes required",
+    "fourEyesHint": "The user who started the run cannot approve this gate (admin included).",
+    "interruptedRuns": "Interrupted",
+    "interruptedHint": "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.",
+    "continueRun": "Continue…",
+    "cancelRun": "Cancel run",
+    "continueRunTitle": "Continue run #{{id}}?",
+    "continueRunDesc": "The run resumes from where it was interrupted and may send real commands to machines. Completed steps are skipped.",
+    "continueRunConfirm": "Continue run",
+    "rollbackImpact": "Requires an OTP code and a reason; the reason is recorded in the audit log.",
+    "runFail": "Could not start the run"
   },
   "aiHub": {
     "subtitle": "AI-powered features for inspection intelligence",

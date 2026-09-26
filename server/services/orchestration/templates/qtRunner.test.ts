@@ -65,16 +65,31 @@ vi.mock("drizzle-orm", async (orig) => {
     ...actual,
     eq: (col: any, val: unknown) => ({ __op: "eq", col, val }),
     desc: (col: any) => ({ __op: "desc", col }),
+    // doc 80 ORC-01/02 — engine dùng UPDATE có điều kiện (and/ne/inArray/notInArray) + returning().
+    and: (...conds: any[]) => ({ __op: "and", conds }),
+    ne: (col: any, val: unknown) => ({ __op: "ne", col, val }),
+    inArray: (col: any, vals: unknown[]) => ({ __op: "in", col, vals }),
+    notInArray: (col: any, vals: unknown[]) => ({ __op: "notIn", col, vals }),
   };
 });
 
 function colName(col: any): string {
   return col?.name ?? col?.config?.name ?? String(col);
 }
+function matchCond(r: Row, cond: any): boolean {
+  if (!cond) return true;
+  switch (cond.__op) {
+    case "eq": return r[colName(cond.col)] === cond.val;
+    case "ne": return r[colName(cond.col)] !== cond.val;
+    case "in": return cond.vals.includes(r[colName(cond.col)]);
+    case "notIn": return !cond.vals.includes(r[colName(cond.col)]);
+    case "and": return cond.conds.every((c: any) => matchCond(r, c));
+    default: return true;
+  }
+}
 function applyWhere(list: Row[], cond: any): Row[] {
   if (!cond) return list;
-  if (cond.__op === "eq") return list.filter((r) => r[colName(cond.col)] === cond.val);
-  return list;
+  return list.filter((r) => matchCond(r, cond));
 }
 
 function makeSelect(tableName: string) {
@@ -150,7 +165,11 @@ const fakeDb = {
       where(cond: any) {
         const matched = applyWhere(rows(tableName), cond);
         for (const r of matched) Object.assign(r, patch);
-        return Promise.resolve();
+        const result = matched.map((r) => ({ ...r }));
+        return {
+          returning: () => Promise.resolve(result),
+          then: (res: any, rej: any) => Promise.resolve(result).then(res, rej),
+        };
       },
     };
     return upd;
