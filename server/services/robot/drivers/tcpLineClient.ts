@@ -50,6 +50,30 @@ export class TcpLineTimeoutError extends Error {
   }
 }
 
+/** Stable reason code: the peer closed / the socket errored while a request was pending. */
+export const LINE_CONNECTION_CLOSED = "line_connection_closed" as const;
+
+/**
+ * Rejection of pending `send()`s when the socket closes or errors under them (doc 81 Đợt 1B
+ * Task 5 fix round 1): the command may already be executing — outcome unknown.
+ */
+export class TcpLineClosedError extends Error {
+  readonly reasonCode = LINE_CONNECTION_CLOSED;
+  constructor(message: string) {
+    super(message);
+    this.name = "TcpLineClosedError";
+  }
+}
+
+export interface TcpLineSendOptions {
+  /**
+   * Called immediately before the frame is written (after any transparent reconnect). Throw
+   * to refuse the write — robot drivers pass their abort-epoch guard here so a job that was
+   * fenced by abort() while waiting (e.g. in the reconnect window) never reaches the wire.
+   */
+  guard?: () => void;
+}
+
 export interface TcpLineClientOptions {
   /**
    * Session handshake run on a NEW connection after a timeout/reset, BEFORE the
@@ -149,12 +173,12 @@ export class TcpLineClient {
         }
         if (!isCurrent()) return;
         this.connected = false;
-        this.failAllPending(err);
+        this.failAllPending(new TcpLineClosedError(`${this.name} socket error: ${err?.message ?? String(err)}`));
       });
       socket.on("close", () => {
         if (!isCurrent()) return;
         this.connected = false;
-        this.failAllPending(new Error(`${this.name} socket closed`));
+        this.failAllPending(new TcpLineClosedError(`${this.name} socket closed`));
       });
     });
   }
@@ -233,7 +257,7 @@ export class TcpLineClient {
   }
 
   /** Write one fully-framed line (terminator already included) and await the next reply line. */
-  async send(frame: string, timeoutMs: number): Promise<string> {
+  async send(frame: string, timeoutMs: number, sendOpts: TcpLineSendOptions = {}): Promise<string> {
     if (!this.connected) throw new Error(`${this.name}: not connected`);
     if (this.stale || (this.reconnecting && !this.handshaking)) {
       await this.reconnect();
@@ -242,6 +266,12 @@ export class TcpLineClient {
       const socket = this.socket;
       if (!socket || !this.connected) {
         reject(new Error(`${this.name}: not connected`));
+        return;
+      }
+      try {
+        sendOpts.guard?.();
+      } catch (err) {
+        reject(err as Error); // refused BEFORE any byte is written
         return;
       }
       const timer = setTimeout(() => {

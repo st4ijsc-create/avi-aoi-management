@@ -14,7 +14,7 @@
  */
 import net from "node:net";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { TcpLineClient, TcpLineTimeoutError } from "./tcpLineClient";
+import { TcpLineClient, TcpLineTimeoutError, TcpLineClosedError } from "./tcpLineClient";
 
 interface FakeLineServer {
   port: number;
@@ -42,6 +42,10 @@ async function startSequentialLineServer(delays: Record<string, number>): Promis
         buf = buf.slice(i + (buf.startsWith("\r\n", i) ? 2 : 1));
         if (!line) continue;
         lines.push(line);
+        if (line === "DIE") {
+          sock.destroy(); // peer đóng kết nối khi lệnh đang chờ trả lời
+          return;
+        }
         // TUẦN TỰ: dòng sau đợi dòng trước trả lời xong (như bộ điều khiển thật).
         chain = chain.then(
           () =>
@@ -168,3 +172,16 @@ describe("TcpLineClient — reply muộn không bị gán cho lệnh kế tiếp
     expect(server.perConnection.length).toBe(2);
   });
 });
+
+describe("TcpLineClient — đóng kết nối khi lệnh đang chờ mang reasonCode (fix round 1)", () => {
+  it("peer đóng socket khi lệnh đang chờ ⇒ reject TcpLineClosedError, reasonCode line_connection_closed", async () => {
+    const c = await openClient();
+    const err = await within(c.send("DIE\r", 2000), 3000).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(TcpLineClosedError);
+    expect((err as TcpLineClosedError).reasonCode).toBe("line_connection_closed");
+  });
+});
+

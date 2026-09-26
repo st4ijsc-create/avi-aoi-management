@@ -58,6 +58,7 @@ function defaultReplies(cmd: string): string {
   if (cmd === "running") return "Program running: true";
   if (cmd === "safetystatus") return "Safetystatus: NORMAL";
   if (cmd === "programState") return "PLAYING prog.urp";
+  if (cmd === "stop") return "Stopped"; // literal success reply of the UR Dashboard Server
   return "ok";
 }
 
@@ -237,6 +238,40 @@ describe("UrsimBridgeDriver", () => {
     const d = new UrsimBridgeDriver();
     await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: 1 } });
     await expect(d.abort()).resolves.toBeUndefined();
+    expect(dash.received).toContain("stop");
+    await d.disconnect();
+  });
+
+  // doc 81 Đợt 1B Task 5 fix round 1 (M5) — chỉ literal "Stopped" mới là dừng thành công.
+  it("dashboard trả 'Failed to execute: stop' ⇒ runJob abort failed ur_stop_not_confirmed; abort() reject", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const dash = await startDashboardServer((cmd) => (cmd === "stop" ? "Failed to execute: stop" : defaultReplies(cmd)));
+    cleanups.push(dash.close);
+    const d = new UrsimBridgeDriver();
+    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: 1 } });
+    const res = await d.runJob({ jobType: "abort" });
+    expect(res.ok).toBe(false);
+    expect(res.detail?.reasonCode).toBe("ur_stop_not_confirmed");
+    await expect(d.abort()).rejects.toThrow(/UR abort failed.*ur_stop_not_confirmed/);
+    await d.disconnect();
+  });
+
+  // doc 81 Đợt 1B Task 5 fix round 1 — hàng rào abort: job đang ở pha kết nối cổng script khi
+  // abort() được gọi ⇒ script KHÔNG BAO GIỜ được ghi; dashboard nhận `stop`.
+  it("abort() giữa pha kết nối của một job chuyển động ⇒ 0 byte URScript tới cổng script, dashboard nhận stop", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const dash = await startDashboardServer(defaultReplies);
+    const script = await startScriptServer();
+    cleanups.push(dash.close); cleanups.push(script.close);
+    const d = new UrsimBridgeDriver();
+    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: script.port } });
+    const job = d.runJob({ jobType: "move", params: { joints: [0.5, 0, 0, 0, 0, 0] } });
+    await d.abort();
+    const res = await job;
+    expect(res.ok).toBe(false);
+    expect(res.detail?.reasonCode).toBe("job_fenced_by_abort");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(script.getReceived()).toBe("");
     expect(dash.received).toContain("stop");
     await d.disconnect();
   });

@@ -17,6 +17,11 @@ function flagEnabled(): boolean {
 
 export async function startRobots(): Promise<boolean> {
   if (running) return true;
+  // doc 81 Đợt 1B Task 5 fix round 1 (M1) — reconcile robot_jobs rows a previous process left
+  // 'running' (died between the pre-motion row and its finalize). Runs even when the gateway
+  // is off: a stale row would otherwise block its idempotency key forever. Never throws.
+  const { reconcileOrphanedRobotJobs } = await import("./robotCommandDispatcher");
+  await reconcileOrphanedRobotJobs();
   if (!flagEnabled()) {
     console.log("[Robot] disabled (set ROBOT_GATEWAY_ENABLED=true to enable)");
     return false;

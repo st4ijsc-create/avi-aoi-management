@@ -29,7 +29,16 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "./robotDriver";
-import { abortThroughRunJob } from "./robotDriver";
+import { abortThroughRunJob, AbortFence } from "./robotDriver";
+
+/**
+ * doc 81 Đợt 1B Task 5 fix round 1 (M5) — the UR Dashboard Server answers `stop` with the
+ * literal "Stopped" on success and "Failed to execute: stop" otherwise (UR Dashboard Server
+ * manual, command `stop`). Only the success literal counts as a confirmed stop.
+ */
+export function isUrStopConfirmed(reply: string): boolean {
+  return /^Stopped\b/.test(String(reply ?? "").trim());
+}
 
 /**
  * The vendor key. 'ur' is NOT yet a member of the RobotVendor union / robotVendorEnum
@@ -143,6 +152,7 @@ export class UrsimBridgeDriver implements RobotDriver {
   private lastError: string | undefined;
   /** Home pose from the robot's STORED config (connectionOptions.home), never from a job. */
   private home: number[] | undefined;
+  private readonly fence = new AbortFence();
 
   async connect(cfg: RobotConnectionConfig): Promise<void> {
     const { host, port } = parseHost(cfg.endpoint);
@@ -225,6 +235,8 @@ export class UrsimBridgeDriver implements RobotDriver {
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
+    // doc 81 Đợt 1B Task 5 fix round 1 — abort fence, checked inside sendScript after connect.
+    const guard = this.fence.capture();
 
     // Abort routes through the dashboard `stop` (not a script) when control is enabled.
     let urscript: string;
@@ -255,14 +267,25 @@ export class UrsimBridgeDriver implements RobotDriver {
     try {
       if (job.jobType === "abort") {
         const reply = await this.client.stop();
+        if (!isUrStopConfirmed(reply)) {
+          const msg = `ur_stop_not_confirmed: dashboard replied "${reply}"`;
+          this.lastError = msg;
+          return { ok: false, status: "failed", error: msg, detail: { jobType: "abort", dashboard: reply, sent: true, reasonCode: "ur_stop_not_confirmed" } };
+        }
         return { ok: true, status: "done", detail: { jobType: "abort", dashboard: reply, sent: true } };
       }
-      const res = await this.client.sendScript(urscript);
+      const res = await this.client.sendScript(urscript, guard);
       return { ok: true, status: "done", detail: { jobType: job.jobType, urscript, ...res } };
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
-      return { ok: false, status: "failed", error: msg };
+      const reasonCode = (err as { reasonCode?: unknown })?.reasonCode;
+      return {
+        ok: false,
+        status: "failed",
+        error: msg,
+        ...(typeof reasonCode === "string" ? { detail: { jobType: job.jobType, sent: false, reasonCode } } : {}),
+      };
     }
   }
 
@@ -271,6 +294,7 @@ export class UrsimBridgeDriver implements RobotDriver {
    * Task 5: a failed/unsent stop is SURFACED (throws), no longer swallowed.
    */
   async abort(): Promise<void> {
+    this.fence.bump(); // FIRST: any job started before this abort can write nothing more
     await abortThroughRunJob((job) => this.runJob(job), "UR");
   }
 

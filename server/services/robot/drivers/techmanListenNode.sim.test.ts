@@ -240,3 +240,26 @@ describe("Techman — verb console start/reset/pause bị từ chối ở driver
     expect(node.received).toEqual([SCRIPT_EXIT_ID1]);
   });
 });
+
+/**
+ * doc 81 Đợt 1B Task 5 fix round 1 — hàng rào abort. Job `home` (id 1) vừa mở socket tới Listen
+ * Node (đang ở pha connect) thì abort() được gọi ⇒ khung PTP của job đó KHÔNG BAO GIỜ được ghi; chỉ
+ * khung abort id 2 tới robot. Literal độc lập: `$TMSCT,22,2,StopAndClearBuffer(),*64`, `$TMSCT,4,2,OK,*5F`.
+ */
+describe("Techman — hàng rào abort: không byte chuyển động nào sau/đồng thời với STOP (fix round 1)", () => {
+  it("runJob(home) đang kết nối + abort() ⇒ chỉ khung abort id 2 tới Listen Node, job home trả job_fenced_by_abort", async () => {
+    const { d, node } = await rig({ kind: "reply", chunks: ["$TMSCT,4,2,OK,*5F\r\n"] });
+    const job = d.runJob({ jobType: "home" });
+    const stop = settleWithin(d.abort().then(() => "resolved"), 3000);
+    const j = await settleWithin(job, 3000);
+    expect((await stop).value).toBe("resolved");
+    expect(j.value?.ok).toBe(false);
+    expect(j.value?.detail?.reasonCode).toBe("job_fenced_by_abort");
+    expect(j.value?.detail?.sent).toBe(false);
+    await new Promise((r) => setTimeout(r, 100));
+    const all = node.received.join("");
+    expect(all).not.toContain("PTP(");
+    expect(node.received.filter((x) => x.length > 0)).toEqual(["$TMSCT,22,2,StopAndClearBuffer(),*64\r\n"]);
+  });
+});
+

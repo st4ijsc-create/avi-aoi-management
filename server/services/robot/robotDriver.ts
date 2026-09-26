@@ -135,9 +135,44 @@ export async function abortThroughRunJob(
  * treats them like its own deadline: it sends the driver's stop before recording `failed`.
  */
 export const MOTION_OUTCOME_UNKNOWN_REASON_CODES: ReadonlySet<string> = new Set([
-  "line_reply_timeout",   // TcpLineClient (MELFA / Delta)
-  "tm_reply_timeout",     // Techman Listen Node (Task 4 classification)
-  "tm_connection_closed", // Techman Listen Node closed before a complete reply
+  "line_reply_timeout",     // TcpLineClient (MELFA / Delta): no reply line in time
+  "line_connection_closed", // TcpLineClient: peer closed / socket error while a command was pending
+  "rmi_reply_timeout",      // FANUC RMI: no reply packet in time
+  "tm_reply_timeout",       // Techman Listen Node (Task 4 classification)
+  "tm_connection_closed",   // Techman Listen Node closed before a complete reply
 ]);
+
+/**
+ * doc 81 Đợt 1B Task 5 fix round 1 — a job still running when abort() was called must not
+ * put ANY further byte on the wire (the dispatcher abandons a timed-out runJob, but the
+ * promise keeps going: FANUC GetStatus→Abort→Initialize→motion, Techman/UR connect phase,
+ * MELFA/Delta reconnect window). Rejection reason of such a write.
+ */
+export class RobotJobFencedError extends Error {
+  readonly reasonCode = "job_fenced_by_abort" as const;
+  constructor() {
+    super("job_fenced_by_abort: an abort was issued after this job started — no further bytes are sent");
+    this.name = "RobotJobFencedError";
+  }
+}
+
+/**
+ * Abort epoch shared by every robot driver. `abort()` calls `bump()` FIRST (synchronously,
+ * before its own stop goes out); `runJob()` calls `capture()` at its start and invokes the
+ * returned guard immediately before every socket write — a changed epoch throws
+ * {@link RobotJobFencedError}, so no motion byte can follow the stop.
+ */
+export class AbortFence {
+  private epoch = 0;
+  bump(): void {
+    this.epoch++;
+  }
+  capture(): () => void {
+    const at = this.epoch;
+    return () => {
+      if (this.epoch !== at) throw new RobotJobFencedError();
+    };
+  }
+}
 
 export type RobotDriverFactory = () => RobotDriver;

@@ -24,7 +24,7 @@
  *   • record() no longer swallows insert errors; the pre-motion row is mandatory.
  *   • a motion whose outcome is unknown (deadline / driver reply timeout) is stopped.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions } from "../../../drizzle/schema";
@@ -262,6 +262,70 @@ async function stopAfterUnknownOutcome(driver: RobotDriver, deadlineMs: number):
   }
 }
 
+/**
+ * doc 81 Đợt 1B Task 5 fix round 1 (M1) — replay of a prior job with the same idempotency
+ * key, mapped onto the RobotDispatchResult union (the DB enum also has running / draft /
+ * pending / confirmed, which used to be cast straight into the union). A key whose job is
+ * still `running` (or in any non-terminal state) is NOT re-run and NOT reported as done:
+ * `rejected` + IDEMPOTENT_JOB_IN_PROGRESS.
+ */
+function idempotentReplay(prior: { id: number; status: string }): RobotDispatchResult {
+  switch (prior.status) {
+    case "done":
+    case "simulated":
+      return { ok: true, status: prior.status, jobId: prior.id };
+    case "failed":
+    case "rejected":
+      return { ok: false, status: prior.status, jobId: prior.id };
+    default:
+      return { ok: false, status: "rejected", jobId: prior.id, error: "IDEMPOTENT_JOB_IN_PROGRESS" };
+  }
+}
+
+/** errorText written by the startup sweep on an orphaned `running` row. */
+export const PROCESS_RESTART_OUTCOME_UNKNOWN = "process_restart_outcome_unknown" as const;
+
+/**
+ * Age after which a `running` row cannot belong to a live dispatch: the job deadline plus the
+ * abort deadline (both = ROBOT_CONTROL_TIMEOUT_MS) plus one minute of slack.
+ */
+export function orphanedRunningThresholdMs(): number {
+  const timeoutMs = Math.max(1000, Number(process.env.ROBOT_CONTROL_TIMEOUT_MS) || 10_000);
+  return 2 * timeoutMs + 60_000;
+}
+
+/**
+ * doc 81 Đợt 1B Task 5 fix round 1 (M1) — startup reconciliation. A process that died
+ * between the pre-motion `running` row and its finalize leaves the row `running` forever
+ * (and its idempotency key blocked). Marks every `running` row started more than
+ * `olderThanMs` ago as `failed` with PROCESS_RESTART_OUTCOME_UNKNOWN — honest: the robot
+ * may or may not have moved. Called from startRobots(). Never throws; returns the count.
+ */
+export async function reconcileOrphanedRobotJobs(olderThanMs: number = orphanedRunningThresholdMs()): Promise<number> {
+  try {
+    const db = await getDb();
+    if (!db) return 0;
+    const cutoff = new Date(Date.now() - olderThanMs);
+    const rows = await db
+      .update(robotJobs)
+      .set({
+        status: "failed",
+        errorText: `${PROCESS_RESTART_OUTCOME_UNKNOWN}: job was still 'running' when the process restarted — robot outcome unknown`,
+        result: { reasonCode: PROCESS_RESTART_OUTCOME_UNKNOWN },
+        completedAt: new Date(),
+      })
+      .where(and(eq(robotJobs.status, "running"), lt(robotJobs.startedAt, cutoff)))
+      .returning({ id: robotJobs.id });
+    if (rows.length > 0) {
+      console.warn(`[Robot] reconciled ${rows.length} orphaned 'running' robot_jobs row(s) → failed (${PROCESS_RESTART_OUTCOME_UNKNOWN})`);
+    }
+    return rows.length;
+  } catch (err) {
+    console.error("[Robot] orphaned robot_jobs reconciliation failed:", (err as Error)?.message ?? err);
+    return 0;
+  }
+}
+
 export async function dispatchRobotJob(input: RobotDispatchInput): Promise<RobotDispatchResult> {
   try {
     return await dispatchRobotJobCore(input);
@@ -286,26 +350,35 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     if (db) {
       const [prior] = await db.select().from(robotJobs)
         .where(eq(robotJobs.idempotencyKey, input.idempotencyKey)).limit(1);
-      if (prior) {
-        return { ok: prior.status === "done" || prior.status === "simulated", status: prior.status as RobotDispatchResult["status"], jobId: prior.id };
-      }
+      if (prior) return idempotentReplay(prior);
     }
   }
 
   // 2) HITL gate — ĐỐI XỨNG với OT commandDispatcher (doc 25 T1).
   //    doc 81 Đợt 1B Task 5 — triggerKind='manual' NO LONGER skips this gate for a MOTION
-  //    job. Equivalent-confirmation condition for 'manual': the same rule as 'hitl' — a
-  //    human `confirmedBy` is mandatory, and an `actionId`, when given, is re-verified.
-  //    The only manual caller (robot.actuate) passes confirmedBy = the authenticated
-  //    operator who typed the confirmation in the console, behind actuationProcedure
-  //    (role floor + 2FA when enabled) and machine_control/canEdit — that is the human
-  //    gate; a manual MOTION with no confirmedBy is refused. A manual `abort` (stop) stays
-  //    exempt, as before, so a stop is never locked out.
+  //    job. What 'manual' means (ruling R11, stated exactly — NOT a second-person check):
+  //    manual = a human operator initiates the motion: authenticated session through
+  //    actuationProcedure (role floor) + machine_control/canEdit; confirmedBy is bound
+  //    server-side to the session user; no second person.
+  //    Enforced here: a manual MOTION needs confirmedBy, and — when no actionId is given —
+  //    confirmedBy === requestedBy (an internal caller cannot pass someone else's id as the
+  //    "confirmer"); an actionId, when given, is re-verified like 'hitl'. A manual `abort`
+  //    (stop) stays exempt so a stop is never locked out.
   if (triggerKind === "hitl" || motion) {
     // 2.a Bắt buộc có người xác nhận.
     if (!input.confirmedBy) {
       const jobId = await record(input, "rejected", undefined, "HITL required: no confirmedBy");
       return { ok: false, status: "rejected", jobId, error: "HITL confirmation required" };
+    }
+    // 2.a-manual (R11) — manual without actionId: the confirmer IS the initiating session user.
+    if (triggerKind === "manual" && !input.actionId && input.confirmedBy !== input.requestedBy) {
+      const jobId = await record(
+        input,
+        "rejected",
+        undefined,
+        "MANUAL_CONFIRMER_MISMATCH: manual motion requires confirmedBy === requestedBy (the session user)",
+      );
+      return { ok: false, status: "rejected", jobId, error: "MANUAL_CONFIRMER_MISMATCH" };
     }
     // 2.b Defense-in-depth: khi có actionId, PHẢI tái-xác-minh bản ghi ai_pending_actions
     //     đã confirmed/executed VÀ đúng owner (=confirmedBy) — hệt OT. KHÔNG tin confirmedBy
@@ -472,7 +545,9 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   //     interlockEngine; ROBOT_NO_OT_ADAPTER_ID không bao giờ trùng adapter thật) — CHỈ rule
   //     nhắm targetMachineId=robotId (action chặn/dừng, enabled+approved) mới chặn. Rule đang
   //     vi phạm HOẶC lỗi đánh giá (failClosed) → TỪ CHỐI, KHÔNG gọi driver.runJob.
-  {
+  //     doc 81 Đợt 1B Task 5 fix round 1 (M3) — MOTION only: a stop (abort) is exempt, like the
+  //     safety and HITL gates — an active interlock violation must never block a STOP.
+  if (motion) {
     const { evaluateInterlockGate } = await import("../interlock/interlockGate");
     const gate = await evaluateInterlockGate(robotInterlockTarget(input.robotId));
     if (gate.blocked) {

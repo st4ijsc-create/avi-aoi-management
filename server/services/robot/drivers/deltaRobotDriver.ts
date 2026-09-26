@@ -84,7 +84,7 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth, RobotPose,
 } from "../robotDriver";
-import { abortThroughRunJob } from "../robotDriver";
+import { abortThroughRunJob, AbortFence } from "../robotDriver";
 import type { RobotValidationStatus } from "../index";
 import { TcpLineClient } from "./tcpLineClient";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
@@ -224,6 +224,7 @@ export class DeltaDriver implements RobotDriver {
   private port = DEFAULT_DELTA_PORT;
   private timeoutMs = 5000;
   private seq = 1;
+  private readonly fence = new AbortFence();
 
   /** Parse "tcp://host:port" | "host:port" | "host" → {host,port}. */
   private parseEndpoint(endpoint: string, defaultPort: number): { host: string; port: number } {
@@ -238,10 +239,10 @@ export class DeltaDriver implements RobotDriver {
   }
 
   /** Send one command frame, await the reply, and throw if it is a Delta error. */
-  private async command(cmd: string, args: Array<string | number> = []): Promise<DeltaReply> {
+  private async command(cmd: string, args: Array<string | number> = [], guard?: () => void): Promise<DeltaReply> {
     if (!this.client) throw new DeviceUnreachableError("deltaRobot");
     const frame = frameDeltaCommand(this.seq++, cmd, args);
-    const reply = parseDeltaResponse(await this.client.send(frame, this.timeoutMs));
+    const reply = parseDeltaResponse(await this.client.send(frame, this.timeoutMs, { guard }));
     if (!reply.ok) throw new Error(`Delta ${cmd} failed: error ${reply.errorCode ?? "?"}`);
     return reply;
   }
@@ -354,6 +355,8 @@ export class DeltaDriver implements RobotDriver {
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
+    // doc 81 Đợt 1B Task 5 fix round 1 — abort fence (see MitsubishiDriver.runJob).
+    const guard = this.fence.capture();
 
     const isAbort = job.jobType === "abort";
     const { cmd, args } = isAbort ? { cmd: "STOP", args: [] as Array<string | number> } : buildDeltaMotion(job);
@@ -372,9 +375,9 @@ export class DeltaDriver implements RobotDriver {
     try {
       // Abort halts a running move and needs no servo-on; motion needs servo power.
       if (!isAbort) {
-        await this.command("SERVO", [1]);
+        await this.command("SERVO", [1], guard);
       }
-      const reply = await this.command(cmd, args);
+      const reply = await this.command(cmd, args, guard);
       this.lastOkAt = new Date();
       return { ok: true, status: "done", detail: { jobType: job.jobType, command: cmd, sent: true, reply: reply.fields } };
     } catch (err) {
@@ -399,6 +402,7 @@ export class DeltaDriver implements RobotDriver {
    * instead of swallowed — the dispatcher records abort_failed.
    */
   async abort(): Promise<void> {
+    this.fence.bump(); // FIRST: any job started before this abort can write nothing more
     if (this.client && this.client.inFlight() > 0) this.client.resetConnection("abort preempts in-flight request");
     await abortThroughRunJob((job) => this.runJob(job), "Delta");
   }

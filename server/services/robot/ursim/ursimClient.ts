@@ -156,9 +156,12 @@ export class UrsimClient {
    * up to 79 bytes (or until the read timeout) before ending the socket.
    * Throws (honest) when the endpoint is unreachable.
    */
-  async sendScript(urscript: string): Promise<{ sent: boolean; bytes: number }> {
+  async sendScript(urscript: string, guard?: () => void): Promise<{ sent: boolean; bytes: number }> {
     const sock = await openSocket(this.ep.host, this.ep.scriptPort, this.ep.timeoutMs);
     try {
+      // doc 81 Đợt 1B Task 5 fix round 1 — the caller's abort fence is checked AFTER the
+      // connect phase, right before the write: a job fenced meanwhile writes nothing.
+      guard?.();
       const payload = urscript.endsWith("\n") ? urscript : urscript + "\n";
       await new Promise<void>((resolve, reject) => {
         sock.write(payload, "utf8", (err) => (err ? reject(err) : resolve()));

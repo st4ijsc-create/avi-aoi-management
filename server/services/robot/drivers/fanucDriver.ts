@@ -64,7 +64,19 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "../robotDriver";
-import { abortThroughRunJob } from "../robotDriver";
+import { abortThroughRunJob, AbortFence } from "../robotDriver";
+
+/** Stable reason code: no RMI reply packet within the request timeout (outcome unknown). */
+export const RMI_REPLY_TIMEOUT = "rmi_reply_timeout" as const;
+
+/** doc 81 Đợt 1B Task 5 fix round 1 — RMI request timeout carries a reason code. */
+export class FanucRmiTimeoutError extends Error {
+  readonly reasonCode = RMI_REPLY_TIMEOUT;
+  constructor(message: string) {
+    super(message);
+    this.name = "FanucRmiTimeoutError";
+  }
+}
 
 /**
  * Well-known RMI "connect" port on R-30iB Plus controllers. FRC_Connect is sent
@@ -316,7 +328,7 @@ export class FanucRmiClient {
         // Drop this waiter from the queue on timeout.
         const idx = this.pending.findIndex((w) => w.timer === timer);
         if (idx >= 0) this.pending.splice(idx, 1);
-        reject(new Error(`FANUC RMI ${packetType(pkt)} timeout after ${timeoutMs}ms`));
+        reject(new FanucRmiTimeoutError(`FANUC RMI ${packetType(pkt)} timeout after ${timeoutMs}ms`));
       }, timeoutMs);
       if (typeof timer.unref === "function") timer.unref();
       this.pending.push({ resolve, reject, timer });
@@ -374,6 +386,7 @@ export class FanucDriver implements RobotDriver {
   private skipPortReconnect = false;
   private version: { major?: number; minor?: number } = {};
   private seq = 1;
+  private readonly fence = new AbortFence();
 
   /** Parse "tcp://host:port" | "host:port" | "host" → {host,port}. */
   private parseEndpoint(endpoint: string, defaultPort: number): { host: string; port: number } {
@@ -555,6 +568,10 @@ export class FanucDriver implements RobotDriver {
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
 
+    // doc 81 Đợt 1B Task 5 fix round 1 — abort fence: `guard()` runs right before EVERY send
+    // below (FanucRmiClient.send writes synchronously), so once abort() has bumped the epoch
+    // this job — possibly mid GetStatus→Abort→Initialize chain — sends nothing more.
+    const guard = this.fence.capture();
     let sequenceId = this.seq++;
     let packet = job.jobType === "abort"
       ? buildAbortPacket()
@@ -573,6 +590,7 @@ export class FanucDriver implements RobotDriver {
       // FRC_Abort is a Command that needs no Initialize; motion instructions do.
       if (job.jobType !== "abort") {
         // Manual startup pre-check before creating the RMI_MOVE program. [RMI §2.3.1 p.9]
+        guard();
         const st = await this.client.send(buildGetStatusPacket(), this.timeoutMs);
         this.assertOk(st, "FRC_GetStatus");
         if (Number(st.ServoReady ?? 0) !== 1) {
@@ -584,8 +602,10 @@ export class FanucDriver implements RobotDriver {
         }
         // If RMI is already running, abort it first so FRC_Initialize can succeed. [RMI §2.3.1 p.9]
         if (Number(st.RMIMotionStatus ?? 0) !== 0) {
+          guard();
           await this.client.send(buildAbortPacket(), this.timeoutMs).catch(() => undefined);
         }
+        guard();
         const init = await this.client.send(buildInitializePacket(this.groupMask), this.timeoutMs);
         this.assertOk(init, "FRC_Initialize");
         // FRC_Initialize recreates RMI_MOVE; sequence IDs restart at 1 (or the
@@ -596,6 +616,7 @@ export class FanucDriver implements RobotDriver {
         sequenceId = this.seq++;
         packet = buildFanucInstruction(job, sequenceId);
       }
+      guard();
       const resp = await this.client.send(packet, this.timeoutMs);
       const errId = Number(resp.ErrorID ?? 0);
       if (errId !== 0) {
@@ -606,7 +627,15 @@ export class FanucDriver implements RobotDriver {
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
-      return { ok: false, status: "failed", error: msg };
+      // Keep the reason code (rmi_reply_timeout ⇒ the dispatcher sends a stop; a fenced job
+      // reports job_fenced_by_abort).
+      const reasonCode = (err as { reasonCode?: unknown })?.reasonCode;
+      return {
+        ok: false,
+        status: "failed",
+        error: msg,
+        ...(typeof reasonCode === "string" ? { detail: { jobType: job.jobType, sequenceId, reasonCode } } : {}),
+      };
     }
   }
 
@@ -615,6 +644,7 @@ export class FanucDriver implements RobotDriver {
    * Task 5: a failed/unsent abort is SURFACED (throws), no longer swallowed.
    */
   async abort(): Promise<void> {
+    this.fence.bump(); // FIRST: any job started before this abort can send nothing more
     await abortThroughRunJob((job) => this.runJob(job), "FANUC RMI");
   }
 

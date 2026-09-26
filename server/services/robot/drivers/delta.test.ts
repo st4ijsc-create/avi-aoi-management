@@ -264,6 +264,25 @@ describe("DeltaDriver — motion gate + fail-safe", () => {
     expect(sock.written.length).toBe(before);
   });
 
+  // doc 81 Đợt 1B Task 5 fix round 1 — hàng rào abort trong cửa sổ nối lại.
+  it("job đang chờ nối lại khi abort() được gọi ⇒ kết nối mới chỉ nhận STOP, không SERVO/MOVL", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    nextSocket = makeController((cmd) => (cmd === "MOVL" ? null : defaultResponder(cmd, "1", [])));
+    const { DeltaDriver } = await import("./deltaRobotDriver");
+    const d = new DeltaDriver();
+    await d.connect({ endpoint: "tcp://192.168.0.40:5000", timeoutMs: 100 });
+    const first = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
+    expect(first.detail?.reasonCode).toBe("line_reply_timeout"); // kết nối cũ bị huỷ
+    const fresh = makeController(defaultResponder);
+    nextSocket = fresh; // lần nối lại nhận bộ điều khiển mới
+    const job = d.runJob({ jobType: "move", params: { x: 2, y: 2, z: 2 } });
+    await expect(d.abort()).resolves.toBeUndefined();
+    const r = await job;
+    expect(r.detail?.reasonCode).toBe("job_fenced_by_abort");
+    await new Promise((res) => setTimeout(res, 20));
+    expect(fresh.written.map(cmdOf)).toEqual(["STOP"]);
+  });
+
   it("runJob: not connected → failed result, never throws", async () => {
     const { DeltaDriver } = await import("./deltaRobotDriver");
     const d = new DeltaDriver();

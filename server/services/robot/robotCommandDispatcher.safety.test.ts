@@ -99,11 +99,13 @@ vi.mock("./robotManager", () => ({
 }));
 
 // Interlock có test riêng; ở đây chỉ ghi lại khoá được đánh giá.
-const interlock = vi.hoisted(() => ({ calls: [] as any[] }));
+const interlock = vi.hoisted(() => ({ calls: [] as any[], blocked: false }));
 vi.mock("../interlock/interlockGate", () => ({
   evaluateInterlockGate: vi.fn(async (p: any) => {
     interlock.calls.push(p);
-    return { blocked: false, failClosed: false, violations: [] };
+    return interlock.blocked
+      ? { blocked: true, failClosed: false, violations: [{ ruleId: 91, ruleName: "guard open", action: "stop_line" }] }
+      : { blocked: false, failClosed: false, violations: [] };
   }),
 }));
 
@@ -162,6 +164,10 @@ async function startFakeMelfa(): Promise<FakeMelfa> {
         const cmd = frame.split(";").slice(2).join(";");
         cmds.push(cmd);
         const reply = fake.respond(cmd);
+        if (reply === "__CLOSE__") {
+          sock.destroy(); // peer đóng kết nối giữa lệnh
+          return;
+        }
         if (reply != null && !sock.destroyed) sock.write(`${reply}\r`);
       }
     });
@@ -195,6 +201,7 @@ async function within<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 const allCmds = (f: FakeMelfa) => f.conns.flat();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const motionCmds = (f: FakeMelfa) => allCmds(f).filter((c) => MOTION.test(c));
 
 const ENV_KEYS = [
@@ -241,6 +248,7 @@ beforeEach(() => {
   ledger.noDb = false;
   ledger.onUpdate = null;
   interlock.calls.length = 0;
+  interlock.blocked = false;
   plc.mode = "ok";
   fake.respond = healthy;
   process.env.ROBOT_CONTROL_ENABLED = "true";
@@ -450,3 +458,101 @@ describe("interlock robot: khoá đánh giá", () => {
     expect(ROBOT_NO_OT_ADAPTER_ID).toBeLessThan(1);
   });
 });
+
+// ── doc 81 Đợt 1B Task 5 fix round 1 ─────────────────────────────────────────
+describe("fix round 1 — manual: confirmedBy phải là chính người khởi tạo (R11)", () => {
+  it("manual + chuyển động + confirmedBy ≠ requestedBy (không actionId) ⇒ rejected MANUAL_CONFIRMER_MISMATCH, 0 byte", async () => {
+    await connectDriver(2000);
+    const r = await within(
+      dispatchRobotJob({ robotId: 7, job: { jobType: "home" }, triggerKind: "manual", requestedBy: 3, confirmedBy: 99 }),
+      10_000,
+    );
+    expect(r.status).toBe("rejected");
+    expect(r.error).toBe("MANUAL_CONFIRMER_MISMATCH");
+    expect(allCmds(fake)).toEqual([]);
+  });
+
+  it("hitl + confirmedBy ≠ requestedBy vẫn qua (quy tắc chỉ cho manual)", async () => {
+    await connectDriver(2000);
+    const r = await within(dispatchRobotJob({ ...HOME, requestedBy: 3, confirmedBy: 99 }), 10_000);
+    expect(r.status).toBe("done");
+  });
+});
+
+describe("fix round 1 — interlock không bao giờ chặn lệnh DỪNG (M3)", () => {
+  it("interlock đang vi phạm ⇒ chuyển động bị chặn INTERLOCK_BLOCKED, 0 byte", async () => {
+    await connectDriver(2000);
+    interlock.blocked = true;
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.error).toBe("INTERLOCK_BLOCKED");
+    expect(allCmds(fake)).toEqual([]);
+  });
+
+  it("interlock đang vi phạm ⇒ abort VẪN đi: robot nhận STOP", async () => {
+    await connectDriver(2000);
+    interlock.blocked = true;
+    const r = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(r.status).toBe("done");
+    expect(allCmds(fake)).toEqual(["STOP"]);
+  });
+});
+
+describe("fix round 1 — idempotency không ép 'running' vào union kết quả (M1)", () => {
+  it("khoá đã có hàng 'running' ⇒ rejected IDEMPOTENT_JOB_IN_PROGRESS, không chạy lại, 0 byte", async () => {
+    await connectDriver(2000);
+    ledger.rows.push({ id: 500, idempotencyKey: "k-running", status: "running" });
+    const r = await within(dispatchRobotJob({ ...HOME, idempotencyKey: "k-running" }), 10_000);
+    expect(r).toEqual({ ok: false, status: "rejected", jobId: 500, error: "IDEMPOTENT_JOB_IN_PROGRESS" });
+    expect(allCmds(fake)).toEqual([]);
+  });
+
+  it.each([
+    ["done", true],
+    ["simulated", true],
+    ["failed", false],
+    ["rejected", false],
+  ] as const)("khoá đã có hàng '%s' ⇒ trả lại đúng trạng thái đó (ok=%s)", async (status, ok) => {
+    await connectDriver(2000);
+    ledger.rows.push({ id: 501, idempotencyKey: `k-${status}`, status });
+    const r = await within(dispatchRobotJob({ ...HOME, idempotencyKey: `k-${status}` }), 10_000);
+    expect(r).toEqual({ ok, status, jobId: 501 });
+  });
+});
+
+describe("fix round 1 — hàng rào abort MELFA: không lệnh chuyển động nào sau STOP (cửa sổ nối lại)", () => {
+  it("job đang chờ nối lại khi abort() được gọi ⇒ kết nối mới chỉ nhận OPEN= rồi STOP, KHÔNG CNTLON/SRVON/EXEC", async () => {
+    await connectDriver(300);
+    // 1) một lệnh hết hạn giờ ở tầng driver ⇒ kết nối bị huỷ, lần gửi sau phải nối lại.
+    fake.respond = (cmd) => (cmd.startsWith("EXEC") ? null : healthy(cmd));
+    const first = await within(driver.runJob({ jobType: "home" }), 5000);
+    expect(first.detail?.reasonCode).toBe("line_reply_timeout");
+    fake.respond = healthy;
+    const before = fake.conns.length;
+    // 2) job mới bắt đầu (đang chờ nối lại), abort() tới ngay sau — như hạn dispatcher rơi giữa chừng.
+    const job = driver.runJob({ jobType: "home" });
+    const stop = driver.abort();
+    await within(stop, 5000);
+    const r = await within(job, 5000);
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("job_fenced_by_abort");
+    await sleep(200);
+    const fresh = fake.conns.slice(before).flat();
+    expect(fresh).toEqual(["OPEN=AOICTRL", "STOP"]);
+  });
+});
+
+describe("fix round 1 — đóng kết nối giữa lệnh chuyển động = kết cục không rõ (line_connection_closed)", () => {
+  it("robot đóng socket khi EXEC đang chờ ⇒ dispatcher thử dừng và ghi rõ kết quả dừng (không im lặng failed)", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    await connectDriver(2000);
+    fake.respond = (cmd) => (cmd.startsWith("EXEC") ? "__CLOSE__" : healthy(cmd));
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "line_connection_closed" });
+    // Kết nối đã mất ⇒ STOP không gửi được: sổ ghi abort_failed một cách trung thực.
+    expect(ledger.rows[0].result.abort).toBe("abort_failed");
+    expect(ledger.rows[0].errorText).toMatch(/line_connection_closed|socket closed/);
+    expect(ledger.rows[0].errorText).toMatch(/abort_failed/);
+  });
+});
+

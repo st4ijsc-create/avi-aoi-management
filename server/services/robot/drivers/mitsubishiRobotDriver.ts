@@ -96,7 +96,7 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth, RobotPose,
 } from "../robotDriver";
-import { abortThroughRunJob } from "../robotDriver";
+import { abortThroughRunJob, AbortFence } from "../robotDriver";
 import { TcpLineClient } from "./tcpLineClient";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
@@ -244,6 +244,7 @@ export class MitsubishiDriver implements RobotDriver {
   private robotNo = DEFAULT_ROBOT_NO;
   private slotNo = DEFAULT_SLOT_NO;
   private clientName = DEFAULT_CLIENT_NAME;
+  private readonly fence = new AbortFence();
 
   /** Parse "tcp://host:port" | "host:port" | "host" → {host,port}. */
   private parseEndpoint(endpoint: string, defaultPort: number): { host: string; port: number } {
@@ -258,9 +259,11 @@ export class MitsubishiDriver implements RobotDriver {
   }
 
   /** Send one command, await the reply, and throw if it is a MELFA error. */
-  private async command(cmd: string): Promise<MelfaReply> {
+  private async command(cmd: string, guard?: () => void): Promise<MelfaReply> {
     if (!this.client) throw new DeviceUnreachableError("mitsubishiRobot");
-    const reply = parseMelfaResponse(await this.client.send(frameMelfaCommand(cmd, this.robotNo, this.slotNo), this.timeoutMs));
+    const reply = parseMelfaResponse(
+      await this.client.send(frameMelfaCommand(cmd, this.robotNo, this.slotNo), this.timeoutMs, { guard }),
+    );
     if (!reply.ok) throw new Error(`MELFA ${cmd.split(/[ (]/)[0]} failed: error ${reply.errorNo ?? "?"}`);
     return reply;
   }
@@ -381,6 +384,9 @@ export class MitsubishiDriver implements RobotDriver {
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
+    // doc 81 Đợt 1B Task 5 fix round 1 — abort fence: checked right before EVERY write
+    // (inside TcpLineClient.send, after any reconnect), so nothing follows a STOP.
+    const guard = this.fence.capture();
 
     const isAbort = job.jobType === "abort";
     const motionCmd = isAbort ? "STOP" : buildMelfaMotion(job);
@@ -398,10 +404,10 @@ export class MitsubishiDriver implements RobotDriver {
     try {
       // Abort halts a running move and needs no servo-on; motion needs control+servo.
       if (!isAbort) {
-        await this.command("CNTLON");
-        await this.command("SRVON");
+        await this.command("CNTLON", guard);
+        await this.command("SRVON", guard);
       }
-      const reply = await this.command(motionCmd);
+      const reply = await this.command(motionCmd, guard);
       this.lastOkAt = new Date();
       return { ok: true, status: "done", detail: { jobType: job.jobType, command: framed, sent: true, reply: reply.payload } };
     } catch (err) {
@@ -426,6 +432,7 @@ export class MitsubishiDriver implements RobotDriver {
    * instead of swallowed — the dispatcher records abort_failed.
    */
   async abort(): Promise<void> {
+    this.fence.bump(); // FIRST: any job started before this abort can write nothing more
     if (this.client && this.client.inFlight() > 0) this.client.resetConnection("abort preempts in-flight request");
     await abortThroughRunJob((job) => this.runJob(job), "MELFA");
   }

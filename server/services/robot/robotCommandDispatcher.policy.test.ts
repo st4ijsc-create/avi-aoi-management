@@ -217,7 +217,9 @@ describe("robotCommandDispatcher — policy seam 4a-policy (W3-B2 G3.14)", () =>
 
   it("ON + PERMIT → đi tiếp NGUYÊN VẸN (interlock → runJob → done) + action/resource/context đúng chuẩn", async () => {
     policyMock.secPlatformEnabled.mockReturnValue(true);
-    const r = await dispatchRobotJob(baseInput({ confirmedBy: 9 }));
+    // doc 81 Đợt 1B Task 5 fix round 1 (R11) — manual đòi confirmedBy === requestedBy; ca này cần
+    // actor ≠ requestedBy để chứng minh subject = confirmedBy ⇒ chạy đường 'hitl'.
+    const r = await dispatchRobotJob(baseInput({ confirmedBy: 9, triggerKind: "hitl" }));
     expect(r.status).toBe("done");
     expect(runJobSpy).toHaveBeenCalledTimes(1);
 
@@ -229,7 +231,7 @@ describe("robotCommandDispatcher — policy seam 4a-policy (W3-B2 G3.14)", () =>
     expect(context).toMatchObject({
       verb: "home",
       robotId: 3,
-      triggerKind: "manual",
+      triggerKind: "hitl",
       mode: "real",
       role: "engineer", // resolve qua db/auth (mocked)
       fat_passed: false, // không có bản ghi commissioning trong fake DB

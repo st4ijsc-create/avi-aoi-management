@@ -46,7 +46,7 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "../robotDriver";
-import { abortThroughRunJob } from "../robotDriver";
+import { abortThroughRunJob, AbortFence, RobotJobFencedError } from "../robotDriver";
 
 /**
  * ─── TMflow Modbus register map (ASSUMED — EDIT FOR YOUR DEPLOYMENT) ────────
@@ -164,7 +164,8 @@ export type TmReplyReasonCode =
   | "tm_reply_malformed"
   | "tm_connection_closed"
   | "tm_reply_timeout"
-  | "tm_socket_error";
+  | "tm_socket_error"
+  | "job_fenced_by_abort";
 
 export type TmReplyVerdict =
   | { ok: true; reply: string; warnings?: number[] }
@@ -332,6 +333,7 @@ export class TechmanDriver implements RobotDriver {
   private timeoutMs = 5000;
   private unitId = DEFAULT_UNIT_ID;
   private tmsctSeq = 1;
+  private readonly fence = new AbortFence();
 
   /** Lazy-load modbus-serial (optional dep). Returns the ctor or null. */
   private async loadModbus(): Promise<any> {
@@ -482,6 +484,9 @@ export class TechmanDriver implements RobotDriver {
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected) return { ok: false, status: "failed", error: "not connected" };
+    // doc 81 Đợt 1B Task 5 fix round 1 — abort fence, checked in the socket's connect handler
+    // right before the frame is written (the connect phase is where a job can outlive abort()).
+    const guard = this.fence.capture();
 
     const id = this.tmsctSeq++;
     let command: string;
@@ -514,7 +519,7 @@ export class TechmanDriver implements RobotDriver {
     // doc 81 Đợt 1B Task 4 — the reply is CLASSIFIED: only a checksum-valid
     // `$TMSCT,…,<id>,OK,*CS` for THIS id is `done`; ERROR / $CPERR / bad checksum / wrong id /
     // closed / silent ⇒ `failed` with a reason code (BE2 T1 B/C/D: all of them used to be `done`).
-    const verdict = await this.sendListenNode(command, id);
+    const verdict = await this.sendListenNode(command, id, guard);
     if (verdict.ok) {
       return {
         ok: true,
@@ -537,7 +542,7 @@ export class TechmanDriver implements RobotDriver {
       detail: {
         jobType: job.jobType,
         tmsct: command,
-        sent: true,
+        sent: verdict.reasonCode !== "job_fenced_by_abort",
         reasonCode: verdict.reasonCode,
         ...(verdict.reply !== undefined ? { reply: verdict.reply } : {}),
         ...(verdict.deviceErrorCode !== undefined ? { deviceErrorCode: verdict.deviceErrorCode } : {}),
@@ -554,7 +559,7 @@ export class TechmanDriver implements RobotDriver {
    * NOTE: real Listen Node sessions are often long-lived and stream TMSTA
    * status; this one-shot send/ack keeps the dispatcher's per-job model.
    */
-  private sendListenNode(command: string, sentId: number): Promise<TmReplyVerdict> {
+  private sendListenNode(command: string, sentId: number, guard: () => void = () => undefined): Promise<TmReplyVerdict> {
     return new Promise<TmReplyVerdict>((resolve) => {
       const socket = createConnection({ host: this.listenHost, port: this.listenPort });
       let settled = false;
@@ -578,7 +583,18 @@ export class TechmanDriver implements RobotDriver {
       );
       if (typeof timer.unref === "function") timer.unref();
 
-      socket.on("connect", () => socket.write(command));
+      socket.on("connect", () => {
+        try {
+          guard();
+        } catch (err) {
+          if (err instanceof RobotJobFencedError) {
+            finish({ ok: false, reasonCode: "job_fenced_by_abort", message: err.message });
+            return; // fenced by abort(): the frame is NEVER written
+          }
+          throw err;
+        }
+        socket.write(command);
+      });
       socket.on("data", (chunk: Buffer) => {
         buf += chunk.toString("latin1");
         const parsed = parseListenNodeFrame(buf);
@@ -611,6 +627,7 @@ export class TechmanDriver implements RobotDriver {
    * so the dispatcher's timeout path records abort_failed honestly.
    */
   async abort(): Promise<void> {
+    this.fence.bump(); // FIRST: any job started before this abort can write nothing more
     await abortThroughRunJob((job) => this.runJob(job), "Techman");
   }
 
