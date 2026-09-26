@@ -173,6 +173,20 @@ export async function releaseVersion(
     const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, recipeId)).limit(1);
     if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${recipeId} not found`);
 
+    // FLOW-01/INT-02 (doc 80 Task 3) — same guarantee as /recipes' deployRecipe
+    // (server/db/machineRecipe.ts:277-279): refuse to release a version that has not
+    // been signed off by a second approver (approvedBy is null). Before this check,
+    // equipmentIntegration could promote a never-reviewed recipe straight to `active`
+    // while /recipes enforced SoD on the SAME table.
+    if (target.approvedBy == null) {
+      throw appError(
+        "PRECONDITION_FAILED",
+        "OPERATION_FAILED",
+        { operation: "releaseRecipeVersion" },
+        `Recipe #${recipeId} (${target.code} v${target.version}) has not been approved — a second approver must sign off before it can be released.`,
+      );
+    }
+
     // Row-lock ALL versions sharing this code → serialize concurrent promoters.
     await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
 
@@ -237,6 +251,17 @@ export async function rollbackToVersion(
   return d.transaction(async (tx) => {
     const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, toRecipeId)).limit(1);
     if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${toRecipeId} not found`);
+
+    // FLOW-01/INT-02 (doc 80 Task 3) — rollback also PROMOTES `target` to active, so it
+    // needs the SAME approvedBy gate as release (see releaseVersion above).
+    if (target.approvedBy == null) {
+      throw appError(
+        "PRECONDITION_FAILED",
+        "OPERATION_FAILED",
+        { operation: "rollbackRecipeVersion" },
+        `Recipe #${toRecipeId} (${target.code} v${target.version}) has not been approved — a second approver must sign off before it can be rolled back to.`,
+      );
+    }
 
     // Row-lock ALL versions sharing this code → serialize concurrent promoters.
     await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");

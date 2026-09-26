@@ -15738,6 +15738,7 @@
     "machineCode": "Machine code",
     "machineOptional": "Machine (optional)",
     "machineRequired": "Select a machine.",
+    "needsEditPermission": "Needs edit permission (machine_control/canEdit) to release/rollback.",
     "noAdapters": "No adapter protocols registered.",
     "noMachine": "(none)",
     "noPermission": "You do not have permission to view equipment integration.",

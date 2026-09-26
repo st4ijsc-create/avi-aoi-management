@@ -15718,6 +15718,7 @@
     "machineCode": "Mã máy",
     "machineOptional": "Máy (tùy chọn)",
     "machineRequired": "Chọn một máy.",
+    "needsEditPermission": "Cần quyền sửa (machine_control/canEdit) để phát hành/rollback.",
     "noAdapters": "Chưa đăng ký giao thức adapter nào.",
     "noMachine": "(không có)",
     "noPermission": "Bạn không có quyền xem tích hợp thiết bị.",

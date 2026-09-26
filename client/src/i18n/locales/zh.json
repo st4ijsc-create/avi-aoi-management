@@ -14700,6 +14700,7 @@
     "machine": "机器",
     "machineOptional": "机器（可选）",
     "machineRequired": "请选择一台机器。",
+    "needsEditPermission": "发布/回滚需要编辑权限（machine_control/canEdit）。",
     "noAdapters": "未注册适配器协议。",
     "noMachine": "（无）",
     "noPermission": "您无权查看设备集成。",
