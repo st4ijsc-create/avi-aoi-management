@@ -43,8 +43,7 @@ import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import { kyAnhTrongThan, kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
 import {
-  congAnhMo,
-  machineIdsChoLoiVao,
+  congAnhMo, machineIdsChoLoiVao,
   mayTrongPhamViAnh,
   phamViDaApAnh,
   sanPhamTrongPhamViAnh,
@@ -59,6 +58,7 @@ import { livenessProbe, readinessProbe } from "./healthProbes";
 import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
+import { listenThenStartOt } from "../services/ot/backgroundStart";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
 installConsoleBridge();
@@ -6411,7 +6411,7 @@ async function startServer() {
       : 65_000;
   server.keepAliveTimeout = 61_000;
 
-  server.listen(port, () => {
+  const onListening = () => {
     logger.info({ port, protocol }, `Server running on ${protocol}://localhost:${port}/`);
 
     // doc 33 F1 (SYNAPSE ADR-007): report the resolved edition + infra profile (advisory).
@@ -6425,24 +6425,23 @@ async function startServer() {
     cacheWarmingService.initialize().catch(err => {
       logger.error({ err }, '[CacheWarming] Failed to initialize');
     });
-  });
+  };
 
   // F1.1 — OT Connectivity Framework (parallel to OPC-UA scaffold above).
   // Disabled by default; opt in via OT_GATEWAY_ENABLED=true.
-  // doc 81 Đợt 1B Task 2 — chạy NỀN SAU listen, không await: một thiết bị treo không còn giữ
-  // được boot; lỗi chỉ được log (startBackgroundOt không bao giờ reject). Mỗi adapter tự có
-  // hạn khởi động OT_ADAPTER_START_TIMEOUT_MS (otManager).
-  void import("../services/ot/backgroundStart")
-    .then(({ startBackgroundOt }) =>
-      startBackgroundOt(
-        async () => {
-          const { startOt } = await import("../services/ot");
-          await startOt();
-        },
-        (message, detail) => console.error(message, detail),
-      ),
-    )
-    .catch((err) => console.error("[OT] init failed:", (err as any)?.message || err));
+  // doc 81 Đợt 1B Task 2 — listen (port, onListening) TRƯỚC, rồi OT chạy NỀN, không
+  // await: một thiết bị treo không còn giữ được boot; lỗi chỉ được log (không bao giờ reject).
+  // Mỗi adapter tự có hạn khởi động OT_ADAPTER_START_TIMEOUT_MS (otManager).
+  void listenThenStartOt(
+    server,
+    port,
+    onListening,
+    async () => {
+      const { startOt } = await import("../services/ot");
+      await startOt();
+    },
+    (message, detail) => console.error(message, detail),
+  );
   
   // Graceful shutdown
   let isShuttingDown = false;

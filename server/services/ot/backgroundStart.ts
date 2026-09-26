@@ -13,6 +13,27 @@
  */
 export type BackgroundStartLogger = (message: string, detail: unknown) => void;
 
+/** Phần tối thiểu của http/https/net Server mà đuôi boot cần. */
+export interface ListenableServer {
+  listen(port: number, listeningListener?: () => void): unknown;
+}
+
+/**
+ * doc 81 Đợt 1B Task 2 (Fix round 1) — ĐUÔI BOOT tách khỏi `server/_core/index.ts` để test được
+ * bằng server thật: gọi `server.listen(port, onListening)` TRƯỚC, rồi mới khởi động OT nền qua
+ * {@link startBackgroundOt}. Trả về ngay; promise trả về không bao giờ reject (chỉ để quan sát).
+ */
+export function listenThenStartOt(
+  server: ListenableServer,
+  port: number,
+  onListening: () => void,
+  startFn: () => unknown,
+  logError: BackgroundStartLogger,
+): Promise<void> {
+  server.listen(port, onListening);
+  return startBackgroundOt(startFn, logError);
+}
+
 export function startBackgroundOt(
   startFn: () => unknown,
   logError: BackgroundStartLogger,

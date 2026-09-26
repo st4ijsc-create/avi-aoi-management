@@ -67,6 +67,21 @@ export const OT_LEGACY_RECONNECT_MAX_MS = 60_000;
 export function adapterStartTimeoutMs(): number {
   return intEnv(process.env.OT_ADAPTER_START_TIMEOUT_MS, DEFAULT_OT_ADAPTER_START_TIMEOUT_MS);
 }
+/**
+ * doc 81 Đợt 1B Task 2 (Fix round 1) — hạn HIỆU LỰC cho một adapter/endpoint: không bao giờ
+ * ngắn hơn timeoutMs mà chính adapter cấu hình (+ biên), nếu không một thiết bị chậm hợp lệ
+ * (timeoutMs > hạn env) sẽ không bao giờ nối được — mọi lần nối xong muộn đều bị hạ.
+ */
+export function effectiveAdapterStartTimeoutMs(...conns: Array<{ timeoutMs?: number } | undefined>): number {
+  let ms = adapterStartTimeoutMs();
+  for (const c of conns) {
+    const t = c?.timeoutMs;
+    if (typeof t === "number" && Number.isFinite(t) && t > 0) {
+      ms = Math.max(ms, t + OT_ADAPTER_START_CLEANUP_GRACE_MS);
+    }
+  }
+  return ms;
+}
 function adapterStartConcurrency(): number {
   return intEnv(process.env.OT_ADAPTER_START_CONCURRENCY, DEFAULT_OT_ADAPTER_START_CONCURRENCY);
 }
@@ -144,7 +159,7 @@ async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) =>
  */
 async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number): Promise<boolean> {
   const { adapter } = entry;
-  const timeoutMs = adapterStartTimeoutMs();
+  const timeoutMs = effectiveAdapterStartTimeoutMs(adapter.connection);
   entry.attempts += 1;
   entry.inflight = true;
   const work = (async (): Promise<OtSubscriptionHandle> => {
@@ -551,6 +566,7 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
     healthIntervalMs: haHealthIntervalMs(adapter.pollIntervalMs),
     backoff: haBackoffFromEnv(),
     // doc 81 Đợt 1B Task 2 (R8) — một lần connect+subscribe không giữ quá hạn khởi động.
+    // Fix round 1 — supervisor tự nâng hạn theo timeoutMs của từng endpoint (connectDeadlineFor).
     connectTimeoutMs: adapterStartTimeoutMs(),
   });
 }
@@ -591,13 +607,15 @@ async function startOtOnce(): Promise<boolean> {
     console.error("[OT] loadEnabledAdapters failed:", (err as Error)?.message || err);
     return false;
   }
+  // Fix round 1 — stopOt (+ startOt mới) chạy trong lúc nạp: lượt cũ dừng NGAY, không ghi đè
+  // entry/supervisor của thế hệ mới.
+  if (myEpoch !== epoch) return false;
 
   if (adapters.length === 0) {
     console.log("[OT] no enabled adapters — nothing to start");
     return false;
   }
 
-  const startTimeoutMs = adapterStartTimeoutMs();
   const concurrency = adapterStartConcurrency();
 
   // ── C3 HA PATH — supervised connections (reconnect + failover). ─────────────
@@ -612,7 +630,8 @@ async function startOtOnce(): Promise<boolean> {
         try {
           await withDeadline(
             supervisor.start(),
-            startTimeoutMs + OT_ADAPTER_START_CLEANUP_GRACE_MS,
+            effectiveAdapterStartTimeoutMs(adapter.connection, adapter.backupConnection) +
+              OT_ADAPTER_START_CLEANUP_GRACE_MS,
             `adapter "${adapter.code}" supervisor start`,
           );
         } catch (err) {

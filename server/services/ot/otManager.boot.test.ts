@@ -27,9 +27,13 @@ import * as ModbusSerialNs from "modbus-serial";
 // cho 2/3 lời gọi — xem loadIngest() trong otManager.ts.)
 const hoisted = vi.hoisted(() => ({
   adapters: [] as unknown[],
+  /** Nếu đặt: loadEnabledAdapters gọi hàm này (điều khiển thời điểm nạp xong). */
+  load: null as null | (() => Promise<unknown[]>),
   onIngest: null as null | ((adapterId: number, s: unknown) => void),
 }));
-vi.mock("./deviceAdapter", () => ({ loadEnabledAdapters: async () => hoisted.adapters }));
+vi.mock("./deviceAdapter", () => ({
+  loadEnabledAdapters: async () => (hoisted.load ? hoisted.load() : hoisted.adapters),
+}));
 vi.mock("./ingest", () => ({
   ingestSample: async (a: { adapterId: number }, s: unknown) => {
     hoisted.onIngest?.(a.adapterId, s);
@@ -145,6 +149,7 @@ interface Rig {
   livePort: number;
   holding: Map<number, number>;
   live: { sim: ModbusSim };
+  mk: (adapterId: number, code: string, protocol: "modbus" | "s7", endpoint: string) => RuntimeAdapter;
 }
 
 /**
@@ -188,7 +193,7 @@ async function rig(): Promise<Rig> {
 
   const mgr = await import("./otManager");
   cleanups.push(() => mgr.stopOt());
-  return { mgr, samples, livePort: live.sim.port, holding, live };
+  return { mgr, samples, livePort: live.sim.port, holding, live, mk };
 }
 
 function goodFrom(r: Rig, adapterId: number, value: number, since = 0): OtSample | undefined {
@@ -219,6 +224,7 @@ describe("otManager khởi động có hạn (doc 81 Đợt 1B Task 2)", () => {
     await runCleanups();
     hoisted.onIngest = null;
     hoisted.adapters = [];
+    hoisted.load = null;
     vi.unstubAllEnvs();
   });
 
@@ -376,5 +382,129 @@ describe("otManager khởi động có hạn (doc 81 Đợt 1B Task 2)", () => {
     expect(b.value).toBe(true);
     expect(connects, "adapter #1 chỉ được connect MỘT lần").toBe(1);
     expect(r.mgr.listActiveAdapters().filter((x) => x.adapterId === 1)).toHaveLength(1);
+  }, 20_000);
+
+  // ── Fix round 1 ─────────────────────────────────────────────────────────────
+
+  it("(FR1-2) lượt startOt CŨ nạp adapter xong SAU stopOt + startOt mới ⇒ thế hệ mới giữ nguyên", async () => {
+    vi.stubEnv("OT_CONN_HA_ENABLED", "false");
+    const r = await rig();
+    const genB = hoisted.adapters as RuntimeAdapter[];
+    // Thế hệ CŨ: cùng id 1 (trỏ server sống) nhưng driver KHÁC.
+    const stale = r.mk(1, "STALE-MB", "modbus", `tcp://127.0.0.1:${r.livePort}`);
+    let releaseStale!: (v: unknown[]) => void;
+    let calls = 0;
+    hoisted.load = () => {
+      calls += 1;
+      if (calls === 1) return new Promise<unknown[]>((res) => (releaseStale = res));
+      return Promise.resolve(genB);
+    };
+    const p1 = r.mgr.startOt(); // lượt cũ: kẹt ở loadEnabledAdapters
+    await sleep(30);
+    await r.mgr.stopOt();
+    const p2 = await settleWithin(r.mgr.startOt(), ACCEPT_BOUND_MS);
+    expect(p2.value).toBe(true);
+    expect(r.mgr.getOtAdapterStatus(1)?.state).toBe("active");
+
+    releaseStale([stale]); // lượt cũ nạp xong MUỘN
+    const p1r = await settleWithin(p1, ACCEPT_BOUND_MS);
+    expect(p1r.settled).toBe(true);
+    expect(p1r.value).toBe(false);
+    await sleep(300);
+    const st = r.mgr.getOtAdapterStatus(1);
+    expect(st?.code, "entry của thế hệ mới không được bị lượt cũ ghi đè").toBe("LIVE-MB");
+    expect(st?.state).toBe("active");
+    expect(r.mgr.getActiveAdapter(1)).toBe(genB.find((a) => a.adapterId === 1));
+    expect(r.mgr.getOtAdapterStatus(3)?.state, "adapter #3 của thế hệ mới vẫn còn").toBe("error");
+    expect(stale.driver.isConnected(), "lượt cũ không được nối driver của nó").toBe(false);
+  }, 20_000);
+
+  for (const ha of [false, true]) {
+    it(`(FR1-3) ${ha ? "HA" : "LEGACY"}: adapter cấu hình timeoutMs LỚN hơn hạn env ⇒ hạn hiệu lực = max(env, timeoutMs + biên), nối được`, async () => {
+      vi.stubEnv("OT_CONN_HA_ENABLED", ha ? "true" : "false");
+      vi.stubEnv("OT_ADAPTER_START_TIMEOUT_MS", "1000");
+      const r = await rig();
+      const live = (hoisted.adapters as RuntimeAdapter[]).find((a) => a.adapterId === 1)!;
+      live.connection = { ...live.connection, timeoutMs: 2500 };
+      // Thiết bị CHẬM: connect mất 1500 ms (> hạn env 1000 ms, < timeoutMs 2500 của adapter).
+      // HA dựng driver MỚI qua registry ⇒ bọc cả registry lẫn driver sẵn có của adapter.
+      const slowConnect = (drv: any) => {
+        const rc = drv.connect.bind(drv);
+        drv.connect = async (cfg: any) => {
+          if (cfg?.timeoutMs === 2500) await sleep(1500);
+          return rc(cfg);
+        };
+        return drv;
+      };
+      const registry = await import("./driverRegistry");
+      const { createModbusDriver } = await import("./drivers/modbusDriver");
+      registry.registerDriver("modbus", () => slowConnect(createModbusDriver()));
+      slowConnect(live.driver);
+      const res = await settleWithin(r.mgr.startOt(), 2500 + 1000 + 2000);
+      expect(res.settled).toBe(true);
+      const st = r.mgr.getOtAdapterStatus(1);
+      expect(st?.state, `#1 phải active (state=${st?.state}, err=${st?.lastError})`).toBe("active");
+      expect(st?.attempts, "nối được ngay lần đầu, không phải nhờ thử lại").toBe(1);
+      expect(await waitFor(() => !!goodFrom(r, 1, 1234), 2000)).toBe(true);
+      // adapter KHÔNG cấu hình timeoutMs vẫn theo hạn env (S7 im lặng quá hạn 1000 ms).
+      expect(["error", "reconnecting"]).toContain(r.mgr.getOtAdapterStatus(3)?.state);
+    }, 20_000);
+  }
+
+  it("(FR1-4) LEGACY: connect xong MUỘN sau hạn ⇒ handle bị đóng, driver bị hạ, không 'active' nhờ nó; lần thử lại sau đó nối được", async () => {
+    vi.stubEnv("OT_CONN_HA_ENABLED", "false");
+    const r = await rig();
+    const live = (hoisted.adapters as RuntimeAdapter[]).find((a) => a.adapterId === 1)!;
+    const d = live.driver;
+    const events: string[] = [];
+    let n = 0;
+    const realConnect = d.connect.bind(d);
+    d.connect = async (cfg) => {
+      const k = ++n;
+      events.push(`connect-start#${k}`);
+      if (k === 1) await sleep(START_TIMEOUT_MS + 500); // xong SAU hạn 1500 ms
+      await realConnect(cfg);
+      events.push(`connect-done#${k}`);
+    };
+    const realSubscribe = d.subscribe.bind(d);
+    d.subscribe = async (tags, onSample, ms) => {
+      const k = n;
+      const h = await realSubscribe(tags, onSample, ms);
+      events.push(`subscribe#${k}`);
+      return {
+        close: async () => {
+          events.push(`close#${k}`);
+          await h.close();
+        },
+      };
+    };
+    const realDisconnect = d.disconnect.bind(d);
+    d.disconnect = async () => {
+      events.push("disconnect");
+      await realDisconnect();
+    };
+
+    const res = await settleWithin(r.mgr.startOt(), ACCEPT_BOUND_MS);
+    expect(res.settled).toBe(true);
+    expect(r.mgr.getOtAdapterStatus(1)?.state).toBe("error");
+    expect(r.mgr.getOtAdapterStatus(1)?.lastError).toMatch(/timeout/);
+
+    // Kết nối muộn tới rồi bị hạ; lần thử lại (#2) nối được.
+    const back = await waitFor(() => r.mgr.getOtAdapterStatus(1)?.state === "active", 5000);
+    expect(back, `phải nối lại được (events=${events.join(",")})`).toBe(true);
+    const iDone1 = events.indexOf("connect-done#1");
+    const iSub1 = events.indexOf("subscribe#1");
+    const iClose1 = events.indexOf("close#1");
+    const iStart2 = events.indexOf("connect-start#2");
+    expect(iDone1, events.join(",")).toBeGreaterThanOrEqual(0);
+    expect(iClose1, `handle của kết nối muộn phải bị đóng (${events.join(",")})`).toBeGreaterThan(iSub1);
+    const discAfterLate = events.findIndex((e, i) => e === "disconnect" && i > iSub1);
+    expect(discAfterLate, `driver phải bị hạ sau kết nối muộn (${events.join(",")})`).toBeGreaterThan(iSub1);
+    expect(iStart2, "lần thử lại chỉ bắt đầu SAU khi kết nối muộn đã được dọn").toBeGreaterThan(
+      Math.max(iClose1, discAfterLate),
+    );
+    expect(r.mgr.getOtAdapterStatus(1)?.attempts).toBeGreaterThanOrEqual(2);
+    const tBack = Date.now();
+    expect(await waitFor(() => !!goodFrom(r, 1, 1234, tBack), 2000)).toBe(true);
   }, 20_000);
 });

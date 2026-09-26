@@ -21,7 +21,11 @@ import type {
   OtCommandResult,
   OtHealth,
 } from "./otDriver";
-import { ConnectionSupervisor, DEFAULT_SUPERVISOR_CONNECT_TIMEOUT_MS } from "./connectionSupervisor";
+import {
+  ConnectionSupervisor,
+  DEFAULT_SUPERVISOR_CONNECT_TIMEOUT_MS,
+  SUPERVISOR_CONNECT_GRACE_MS,
+} from "./connectionSupervisor";
 
 async function settleWithin<T>(p: Promise<T>, ms: number): Promise<{ settled: boolean; elapsed: number }> {
   const t0 = Date.now();
@@ -121,6 +125,35 @@ describe("ConnectionSupervisor connect có hạn (doc 81 Đợt 1B Task 2 / R8)"
     await sleep(500);
     expect(sup.status().attempts, "vòng thử lại phải tiến (attempts tăng)").toBeGreaterThan(a);
     expect(d.maxInFlight, "không chồng connect lên driver đang treo").toBe(1);
+    const s = await settleWithin(sup.stop(), 3000);
+    expect(s.settled).toBe(true);
+  });
+
+  it("(FR1-3) endpoint cấu hình timeoutMs > connectTimeoutMs ⇒ hạn = timeoutMs + 1 s, thiết bị chậm nối được ngay lần đầu", async () => {
+    expect(SUPERVISOR_CONNECT_GRACE_MS).toBe(1000);
+    const d = new GatedDriver();
+    let open!: () => void;
+    d.gate = new Promise<void>((r) => (open = r));
+    const sup = new ConnectionSupervisor({
+      adapterId: 8,
+      code: "SLOW",
+      protocol: "stub",
+      tags: [{ tagKey: "t", address: "a", dataType: "int" }],
+      pollIntervalMs: 200,
+      healthIntervalMs: 50,
+      endpoints: [{ label: "primary", connection: { endpoint: "stub://x", timeoutMs: 600 } }],
+      createDriver: () => d,
+      onSample: () => undefined,
+      backoff: { initialMs: 100, maxMs: 200, factor: 2, jitter: 0 },
+      linkLossFailThreshold: 1,
+      connectTimeoutMs: 200,
+    });
+    const t = setTimeout(() => open(), 400); // chậm hơn 200 ms, nhanh hơn 600 + 1000 ms
+    const r = await settleWithin(sup.start(), 2500);
+    clearTimeout(t);
+    expect(r.settled).toBe(true);
+    expect(sup.status().state, `lastError=${sup.status().lastError}`).toBe("connected");
+    expect(sup.status().attempts).toBe(1);
     const s = await settleWithin(sup.stop(), 3000);
     expect(s.settled).toBe(true);
   });

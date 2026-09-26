@@ -61,6 +61,11 @@ export const DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS = 2500;
  * vòng nối (và start()) lâu hơn hạn khởi động một adapter.
  */
 export const DEFAULT_SUPERVISOR_CONNECT_TIMEOUT_MS = 10_000;
+/**
+ * doc 81 Đợt 1B Task 2 (Fix round 1) — biên cộng vào timeoutMs của endpoint: hạn một lần nối
+ * endpoint = max(connectTimeoutMs, endpoint.timeoutMs + biên) — thiết bị chậm hợp lệ vẫn nối được.
+ */
+export const SUPERVISOR_CONNECT_GRACE_MS = 1000;
 
 /** Lifecycle state of a supervised adapter connection. */
 export type SupervisorState =
@@ -603,8 +608,9 @@ export class ConnectionSupervisor {
   private async connectAndSubscribe(ep: RuntimeEndpoint): Promise<void> {
     // doc 81 Đợt 1B Task 2 — lần connect trước (đã quá hạn) còn treo trên CHÍNH driver này:
     // không chồng connect thứ hai; tính lần này là thất bại, backoff sẽ thử lại sau.
+    const deadlineMs = this.connectDeadlineFor(ep);
     if (ep.pendingConnect) {
-      throw new Error(`previous ${ep.label} connect still pending (timed out after ${this.connectTimeoutMs}ms)`);
+      throw new Error(`previous ${ep.label} connect still pending (timed out after ${deadlineMs}ms)`);
     }
     await this.closeActiveHandle();
     // Ensure a clean slate: a stale-but-"connected" driver is disconnected first.
@@ -635,12 +641,20 @@ export class ConnectionSupervisor {
     );
     let inTime = false;
     try {
-      const handle = await withDeadline(work, this.connectTimeoutMs, `supervisor ${this.code} ${ep.label} connect`);
+      const handle = await withDeadline(work, deadlineMs, `supervisor ${this.code} ${ep.label} connect`);
       inTime = true;
       this.activeHandle = handle;
     } finally {
       if (!inTime && !workSettled) this.reapLateConnect(ep, work);
     }
+  }
+
+  /** Fix round 1 — hạn một lần nối endpoint: không ngắn hơn timeoutMs của chính endpoint + biên. */
+  private connectDeadlineFor(ep: RuntimeEndpoint): number {
+    const t = ep.connection.timeoutMs;
+    return typeof t === "number" && Number.isFinite(t) && t > 0
+      ? Math.max(this.connectTimeoutMs, t + SUPERVISOR_CONNECT_GRACE_MS)
+      : this.connectTimeoutMs;
   }
 
   /**
