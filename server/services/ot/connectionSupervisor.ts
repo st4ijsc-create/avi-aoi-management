@@ -46,6 +46,14 @@ import type {
   OnOtSample,
   OtProtocol,
 } from "./otDriver";
+import { withDeadline } from "./drivers/boundedClose";
+
+/**
+ * doc 81 Đợt 1B Task 1 — hạn cho MỖI lời gọi hạ kết nối của driver (disconnect /
+ * subscription.close) và cho TOÀN BỘ stop(). Supervisor không được phụ thuộc vào việc
+ * mọi driver đều trả về: một driver treo không được kẹt vòng nối lại hay stop().
+ */
+export const DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS = 2500;
 
 /** Lifecycle state of a supervised adapter connection. */
 export type SupervisorState =
@@ -112,6 +120,12 @@ export interface SupervisorOptions {
    * MACHINE_PRESENCE_ENABLED). Không truyền ⇒ chỉ nhánh sweep-telemetry ghi presence.
    */
   machineId?: number;
+  /**
+   * doc 81 Đợt 1B Task 1 — hạn (ms) cho mỗi driver.disconnect()/handle.close() và cho cả
+   * stop(). Mặc định {@link DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS}. Hết hạn ⇒ bỏ đợi
+   * (driver tự dọn transport của nó), supervisor đi tiếp.
+   */
+  disconnectTimeoutMs?: number;
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -185,6 +199,8 @@ export class ConnectionSupervisor {
   private readonly linkLossThreshold: number;
   /** doc 40 MON-F1 — machineId (nếu có) để đẩy presence online/offline. */
   private readonly machineId: number | null;
+  /** doc 81 Đợt 1B Task 1 — hạn cho mỗi lời gọi hạ kết nối + cho stop(). */
+  private readonly disconnectTimeoutMs: number;
 
   private readonly endpoints: RuntimeEndpoint[];
 
@@ -236,6 +252,10 @@ export class ConnectionSupervisor {
       Math.floor(opts.linkLossFailThreshold ?? linkLossThresholdFromEnv()),
     );
     this.machineId = opts.machineId ?? null;
+    this.disconnectTimeoutMs =
+      typeof opts.disconnectTimeoutMs === "number" && opts.disconnectTimeoutMs > 0
+        ? opts.disconnectTimeoutMs
+        : DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS;
 
     if (!opts.endpoints || opts.endpoints.length === 0) {
       throw new Error(`ConnectionSupervisor "${opts.code}": at least one endpoint required`);
@@ -328,9 +348,25 @@ export class ConnectionSupervisor {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
-    await this.closeActiveHandle();
-    for (const ep of this.endpoints) await this.safeDisconnect(ep);
+    // doc 81 Đợt 1B Task 1 — cả stop() có MỘT hạn: đóng subscription + hạ mọi endpoint
+    // SONG SONG, mỗi lời gọi tự có hạn; driver treo không giữ được stop().
+    await this.bounded(
+      (async () => {
+        await this.closeActiveHandle();
+        await Promise.all(this.endpoints.map((ep) => this.safeDisconnect(ep)));
+      })(),
+      "stop",
+    );
     this.activeIndex = -1;
+  }
+
+  /** doc 81 Đợt 1B Task 1 — chờ p tối đa disconnectTimeoutMs; không bao giờ ném. */
+  private async bounded(p: Promise<unknown>, what: string): Promise<void> {
+    try {
+      await withDeadline(p, this.disconnectTimeoutMs, `supervisor ${this.code} ${what}`);
+    } catch (err) {
+      this.lastError = errMsg(err);
+    }
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
@@ -486,6 +522,13 @@ export class ConnectionSupervisor {
       this.attempts += 1;
       try {
         await this.connectAndSubscribe(ep);
+        // doc 81 Đợt 1B Task 1 — stop() đã chạy trong lúc connect: KHÔNG sống lại; hạ ngay
+        // kết nối muộn này (không để poll/socket rò sau khi tiến trình đã yêu cầu dừng).
+        if (this.stopped) {
+          await this.closeActiveHandle();
+          await this.safeDisconnect(ep);
+          return false;
+        }
         // ── success ──
         this.activeIndex = idx;
         this.consecutiveFailures = 0;
@@ -564,20 +607,14 @@ export class ConnectionSupervisor {
     if (this.activeHandle) {
       const h = this.activeHandle;
       this.activeHandle = null;
-      try {
-        await h.close();
-      } catch {
-        // ignore
-      }
+      // doc 81 Đợt 1B Task 1 — có hạn: subscription treo không kẹt vòng nối lại/stop().
+      await this.bounded(Promise.resolve().then(() => h.close()), "subscription close");
     }
   }
 
   private async safeDisconnect(ep: RuntimeEndpoint): Promise<void> {
-    try {
-      await ep.driver.disconnect();
-    } catch {
-      // ignore
-    }
+    // doc 81 Đợt 1B Task 1 — có hạn: driver.disconnect() treo không kẹt supervisor.
+    await this.bounded(Promise.resolve().then(() => ep.driver.disconnect()), "disconnect");
   }
 
   private scheduleRetry(delayMs: number): void {

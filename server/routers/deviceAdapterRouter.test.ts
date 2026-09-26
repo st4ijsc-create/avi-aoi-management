@@ -20,7 +20,10 @@ vi.mock("drizzle-orm", async (orig) => {
   return { ...actual, eq: makeEq, and: makeAnd, gte: makeGte, desc: makeDesc };
 });
 
-vi.mock("../db", () => ({ getDb: vi.fn(async () => fake) }));
+// `phaiDoiMatKhau` is read by the GLOBAL root middleware (server/_core/trpc.ts) — a bare
+// `{ getDb }` mock makes Vitest throw "No 'phaiDoiMatKhau' export" on every call (same fix
+// as equipmentIntegrationRouter.test.ts).
+vi.mock("../db", () => ({ getDb: vi.fn(async () => fake), phaiDoiMatKhau: vi.fn(async () => false) }));
 
 // Driver registry: delegate to the REAL implementation by default, but allow a
 // per-test override of createDriver (to exercise the clean-error branch).
@@ -149,6 +152,37 @@ describe("testConnection (read-only probe, NO write)", () => {
       driverOverride.createDriver = null;
     }
   });
+
+  // doc 81 Đợt 1B Task 1 — hạn TỔNG (timeoutMs 8 s + 2 s) cho connect + disconnect, và
+  // luôn dọn. Trước bản vá: connect 8 s + disconnect 8 s nối tiếp = 16 s khi driver treo.
+  it("driver treo ở CẢ connect lẫn disconnect ⇒ trả ok:false trong ≤ 10 s + biên, disconnect được gọi", async () => {
+    let disconnectCalls = 0;
+    driverOverride.createDriver = () => ({
+      protocol: "modbus",
+      connect: () => new Promise<void>(() => undefined),
+      disconnect: () => {
+        disconnectCalls += 1;
+        return new Promise<void>(() => undefined);
+      },
+      isConnected: () => false,
+    });
+    try {
+      const t0 = Date.now();
+      const guard = new Promise<"treo">((r) => setTimeout(() => r("treo"), 11_000).unref());
+      const res = await Promise.race([
+        caller.testConnection({ protocol: "modbus", endpoint: "tcp://127.0.0.1:1" }),
+        guard,
+      ]);
+      const elapsed = Date.now() - t0;
+      expect(res, `testConnection treo > 11 s`).not.toBe("treo");
+      expect((res as { ok: boolean }).ok).toBe(false);
+      expect((res as { errorCode?: string }).errorCode).toBe("DEVICE_UNREACHABLE");
+      expect(elapsed).toBeLessThan(11_000);
+      expect(disconnectCalls).toBeGreaterThanOrEqual(1);
+    } finally {
+      driverOverride.createDriver = null;
+    }
+  }, 20_000);
 });
 
 describe("RBAC", () => {

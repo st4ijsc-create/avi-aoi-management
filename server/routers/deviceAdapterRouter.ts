@@ -7,8 +7,9 @@
  *     definitions) and runs a READ-ONLY connectivity probe (testConnection). It
  *     does NOT import commandDispatcher and NEVER calls driver.writeTags — there is
  *     no code path from here that writes a value to a machine.
- *   - testConnection: createDriver(protocol).connect(cfg) → disconnect() inside a
- *     try/finally under a hard timeout. It reads NOTHING and writes NOTHING; it only
+ *   - testConnection: createDriver(protocol).connect(cfg) → disconnect() via
+ *     probeOtConnection under ONE overall deadline (timeoutMs + 2 s), always cleaning
+ *     up the transport (doc 81 Đợt 1B Task 1). It reads NOTHING and writes NOTHING; it only
  *     reports whether the endpoint is reachable.
  *   - Marking a tag `writable` here only DECLARES that the tag may be a write target;
  *     the actual write still goes exclusively through the HITL / interlock dispatcher
@@ -30,6 +31,7 @@ import { deviceAdapters, deviceTags } from "../../drizzle/schema";
 import { createDriver } from "../services/ot/driverRegistry";
 import "../services/ot"; // side-effect: register all drivers (stub + 5 protocol scaffolds)
 import type { OtProtocol } from "../services/ot/otDriver";
+import { probeOtConnection } from "../services/ot/probeConnection";
 
 async function getDb() {
   const db = await getDbRaw();
@@ -70,19 +72,13 @@ const tagCreateInput = z.object({
   samplingMs: z.number().int().min(1).max(86_400_000).nullable().optional(),
 });
 
+/**
+ * timeoutMs truyền cho driver.connect. doc 81 Đợt 1B Task 1 — hạn TỔNG của cả lượt dò
+ * (connect + disconnect) là DEFAULT_TEST_TIMEOUT_MS + PROBE_MARGIN_MS (= 10 s), đặt ở
+ * đường dùng chung `probeOtConnection` để MỌI driver đều có; trước đây 8 s + 8 s nối tiếp
+ * và kết nối xong muộn không được dọn.
+ */
 const DEFAULT_TEST_TIMEOUT_MS = 8000;
-
-/** Reject the promise after `ms` to avoid hanging on an unreachable endpoint. */
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-    if (typeof (t as NodeJS.Timeout).unref === "function") (t as NodeJS.Timeout).unref();
-    p.then(
-      (v) => { clearTimeout(t); resolve(v); },
-      (e) => { clearTimeout(t); reject(e); },
-    );
-  });
-}
 
 /** Friendly message for a unique-constraint violation. */
 function isUniqueViolation(err: unknown): boolean {
@@ -264,11 +260,8 @@ export const deviceAdapterRouter = router({
       }
 
       try {
-        await withTimeout(
-          driver.connect({ endpoint, options, timeoutMs: DEFAULT_TEST_TIMEOUT_MS }),
-          DEFAULT_TEST_TIMEOUT_MS,
-          `${protocol} connect`,
-        );
+        // doc 81 Đợt 1B Task 1 — hạn tổng + luôn dọn socket (kể cả kết nối xong muộn).
+        await probeOtConnection(driver, { endpoint, options, timeoutMs: DEFAULT_TEST_TIMEOUT_MS });
         return { ok: true, latencyMs: Date.now() - startedAt };
       } catch (err) {
         return {
@@ -280,12 +273,6 @@ export const deviceAdapterRouter = router({
           // câu cho người vận hành. Dịch dòng này là đổi thông tin hữu ích lấy câu chung chung.
           error: err instanceof Error ? err.message : String(err),
         };
-      } finally {
-        try {
-          await withTimeout(driver.disconnect(), DEFAULT_TEST_TIMEOUT_MS, `${protocol} disconnect`);
-        } catch {
-          // best-effort cleanup; ignore disconnect errors
-        }
       }
     }),
 
