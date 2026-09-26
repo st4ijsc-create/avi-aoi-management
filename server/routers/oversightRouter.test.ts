@@ -17,6 +17,18 @@ vi.mock("../services/fleet/trafficManager", () => ({
 const mockGetDb = vi.fn(async () => undefined as unknown);
 vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => mockGetDb(...a) }));
 
+// Fix round 1 (doc 80 Đợt 1 Task 2) — mock CHỈ `checkPermission` (giữ nguyên
+// `requirePermission` thật qua `importOriginal`). `requirePermission`'s middleware gọi
+// `checkPermission` qua CLOSURE nội bộ của chính `accessControl.ts` — KHÔNG đi qua mock
+// này (mock chỉ thay named export mà `oversightRouter.ts` tự `import`) — nên gate
+// `machine_monitoring` vẫn chạy checkPermission THẬT (admin bypass, không chạm DB) trong
+// khi `canSeeNamesSafe` (dùng `checkPermission` NHẬP TỪ NGOÀI) nhận đúng bản mock.
+const checkPermissionMock = vi.fn(async () => true);
+vi.mock("../_core/accessControl", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../_core/accessControl")>();
+  return { ...actual, checkPermission: (...a: Parameters<typeof actual.checkPermission>) => checkPermissionMock(...a) };
+});
+
 import { oversightRouter, _internal } from "./oversightRouter";
 
 /**
@@ -54,6 +66,8 @@ beforeEach(() => {
   mockGetDb.mockResolvedValue(undefined);
   detectDeadlocksMock.mockReset();
   detectDeadlocksMock.mockResolvedValue({ enabled: true, cycles: [] });
+  checkPermissionMock.mockReset();
+  checkPermissionMock.mockResolvedValue(true);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => {
@@ -198,6 +212,22 @@ describe("oversightRouter._internal — MỖI NHÁNH degraded khi query ném (HU
     const r = await _internal.fetchInterlockCoverage(db);
     expect(r).toEqual({ count: 0, degraded: true });
   });
+
+  // Fix round 1 (doc 80 Đợt 1 Task 2, finding #2) — `checkPermission` (dùng để quyết định
+  // showNames) từng nằm NGOÀI try/catch trong `pendingSummary`: nó ném là CẢ chín nhánh mất
+  // theo, mâu thuẫn với chính lời khai "không nhánh nào được làm vỡ cả query" của file này.
+  it("canSeeNamesSafe: checkPermission ném ⇒ trả false (ẩn tên), KHÔNG throw ra ngoài", async () => {
+    checkPermissionMock.mockRejectedValueOnce(new Error("permissions table down"));
+    const r = await _internal.canSeeNamesSafe(1, "operator", "machine_control");
+    expect(r).toBe(false);
+  });
+
+  it("canSeeNamesSafe: checkPermission khoẻ ⇒ trả đúng giá trị của nó", async () => {
+    checkPermissionMock.mockResolvedValueOnce(true);
+    expect(await _internal.canSeeNamesSafe(1, "operator", "machine_control")).toBe(true);
+    checkPermissionMock.mockResolvedValueOnce(false);
+    expect(await _internal.canSeeNamesSafe(1, "operator", "machine_control")).toBe(false);
+  });
 });
 
 describe("oversightRouter.pendingSummary (createCaller, admin — bỏ qua bảng permissions)", () => {
@@ -213,6 +243,27 @@ describe("oversightRouter.pendingSummary (createCaller, admin — bỏ qua bản
       "orchestration", "safety", "deadlocks", "ecn", "changeover",
     ] as const) {
       expect(r[key]).toEqual({ count: 0, samples: [], degraded: false });
+    }
+  });
+
+  // Fix round 1 (doc 80 Đợt 1 Task 2, finding #2) — đo ở TẦNG TÍCH HỢP (qua `createCaller`,
+  // không chỉ `canSeeNamesSafe` đơn vị): `checkPermission` ném KHÔNG được làm vỡ cả chín
+  // nhánh. `d` KHÔNG null lần này (mọi `.then()` trả cùng MỘT đáp án an toàn `[{c:0}]` —
+  // đủ cho cả truy vấn đếm lẫn truy vấn mẫu vì mọi nhánh cần tên đều bị ẩn nên KHÔNG chạy
+  // lượt đọc mẫu thứ hai; hai nhánh orchestration/safety luôn đọc mẫu nhưng không phụ thuộc
+  // `checkPermission`, và một hàng `{c:0}` không làm `.map(...)` của chúng throw).
+  it("checkPermission ném (Fix round 1) ⇒ VẪN trả đủ chín nhánh (không throw), samples rỗng ở nhánh cần tên", async () => {
+    checkPermissionMock.mockRejectedValue(new Error("permissions table down"));
+    const safeAnswer = [{ c: 0 }];
+    mockGetDb.mockResolvedValue(fakeDb(new Array(12).fill(safeAnswer)).db);
+    const caller = oversightRouter.createCaller(admin());
+    const r = await caller.pendingSummary();
+    expect(r.total).toBe(0);
+    // Nhánh cần tên (machine_control/interlock) — checkPermission ném ⇒ showNames=false ⇒
+    // samples RỖNG, KHÔNG phải degraded (đếm vẫn thành công, chỉ tên bị ẩn).
+    for (const key of ["recipes", "recipeActiveUnapproved", "interlock", "interlockEventsOpen", "ecn", "changeover"] as const) {
+      expect(r[key].samples, `${key}.samples phải rỗng khi checkPermission ném`).toEqual([]);
+      expect(r[key].degraded, `${key}.degraded phải false — đây là ẩn tên, không phải lỗi nguồn`).toBe(false);
     }
   });
 });

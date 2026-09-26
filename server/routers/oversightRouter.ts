@@ -51,6 +51,10 @@ import {
   machines,
 } from "../../drizzle/schema";
 import { detectDeadlocks } from "../services/fleet/trafficManager";
+// Fix round 1 (doc 80 Đợt 1 Task 2) — ILK-06: dùng ĐÚNG cùng allowlist action mà cổng
+// inline thật sự chặn lệnh (`evaluateInterlockGate`), để "độ phủ interlock" không đếm
+// rule chỉ `alert` (không chặn gì) là "có phủ" — chính hình dạng báo-xanh-giả cần tránh.
+import { INTERLOCK_GATE_ACTIONS } from "../services/interlock/interlockGate";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -78,6 +82,22 @@ function degradedCategory(err: unknown, tag: string): CategoryCount {
   // eslint-disable-next-line no-console
   console.error(`[oversight] ${tag} count failed:`, err instanceof Error ? err.message : err);
   return { count: 0, samples: [], degraded: true };
+}
+
+/**
+ * Fix round 1 (doc 80 Đợt 1 Task 2) — `checkPermission` NGOÀI try/catch mâu thuẫn với
+ * đúng lời khai của file này ("không nhánh nào được làm vỡ cả query"): nó ném là
+ * `pendingSummary` ném theo, mất luôn CẢ chín nhánh chỉ vì một lượt kiểm quyền lỗi.
+ * Lỗi ⇒ coi như KHÔNG có quyền xem tên (an toàn hơn: chỉ ẩn tên, KHÔNG hạ đếm/không throw).
+ */
+async function canSeeNamesSafe(userId: number, userRole: string, moduleName: string): Promise<boolean> {
+  try {
+    return await checkPermission(userId, userRole, moduleName, "canView");
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[oversight] permission check "${moduleName}" failed — ẩn tên, KHÔNG chặn query:`, err instanceof Error ? err.message : err);
+    return false;
+  }
 }
 
 // ── recipe chưa duyệt (draft + chưa có second-approver) ────────────────────────
@@ -342,14 +362,24 @@ const ZERO_SUMMARY = {
   total: 0,
 };
 
-// ── ILK-06 (doc 80 Phụ lục D §6/§7.1) — số rule interlock ĐANG BẬT và CÓ ĐÍCH ──
-// (targetMachineId hoặc targetAdapterId) — "độ phủ interlock". Đọc CÙNG bảng mà
-// `interlockGate.ts#isTargeted` dùng để quyết định rule nào thực sự chặn được lệnh.
+// ── ILK-06 (doc 80 Phụ lục D §6/§7.1) — số rule interlock THỰC SỰ CHẶN ĐƯỢC LỆNH ──
+// "Độ phủ interlock" phải khớp CHÍNH XÁC tập rule mà `evaluateInterlockGate` xét
+// (`interlockGate.ts:207-215`): enabled + ĐÃ DUYỆT (approvedBy IS NOT NULL) + action nằm
+// trong allowlist chặn (`INTERLOCK_GATE_ACTIONS` — không tính `alert`, KHÔNG chặn gì) + có
+// đích (targetMachineId/targetAdapterId). Fix round 1 — bản trước chỉ xét enabled+có đích,
+// nên một rule `alert` có đích nhưng CHƯA DUYỆT vẫn được đếm là "có phủ" — đúng hình dạng
+// báo-xanh-giả mà ILK-06 tồn tại để ngăn (rule đó không chặn được lệnh nào cả).
 async function fetchInterlockCoverage(d: Db | null): Promise<{ count: number; degraded: boolean }> {
   if (!d) return { count: 0, degraded: true };
   try {
     const cond = and(
       eq(interlockRules.enabled, true),
+      isNotNull(interlockRules.approvedBy),
+      // `INTERLOCK_GATE_ACTIONS` is typed `ReadonlySet<string>` (kept broad so
+      // `interlockGate.ts#isTargeted`'s `.has(rule.action)` — where `rule.action` is the
+      // FULL action enum, including `alert` — still type-checks). Narrow the SPREAD here to
+      // the three literal values it actually holds so drizzle's typed enum column accepts it.
+      inArray(interlockRules.action, [...INTERLOCK_GATE_ACTIONS] as Array<"block_downstream" | "stop_line" | "reduce_speed">),
       or(isNotNull(interlockRules.targetMachineId), isNotNull(interlockRules.targetAdapterId)),
     );
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(interlockRules).where(cond);
@@ -379,9 +409,11 @@ export const oversightRouter = router({
 
       // HUB-02 — mức quyền THẬT của trang đích (không phải `machine_status` — mức
       // Hub dùng để GỌI thủ tục này) quyết định ai thấy TÊN mục. Tính MỘT LẦN.
+      // Fix round 1 — mỗi lượt kiểm quyền tự bọc try/catch (`canSeeNamesSafe`): lỗi ở
+      // đây chỉ ẩn tên, KHÔNG được làm vỡ cả chín nhánh còn lại.
       const [showMachineControlNames, showInterlockNames] = await Promise.all([
-        checkPermission(ctx.user.id, ctx.user.role, "machine_control", "canView"),
-        checkPermission(ctx.user.id, ctx.user.role, "interlock", "canView"),
+        canSeeNamesSafe(ctx.user.id, ctx.user.role, "machine_control"),
+        canSeeNamesSafe(ctx.user.id, ctx.user.role, "interlock"),
       ]);
 
       const [
@@ -482,4 +514,5 @@ export const _internal = {
   fetchEcnPending,
   fetchChangeoverPending,
   fetchInterlockCoverage,
+  canSeeNamesSafe,
 };
