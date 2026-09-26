@@ -16746,11 +16746,11 @@
       "reduced_speed": "Giảm tốc độ",
       "stopped": "Đã dừng"
     },
-    "proximityHint": "Nạp dữ liệu thử tư vấn. Dưới biên đã cấu hình (và tại/trên độ tin cậy tối thiểu) → ghi một near_miss + nâng một Andon vàng. Nó KHÔNG BAO GIỜ phát lệnh thiết bị. Nguồn được gắn thẻ 'test'.",
+    "proximityHint": "CHỈ THỬ — không phát cảnh báo Andon. Dưới biên đã cấu hình (và tại/trên độ tin cậy tối thiểu) → ghi một near_miss gắn nguồn 'test' cho đường nạp dữ liệu. Nó KHÔNG nâng Andon và KHÔNG BAO GIỜ phát lệnh thiết bị.",
     "proximityNoop": "Trên biên / độ tin cậy thấp — không ghi suýt sự cố (tư vấn)",
-    "proximityTitle": "Báo cáo tiệm cận (thử tư vấn)",
-    "proximityTriggered": "Đã ghi suýt sự cố (tư vấn) — đã nâng Andon vàng, không phát lệnh thiết bị",
-    "reportProximity": "Báo cáo tiệm cận (thử tư vấn)",
+    "proximityTitle": "Báo cáo tiệm cận (CHỈ THỬ — không phát cảnh báo)",
+    "proximityTriggered": "Đã ghi suýt sự cố (nguồn 'test') — CHỈ THỬ, không phát cảnh báo Andon, không phát lệnh thiết bị",
+    "reportProximity": "Báo cáo tiệm cận (CHỈ THỬ — không phát cảnh báo)",
     "stationIdOpt": "Mã trạm (tùy chọn)",
     "subtitle": "Giám sát an toàn tư vấn, phân công nhân lực hỗn hợp và điều phối bàn giao người↔robot.",
     "tab": {

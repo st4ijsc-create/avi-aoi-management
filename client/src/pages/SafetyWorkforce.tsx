@@ -288,7 +288,9 @@ export default function SafetyWorkforce() {
   const ingestM = trpc.safety.ingestProximity.useMutation({
     onSuccess: (r) => {
       if (r && "triggered" in r && r.triggered) {
-        toast.success(t("safety.proximityTriggered", "Near-miss recorded (advisory) — yellow Andon raised, no device command issued"));
+        // SAF-01 — this dialog always sends source:"test" (see ProximityDialog.submit
+        // below), and the server never raises an Andon for a test-sourced trigger.
+        toast.success(t("safety.proximityTriggered", "Near-miss recorded (source 'test') — TEST ONLY, no Andon raised, no device command issued"));
       } else {
         toast.info(t("safety.proximityNoop", "Above margin / low confidence — no near-miss recorded (advisory)"));
       }
@@ -476,7 +478,7 @@ export default function SafetyWorkforce() {
                   )}
                 </CardTitle>
                 <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setProximityOpen(true)}>
-                  <ScanLine className="mr-1 h-4 w-4" />{t("safety.reportProximity", "Report proximity (advisory test)")}
+                  <ScanLine className="mr-1 h-4 w-4" />{t("safety.reportProximity", "Report proximity (TEST ONLY — no alert raised)")}
                 </Button>
               </CardHeader>
               <CardContent>
@@ -968,11 +970,11 @@ function ProximityDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><ScanLine className="h-4 w-4" />{t("safety.proximityTitle", "Report proximity (advisory test)")}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><ScanLine className="h-4 w-4" />{t("safety.proximityTitle", "Report proximity (TEST ONLY — no alert raised)")}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 py-2">
           <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-muted-foreground">
-            {t("safety.proximityHint", "Advisory test ingest. Below the configured margin (and at/above min confidence) → records a near_miss + raises a yellow Andon. It NEVER issues a device command. source is tagged 'test'.")}
+            {t("safety.proximityHint", "TEST ONLY — does not raise an Andon alert. Below the configured margin (and at/above min confidence) → records a near_miss tagged source 'test' for the ingest pipeline. It NEVER raises an Andon and NEVER issues a device command.")}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1">

@@ -16766,11 +16766,11 @@
       "reduced_speed": "Reduced speed",
       "stopped": "Stopped"
     },
-    "proximityHint": "Advisory test ingest. Below the configured margin (and at/above min confidence) → records a near_miss + raises a yellow Andon. It NEVER issues a device command. source is tagged 'test'.",
+    "proximityHint": "TEST ONLY — does not raise an Andon alert. Below the configured margin (and at/above min confidence) → records a near_miss tagged source 'test' for the ingest pipeline. It NEVER raises an Andon and NEVER issues a device command.",
     "proximityNoop": "Above margin / low confidence — no near-miss recorded (advisory)",
-    "proximityTitle": "Report proximity (advisory test)",
-    "proximityTriggered": "Near-miss recorded (advisory) — yellow Andon raised, no device command issued",
-    "reportProximity": "Report proximity (advisory test)",
+    "proximityTitle": "Report proximity (TEST ONLY — no alert raised)",
+    "proximityTriggered": "Near-miss recorded (source 'test') — TEST ONLY, no Andon raised, no device command issued",
+    "reportProximity": "Report proximity (TEST ONLY — no alert raised)",
     "stationIdOpt": "Station id (optional)",
     "subtitle": "Advisory safety monitoring, mixed-workforce assignments and human↔robot handover coordination.",
     "tab": {

@@ -37,7 +37,7 @@ import { tasks, zones, zoneReservations, robots, robotTelemetry } from "../../dr
 import { traTelemetryMoiNhatTheoRobot } from "../db/telemetryMoiNhat"; // Đợt 50 mục E — một chỗ duy nhất
 import { operationCodes, operationProgramMap, programVariants, sharedResources, resourceReservations, chargerStations, batteryChargingPlans } from "../../drizzle/schema/fleetResource";
 import { fleetOrchEnabled, allocateTask, rebalanceDeviceTasks, deviceSupportsCapability } from "../services/fleet/taskAllocator";
-import { phamViCua } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { taskFactoryGate, robotFactoryGate } from "../services/ecosystem/commandCenterScope";
 import { publishTaskEvent } from "../services/ecosystem/ecosystemEvents";
@@ -47,6 +47,8 @@ import { fleetResourceEnabled, resolveOperation } from "../services/fleet/skillR
 import { pickVariantForProgram, recordVariantOutcome } from "../services/fleet/variantPicker";
 import { claimResource, releaseResource, getResourceAvailability } from "../services/fleet/resourceManager";
 import { sweepChargingPlans } from "../services/fleet/chargingPlanner";
+// doc 80 Đợt 0 Task 6 (FLT-02) — cùng helper audit bất biến mà interlock/standards dùng.
+import { recordAuditEvent } from "../services/audit/controlAuditService";
 
 async function db() {
   const d = await getDb();
@@ -66,6 +68,47 @@ function requireResourceFlag() {
   if (!fleetResourceEnabled()) {
     throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "fleetResourceLayer" }, "Fleet resource layer disabled (set FLEET_RESOURCE_ENABLED=true)");
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FLT-03 (doc 80 Đợt 0, E_DIEU_PHOI_AN_TOAN_CHUAN_HOA.md §4/§6.2) — phạm vi nhà máy
+// khi GHI. Đường đọc ở trên đã lọc bằng `idsTrongPhamVi` + `taskFactoryGate`/
+// `robotFactoryGate`/`zones.factoryId` trực tiếp; các mutation bên dưới trước đây nhận
+// `taskId`/`deviceId`/`zoneId` là LỜI TỰ KHAI của người gọi và không kiểm gì — một
+// canCreate ở nhà máy A gõ đúng id của nhà máy B là SỬA được nhà máy B.
+//
+// Khác READ (ngoài phạm vi ⇒ NOT_FOUND, cùng câu chữ với "không tồn tại" — xem
+// `getTask`): ở đây "TỒN TẠI nhưng ngoài phạm vi" ⇒ FORBIDDEN, đúng yêu cầu brief.
+// `actuationProcedure` đã đòi machine_control/canCreate nên xác nhận sự TỒN TẠI cho
+// một vai đã có quyền ghi không phải là rò rỉ mới. "Không tồn tại" vẫn im lặng ở đây
+// (không tự bịa NOT_FOUND thay cho thủ tục gọi) — mỗi hàm chỉ ném khi hàng CÓ THẬT mà
+// nằm ngoài `ids`.
+// ════════════════════════════════════════════════════════════════════════════
+async function assertTaskInScope(d: Awaited<ReturnType<typeof db>>, ctx: CoDanhTinh, taskId: number): Promise<void> {
+  const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+  if (ids === null) return;
+  const [exists] = await d.select({ id: tasks.id }).from(tasks).where(eq(tasks.id, taskId)).limit(1);
+  if (!exists) return; // không tồn tại — việc của NOT_FOUND ở nơi gọi, không phải cổng này
+  const [inScope] = await d.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.id, taskId), taskFactoryGate(ids))).limit(1);
+  if (!inScope) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "fleetTask", parent: "factory" }, `Task ${taskId} is outside your factory scope`);
+}
+
+async function assertRobotInScope(d: Awaited<ReturnType<typeof db>>, ctx: CoDanhTinh, robotId: number): Promise<void> {
+  const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+  if (ids === null) return;
+  const [exists] = await d.select({ id: robots.id }).from(robots).where(eq(robots.id, robotId)).limit(1);
+  if (!exists) return;
+  const [inScope] = await d.select({ id: robots.id }).from(robots).where(and(eq(robots.id, robotId), robotFactoryGate(ids))).limit(1);
+  if (!inScope) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "robot", parent: "factory" }, `Device ${robotId} is outside your factory scope`);
+}
+
+async function assertZoneInScope(d: Awaited<ReturnType<typeof db>>, ctx: CoDanhTinh, zoneId: number): Promise<void> {
+  const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+  if (ids === null) return;
+  const [exists] = await d.select({ id: zones.id }).from(zones).where(eq(zones.id, zoneId)).limit(1);
+  if (!exists) return;
+  const [inScope] = await d.select({ id: zones.id }).from(zones).where(and(eq(zones.id, zoneId), inArray(zones.factoryId, ids.length ? ids : [-1]))).limit(1);
+  if (!inScope) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "zone", parent: "factory" }, `Zone ${zoneId} is outside your factory scope`);
 }
 
 const TASK_STATUSES = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
@@ -286,7 +329,7 @@ export const fleetRouter = router({
         autoAllocate: z.boolean().default(false),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
       // Idempotent on taskKey — replay returns the prior row.
@@ -309,6 +352,8 @@ export const fleetRouter = router({
         .returning({ id: tasks.id });
       let allocation;
       if (input.autoAllocate && row) allocation = await allocateTask(row.id);
+      // FLT-02 — actor + dòng audit bất biến (mutation ghi thật, không phải replay idempotent).
+      if (row) await recordAuditEvent(d, { entityType: "fleet_task", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: { ...input, id: row.id, allocation } });
       return { ok: true, id: row?.id, created: true, allocation };
     }),
 
@@ -316,20 +361,25 @@ export const fleetRouter = router({
   allocate: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ taskId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
-      return allocateTask(input.taskId);
+      const d = await db();
+      await assertTaskInScope(d, ctx, input.taskId); // FLT-03
+      const result = await allocateTask(input.taskId); // FLOW-05/FLT-06 — CAS inside
+      await recordAuditEvent(d, { entityType: "fleet_task", entityId: input.taskId, action: "allocate", actorId: ctx.user.id, before: null, after: result }); // FLT-02
+      return result;
     }),
 
   /** Manually (re)assign a task to a specific device. */
   assign: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ taskId: z.number().int().positive(), deviceId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
       const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
       if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.taskId} not found`);
+      await assertTaskInScope(d, ctx, input.taskId); // FLT-03
       if (["completed", "cancelled"].includes(t.status)) {
         throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Task ${input.taskId} is terminal (${t.status})`);
       }
@@ -345,16 +395,18 @@ export const fleetRouter = router({
         // cho thiết bị này", cùng họ OPERATION_FAILED.
         throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Device ${input.deviceId} not found or not enabled`);
       }
+      await assertRobotInScope(d, ctx, input.deviceId); // FLT-03
       if (robot.status === "offline" || robot.status === "estop") {
         throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Device ${input.deviceId} is ${robot.status} — cannot assign work`);
       }
       if (!deviceSupportsCapability(robot.kind, t.requiredCapability)) {
         throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Device ${input.deviceId} (${robot.kind}) does not support capability "${t.requiredCapability}"`);
       }
-      await d
+      const [updated] = await d
         .update(tasks)
         .set({ status: "assigned", assignedDeviceId: input.deviceId, assignedDeviceKind: "robot", assignedAt: new Date(), updatedAt: new Date() })
-        .where(eq(tasks.id, input.taskId));
+        .where(eq(tasks.id, input.taskId))
+        .returning();
       // U1-a — publish task.assigned for the manual (re)assign path too.
       publishTaskEvent("assigned", {
         taskId: input.taskId,
@@ -367,6 +419,8 @@ export const fleetRouter = router({
         corporateCode: t.corporateCode,
         factoryId: t.factoryId,
       });
+      // FLT-02 — actor + dòng audit bất biến.
+      await recordAuditEvent(d, { entityType: "fleet_task", entityId: input.taskId, action: "assign", actorId: ctx.user.id, before: t, after: updated ?? null });
       return { ok: true };
     }),
 
@@ -384,15 +438,16 @@ export const fleetRouter = router({
         error: z.string().max(500).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
       const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
       if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.taskId} not found`);
+      await assertTaskInScope(d, ctx, input.taskId); // FLT-03
       if (["completed", "cancelled", "failed"].includes(t.status)) {
         throw appError("CONFLICT", "OPERATION_FAILED", { operation: "completeFleetTask" }, `Task ${input.taskId} already terminal (${t.status})`);
       }
-      await d
+      const [updated] = await d
         .update(tasks)
         .set({
           status: input.outcome,
@@ -400,7 +455,8 @@ export const fleetRouter = router({
           completedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(tasks.id, input.taskId));
+        .where(eq(tasks.id, input.taskId))
+        .returning();
       publishTaskEvent(input.outcome, {
         taskId: input.taskId,
         taskKey: t.taskKey,
@@ -413,6 +469,8 @@ export const fleetRouter = router({
         factoryId: t.factoryId,
         error: input.outcome === "failed" ? (input.error ?? null) : null,
       });
+      // FLT-02 — actor + dòng audit bất biến.
+      await recordAuditEvent(d, { entityType: "fleet_task", entityId: input.taskId, action: input.outcome, actorId: ctx.user.id, before: t, after: updated ?? null, reason: input.error ?? null });
       return { ok: true };
     }),
 
@@ -420,27 +478,36 @@ export const fleetRouter = router({
   rebalanceDevice: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ deviceId: z.number().int().positive(), reason: z.string().max(200).optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
-      return rebalanceDeviceTasks(input.deviceId, input.reason);
+      const d = await db();
+      await assertRobotInScope(d, ctx, input.deviceId); // FLT-03
+      const result = await rebalanceDeviceTasks(input.deviceId, input.reason);
+      // FLT-02 — actor + dòng audit bất biến.
+      await recordAuditEvent(d, { entityType: "robot", entityId: input.deviceId, action: "rebalance", actorId: ctx.user.id, before: null, after: result, reason: input.reason ?? null });
+      return result;
     }),
 
   /** Cancel a task (terminal). */
   cancelTask: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ taskId: z.number().int().positive(), reason: z.string().max(200).optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
       const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
       if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.taskId} not found`);
+      await assertTaskInScope(d, ctx, input.taskId); // FLT-03
       if (["completed", "cancelled", "failed"].includes(t.status)) {
         throw appError("CONFLICT", "OPERATION_FAILED", { operation: "cancelFleetTask" }, `Task ${input.taskId} already terminal (${t.status})`);
       }
-      await d
+      const [updated] = await d
         .update(tasks)
         .set({ status: "cancelled", lastError: input.reason ?? "cancelled by operator", completedAt: new Date(), updatedAt: new Date() })
-        .where(eq(tasks.id, input.taskId));
+        .where(eq(tasks.id, input.taskId))
+        .returning();
+      // FLT-02 — actor + dòng audit bất biến.
+      await recordAuditEvent(d, { entityType: "fleet_task", entityId: input.taskId, action: "cancel", actorId: ctx.user.id, before: t, after: updated ?? null, reason: input.reason ?? null });
       return { ok: true };
     }),
 
@@ -457,7 +524,7 @@ export const fleetRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
       const [clash] = await d.select().from(zones).where(eq(zones.code, input.code)).limit(1);
@@ -473,6 +540,8 @@ export const fleetRouter = router({
           factoryId: input.factoryId ?? null,
         })
         .returning({ id: zones.id });
+      // FLT-02 — actor + dòng audit bất biến.
+      if (row) await recordAuditEvent(d, { entityType: "zone", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: { ...input, id: row.id } });
       return { ok: true, id: row?.id };
     }),
 
@@ -486,29 +555,51 @@ export const fleetRouter = router({
         queueIfFull: z.boolean().default(true),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
-      return reserveZone({ zoneId: input.zoneId, deviceId: input.deviceId, taskId: input.taskId ?? null, queueIfFull: input.queueIfFull });
+      const d = await db();
+      await assertZoneInScope(d, ctx, input.zoneId); // FLT-03
+      await assertRobotInScope(d, ctx, input.deviceId); // FLT-03
+      const result = await reserveZone({ zoneId: input.zoneId, deviceId: input.deviceId, taskId: input.taskId ?? null, queueIfFull: input.queueIfFull });
+      // FLT-02 — actor + dòng audit bất biến (ghi SAU khi TX của reserveZone đã commit).
+      await recordAuditEvent(d, { entityType: "zone_reservation", entityId: result.reservationId ?? `${input.zoneId}:${input.deviceId}`, action: "reserve", actorId: ctx.user.id, before: null, after: result });
+      return result;
     }),
 
   release: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ deviceId: z.number().int().positive(), zoneId: z.number().int().positive().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireFlag();
-      return releaseZone(input.deviceId, input.zoneId);
+      const d = await db();
+      await assertRobotInScope(d, ctx, input.deviceId); // FLT-03
+      if (input.zoneId != null) await assertZoneInScope(d, ctx, input.zoneId); // FLT-03
+      const result = await releaseZone(input.deviceId, input.zoneId);
+      // FLT-02 — actor + dòng audit bất biến.
+      await recordAuditEvent(d, { entityType: "zone_reservation", entityId: input.zoneId ?? input.deviceId, action: "release", actorId: ctx.user.id, before: null, after: result });
+      return result;
     }),
 
   /**
    * W4-18 (5) — ADVISORY deadlock resolution. Cancels the lowest-priority queued
    * waiter in each detected cycle to break it (reservation STATE only, no device
    * command). Flag-gated + machine_control/canCreate.
+   *
+   * ⚠ FLT-03 — no single entity id is accepted here (it resolves EVERY cycle across
+   * the whole reservation wait-graph in one pass, like `deadlocks` read above), so
+   * there is no per-call factory-scope gate to apply; actor + audit still record who
+   * ran it. Scoping this system-wide sweep to one factory is a separate, larger change
+   * (splitting the wait-graph by factory) left out of this Đợt 0 task.
    */
   resolveDeadlock: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
-    .mutation(async () => {
+    .mutation(async ({ ctx }) => {
       requireFlag();
-      return resolveDeadlock();
+      const d = await db();
+      const result = await resolveDeadlock();
+      // FLT-02 — actor + dòng audit bất biến.
+      await recordAuditEvent(d, { entityType: "fleet_deadlock", entityId: "global", action: "resolve", actorId: ctx.user.id, before: null, after: result });
+      return result;
     }),
 
   // ══════════════════════════════════════════════════════════════════════════

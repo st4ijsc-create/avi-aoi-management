@@ -384,7 +384,16 @@ export async function allocateTask(taskId: number): Promise<AllocateResult> {
     return { ok: false, enabled: true, decision, message: "no eligible device" };
   }
 
-  await db
+  // FLOW-05/FLT-06 (doc 80 Đợt 0) — CAS transition, not read-then-write. The
+  // `task.status !== "pending"` guard above reads a SNAPSHOT: two concurrent
+  // allocateTask(taskId) calls for the SAME task both pass it (both read the row
+  // BEFORE either writes), so an unconditional UPDATE let whichever writer ran LAST
+  // silently overwrite the earlier one's assignment (double allocation, one
+  // publishTaskEvent lying about a device the DB no longer agrees with). The WHERE
+  // clause below re-checks status AT THE MOMENT OF WRITE — Postgres executes one
+  // UPDATE at a time on a given row, so only the writer that still finds
+  // status='pending' gets a row back from `.returning()`; the loser sees 0 rows.
+  const [updated] = await db
     .update(tasks)
     .set({
       status: "assigned",
@@ -393,7 +402,15 @@ export async function allocateTask(taskId: number): Promise<AllocateResult> {
       assignedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(tasks.id, taskId));
+    .where(and(eq(tasks.id, taskId), eq(tasks.status, "pending")))
+    .returning();
+  if (!updated) {
+    // Lost the race — another allocate/rebalance/drain pass already transitioned this
+    // task concurrently. Honest no-op (not a thrown error): this function also runs
+    // from a background sweep (drainPendingTasks) that must not blow up mid-loop.
+    console.log(`[Fleet] allocateTask ${taskId}: lost the allocation race (status changed concurrently) — not assigned`);
+    return { ok: false, enabled: true, decision, message: `task ${taskId} allocation conflict — status changed concurrently` };
+  }
   console.log(`[Fleet] task ${taskId} → device ${decision.best.deviceId} (score ${decision.best.score})`);
   // U1-a — publish task.assigned (fire-and-forget; never throws into the allocator).
   publishTaskEvent("assigned", {

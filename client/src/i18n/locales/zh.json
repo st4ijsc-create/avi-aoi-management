@@ -17140,11 +17140,11 @@
       "reduced_speed": "已减速",
       "stopped": "已停止"
     },
-    "proximityHint": "参考性测试采集。低于配置的余量（且达到/高于最小置信度）→ 记录一次 near_miss 并触发黄色安灯。它绝不下发设备命令。来源被标记为“test”。",
+    "proximityHint": "仅作测试 — 不会触发安灯报警。低于配置的余量（且达到/高于最小置信度）→ 记录一次来源为 'test' 的 near_miss，供采集管线使用。它不会触发安灯，且绝不下发设备命令。",
     "proximityNoop": "高于余量 / 置信度低 — 未记录未遂事件（参考性）",
-    "proximityTitle": "上报接近度（参考性测试）",
-    "proximityTriggered": "已记录未遂事件（参考性）— 已触发黄色安灯，未下发设备命令",
-    "reportProximity": "上报接近度（参考性测试）",
+    "proximityTitle": "上报接近度（仅测试 — 不触发报警）",
+    "proximityTriggered": "已记录未遂事件（来源 'test'）— 仅作测试，未触发安灯报警，未下发设备命令",
+    "reportProximity": "上报接近度（仅测试 — 不触发报警）",
     "stationIdOpt": "工位 ID（可选）",
     "subtitle": "参考性安全监控、混合工作队伍分配与人↔机器人交接协调。",
     "tab": {

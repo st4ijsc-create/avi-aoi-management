@@ -44,10 +44,13 @@ export type SafetyEventType =
   | "estop" | "collision" | "intrusion" | "zone_intrusion" | "force_limit" | "speed_violation" | "near_miss";
 // Provenance of the OBSERVATION. `plc` = read from a certified Safety PLC's (non-
 // safety-rated) status interface; `sim` = a clearly-labelled SIMULATED track/status
-// (never a real sensor). Both are additive — the column is a free varchar, so no
-// migration is needed. They exist so PLC/sim-observed events are labelled HONESTLY
-// instead of being mislabelled `telemetry`/`operator`.
-export type SafetyDetectedBy = "vision" | "interlock" | "operator" | "telemetry" | "plc" | "sim";
+// (never a real sensor); `test` = the Safety Monitor UI's "test proximity" sandbox
+// button (SAF-01, doc 80 Đợt 0) — a synthetic trigger that must NEVER be confused
+// with a human-observed event, and must NEVER raise a real Andon (see
+// nearMissAdvisor.processDetection). All are additive — the column is a free
+// varchar, so no migration is needed. They exist so PLC/sim/test-observed events
+// are labelled HONESTLY instead of being mislabelled `telemetry`/`operator`.
+export type SafetyDetectedBy = "vision" | "interlock" | "operator" | "telemetry" | "plc" | "sim" | "test";
 export type SafetyHandledBy = "interlock_engine" | "operator" | "advisory";
 export type SafetyOutcome = "stopped" | "reduced_speed" | "manual_override" | "logged_only";
 
