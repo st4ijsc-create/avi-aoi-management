@@ -15,6 +15,7 @@
  *       writeTags 0× (none weakened; commissioning is only ever an ADDITIONAL block).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { boundPending, resultRows, TESTKIT_TOOL } from "./commandDispatcher.testkit";
 
 type Row = Record<string, any>;
 
@@ -39,9 +40,9 @@ function reset() {
   cmdSeq = 1;
 }
 
-vi.mock("drizzle-orm", () => ({
-  eq: (col: any, val: any) => ({ __k: col.__name, __v: val, __op: "eq" }),
-  and: (...ps: any[]) => ({ __and: ps }),
+// doc 81 Đợt 1B Task 6 — + inArray/sql for the write-ahead reservation (see commandDispatcher.testkit.ts).
+vi.mock("drizzle-orm", async () => ({
+  ...(await import("./commandDispatcher.testkit")).fakeOrm,
   desc: (col: any) => ({ __desc: col.__name }),
 }));
 
@@ -49,6 +50,7 @@ function matches(row: Row, pred: any): boolean {
   if (!pred) return true;
   if (pred.__and) return pred.__and.every((p: any) => matches(row, p));
   if (pred.__op === "eq") return row[pred.__k] === pred.__v;
+  if (pred.__op === "in") return pred.__v.includes(row[pred.__k]);
   return true;
 }
 
@@ -72,11 +74,12 @@ function whereResult(rows: Row[]) {
   const p: any = Promise.resolve(rows);
   p.limit = async (_n?: number) => rows.slice(0, 1);
   p.orderBy = () => Promise.resolve(rows);
+  p.for = async (_mode: string) => rows; // Task 6 — SELECT … FOR UPDATE (no lock semantics here)
   return p;
 }
 
 function makeFakeDb() {
-  return {
+  const db: any = {
     select: () => ({
       from: (table: any) => ({
         where: (pred: any) => whereResult(tableFor(table).filter((r) => matches(r, pred))),
@@ -99,7 +102,22 @@ function makeFakeDb() {
         },
       }),
     }),
+    // doc 81 Đợt 1B Task 6 — reservation tx: update (CAS consume), execute (advisory lock), transaction.
+    update: (table: any) => ({
+      set: (vals: Row) => ({
+        where: (pred: any) => ({
+          returning: async (_sel?: any) => {
+            const hit = tableFor(table).filter((r) => matches(r, pred));
+            for (const r of hit) Object.assign(r, vals);
+            return hit.map((r) => ({ id: r.id }));
+          },
+        }),
+      }),
+    }),
+    execute: async () => [],
+    transaction: async (fn: (tx: any) => Promise<unknown>) => fn(db),
   };
+  return db;
 }
 
 vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeFakeDb()) }));
@@ -140,7 +158,7 @@ const baseInput = (over: Partial<Parameters<typeof dispatch>[0]> = {}) => ({
   machineId: 5,
   commandType: "start",
   writes: [{ tagKey: "cmd_start", value: true }],
-  triggeredBy: { kind: "hitl" as const, actionId: "act-1", confirmedBy: 1, requestedBy: 1 },
+  triggeredBy: { kind: "hitl" as const, actionId: "act-1", tool: TESTKIT_TOOL, confirmedBy: 1, requestedBy: 1 },
   lang: "vi" as const,
   idempotencyKey: "key-1",
   ...over,
@@ -164,7 +182,8 @@ beforeEach(() => {
   // default: enabled adapter + writable tag + confirmed action
   adapters.push({ id: 10, machineId: 5, code: "A10", isEnabled: true });
   tags.push({ id: 100, adapterId: 10, tagKey: "cmd_start", address: "ns=1;s=Start", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
-  pending.set("act-1", { id: "act-1", status: "confirmed", userId: 1 });
+  // doc 81 Đợt 1B Task 6 — a real write needs a confirmed action BOUND to the command.
+  pending.set("act-1", boundPending("act-1", baseInput()));
 });
 
 describe("commandDispatcher — C2 commissioning gate (default ON)", () => {
@@ -176,9 +195,9 @@ describe("commandDispatcher — C2 commissioning gate (default ON)", () => {
     expect(r.ok).toBe(true);
     expect(r.reason).toBe("not_commissioned");
     expect(writeTagsSpy).not.toHaveBeenCalled();
-    expect(cmdLog).toHaveLength(1);
-    expect(cmdLog[0].status).toBe("simulated");
-    expect(cmdLog[0].errorText).toMatch(/^not_commissioned:/);
+    expect(resultRows(cmdLog)).toHaveLength(1);
+    expect(resultRows(cmdLog)[0].status).toBe("simulated");
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/^not_commissioned:/);
   });
 
   it("(b) control ON + commissioned (active, non-expired) ⇒ REAL write, writeTags 1×, acked", async () => {
@@ -188,7 +207,7 @@ describe("commandDispatcher — C2 commissioning gate (default ON)", () => {
     expect(r.status).toBe("acked");
     expect(r.ok).toBe(true);
     expect(writeTagsSpy).toHaveBeenCalledTimes(1);
-    expect(cmdLog[0].status).toBe("acked");
+    expect(resultRows(cmdLog)[0].status).toBe("acked");
   });
 
   it("(c1) EXPIRED commissioning record ⇒ blocked (simulated), writeTags 0×", async () => {
@@ -284,7 +303,7 @@ describe("commandDispatcher — C2 does NOT weaken any existing gate (gate ON)",
     const r = await dispatch(baseInput());
     expect(r.status).toBe("simulated");
     expect(r.reason).toBeUndefined(); // plain dry-run, not the commissioning block
-    expect(cmdLog[0].errorText ?? null).toBeNull();
+    expect(resultRows(cmdLog)[0].errorText ?? null).toBeNull();
     expect(writeTagsSpy).not.toHaveBeenCalled();
   });
 });

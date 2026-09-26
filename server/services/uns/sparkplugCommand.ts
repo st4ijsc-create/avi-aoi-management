@@ -11,9 +11,18 @@
  *     It is decoded (metric name + value), mapped to a platform machine, and
  *     handed to the EXISTING commandDispatcher.dispatch() under the SAME gates as
  *     any other control command:
- *       triggeredBy.kind = 'hitl' (no actionId → no confirmed-row shortcut) AND
- *       OT_CONTROL_ENABLED gate inside dispatch(). DEFAULT (flag off) → dispatch
- *       records a `simulated` row and returns { simulated:true }. No driver write.
+ *       triggeredBy.kind = 'hitl' + requireBoundAction AND OT_CONTROL_ENABLED gate
+ *       inside dispatch().
+ *   - doc 81 Đợt 1B Task 6 (BE2 §3 S1 — anonymous MQTT client publishing DCMD): a
+ *     command must carry a HITL actionId in the reserved string metric
+ *     `HITL/ActionId` (SPARKPLUG_ACTION_ID_METRIC). The dispatcher then requires a
+ *     'confirmed', unexpired ai_pending_actions row created for tool
+ *     `sparkplug.command` whose canonical payload hash matches EXACTLY this
+ *     adapter/machine/commandType/writes — on EVERY path (simulated too). No / invalid
+ *     actionId ⇒ `rejected` ledger row, no driver call. No confirmer is fabricated
+ *     (the old `confirmedBy = systemUserId` — 0 by default — is gone): the confirmer
+ *     is the owner of the bound row. This closes S1 in code whatever
+ *     SPARKPLUG_COMMAND_ENABLED says (the flag only decides whether we subscribe).
  *   - This module does NOT call driver.writeTags and does NOT edit/duplicate the
  *     dispatcher's HITL/dry-run logic — it CALLS dispatch() and nothing else.
  *   - The one safe auto-action Sparkplug expects is "Node Control/Rebirth": an
@@ -38,6 +47,18 @@ import type { DispatchInput, DispatchResult } from "../ot/commandDispatcher";
 
 /** Sparkplug well-known metric name for the rebirth request (NCMD). */
 export const REBIRTH_METRIC = "Node Control/Rebirth";
+
+/**
+ * doc 81 Đợt 1B Task 6 — reserved metric carrying the HITL actionId (String) of a
+ * command. It is NEVER mapped to a device write.
+ */
+export const SPARKPLUG_ACTION_ID_METRIC = "HITL/ActionId";
+
+/**
+ * doc 81 Đợt 1B Task 6 — the `ai_pending_actions.tool` a Sparkplug command's action must
+ * have been created for (part of the canonical payload hash, otActionBinding.ts).
+ */
+export const SPARKPLUG_COMMAND_TOOL = "sparkplug.command";
 
 /** A decoded inbound Sparkplug command (NCMD or DCMD), normalised. */
 export interface InboundCommand {
@@ -93,9 +114,9 @@ export interface SparkplugCommandDeps {
   /** Map one DCMD metric → a write (or null to ignore). */
   metricToWrite: MetricToWrite;
   /**
-   * System user id recorded as requestedBy/confirmedBy on the dispatch (the
-   * inbound command has no interactive human; the dispatcher's mode gate — not
-   * this id — is what prevents a hardware write by default).
+   * System user id recorded as `requestedBy` on the dispatch (the inbound command has
+   * no interactive human). doc 81 Đợt 1B Task 6: it is NOT used as the confirmer any
+   * more — the confirmer is the owner of the bound HITL action.
    */
   systemUserId: number;
   /** Optional logger (defaults to console). */
@@ -258,9 +279,16 @@ export class SparkplugCommandHandler {
    * metrics are ignored. Never executes hardware here.
    */
   private async routeControlMetrics(cmd: InboundCommand): Promise<void> {
+    // doc 81 Đợt 1B Task 6 — the HITL actionId travels in a reserved metric; it is
+    // extracted here and never becomes a write.
+    let actionId: string | undefined;
     const writes: Array<{ tagKey: string; value: unknown; commandType: string }> = [];
     for (const m of cmd.metrics) {
       if (m.name === REBIRTH_METRIC) continue; // handled by rebirth path
+      if (m.name === SPARKPLUG_ACTION_ID_METRIC) {
+        if (typeof m.value === "string" && m.value.trim() !== "") actionId = m.value.trim();
+        continue;
+      }
       let mapped: ReturnType<MetricToWrite>;
       try {
         mapped = this.deps.metricToWrite(m);
@@ -295,13 +323,16 @@ export class SparkplugCommandHandler {
         machineId: target.machineId,
         commandType,
         writes: ws,
-        // HITL trigger, NO actionId: routes through the dispatcher's shared gates.
-        // The mode gate (OT_CONTROL_ENABLED, default off) keeps this DRY-RUN — no
-        // hardware write — exactly like any other non-confirmed control attempt.
+        // doc 81 Đợt 1B Task 6 — HITL trigger that REQUIRES a bound action on every path.
+        // No confirmedBy: nobody is fabricated as the confirmer; the dispatcher takes the
+        // owner of the bound, confirmed row (or rejects + ledgers when there is none).
+        // One actionId authorises ONE dispatch (it is consumed on the real path).
         triggeredBy: {
           kind: "hitl",
-          confirmedBy: this.deps.systemUserId,
+          actionId,
+          tool: SPARKPLUG_COMMAND_TOOL,
           requestedBy: this.deps.systemUserId,
+          requireBoundAction: true,
         },
         idempotencyKey: `spcmd-${target.machineId}-${cmd.kind}-${commandType}-${Date.now()}`,
       };

@@ -84,7 +84,11 @@ export interface EquipmentCommand {
   job?: RobotJobSpec;
   idempotencyKey: string;
   /** HITL provenance — actionId + confirmedBy/requestedBy. */
-  hitl: { actionId: string; requestedBy: number; confirmedBy?: number };
+  /**
+   * doc 81 Đợt 1B Task 6 — `tool` = the ai_pending_actions.tool the actionId was created for;
+   * the OT dispatcher binds a real write to (tool + canonical payload hash) and consumes it.
+   */
+  hitl: { actionId: string; requestedBy: number; confirmedBy?: number; tool?: string };
   lang?: "vi" | "en" | "zh";
 }
 
@@ -209,6 +213,7 @@ class OtEquipmentAdapter implements EquipmentAdapter {
     const triggeredBy: DispatchTrigger = {
       kind: "hitl",
       actionId: command.hitl.actionId,
+      ...(command.hitl.tool ? { tool: command.hitl.tool } : {}),
       requestedBy: command.hitl.requestedBy,
       confirmedBy: command.hitl.confirmedBy ?? command.hitl.requestedBy,
     };

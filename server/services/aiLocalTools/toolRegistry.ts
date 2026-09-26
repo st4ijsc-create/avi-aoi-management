@@ -13,6 +13,7 @@
 
 import { z } from "zod";
 import type { AuditChangeField } from "../auditTrailService";
+import type { OtWriteTarget } from "../ot/otActionBinding";
 
 export type ToolResultType =
   | "today_stats"
@@ -218,6 +219,16 @@ export interface Tool<TParams = unknown, TData = unknown> {
    * Validates route whitelist; returns null when the route is not allowed.
    */
   buildClientAction?: (params: TParams, ctx: ToolExecContext) => ClientActionDirective | null;
+  /**
+   * doc 81 Đợt 1B Task 6 — OT write tools ONLY: resolve, at PROPOSE time, exactly the OT
+   * command execute() will dispatch ({adapterId, machineId, commandType, writes}).
+   * proposeAction stores its canonical hash (otActionBinding.otPayloadHash, tool = this
+   * tool's name) in previewJson; the OT dispatcher refuses a real write whose command
+   * hashes differently. Absent / returns null / throws ⇒ no binding stored ⇒ the action
+   * can authorise NO real OT write. Must be READ-ONLY and must build the writes with the
+   * SAME code path execute() uses.
+   */
+  otWriteBinding?: (params: TParams, ctx: ToolExecContext) => Promise<OtWriteTarget | null>;
 }
 
 /** True when the tool is a client-side directive tool (navigate/prefill). */

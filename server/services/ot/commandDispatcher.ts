@@ -14,6 +14,14 @@
  *       'hitl'      → a human-confirmed AI write-action (F4). dispatch re-verifies
  *                     the ai_pending_actions row is confirmed/executed AND owned by
  *                     `confirmedBy` before doing anything.
+ *                     doc 81 Đợt 1B Task 6 — on the REAL-write path that legacy check is
+ *                     NOT enough: the action must be BOUND to this exact command (tool +
+ *                     canonical payload hash, otActionBinding.ts), status 'confirmed'
+ *                     (never 'executed'), unexpired, and it is CONSUMED exactly once
+ *                     (SELECT … FOR UPDATE + CAS confirmed→executed in the SAME tx that
+ *                     writes the ledger intent). No actionId on the real path ⇒
+ *                     PRECONDITION_FAILED. `requireBoundAction` (Sparkplug DCMD/NCMD)
+ *                     applies the binding check on EVERY path, simulated included.
  *       'interlock' → a DETERMINISTIC, human-approved interlock rule auto-firing
  *                     (F5b). dispatch re-verifies (verifyInterlockAuthorization):
  *                     rule enabled + approvedBy set & matching + requiresHumanConfirm
@@ -52,6 +60,19 @@
  *     commandLog row. The tag.writable allowlist is enforced BEFORE any write.
  *   - Idempotency: a prior terminal commandLog for the same idempotencyKey is
  *     returned as-is (no second dispatch / no blind retry).
+ *   - doc 81 Đợt 1B Task 6 — WRITE-AHEAD LEDGER (real-write path only). command_log
+ *     is WORM (INSERT+SELECT), so the ledger is two INSERTs, never an UPDATE:
+ *       1. under pg_advisory_xact_lock(hashtext('ot.command:'||idempotencyKey)) the
+ *          key is re-probed, the HITL action is bound+consumed, and one INTENT row per
+ *          write is inserted: status 'sent', ackValue {ledger:'intent'}, idempotencyKey
+ *          'intent:<per-write key>'. The tx commits BEFORE driver.writeTags is called;
+ *          if it fails nothing is sent (LEDGER_INTENT_FAILED — the one branch that leaves
+ *          no ledger row: the ledger itself refused the INSERT; the action is not consumed).
+ *       2. after the write, one RESULT row per write (the per-write key as before,
+ *          ackValue {ledger:'result', intentId}) — linked to its intent by id AND by
+ *          the deterministic key pair.
+ *     An intent without a result (crash mid-write, or a same-key call in flight) is
+ *     never re-written: a later call with that key is refused DUPLICATE_IN_FLIGHT.
  *   - NO auto-chaining: dispatch handles exactly one command request.
  *   - G1.7 (doc 44 W0-D): every ledger row additionally carries `correlation_id`
  *     (from DispatchInput.correlationId, else the AsyncLocalStorage correlation
@@ -76,7 +97,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   aiPendingActions,
@@ -85,8 +106,10 @@ import {
   commandLog,
   interlockRules,
   interlockEvents,
+  type AiPendingAction,
   type CommandLog,
 } from "../../../drizzle/schema";
+import { otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { getActiveDriver } from "./otManager";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import type { OtTagAddress } from "./otDriver";
@@ -141,9 +164,9 @@ const INTERLOCK_AUTO_ACTIONS: ReadonlySet<string> = new Set([
 /**
  * doc 48 R1 (T1) — SAFETY-PLC PREFLIGHT flag. Read at RUNTIME (tests/operators toggle).
  * Default ON: safety should be on UNLESS an operator EXPLICITLY disables it
- * (=== "false"). This is non-breaking despite being ON-by-default because an UNKNOWN
- * safety status (no safety-PLC configured/enabled — the common case) still PASSES; only
- * a real BLOCKED read denies. See readSafetyStateForPreflight + the (5a-safety) gate.
+ * (=== "false"). doc 81 Đợt 1B Task 6: an UNKNOWN safety status (no safety-PLC
+ * configured/enabled, or a read error) now BLOCKS a real HITL write (SAFETY_UNKNOWN) —
+ * only an OK read lets it through. See readSafetyStateForPreflight + the (5a-safety) gate.
  */
 export function isSafetyPreflightEnabled(): boolean {
   return process.env.OT_SAFETY_PREFLIGHT_ENABLED !== "false";
@@ -158,8 +181,8 @@ export function isSafetyPreflightEnabled(): boolean {
  *
  * Dynamic import avoids a STATIC module cycle (adapterFacade statically imports this
  * dispatcher — mirrors the emitCmdAck/unsPublisher pattern). Belt-and-braces: any
- * unexpected throw maps to 'UNKNOWN' (allow + warn), NEVER to a spurious 'BLOCKED' —
- * a read error must not fabricate a trip, and UNKNOWN must not brick an unconfigured line.
+ * unexpected throw maps to 'UNKNOWN' (never a fabricated 'BLOCKED' trip); since doc 81
+ * Đợt 1B Task 6 the gate treats UNKNOWN as "not OK" and refuses the write (fail-closed).
  */
 async function readSafetyStateForPreflight(
   adapterId: number,
@@ -171,7 +194,7 @@ async function readSafetyStateForPreflight(
     return state.state;
   } catch (err) {
     console.warn(
-      `[Dispatch] safety preflight read failed for adapter ${adapterId} (treated as UNKNOWN, not blocked):`,
+      `[Dispatch] safety preflight read failed for adapter ${adapterId} (treated as UNKNOWN ⇒ write refused):`,
       (err as Error)?.message || err,
     );
     return "UNKNOWN";
@@ -188,13 +211,40 @@ export interface DispatchWrite {
 /** F4 HITL trigger: a human-confirmed AI write-action. */
 export interface HitlTrigger {
   kind: "hitl";
-  /** ai_pending_actions.id of the confirmed HITL action (defense-in-depth). */
+  /**
+   * ai_pending_actions.id of the confirmed HITL action. doc 81 Đợt 1B Task 6: REQUIRED for
+   * a real (non-simulated) write — absent ⇒ PRECONDITION_FAILED — and it must be bound to
+   * this exact command (see otActionBinding.ts) and is consumed once.
+   */
   actionId?: string;
-  /** User who confirmed the HITL action (must own the pending row). */
-  confirmedBy: number;
+  /**
+   * doc 81 Đợt 1B Task 6 — the tool/actor the pending action was created for; must equal
+   * ai_pending_actions.tool and is part of the canonical payload hash.
+   */
+  tool?: string;
+  /**
+   * User who confirmed the HITL action (must own the pending row). doc 81 Đợt 1B Task 6:
+   * OMITTED only by a transport with no interactive human (Sparkplug) — the confirmer is
+   * then the owner of the bound, confirmed row, never a fabricated id (was `0`).
+   */
+  confirmedBy?: number;
   /** User who originally requested (proposed) the action. */
   requestedBy: number;
+  /**
+   * doc 81 Đợt 1B Task 6 — apply the strict binding check on EVERY path (simulated too),
+   * not only on the real write. Set by the Sparkplug NCMD/DCMD receiver: an anonymous
+   * MQTT command without a valid bound actionId is rejected + ledgered, regardless of
+   * OT_CONTROL_ENABLED / SPARKPLUG_COMMAND_ENABLED.
+   */
+  requireBoundAction?: boolean;
 }
+
+/**
+ * doc 81 Đợt 1B Task 6 — ledger value for `confirmedBy` when NOBODY confirmed the command
+ * (a rejected Sparkplug command without a bound action). command_log.confirmedBy is NOT
+ * NULL; a negative id cannot collide with a real user and cannot read as "user 0 confirmed".
+ */
+export const NO_CONFIRMER = -1;
 
 /** F5b interlock trigger: a deterministic, human-approved interlock rule. */
 export interface InterlockTrigger {
@@ -347,7 +397,7 @@ function actors(input: DispatchInput): { requestedBy: number; confirmedBy: numbe
   if (input.triggeredBy.kind === "hitl") {
     return {
       requestedBy: input.triggeredBy.requestedBy,
-      confirmedBy: input.triggeredBy.confirmedBy,
+      confirmedBy: input.triggeredBy.confirmedBy ?? NO_CONFIRMER,
       actionId: input.triggeredBy.actionId ?? null,
     };
   }
@@ -458,9 +508,25 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
 
   // ── (1) Authorization gate — branch on the trigger source. ───────────────────
   if (input.triggeredBy.kind === "hitl") {
-    // F4: defense-in-depth — the pending action must be confirmed/executed AND
-    // owned by the confirming user.
-    if (input.triggeredBy.actionId) {
+    const t = input.triggeredBy;
+    if (t.requireBoundAction) {
+      // doc 81 Đợt 1B Task 6 — Sparkplug NCMD/DCMD: strict binding on EVERY path (the
+      // anonymous-MQTT S1 path is closed here in code, whatever the flags say). Read-only
+      // here; the real-write path re-verifies under FOR UPDATE and consumes the row.
+      if (!t.actionId) {
+        const ids = await writeRejected(db, input, "PRECONDITION_FAILED", "command requires a bound, confirmed HITL actionId (none supplied)");
+        return { ok: false, simulated: false, status: "rejected", reason: "PRECONDITION_FAILED", results: failedResults(input, "PRECONDITION_FAILED"), commandLogIds: ids };
+      }
+      const [pending] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, t.actionId)).limit(1);
+      const bound = verifyActionBinding(pending, input, t);
+      if (!bound.ok) {
+        const ids = await writeRejected(db, input, bound.reason, bound.detail);
+        return { ok: false, simulated: false, status: "rejected", reason: bound.reason, results: failedResults(input, bound.reason), commandLogIds: ids };
+      }
+    } else if (input.triggeredBy.actionId) {
+      // F4: defense-in-depth — the pending action must be confirmed/executed AND
+      // owned by the confirming user. (Legacy check — kept byte-identical for the
+      // simulated path; the real-write path adds the strict binding + consume.)
       const actionId = input.triggeredBy.actionId;
       const confirmedBy = input.triggeredBy.confirmedBy;
       const [pending] = await db
@@ -498,20 +564,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     .where(eq(commandLog.idempotencyKey, probeKey))
     .limit(1);
   if (existing && TERMINAL_STATUSES.has(existing.status)) {
-    const cachedOk =
-      existing.status === "simulated" ||
-      existing.status === "acked" ||
-      existing.status === "acked_verified" ||
-      existing.status === "acked_unverified" ||
-      existing.status === "sent";
-    return {
-      ok: cachedOk,
-      simulated: existing.status === "simulated",
-      status: existing.status,
-      reason: existing.errorText ?? undefined,
-      results: input.writes.map((w) => ({ tagKey: w.tagKey, address: existing.address ?? undefined, ok: cachedOk, status: existing.status, error: existing.errorText ?? undefined })),
-      commandLogIds: [existing.id],
-    };
+    return cachedResult(input, existing);
   }
 
   // ── (3) Resolve adapter + tags; assert enabled + writable. ───────────────────
@@ -629,13 +682,13 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         else the safety-PLC status adapter); it NEVER actuates a safety function. Honest,
   //         3-way:
   //           • BLOCKED → REJECT (SAFETY_BLOCKED); driver.writeTags is NEVER called.
-  //           • UNKNOWN → ALLOW + WARN. UNKNOWN ≠ BLOCKED: a line with no safety-PLC
-  //                       configured/enabled must NOT be bricked (non-breaking) — the
-  //                       certified Safety-PLC still performs any rated stop in hardware.
+  //           • UNKNOWN → REJECT (SAFETY_UNKNOWN) since doc 81 Đợt 1B Task 6 (was: allow +
+  //                       warn). No configured/readable safety-PLC reporting OK ⇒ no real
+  //                       write; a read error also lands here (fail-closed).
   //           • OK      → proceed.
   //         Flag OT_SAFETY_PREFLIGHT_ENABLED — ON UNLESS explicitly "false" (safety should be
-  //         on by default). Because UNKNOWN passes, keeping the safety-PLC adapter's OWN flag
-  //         (SAFETY_PLC_ADAPTER_ENABLED) OFF is fully non-breaking. hitl-only (mirrors the
+  //         on by default). With SAFETY_PLC_ADAPTER_ENABLED off (no source) every real HITL
+  //         write is refused SAFETY_UNKNOWN — that is intended. hitl-only (mirrors the
   //         policy + interlock gates): a kind='interlock' command IS a safety de-energization
   //         (block/stop/reduce) — blocking it here would self-lock the safety response. The
   //         dry-run/simulated path never reaches here (no real write to guard).
@@ -657,11 +710,24 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         commandLogIds: ids,
       };
     }
-    if (safety === "UNKNOWN") {
-      console.warn(
-        `[Dispatch] safety preflight: UNKNOWN safety status for adapter ${input.adapterId} ` +
-          `(no safety-PLC configured/enabled) — allowing write (honest: UNKNOWN ≠ BLOCKED).`,
+    if (safety !== "OK") {
+      // doc 81 Đợt 1B Task 6 (BE2 §L2 :660) — UNKNOWN used to pass with a warning. Not OK is
+      // not OK: no safety-PLC configured/enabled/readable ⇒ the write is refused before any
+      // ledger intent or driver call (same rule as the robot dispatcher, Task 5).
+      const ids = await writeRejected(
+        db,
+        input,
+        "SAFETY_UNKNOWN",
+        `safety-PLC preflight returned ${safety} (no configured/readable safety-PLC reports OK) — actuation denied before write`,
       );
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "SAFETY_UNKNOWN",
+        results: failedResults(input, "SAFETY_UNKNOWN"),
+        commandLogIds: ids,
+      };
     }
   }
 
@@ -698,6 +764,13 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         acked writes (acked_verified / acked_unverified — WARN only). The
   //         per-write outcome + read-back status are computed BEFORE inserting the
   //         commandLog rows so the ledger stays append-only (insert ONCE, no update).
+  // ── (5b-0) doc 81 Đợt 1B Task 6 — WRITE-AHEAD RESERVATION (advisory lock → re-probe →
+  //         bind + consume the HITL action → INSERT intent rows), committed BEFORE the
+  //         driver is called. Refused / failed ⇒ return; driver.writeTags is never reached.
+  const reservation = await reserveRealWrite(db, input, resolved);
+  if (!reservation.ok) return reservation.result;
+  const { intentIds } = reservation;
+  const ledgerConfirmer = reservation.boundConfirmer ?? who.confirmedBy;
   const commandLogIds: number[] = [];
 
   // Map resolved → driver writes (carry dataType/scale/offset for INVERSE scale).
@@ -840,6 +913,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         input,
         "BUSY",
         `adapter command queue full (depth ${enq.depth} >= max ${enq.max}) — command rejected, retry later`,
+        undefined,
+        undefined,
+        { intentIds, confirmedBy: ledgerConfirmer }, // Task 6 — the RESULT row of the intent
       );
       return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids };
     }
@@ -865,12 +941,15 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         commandType: input.commandType,
         requestedValue: r.write.value as any,
         requestedBy: who.requestedBy,
-        confirmedBy: who.confirmedBy,
+        confirmedBy: ledgerConfirmer,
         status: o.status,
         ...trig,
         ...ctx,
         readBackValue: o.readBackValue as any,
         errorText: o.errorText,
+        // Task 6 — RESULT row linked to its write-ahead intent (by id; the key pair
+        // '<k>' / 'intent:<k>' links them too).
+        ackValue: { ledger: "result", intentId: intentIds[o.idx] } as any,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, o.idx),
         sentAt,
         ackedAt: o.ok ? new Date() : null,
@@ -896,6 +975,225 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   }
   if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
   return { ok: allOk, simulated: false, status: overall, results, commandLogIds };
+}
+
+/** The cached (idempotent replay) result of a prior terminal ledger row for this key. */
+function cachedResult(input: DispatchInput, existing: CommandLog): DispatchResult {
+  const cachedOk =
+    existing.status === "simulated" ||
+    existing.status === "acked" ||
+    existing.status === "acked_verified" ||
+    existing.status === "acked_unverified" ||
+    existing.status === "sent";
+  return {
+    ok: cachedOk,
+    simulated: existing.status === "simulated",
+    status: existing.status,
+    reason: existing.errorText ?? undefined,
+    results: input.writes.map((w) => ({ tagKey: w.tagKey, address: existing.address ?? undefined, ok: cachedOk, status: existing.status, error: existing.errorText ?? undefined })),
+    commandLogIds: [existing.id],
+  };
+}
+
+// ─── doc 81 Đợt 1B Task 6 — HITL binding + write-ahead reservation ────────────
+
+type BindingVerdict =
+  | { ok: true; owner: number }
+  | { ok: false; reason: "NOT_CONFIRMED" | "ACTION_BINDING_MISMATCH"; detail: string };
+
+/**
+ * PURE — is `pending` a valid authorisation for EXACTLY this command? All must hold:
+ *   status === 'confirmed' (an 'executed' row is spent — the 594 AI-coding rows included),
+ *   not expired, owned by the confirmer (when the trigger names one), created for the
+ *   same tool, and carrying the canonical payload hash of THIS adapter/machine/command/
+ *   writes (otActionBinding.otPayloadHash — the same function the creators use).
+ * Used read-only at entry (requireBoundAction) and under FOR UPDATE before consuming.
+ */
+function verifyActionBinding(
+  pending: AiPendingAction | undefined,
+  input: DispatchInput,
+  t: HitlTrigger,
+): BindingVerdict {
+  if (!pending) return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action not found" };
+  if (pending.status !== "confirmed") {
+    return {
+      ok: false,
+      reason: "NOT_CONFIRMED",
+      detail: `HITL action status is '${pending.status}' — only a 'confirmed' action authorises a write, exactly once`,
+    };
+  }
+  if (pending.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action expired" };
+  }
+  if (t.confirmedBy !== undefined && pending.userId !== t.confirmedBy) {
+    return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action owner mismatch" };
+  }
+  if (!t.tool || pending.tool !== t.tool) {
+    return {
+      ok: false,
+      reason: "ACTION_BINDING_MISMATCH",
+      detail: `HITL action was created for tool '${pending.tool}', command claims '${t.tool ?? "(none)"}'`,
+    };
+  }
+  const stored = readOtPayloadHash(pending.previewJson);
+  if (!stored) {
+    return { ok: false, reason: "ACTION_BINDING_MISMATCH", detail: "HITL action carries no OT payload binding" };
+  }
+  const expected = otPayloadHash({
+    tool: pending.tool,
+    adapterId: input.adapterId,
+    machineId: input.machineId ?? null,
+    commandType: input.commandType,
+    writes: input.writes,
+  });
+  if (stored !== expected) {
+    return {
+      ok: false,
+      reason: "ACTION_BINDING_MISMATCH",
+      detail: "HITL action was confirmed for a different adapter/machine/command/tag/value",
+    };
+  }
+  return { ok: true, owner: pending.userId };
+}
+
+/** Advisory-lock namespace so OT command keys never share a lock with another subsystem. */
+const OT_COMMAND_LOCK_NS = "ot.command:";
+
+/** The intent row's key — derived deterministically from the result row's per-write key. */
+function intentKeyFor(resultKey: string): string {
+  const k = `intent:${resultKey}`;
+  return k.length <= 128 ? k : k.slice(0, 128);
+}
+
+type Reservation =
+  | { ok: true; intentIds: number[]; boundConfirmer: number | null }
+  | { ok: false; result: DispatchResult };
+
+/**
+ * Real-write reservation, ONE transaction, committed BEFORE the driver is called:
+ *   1. pg_advisory_xact_lock(hashtext('ot.command:'||idempotencyKey)) — same-key calls
+ *      serialise here (the lock-free probe in step 2 is only a fast path);
+ *   2. re-probe the key: a terminal result ⇒ cached replay; an intent WITHOUT a result ⇒
+ *      the key is in flight or its outcome is unknown ⇒ refuse (DUPLICATE_IN_FLIGHT);
+ *   3. hitl: actionId REQUIRED (PRECONDITION_FAILED); SELECT … FOR UPDATE the pending row,
+ *      verifyActionBinding, then CAS confirmed→executed (0 rows ⇒ NOT_CONFIRMED);
+ *   4. INSERT one intent row per write.
+ * Any throw ⇒ the tx rolls back (action NOT consumed, no intent) and NOTHING is written
+ * to the device (LEDGER_INTENT_FAILED).
+ */
+async function reserveRealWrite(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  input: DispatchInput,
+  resolved: Array<{ write: DispatchWrite; address: string }>,
+): Promise<Reservation> {
+  const resultKeys = resolved.map((r, i) => perWriteKey(input.idempotencyKey, r.write.tagKey, i));
+  const intentKeys = resultKeys.map(intentKeyFor);
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${OT_COMMAND_LOCK_NS + input.idempotencyKey}))`);
+
+      const prior = await tx
+        .select()
+        .from(commandLog)
+        .where(inArray(commandLog.idempotencyKey, [resultKeys[0], intentKeys[0]]));
+      const priorResult = prior.find((r) => r.idempotencyKey === resultKeys[0]);
+      if (priorResult && TERMINAL_STATUSES.has(priorResult.status)) {
+        return { ok: false as const, result: cachedResult(input, priorResult) };
+      }
+      if (prior.length > 0) {
+        // The key's intent exists but no result: another call holds it, or the process died
+        // between the device write and the result row. Either way a second write is unsafe.
+        // Ledgered with a NULL key (the per-write keys belong to the in-flight command).
+        const intentIds = prior.map((r) => r.id);
+        const ids = await writeAll(tx, input, "rejected", "DUPLICATE_IN_FLIGHT", `idempotency key already has a write-ahead intent (#${intentIds.join(",")}) without a result — not re-sent`, undefined, undefined, { nullKey: true, intentIds });
+        return {
+          ok: false as const,
+          result: { ok: false, simulated: false, status: "rejected" as const, reason: "DUPLICATE_IN_FLIGHT", results: failedResults(input, "DUPLICATE_IN_FLIGHT"), commandLogIds: ids },
+        };
+      }
+
+      let boundConfirmer: number | null = null;
+      if (input.triggeredBy.kind === "hitl") {
+        const t = input.triggeredBy;
+        let verdict: BindingVerdict | { ok: false; reason: "PRECONDITION_FAILED"; detail: string };
+        if (!t.actionId) {
+          verdict = { ok: false, reason: "PRECONDITION_FAILED", detail: "real OT write requires a bound, confirmed, single-use HITL actionId (none supplied)" };
+        } else {
+          const [pending] = await tx
+            .select()
+            .from(aiPendingActions)
+            .where(eq(aiPendingActions.id, t.actionId))
+            .for("update");
+          verdict = verifyActionBinding(pending, input, t);
+          if (verdict.ok) {
+            const consumed = await tx
+              .update(aiPendingActions)
+              .set({ status: "executed", executedAt: new Date() })
+              .where(and(eq(aiPendingActions.id, t.actionId), eq(aiPendingActions.status, "confirmed")))
+              .returning({ id: aiPendingActions.id });
+            if (consumed.length !== 1) {
+              verdict = { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action was consumed concurrently" };
+            }
+          }
+        }
+        if (!verdict.ok) {
+          const ids = await writeRejected(tx, input, verdict.reason, verdict.detail);
+          return {
+            ok: false as const,
+            result: { ok: false, simulated: false, status: "rejected" as const, reason: verdict.reason, results: failedResults(input, verdict.reason), commandLogIds: ids },
+          };
+        }
+        boundConfirmer = verdict.owner;
+      }
+
+      const who = actors(input);
+      const trig = triggerCols(input);
+      const ctx = commandContext(input);
+      const sentAt = new Date();
+      const intentIds: number[] = [];
+      for (let i = 0; i < resolved.length; i++) {
+        const r = resolved[i];
+        const [row] = await tx
+          .insert(commandLog)
+          .values({
+            actionId: who.actionId,
+            adapterId: input.adapterId,
+            machineId: input.machineId ?? null,
+            tagKey: r.write.tagKey,
+            address: r.address,
+            commandType: input.commandType,
+            requestedValue: r.write.value as any,
+            requestedBy: who.requestedBy,
+            confirmedBy: boundConfirmer ?? who.confirmedBy,
+            status: "sent",
+            ...trig,
+            ...ctx,
+            ackValue: { ledger: "intent" } as any,
+            idempotencyKey: intentKeys[i],
+            sentAt,
+          })
+          .returning({ id: commandLog.id });
+        intentIds.push(row.id);
+      }
+      return { ok: true as const, intentIds, boundConfirmer };
+    });
+  } catch (err) {
+    console.error(
+      `[Dispatch] write-ahead intent failed for adapter ${input.adapterId} — NOTHING sent to the device:`,
+      (err as Error)?.message || err,
+    );
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        simulated: false,
+        status: "failed",
+        reason: "LEDGER_INTENT_FAILED",
+        results: failedResults(input, "LEDGER_INTENT_FAILED", "failed"),
+        commandLogIds: [],
+      },
+    };
+  }
 }
 
 // ─── F5b — interlock authorization (defense-in-depth, multi-layer) ────────────
@@ -1046,14 +1344,15 @@ async function writeSimulated(
 // ─── commandLog writers (one row per write so the ledger is complete) ─────────
 
 async function writeRejected(
-  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  db: LedgerDb,
   input: DispatchInput,
   reason: string,
   detail: string,
   onlyTagKey?: string,
   address?: string,
+  link?: LedgerLink,
 ): Promise<number[]> {
-  return writeAll(db, input, "rejected", reason, detail, onlyTagKey, address);
+  return writeAll(db, input, "rejected", reason, detail, onlyTagKey, address, link);
 }
 
 async function writeFailed(
@@ -1065,17 +1364,35 @@ async function writeFailed(
   return writeAll(db, input, "failed", reason, detail);
 }
 
+/**
+ * doc 81 Đợt 1B Task 6 — optional ledger linkage for a row written AFTER a write-ahead
+ * intent (a RESULT row, e.g. BUSY) or for a refusal that must not take the per-write key
+ * (DUPLICATE_IN_FLIGHT ⇒ nullKey). Absent ⇒ the row is byte-identical to before.
+ */
+interface LedgerLink {
+  intentIds?: number[];
+  nullKey?: boolean;
+  confirmedBy?: number | null;
+}
+
+/** The db handle OR a transaction handle (ledger writes inside the reservation tx). */
+type LedgerDb =
+  | NonNullable<Awaited<ReturnType<typeof getDb>>>
+  | Parameters<Parameters<NonNullable<Awaited<ReturnType<typeof getDb>>>["transaction"]>[0]>[0];
+
 async function writeAll(
-  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  db: LedgerDb,
   input: DispatchInput,
   status: DispatchStatus,
   reason: string,
   detail: string,
   onlyTagKey?: string,
   address?: string,
+  link?: LedgerLink,
 ): Promise<number[]> {
   const ids: number[] = [];
   const who = actors(input);
+  if (link?.confirmedBy != null) who.confirmedBy = link.confirmedBy;
   const trig = triggerCols(input);
   const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms (rejected/failed too)
   const writes = onlyTagKey ? input.writes.filter((w) => w.tagKey === onlyTagKey) : input.writes;
@@ -1098,7 +1415,10 @@ async function writeAll(
         ...trig,
         ...ctx,
         errorText: `${reason}: ${detail}`,
-        idempotencyKey: perWriteKey(input.idempotencyKey, w.tagKey ?? "_", i),
+        ...(link?.intentIds && link.intentIds.length > 0
+          ? { ackValue: { ledger: link.nullKey ? "refused_duplicate" : "result", intentId: link.intentIds[Math.min(i, link.intentIds.length - 1)] } as any }
+          : {}),
+        idempotencyKey: link?.nullKey ? null : perWriteKey(input.idempotencyKey, w.tagKey ?? "_", i),
       })
       .returning({ id: commandLog.id });
     ids.push(row.id);

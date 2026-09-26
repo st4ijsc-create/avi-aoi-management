@@ -348,7 +348,9 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
     // FOE đã tạo ủy quyền ai_pending_actions confirmed, owner = user khởi động run.
     const pend = store.get("ai_pending_actions") ?? [];
     expect(pend).toHaveLength(1);
-    expect(pend[0].status).toBe("executed"); // terminal → không lọt action inbox
+    // doc 81 Đợt 1B Task 6 (R4): bước OT ⇒ 'confirmed' (dispatcher tiêu thụ confirmed→executed,
+    // một lần) + binding = hash chuẩn hoá của ĐÚNG lệnh gửi đi. Inbox chỉ đọc 'proposed' ⇒ không lọt.
+    expect(pend[0].status).toBe("confirmed");
     expect(pend[0].userId).toBe(USER.id);
     expect(String(pend[0].id)).toMatch(/^foe-/);
 
@@ -356,6 +358,17 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
     const call = otDispatchMock.mock.calls[0][0];
     expect(call.triggeredBy.actionId).toBe(pend[0].id);
     expect(call.triggeredBy.confirmedBy).toBe(USER.id);
+    expect(call.triggeredBy.tool).toBe("foe.orchestration");
+    const { otPayloadHash, readOtPayloadHash } = await import("../../ot/otActionBinding");
+    expect(readOtPayloadHash(pend[0].previewJson)).toBe(
+      otPayloadHash({
+        tool: "foe.orchestration",
+        adapterId: call.adapterId,
+        machineId: call.machineId,
+        commandType: call.commandType,
+        writes: call.writes,
+      }),
+    );
   });
 
   it("runs parallel branches concurrently", async () => {

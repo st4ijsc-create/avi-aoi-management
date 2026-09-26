@@ -61,6 +61,7 @@ import {
   type EquipmentCommandResult,
 } from "../../equipment/equipmentAdapter";
 import { asPackmlState } from "../../equipment/packml";
+import { otPayloadHash, withOtPayloadHash } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
 
@@ -479,11 +480,24 @@ function orchestrationActionId(idempotencyKey: string): string {
  * 'proposed'). Lỗi tạo bản ghi → nuốt: bản ghi không có ⇒ dispatcher fail-closed (từ chối),
  * an toàn hơn là để lệnh lọt.
  */
-async function ensureOrchestrationAction(
+/**
+ * doc 81 Đợt 1B Task 6 (Ruling R4) — the OT dispatcher now accepts a real write only for a
+ * 'confirmed' action BOUND to the exact command (tool + canonical payload hash) and consumes
+ * it (confirmed→executed). So for an OT step the row is created 'confirmed' and carries the
+ * hash of EXACTLY the command FOE is about to send (built from the same EquipmentCommand the
+ * OtEquipmentAdapter maps to DispatchInput). Robot/AGV steps keep the legacy 'executed' row
+ * (the robot dispatcher's HITL check is unchanged — out of Task 6 scope).
+ * ⚠ CÒN MỞ (doc 81 BE2 §L2): FOE still GRANTS ITSELF this approval — no human confirms the
+ * step; Task 6 only binds the self-grant to the one command it was minted for.
+ */
+export const FOE_ACTION_TOOL = "foe.orchestration";
+
+export async function ensureOrchestrationAction(
   user: FoeUser,
   idempotencyKey: string,
   step: WorkflowStep,
   args: Record<string, unknown>,
+  cmd?: EquipmentCommand,
 ): Promise<void> {
   try {
     const d = await getDb();
@@ -495,24 +509,38 @@ async function ensureOrchestrationAction(
       .where(eq(aiPendingActions.id, actionId))
       .limit(1);
     if (existing) return; // resume/retry → tái dùng bản ghi cũ
+    const isOt = cmd != null && cmd.adapterId != null && cmd.robotId == null;
+    const previewJson = isOt
+      ? withOtPayloadHash(
+          null,
+          otPayloadHash({
+            tool: FOE_ACTION_TOOL,
+            adapterId: cmd.adapterId!,
+            machineId: cmd.machineId ?? null,
+            commandType: cmd.name,
+            writes: cmd.writes ?? [],
+          }),
+        )
+      : undefined;
     await d.insert(aiPendingActions).values({
       id: actionId,
-      tool: "foe.orchestration",
+      tool: FOE_ACTION_TOOL,
       argsJson: args ?? {},
       userId: user.id || 0,
       userRole: user.role || "system",
       summary: `FOE orchestration: step ${step.id}`,
-      status: "executed",
+      ...(isOt
+        ? { status: "confirmed" as const, previewJson }
+        : { status: "executed" as const, executedAt: new Date() }),
       idempotencyKey: actionId,
       expiresAt: new Date(Date.now() + 3_600_000),
-      executedAt: new Date(),
     });
   } catch {
     // fail-safe: không tạo được ⇒ cổng dispatcher sẽ fail-closed (an toàn).
   }
 }
 
-function buildEquipmentCommand(
+export function buildEquipmentCommand(
   descriptor: CommandDescriptor,
   capability: EquipmentCapability,
   machineId: number,
@@ -530,6 +558,7 @@ function buildEquipmentCommand(
     // requestedBy/confirmedBy = user đã khởi động run (owner của bản ghi) → cổng OT/robot qua hợp lệ.
     hitl: {
       actionId: orchestrationActionId(idempotencyKey),
+      tool: FOE_ACTION_TOOL, // doc 81 Đợt 1B Task 6 — part of the OT binding
       requestedBy: user.id || 0,
       confirmedBy: user.id || 0,
     },
@@ -781,8 +810,9 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // Doc 25 T1 — tạo ủy quyền ai_pending_actions confirmed THẬT trước khi dispatch để
   // cổng HITL của dispatcher (OT/robot) tái-xác-minh và cho qua HỢP LỆ (không còn phụ
   // thuộc mock). Fail-safe: nếu không tạo được, dispatcher fail-closed từ chối.
-  await ensureOrchestrationAction(rc.user, idempotencyKey, step, step.args ?? {});
+  // doc 81 Đợt 1B Task 6 — build the command FIRST so the authorisation row is bound to it.
   const cmd = buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, idempotencyKey, rc.user);
+  await ensureOrchestrationAction(rc.user, idempotencyKey, step, step.args ?? {}, cmd);
 
   // doc 80 ORC-01 — last check before the command leaves the engine (the awaits above can span an abort).
   if (rc.aborting) return ABORTED_OUTCOME;
