@@ -35,6 +35,7 @@
  */
 import { createConnection } from "node:net";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { closeModbusClient } from "../../ot/drivers/boundedClose";
 import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
@@ -213,6 +214,13 @@ export class TechmanDriver implements RobotDriver {
     this.listenHost = typeof opts.listenHost === "string" ? opts.listenHost : host;
     this.listenPort = typeof opts.listenPort === "number" ? opts.listenPort : DEFAULT_LISTEN_PORT;
 
+    // doc 81 Đợt 1B Task 1 — hạ client cũ (nếu có) trước khi thay, không rò socket.
+    if (this.mbClient) {
+      const prev = this.mbClient;
+      this.mbClient = null;
+      this.connected = false;
+      await closeModbusClient(prev);
+    }
     const client = new ModbusRTU();
     try {
       await this.withTimeout(client.connectTCP(host, { port }), this.timeoutMs, "TM modbus connectTCP");
@@ -229,23 +237,19 @@ export class TechmanDriver implements RobotDriver {
       this.lastError = undefined;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
-      try {
-        if (typeof client.close === "function") {
-          await new Promise<void>((resolve) => client.close(() => resolve()));
-        }
-      } catch { /* ignore */ }
+      // doc 81 Đợt 1B Task 1 — close(cb) của modbus-serial không gọi cb khi socket chưa
+      // từng mở/đã đứt (BE1 §1.3) ⇒ đóng CÓ HẠN rồi destroy socket nền.
+      await closeModbusClient(client);
       throw err;
     }
   }
 
   async disconnect(): Promise<void> {
-    if (this.mbClient && typeof this.mbClient.close === "function") {
-      try {
-        await new Promise<void>((resolve) => this.mbClient.close(() => resolve()));
-      } catch { /* ignore */ }
-    }
+    const client = this.mbClient;
     this.mbClient = null;
     this.connected = false;
+    // doc 81 Đợt 1B Task 1 — đóng có hạn (≤ DEFAULT_CLOSE_TIMEOUT_MS rồi destroy).
+    await closeModbusClient(client);
   }
 
   isConnected(): boolean {
