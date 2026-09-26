@@ -149,19 +149,88 @@ describe("TechmanDriver", () => {
     expect(s.mode).toBe("manual");      // modeCode 1
   });
 
-  it("buildTmsct: produces a well-formed TMSCT frame with checksum", async () => {
-    const { buildTmsct, xorChecksum } = await import("./techmanDriver");
-    const frame = buildTmsct({ jobType: "home" }, 7);
-    expect(frame.startsWith("$TMSCT,")).toBe(true);
-    expect(frame.endsWith("\r\n")).toBe(true);
-    // payload = "<id>,<script>" ; frame = $TMSCT,<len>,<payload>,*<cs>\r\n
-    const m = frame.match(/^\$TMSCT,(\d+),(.*),\*([0-9A-F]{2})\r\n$/);
-    expect(m).not.toBeNull();
-    const [, lenStr, payload, cs] = m!;
-    expect(Number(lenStr)).toBe(payload.length);
-    expect(cs).toBe(xorChecksum(payload));
-    expect(payload.startsWith("7,")).toBe(true);     // transaction id
-    expect(payload).toMatch(/PTP/);                  // home → PTP script
+  // doc 81 Đợt 1B Task 4 — thay test cũ "so hàm với chính nó" (BE2: `cs === xorChecksum(payload)`
+  // xanh dù checksum SAI). Oracle ĐỘC LẬP: ví dụ trong tài liệu TM + vector tính NGOÀI sản phẩm.
+  // Quy tắc TM: checksum = XOR mọi byte GIỮA `$` và `*` (không tính hai ký tự đó), 2 chữ số hex hoa.
+  describe("checksum Listen Node — oracle độc lập", () => {
+    it("ví dụ tài liệu TM: $TMSCT,25,1,ChangeBase(\"RobotBase\"),*08", async () => {
+      // XOR tay (từng byte, giá trị hex → luỹ kế) của `TMSCT,25,1,ChangeBase("RobotBase"),`:
+      //  T54→54 M4D→19 S53→4A C43→09 T54→5D ,2C→71 232→43 535→76 ,2C→5A 131→6B ,2C→47
+      //  C43→04 h68→6C a61→0D n6E→63 g67→04 e65→61 B42→23 a61→42 s73→31 e65→54 (28→7C
+      //  "22→5E R52→0C o6F→63 b62→01 o6F→6E t74→1A B42→58 a61→39 s73→4A e65→2F "22→0D
+      //  )29→24 ,2C→08   ⇒ 08 (khớp tài liệu). Nếu tính cả `$`(24): 08^24 = 2C. Nếu chỉ tính
+      //  payload `1,ChangeBase("RobotBase")` (lỗi cũ BE2 đo được): 7E.
+      const { frameTmsct, listenNodeChecksum } = await import("./techmanDriver");
+      expect(listenNodeChecksum('TMSCT,25,1,ChangeBase("RobotBase"),')).toBe("08");
+      expect(frameTmsct(1, 'ChangeBase("RobotBase")')).toBe('$TMSCT,25,1,ChangeBase("RobotBase"),*08\r\n');
+    });
+
+    it("vector 2 — abort id 7: $TMSCT,22,7,StopAndClearBuffer(),*61", async () => {
+      // Độc lập (Python): functools.reduce(lambda a,c:a^c, b'TMSCT,22,7,StopAndClearBuffer(),', 0) = 0x61
+      const { buildTmsct } = await import("./techmanDriver");
+      expect(buildTmsct({ jobType: "abort" }, 7)).toBe("$TMSCT,22,7,StopAndClearBuffer(),*61\r\n");
+    });
+
+    it("vector 3 — custom mặc định id 3: $TMSCT,14,3,ScriptExit(),*65", async () => {
+      // Độc lập (Python): reduce(xor, b'TMSCT,14,3,ScriptExit(),') = 0x65
+      const { buildTmsct } = await import("./techmanDriver");
+      expect(buildTmsct({ jobType: "custom" }, 3)).toBe("$TMSCT,14,3,ScriptExit(),*65\r\n");
+    });
+
+    it("vector 4 — home id 1: …PTP(\"JPP\",0,0,0,0,0,0,35,200,0,false),*00", async () => {
+      // Độc lập (Python): reduce(xor, b'TMSCT,39,1,PTP("JPP",0,0,0,0,0,0,35,200,0,false),') = 0x00
+      const { buildTmsct } = await import("./techmanDriver");
+      expect(buildTmsct({ jobType: "home" }, 1)).toBe('$TMSCT,39,1,PTP("JPP",0,0,0,0,0,0,35,200,0,false),*00\r\n');
+    });
+  });
+
+  describe("danh sách trắng script Techman", () => {
+    it("hằng số = đúng các lệnh repo đã gửi dưới dạng script (ScriptExit, StopAndClearBuffer)", async () => {
+      const { TECHMAN_SCRIPT_ALLOWLIST } = await import("./techmanScriptAllowlist");
+      expect([...TECHMAN_SCRIPT_ALLOWLIST]).toEqual(["ScriptExit()", "StopAndClearBuffer()"]);
+    });
+
+    it("chỉ khớp NGUYÊN VĂN — không khoảng trắng, không lệnh thứ hai, không kiểu khác", async () => {
+      const { isTechmanScriptAllowed } = await import("./techmanScriptAllowlist");
+      expect(isTechmanScriptAllowed("ScriptExit()")).toBe(true);
+      expect(isTechmanScriptAllowed("StopAndClearBuffer()")).toBe(true);
+      for (const bad of [
+        'ChangeBase("RobotBase")',
+        'QueueTag(1)',
+        'PTP("JPP",0,0,0,0,0,0,35,200,0,false)',
+        " ScriptExit()",
+        "ScriptExit() ",
+        "ScriptExit()\r\nPTP(\"JPP\",0,0,90,0,0,0,100,0,0,false)",
+        "ScriptExit();ChangeBase(\"X\")",
+        "scriptexit()",
+        "",
+        123,
+        null,
+        undefined,
+        ["ScriptExit()"],
+      ]) {
+        expect(isTechmanScriptAllowed(bad as unknown), JSON.stringify(bad)).toBe(false);
+      }
+    });
+
+    it("buildTmsct từ chối script ngoài danh sách (ném lỗi, không dựng khung)", async () => {
+      const { buildTmsct } = await import("./techmanDriver");
+      expect(() => buildTmsct({ jobType: "custom", params: { script: 'ChangeBase("RobotBase")' } }, 1)).toThrow(
+        /tm_script_not_allowlisted/,
+      );
+    });
+
+    it("runJob dry-run với script ngoài danh sách ⇒ failed, không mở socket", async () => {
+      mockModbus();
+      const { TechmanDriver } = await import("./techmanDriver");
+      const d = new TechmanDriver();
+      await d.connect({ endpoint: "127.0.0.1" });
+      const res = await d.runJob({ jobType: "custom", params: { script: "Foo()" } });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe("failed");
+      expect(res.detail?.reasonCode).toBe("tm_script_not_allowlisted");
+      expect(connectCalls).toBe(0);
+    });
   });
 
   it("runJob dry-run: builds TMSCT but opens NO socket when control disabled", async () => {
@@ -192,10 +261,13 @@ describe("TechmanDriver", () => {
     expect(sockets.length).toBe(1);
     const sock = sockets[0];
     sock._emit("connect");
-    sock._emit("data", Buffer.from("$TMSTA,...,*00\r\n", "ascii"));
+    // doc 81 Đợt 1B Task 4 — trước đây test đưa "$TMSTA,...,*00" (khung rác) và sản phẩm vẫn
+    // báo done. Nay đưa ACK hợp lệ cho id 1 (checksum tính độc lập: reduce(xor, b'TMSCT,4,1,OK,') = 5C).
+    sock._emit("data", Buffer.from("$TMSCT,4,1,OK,*5C\r\n", "ascii"));
 
     const res = await p;
     expect(res.ok).toBe(true);
+    expect(res.status).toBe("done");
     expect(res.detail?.sent).toBe(true);
     expect(connectCalls).toBe(1);
     expect(sock.written.length).toBe(1);

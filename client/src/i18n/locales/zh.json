@@ -4170,7 +4170,8 @@
       "viewAiTimeSeries": "查看 AI 时间序列",
       "approveOrchestrationGate": "批准此编排关卡",
       "selfApproveOrchestrationGate": "批准由您本人启动的运行中的四眼关卡",
-      "selfApproveInterlockRule": "自行审批自己提交的联锁规则"
+      "selfApproveInterlockRule": "自行审批自己提交的联锁规则",
+      "sendTechmanScript": "向 Techman 机器人发送脚本"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -4238,7 +4239,8 @@
       "releasedProgramRequiresApproval": "该产品已有已发布的检验程序——阈值变更须通过审批队列（Threshold Approvals）。",
       "productLifecycleRequiresApproval": "该产品处于生命周期状态 '{{lifecycleStatus}}'——阈值变更须通过审批队列（Threshold Approvals）。",
       "evalAlreadyRunning": "已有一轮评估在运行——请等待其完成。",
-      "runAlreadyClaimed": "该运行已被他人批准、拒绝或停止 — 请刷新列表。"
+      "runAlreadyClaimed": "该运行已被他人批准、拒绝或停止 — 请刷新列表。",
+      "techmanScriptNotAllowlisted": "仅接受 Techman 白名单中的指令（ScriptExit()、StopAndClearBuffer()）；其他脚本一律拒绝，不会向机器人发送任何内容。"
     },
     "client": {
       "generic": "系统错误，请重试",
@@ -16236,7 +16238,10 @@
     "fleetCanaryOkShort": "金丝雀已运行",
     "rolledBack": "已回滚",
     "fleetMatrix": "设备 × 版本矩阵",
-    "fleetMatrixEmpty": "尚无设备上报版本"
+    "fleetMatrixEmpty": "尚无设备上报版本",
+    "deployReason": {
+      "techman_program_download_unsupported": "Techman（robot-tm）暂不支持下载程序——尚未实现 TMflow 程序下载指令，因此没有向机器人发送任何内容。"
+    }
   },
   "engineeringHome": {
     "needControl": "需要控制访问权限",

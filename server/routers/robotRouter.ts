@@ -13,6 +13,7 @@ import { eq, desc } from "drizzle-orm";
 import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/robot";
 import { dispatchRobotJob } from "../services/robot/robotCommandDispatcher";
 import type { RobotJobType } from "../services/robot/robotDriver";
+import { isTechmanScriptAllowed, TECHMAN_SCRIPT_ALLOWLIST } from "../services/robot/drivers/techmanScriptAllowlist";
 
 const vendorEnum = z.enum(["fanuc", "mitsubishi", "delta", "techman", "sim", "vda5050"]);
 const kindEnum = z.enum(["arm", "scara", "cobot", "agv"]);
@@ -200,6 +201,28 @@ export const robotRouter = router({
       idempotencyKey: z.string().min(1).max(128).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // doc 81 Đợt 1B Task 4 (BE2 T1-G) — `params` được trải thẳng vào job và TechmanDriver đặt
+      // nguyên văn `params.script` vào khung TMSCT ⇒ trước đây gửi được BẤT KỲ TM script nào.
+      // Có khoá `script` ⇒ tra vendor; Techman chỉ nhận đúng TECHMAN_SCRIPT_ALLOWLIST. Không có
+      // `script` ⇒ không tra gì, đường cũ giữ nguyên. Driver còn tự chặn lần nữa (phòng thủ sâu).
+      if (input.params && Object.prototype.hasOwnProperty.call(input.params, "script")) {
+        const db = await getDb();
+        if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
+        const [r] = await db
+          .select({ vendor: robots.vendor })
+          .from(robots)
+          .where(eq(robots.id, input.robotId))
+          .limit(1);
+        if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
+        if (r.vendor === "techman" && !isTechmanScriptAllowed(input.params.script)) {
+          throw appError(
+            "FORBIDDEN",
+            "PERMISSION_DENIED",
+            { action: "sendTechmanScript", reason: "techmanScriptNotAllowlisted" },
+            `Techman script is not in the allowlist (${TECHMAN_SCRIPT_ALLOWLIST.join(", ")}) — refused, nothing was sent.`,
+          );
+        }
+      }
       const res = await dispatchRobotJob({
         robotId: input.robotId,
         job: {

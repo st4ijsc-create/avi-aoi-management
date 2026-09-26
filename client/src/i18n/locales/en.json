@@ -4178,7 +4178,8 @@
       "viewAiTimeSeries": "view AI time-series",
       "approveOrchestrationGate": "approve this orchestration gate",
       "selfApproveOrchestrationGate": "approve a four-eyes gate of a run you started yourself",
-      "selfApproveInterlockRule": "self-approve your own interlock rule"
+      "selfApproveInterlockRule": "self-approve your own interlock rule",
+      "sendTechmanScript": "send a script to a Techman robot"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4246,7 +4247,8 @@
       "releasedProgramRequiresApproval": "The product already has a released inspection program — threshold changes require approval via the queue (Threshold Approvals).",
       "productLifecycleRequiresApproval": "The product is in lifecycle status '{{lifecycleStatus}}' — threshold changes require approval via the queue (Threshold Approvals).",
       "evalAlreadyRunning": "An evaluation is already running — wait for it to finish.",
-      "runAlreadyClaimed": "The run was already approved, rejected or stopped by someone else — reload the list."
+      "runAlreadyClaimed": "The run was already approved, rejected or stopped by someone else — reload the list.",
+      "techmanScriptNotAllowlisted": "Only commands in the Techman allowlist (ScriptExit(), StopAndClearBuffer()) are accepted; any other script is refused and nothing is sent to the robot."
     },
     "client": {
       "generic": "System error, please try again",
@@ -15674,7 +15676,10 @@
     "fleetCanaryOkShort": "Canary ran",
     "rolledBack": "Rolled back",
     "fleetMatrix": "Machine × version matrix",
-    "fleetMatrixEmpty": "No machine has reported a version yet"
+    "fleetMatrixEmpty": "No machine has reported a version yet",
+    "deployReason": {
+      "techman_program_download_unsupported": "Techman (robot-tm) program download is not supported — no TMflow program-download command is implemented, so NOTHING was sent to the robot."
+    }
   },
   "engineeringHome": {
     "needControl": "Requires control access",
