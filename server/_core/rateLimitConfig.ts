@@ -172,6 +172,27 @@ function trpcProcedures(pathname: string): string[] | null {
     .filter(Boolean);
 }
 
+/** The REST half of the machine ingest tier: `/api/machine/*` minus the bootstrap paths. */
+export function isMachineRestIngestRequest(req: Request): boolean {
+  const raw = req.originalUrl || req.url || "";
+  const p = raw.split("?", 1)[0];
+  if (p === MACHINE_REST_PREFIX || p.startsWith(MACHINE_REST_PREFIX + "/")) {
+    return !MACHINE_BOOTSTRAP_PATHS.includes(p);
+  }
+  return false;
+}
+
+/**
+ * doc 81 Đợt 1B Task 8 fix round 2 — `POST /api/ot/ingest` (the LEGACY OT route, not the
+ * /api/v1/ingest alias) authenticates with its OWN precedence (`_core/otIngestRoute.ts`):
+ * `X-API-Key` → body `apiKey` → body `machineCode` / `X-Machine-Code`, and NEVER reads Bearer.
+ */
+export function isLegacyOtIngestRequest(req: Request): boolean {
+  const raw = req.originalUrl || req.url || "";
+  const p = raw.split("?", 1)[0];
+  return p === "/api/ot/ingest" || p.startsWith("/api/ot/ingest/");
+}
+
 /**
  * True when a request belongs to the machine ingest tier (query-string safe).
  * A tRPC BATCH qualifies only when EVERY procedure in it is an allowlisted machine
@@ -179,12 +200,9 @@ function trpcProcedures(pathname: string): string[] | null {
  * tier by bundling them with one machine procedure.
  */
 export function isMachineIngestRequest(req: Request): boolean {
+  if (isMachineRestIngestRequest(req)) return true;
   const raw = req.originalUrl || req.url || "";
   const p = raw.split("?", 1)[0];
-
-  if (p === MACHINE_REST_PREFIX || p.startsWith(MACHINE_REST_PREFIX + "/")) {
-    return !MACHINE_BOOTSTRAP_PATHS.includes(p);
-  }
 
   const procs = trpcProcedures(p);
   if (procs && procs.length > 0) {
@@ -398,6 +416,21 @@ export function headerCredentials(req: Request): { bearer: string | null; xApiKe
  */
 function credentialKey(req: Request): string | null {
   const { bearer, xApiKey } = headerCredentials(req);
+  // fix round 2 — /api/ot/ingest: bucket = the credential THAT route authenticates with (it never
+  // reads Bearer). Otherwise a random Bearer per request + machineCode-only auth = fresh bucket.
+  if (isLegacyOtIngestRequest(req)) {
+    if (xApiKey) return `key:${hashToken(xApiKey)}`;
+    try {
+      const bodyKey = pickFromBody(req.body, "apiKey");
+      if (bodyKey) return `key:${hashToken(bodyKey)}`;
+      const hdrCode = req.headers?.["x-machine-code"];
+      const code = pickFromBody(req.body, "machineCode") ?? cleanCredential(hdrCode);
+      if (code) return `mcode:${hashToken(code)}`;
+    } catch {
+      // extraction must never break the limiter — fall through to the IP bucket.
+    }
+    return null;
+  }
   if (bearer) return `bearer:${hashToken(bearer)}`;
   if (xApiKey) return `key:${hashToken(xApiKey)}`;
 
@@ -436,23 +469,38 @@ function credentialKey(req: Request): string | null {
  * `Authorization: Bearer`, `X-API-Key` and the body `apiKey` is rejected with 400 BEFORE any
  * limiter counts it: the limiter and the auth layer must never be able to disagree about who
  * is calling. Same value in several places (the SDKs send `Bearer K` + `X-API-Key: K`, the
- * heartbeat sends header + body) passes. Mounted with the limiters in `_core/index.ts`.
+ * heartbeat sends header + body) passes. Mounted with the limiters in `_core/index.ts`, but it
+ * acts ONLY on the machine data plane (fix round 2 — see the first lines of the function).
  */
 export function credentialConflictGuard(req: Request, res: Response, next: NextFunction): void {
+  // fix round 2 — ONLY the machine data plane: /api/ot/ingest, /api/v1/ingest/*, /api/machine/*.
+  // NOT tRPC and NOT the rest of /api: FactoryAlertSystem (in-repo) legitimately sends
+  // `Authorization: Bearer <session JWT>` + `x-api-key: <configured key>` (+ body apiKey) on
+  // /api/trpc/publicProductApi.* and /api/trpc/machineApi.* — a 400 there broke the app after login.
+  if (!(isOtIngestRequest(req) || isMachineRestIngestRequest(req))) {
+    next();
+    return;
+  }
   let distinct = 0;
   try {
     const { bearer, xApiKey } = headerCredentials(req);
     const bodyKey = pickFromBody(req.body, "apiKey");
-    distinct = new Set([bearer, xApiKey, bodyKey].filter((v): v is string => !!v)).size;
+    // /api/ot/ingest never reads Bearer (its bucket ignores it too) ⇒ only X-API-Key vs body apiKey.
+    const creds = isLegacyOtIngestRequest(req) ? [xApiKey, bodyKey] : [bearer, xApiKey, bodyKey];
+    distinct = new Set(creds.filter((v): v is string => !!v)).size;
   } catch {
     distinct = 0; // extraction must never break the request path
   }
   if (distinct > 1) {
-    res.status(400).json({
-      ok: false,
-      code: "conflicting_credentials",
-      error: "Request carries more than one different credential (Authorization Bearer / X-API-Key / body apiKey) — send exactly one.",
-    });
+    const message =
+      "Request carries more than one different credential (Authorization Bearer / X-API-Key / body apiKey) — send exactly one.";
+    const raw = req.originalUrl || req.url || "";
+    if (raw.startsWith("/api/v1/")) {
+      // /api/v1 envelope {ok:false, error:{code,message}} — the SDKs read error.code.
+      res.status(400).json({ ok: false, error: { code: "conflicting_credentials", message } });
+    } else {
+      res.status(400).json({ ok: false, code: "conflicting_credentials", error: message });
+    }
     return;
   }
   next();

@@ -38,7 +38,10 @@ beforeAll(async () => {
     res.status(202).json({ ok: true });
   };
   app.post("/api/v1/ingest/telemetry", ok);
+  app.post("/api/ot/ingest", ok);
+  app.post("/api/machine/heartbeat", ok);
   app.post("/api/trpc/*", ok);
+  app.get("/api/trpc/*", ok);
   await new Promise<void>((r) => {
     server = app.listen(0, "127.0.0.1", () => r());
   });
@@ -92,18 +95,77 @@ describe("HTTP thật — xoay credential thứ hai không thoát bucket", () =>
         body: "{}",
       });
       expect(r.status).toBe(400);
-      expect((await r.json()).code).toBe("conflicting_credentials");
+      // fix round 2 — /api/v1 envelope: SDK đọc error.code
+      const body = await r.json();
+      expect(body).toMatchObject({ ok: false, error: { code: "conflicting_credentials" } });
+      expect(typeof body.error.message).toBe("string");
     }
     expect(handled).toBe(truoc);
   });
 
-  it("header K + body apiKey KHÁC ⇒ 400", async () => {
-    const r = await fetch(`${base}/api/trpc/machineApi.heartbeat`, {
+  it("REST máy /api/machine/*: header K + body apiKey KHÁC ⇒ 400", async () => {
+    const r = await fetch(`${base}/api/machine/heartbeat`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": "K-hdr" },
-      body: JSON.stringify({ json: { apiKey: rnd() } }),
+      body: JSON.stringify({ apiKey: rnd() }),
     });
     expect(r.status).toBe(400);
+    expect((await r.json()).code).toBe("conflicting_credentials");
+  });
+
+  // ── fix round 2 — FactoryAlertSystem (in-repo) gửi Bearer <JWT phiên> + x-api-key <khoá cấu hình>
+  // (authService.getAuthHeaders) cho tRPC publicProductApi.* và machineApi.* (mutation kèm apiKey body).
+  it("★ FactoryAlertSystem: Bearer JWT + x-api-key KHÁC tới /api/trpc/publicProductApi.* ⇒ KHÔNG bị 400", async () => {
+    const input = encodeURIComponent(JSON.stringify({ json: { apiKey: "fas-configured-key" } }));
+    const r = await fetch(`${base}/api/trpc/publicProductApi.getProducts?input=${input}`, {
+      method: "GET",
+      headers: { accept: "application/json", authorization: "Bearer fas-session-jwt", "x-master-key": "fas-configured-key", "x-api-key": "fas-configured-key" },
+    });
+    expect(r.status).toBe(202);
+  });
+
+  it("FactoryAlertSystem: mutation /api/trpc/machineApi.syncMeasurementPoints (Bearer JWT + x-api-key + body apiKey) ⇒ KHÔNG bị 400", async () => {
+    const r = await fetch(`${base}/api/trpc/machineApi.syncMeasurementPoints`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer fas-session-jwt", "x-api-key": "fas-configured-key" },
+      body: JSON.stringify({ json: { apiKey: "fas-configured-key" } }),
+    });
+    expect(r.status).toBe(202);
+  });
+
+  it("★ cùng cặp (Bearer JWT + x-api-key khác) tới /api/v1/ingest/telemetry ⇒ VẪN 400", async () => {
+    const r = await fetch(`${base}/api/v1/ingest/telemetry`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer fas-session-jwt", "x-api-key": "fas-configured-key" },
+      body: "{}",
+    });
+    expect(r.status).toBe(400);
+  });
+
+  it("★ /api/ot/ingest: Bearer NGẪU NHIÊN mỗi request + auth bằng machineCode ⇒ bucket theo machineCode, request thứ 6 bị 429", async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const r = await fetch(`${base}/api/ot/ingest`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${rnd()}` },
+        body: JSON.stringify({ machineCode: "OT-CODE-ONLY", samples: [] }),
+      });
+      statuses.push(r.status);
+    }
+    expect(statuses).toEqual([202, 202, 202, 202, 202, 429]);
+  });
+
+  it("/api/ot/ingest: header X-Machine-Code cũng là danh tính bucket (Bearer ngẫu nhiên bị bỏ qua)", async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const r = await fetch(`${base}/api/ot/ingest`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${rnd()}`, "x-machine-code": "OT-HDR-CODE" },
+        body: JSON.stringify({ samples: [] }),
+      });
+      statuses.push(r.status);
+    }
+    expect(statuses).toEqual([202, 202, 202, 202, 202, 429]);
   });
 
   it("đường hợp lệ SDK: Bearer K + X-API-Key K (CÙNG giá trị) ⇒ đi qua (202)", async () => {

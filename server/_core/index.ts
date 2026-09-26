@@ -326,10 +326,7 @@ async function startServer() {
   // the general /api limiter; the general limiter `skip`s these exact paths
   // (OT_INGEST_PATHS) so the two never double-count. Tune via OT_INGEST_RATE_MAX.
   const otIngestLimiter = createOtIngestLimiter();
-  // doc 81 Đợt 1B Task 8 fix round 1 — credentialConflictGuard chạy TRƯỚC limiter: request mang hai
-  // credential KHÁC nhau (Bearer / X-API-Key / body apiKey) ⇒ 400, để bucket giới hạn và lớp xác thực
-  // không thể hiểu hai người gọi khác nhau (xoay X-API-Key ngẫu nhiên để thoát bucket).
-  app.use([...OT_INGEST_PATHS], credentialConflictGuard, otIngestLimiter);
+  app.use([...OT_INGEST_PATHS], credentialConflictGuard, otIngestLimiter); // doc 81 1B T8: 2 credential khác nhau ⇒ 400 (chỉ mặt phẳng máy, xem rateLimitConfig)
   // doc 51 R6 — DEDICATED machine data-plane tier (CASE #2/#9 mất dữ liệu). AVI/AOI
   // machines submit inspections via /api/trpc/machineApi.* and /api/machine/*, which
   // both rode the 300/60 BROWSER bucket; worse, a machine sending its key in the tRPC
@@ -433,7 +430,7 @@ async function startServer() {
     //
     // Nhánh anh em (Task 8, đã làm): /api/v1/ingest/telemetry (api/v1/router.ts) dùng
     // ingestTelemetryDetailed + otIngestHttpStatus (202 khi đủ · 207 · 400 · 503), ràng buộc
-    // khoá ↔ máy (api/v1/ingestRangBuoc.ts) và đi CÙNG tầng rate-limit này (OT_INGEST_PATHS).
+    // khoá ↔ máy (api/v1/khoaGanMay.ts) và đi CÙNG tầng rate-limit này (OT_INGEST_PATHS).
     //
     // Xác thực máy (x-api-key / body.apiKey / machineCode, scope ingest:write)
     // giữ NGUYÊN, không nới; tầng rate-limit OT riêng (createOtIngestLimiter) giữ

@@ -2,6 +2,10 @@
  * doc 81 Đợt 1B Task 8 — ingest `/api/v1/ingest/*` (+ `/api/ot/ingest`, R17): RÀNG BUỘC khoá ↔ máy
  * + mã HTTP ĐÚNG NGHĨA.
  *
+ * (Fix round 2: tên cũ `ingestRangBuoc.ts` bị đổi — `fakeUtcCensus` (BG-99) coi MỌI tệp import một
+ * module có tên chứa "ingest" và có `new Date(x)` là cửa ứng viên, nên tên cũ làm census đổi số mà
+ * không có cửa ingest mới nào.)
+ *
  * ── ĐO (BE3 §L4) ────────────────────────────────────────────────────────────────────────────
  *   • khoá `mk_` của ESP32 ghi được telemetry cho `SCRW-SIM-01` (HTTP 200, dòng rơi vào máy khác):
  *     `deviceId`/`machineId` trong BODY quyết định máy (router.ts `toCanonicalSample`).
@@ -49,13 +53,15 @@ export async function mayCuaKhoa(p: ApiPrincipal | undefined): Promise<MayCuaKho
   if (!p || p.machineId == null) return null;
   const { getMachineById, getDb } = await import("../../db");
   let m: { id: number; code: string; isActive?: boolean | null } | undefined;
+  let dbVang = false;
   try {
     m = (await getMachineById(p.machineId)) as typeof m;
     // getMachineById trả `undefined` CẢ khi DB vắng — tách hai trường hợp, đừng biến DB sập thành 401.
-    if (!m && !(await getDb())) throw new Error("db unavailable");
+    if (!m) dbVang = !(await getDb());
   } catch {
-    throw new ApiHttpError(503, "db_unavailable", "Database unavailable — retry.");
+    dbVang = true;
   }
+  if (dbVang) throw new ApiHttpError(503, "db_unavailable", "Database unavailable — retry.");
   if (!m || m.isActive === false) {
     throw new ApiHttpError(401, "unauthorized", "Invalid API key (its machine is missing or inactive).");
   }

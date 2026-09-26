@@ -140,6 +140,9 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
     // App dựng theo ĐÚNG thứ tự middleware của _core/index.ts.
     const rl = await import("../../_core/rateLimitConfig");
     const { createV1Router } = await import("./router");
+    // Nạp TRƯỚC cây appRouter (inspection/process-result import động nó ở lượt gọi đầu): một mình
+    // mất ~6 s, dưới tải 100 tệp song song vượt hạn 30 s của một ca ⇒ đỏ GIẢ (fix round 2 đo được).
+    await import("../../routers");
     const app = express();
     app.use(express.json({ limit: "25mb" }));
     app.use([...rl.OT_INGEST_PATHS], rl.credentialConflictGuard, rl.createOtIngestLimiter());
@@ -157,7 +160,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
       server = createServer(app).listen(0, "127.0.0.1", () => resolve());
     });
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  }, 60_000);
+  }, 180_000);
 
   afterEach(async () => {
     h.dbSap = false;

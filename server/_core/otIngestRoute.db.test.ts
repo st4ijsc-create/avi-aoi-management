@@ -38,7 +38,9 @@ beforeAll(async () => {
   app.post(
     "/api/ot/ingest",
     createOtIngestHandler({
-      authenticateMachine: async () => ({ machine: { code: "T7-GW" } }),
+      // Task 8 (R17): máy thật luôn có id; "T7-GW" là GATEWAY ⇒ không bị ràng buộc khoá ↔ máy —
+      // các ca T7 ở đây đo sổ sách/WAL với nhiều deviceId, không đo ràng buộc (cùng otIngestRoute.test.ts).
+      authenticateMachine: async () => ({ machine: { id: 7007, code: "T7-GW", machineType: "IOT_GATEWAY" } }),
       ingestTelemetryDetailed,
     }),
   );
