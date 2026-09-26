@@ -95,6 +95,15 @@ function isLoopback(ip: string): boolean {
 }
 
 /**
+ * fix round 2 (N1) — địa chỉ KHÔNG XÁC ĐỊNH: 0.0.0.0/8 hoặc "::" (đầu vào đã chuẩn hoá, nên
+ * ::ffff:0.0.0.0 đã thành 0.0.0.0). Một connect() tới đây được OS đưa về LOOPBACK ⇒ địa chỉ
+ * được kiểm (0.0.0.0) khác địa chỉ thật sự nối tới (127.0.0.1 / ::1) — phá "kiểm = dùng".
+ */
+function isUnspecified(ip: string): boolean {
+  return ip === "::" || /^0\./.test(ip);
+}
+
+/**
  * Rút phần HOST từ một endpoint ở các dạng repo đang dùng: "tcp://h:p", "opc.tcp://h:p/x",
  * "modbus-tcp://h:p", "h:p", "h", "[v6]:p", "user@h:p". Trả chữ thường, không dấu chấm
  * cuối; null khi rỗng.
@@ -189,7 +198,11 @@ async function canonicalAddresses(
 
 type SimHostCheck =
   | { ok: true; address: string }
-  | { ok: false; reason: "simTargetUnresolvable" | "simTargetIsRealDevice" | "deviceHostUnresolvable"; detail: string };
+  | {
+      ok: false;
+      reason: "simTargetUnresolvable" | "simTargetUnspecified" | "simTargetIsRealDevice" | "deviceHostUnresolvable";
+      detail: string;
+    };
 
 /**
  * Kiểm URSIM_HOST với mọi host thiết bị thật (R9). Trả địa chỉ IP sẽ DÙNG khi đạt.
@@ -204,6 +217,16 @@ export async function checkSimHost(
   const simAddrs = simName ? await canonicalAddresses(simName, resolve, timeoutMs) : null;
   if (!simName || !simAddrs) {
     return { ok: false, reason: "simTargetUnresolvable", detail: `URSIM_HOST "${simHost}" could not be resolved to an IP address` };
+  }
+  // N1: địa chỉ không xác định (0.0.0.0/8, ::) KHÔNG BAO GIỜ là đích sim hợp lệ — bất kỳ địa chỉ
+  // nào của sim thuộc lớp này ⇒ từ chối, trước mọi phép so khớp.
+  const unspecified = simAddrs.filter(isUnspecified);
+  if (unspecified.length > 0) {
+    return {
+      ok: false,
+      reason: "simTargetUnspecified",
+      detail: `URSIM_HOST "${simHost}" is/resolves to an unspecified address (${unspecified.join(", ")}) that the OS routes to loopback — the checked address would not be the connected one`,
+    };
   }
   const simSet = new Set(simAddrs);
   const deviceHosts = [...new Set(deviceEndpoints.map(hostOfEndpoint).filter((h): h is string => !!h))];

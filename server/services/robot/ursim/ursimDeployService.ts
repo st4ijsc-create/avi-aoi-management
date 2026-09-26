@@ -154,13 +154,13 @@ export async function deployUrscriptToUrsim(req: UrsimDeployRequest): Promise<Ur
   } else if (validation.accepted) {
     status = "deployed"; // controller accepted (running state not yet confirmed)
   } else {
-    status = "failed"; // sent but the controller did not accept/run — a broken transpile
+    status = "failed"; // sent but not accepted — see validation.reasonCode (e.g. not_observed_running)
   }
   const deploymentId = await record(
     req,
     status,
     false,
-    { validation },
+    { validation, ...(validation.reasonCode ? { reasonCode: validation.reasonCode } : {}) },
     validation.error,
   );
   return { status, simulated: false, deploymentId, validation, reason: validation.error };

@@ -4188,6 +4188,7 @@
       "simTargetUnknown": "Đích giả lập này không có trong danh sách máy chủ đã đăng ký (hiện chỉ có đích \"default\" cấu hình bằng URSIM_HOST).",
       "simTargetIsRealDevice": "Địa chỉ đích giả lập trùng với một robot hoặc adapter thiết bị thật đã đăng ký — hệ thống từ chối gửi lệnh bật nguồn, nhả phanh và script tới thiết bị thật. Hãy trỏ URSIM_HOST tới máy chạy URSim.",
       "simTargetUnresolvable": "Không phân giải được URSIM_HOST ra địa chỉ IP — không thể chứng minh đích giả lập không phải thiết bị thật nên hệ thống từ chối.",
+      "simTargetUnspecified": "URSIM_HOST là (hoặc phân giải ra) địa chỉ không xác định 0.0.0.0/::, mà hệ điều hành sẽ nối về loopback — địa chỉ được kiểm không phải địa chỉ thật sự nối tới nên hệ thống từ chối. Hãy đặt URSIM_HOST là IP cụ thể của máy URSim.",
       "deviceHostUnresolvable": "Có robot hoặc adapter thiết bị đăng ký bằng tên máy không phân giải được, nên không thể chứng minh URSIM_HOST không phải thiết bị đó — hệ thống từ chối (chỉ URSim loopback cục bộ được miễn).",
       "noPriorDeploymentToRollBack": "Không có lần deploy thành công nào trước đó trên cùng thiết bị/giai đoạn để khôi phục về.",
       "idempotencyKeyUnreadable": "Khoá idempotency đã được dùng nhưng không đọc lại được bản ghi — thử lại với một lượt mới.",

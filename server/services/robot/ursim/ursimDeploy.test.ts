@@ -43,6 +43,7 @@ vi.mock("../../../db/connection", async () => {
 });
 
 import { deployUrscriptToUrsim } from "./ursimDeployService";
+import { FakeUrController } from "./__fakeUrController";
 
 const URSIM_ENV = ["URSIM_ENABLED", "DPC_DEPLOY_ENABLED", "URSIM_HOST", "URSIM_PRIMARY_PORT", "URSIM_DASHBOARD_PORT", "URSIM_TIMEOUT_MS"];
 beforeEach(() => {
@@ -125,6 +126,28 @@ describe("deployUrscriptToUrsim gate reuse", () => {
     expect(res.status).toBe("rejected");
     expect(res.validation).toBeUndefined();
     expect(inserted[0].status).toBe("rejected");
+  });
+
+  it("fix round 2 — gate OPEN + script HỎNG trên bộ điều khiển UR giả ⇒ 'failed', detailJson mang reasonCode not_observed_running", async () => {
+    process.env.URSIM_ENABLED = "true";
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    const fake = new FakeUrController();
+    await fake.start();
+    try {
+      process.env.URSIM_PRIMARY_PORT = String(fake.primaryPort);
+      process.env.URSIM_DASHBOARD_PORT = String(fake.dashboardPort);
+      process.env.URSIM_TIMEOUT_MS = "2000";
+      const broken = { ...req("k-broken", 9), urscript: "def prog():\n  movej([0, 0, 0, 0, 0, 0]\nend" };
+      const res = await Promise.race([
+        deployUrscriptToUrsim(broken),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("bounded timeout 10000ms")), 10000).unref?.()),
+      ]);
+      expect(res.status).toBe("failed");
+      expect(res.validation?.reasonCode).toBe("not_observed_running");
+      expect(inserted[0].detailJson.reasonCode).toBe("not_observed_running");
+    } finally {
+      await fake.close();
+    }
   });
 
   it("idempotency: prior terminal row returned as-is", async () => {

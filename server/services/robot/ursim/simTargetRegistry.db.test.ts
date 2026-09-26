@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { readAppErrorMeta } from "../../../_core/appError";
 import { getDb } from "../../../db/connection";
 import { robots, deviceAdapters } from "../../../../drizzle/schema";
 import { resolveSimTarget, listRealDeviceEndpointsFromDb } from "./simTargetRegistry";
@@ -46,6 +47,16 @@ afterEach(() => {
   delete process.env.URSIM_HOST;
 });
 
+async function reasonOf(p: Promise<unknown>): Promise<{ code: string; reason?: string }> {
+  try {
+    await p;
+  } catch (e) {
+    if (!(e instanceof TRPCError)) throw e;
+    return { code: e.code, reason: (readAppErrorMeta(e)?.appParams as { reason?: string } | undefined)?.reason };
+  }
+  return { code: "RESOLVED" };
+}
+
 async function codeOf(p: Promise<unknown>): Promise<string> {
   try {
     await p;
@@ -69,9 +80,18 @@ describe("simTargetRegistry trên CSDL thật", () => {
     ["robot", "192.0.2.77"],
     ["adapter", "192.0.2.78"],
     ["adapter HA", "192.0.2.79"],
-  ])("URSIM_HOST trùng host %s ⇒ PRECONDITION_FAILED", async (_label, host) => {
+  ])("URSIM_HOST trùng host %s ⇒ PRECONDITION_FAILED simTargetIsRealDevice", async (_label, host) => {
     process.env.URSIM_HOST = host;
-    expect(await codeOf(resolveSimTarget("default"))).toBe("PRECONDITION_FAILED");
+    // fix round 2 (N2): KHÔNG DNS thật — resolver tiêm ném cho MỌI tên (tên máy rác trong `_test`
+    // vì thế "không phân giải được"). Khẳng định ĐÚNG lý do simTargetIsRealDevice: nếu bỏ logic so
+    // IP, ca này rơi sang deviceHostUnresolvable ⇒ ĐỎ (không còn được che bởi mã chung).
+    const noDns = async (h: string): Promise<string[]> => {
+      throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${h}`), { code: "ENOTFOUND" });
+    };
+    expect(await reasonOf(resolveSimTarget("default", { resolveAddresses: noDns }))).toEqual({
+      code: "PRECONDITION_FAILED",
+      reason: "simTargetIsRealDevice",
+    });
   });
 
   it("URSIM_HOST không trùng thiết bị nào (mọi tên máy trong CSDL phân giải được) ⇒ trả đích 'default' (ảo)", async () => {

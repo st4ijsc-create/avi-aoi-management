@@ -4196,6 +4196,7 @@
       "simTargetUnknown": "This simulation target is not in the server's registered list (only the \"default\" target configured by URSIM_HOST exists).",
       "simTargetIsRealDevice": "The simulation target address matches a registered real robot or device adapter — the system refuses to send power on, brake release and a script to a real device. Point URSIM_HOST at the machine running URSim.",
       "simTargetUnresolvable": "URSIM_HOST could not be resolved to an IP address — the simulation target cannot be proven not to be a real device, so it is refused.",
+      "simTargetUnspecified": "URSIM_HOST is (or resolves to) the unspecified address 0.0.0.0/::, which the operating system routes to loopback — the checked address would not be the one actually connected to, so it is refused. Set URSIM_HOST to the URSim machine's specific IP.",
       "deviceHostUnresolvable": "A robot or device adapter is registered under a host name that could not be resolved, so URSIM_HOST cannot be proven not to be that device — refused (only a local loopback URSim is exempt).",
       "noPriorDeploymentToRollBack": "There is no earlier successful deployment on the same device/stage to roll back to.",
       "idempotencyKeyUnreadable": "The idempotency key is already in use but its record could not be read back — retry with a new attempt.",

@@ -4188,6 +4188,7 @@
       "simTargetUnknown": "该仿真目标不在服务器已登记的列表中（目前只有由URSIM_HOST配置的\"default\"目标）。",
       "simTargetIsRealDevice": "仿真目标地址与已登记的真实机器人或设备适配器相同——系统拒绝向真实设备发送上电、松开制动和脚本。请将URSIM_HOST指向运行URSim的机器。",
       "simTargetUnresolvable": "无法将URSIM_HOST解析为IP地址——无法证明仿真目标不是真实设备，因此系统拒绝。",
+      "simTargetUnspecified": "URSIM_HOST 是（或解析为）未指定地址 0.0.0.0/::，操作系统会将其路由到回环地址——被检查的地址并非实际连接的地址，因此系统拒绝。请将URSIM_HOST设置为URSim机器的具体IP。",
       "deviceHostUnresolvable": "有机器人或设备适配器以无法解析的主机名登记，因此无法证明URSIM_HOST不是该设备——系统拒绝（仅本地回环URSim例外）。",
       "noPriorDeploymentToRollBack": "同一设备/阶段上没有更早的成功部署可回滚。",
       "idempotencyKeyUnreadable": "幂等键已被使用但无法读回其记录——请发起新的尝试重试。",

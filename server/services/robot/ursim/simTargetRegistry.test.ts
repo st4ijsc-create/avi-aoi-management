@@ -150,6 +150,27 @@ describe("resolveSimTarget — fail-closed theo R9", () => {
     expect(await run("192.0.2.5", ["ur-arm-3.plant.example:30002"], d)).toEqual({ code: "PRECONDITION_FAILED", reason: "simTargetIsRealDevice" });
   });
 
+  it("fix round 2 (N1) — địa chỉ KHÔNG XÁC ĐỊNH làm địa chỉ sim (OS nối về loopback) ⇒ simTargetUnspecified, mọi dạng", async () => {
+    const d = dns({ "ursim-any.example": ["0.0.0.0"], "ursim-any6.example": ["::"] });
+    const refused = { code: "PRECONDITION_FAILED", reason: "simTargetUnspecified" };
+    // Đúng kịch bản reviewer: robot thật ở loopback, sim = 0.0.0.0 / :: — trước đây ok:true.
+    expect(await run("0.0.0.0", ["127.0.0.1:30002"], d)).toEqual(refused);
+    expect(await run("::", ["[::1]:30002"], d)).toEqual(refused);
+    // Các dạng khác của cùng lớp địa chỉ — kể cả khi KHÔNG có thiết bị nào.
+    for (const h of ["0.0.0.0", "0.1.2.3", "0.255.255.255", "::", "[::]", "0:0:0:0:0:0:0:0", "::ffff:0.0.0.0", "::FFFF:0:0", "ursim-any.example", "ursim-any6.example"]) {
+      expect(await run(h, [], d)).toEqual(refused);
+    }
+    // Tên phân giải ra CẢ loopback LẪN 0.0.0.0 ⇒ vẫn từ chối (bất kỳ địa chỉ không xác định nào).
+    const mixed = dns({ "ursim-mixed.example": ["127.0.0.1", "0.0.0.0"] });
+    expect(await run("ursim-mixed.example", [], mixed)).toEqual(refused);
+  });
+
+  it("fix round 2 (N1) — địa chỉ gần 0.0.0.0/8 nhưng hợp lệ (1.0.0.1, ::2) KHÔNG bị coi là không xác định", async () => {
+    const d = dns({});
+    expect(await run("1.0.0.1", [], d)).toEqual({ code: "OK", host: "1.0.0.1" });
+    expect(await run("::2", [], d)).toEqual({ code: "OK", host: "::2" });
+  });
+
   it("KIỂM = DÙNG: endpoint trả về mang IP đã phân giải (không phải tên), tên sim chỉ được phân giải MỘT lần", async () => {
     const d = dns({ "ursim.lab.example": ["198.51.100.20"], "plc-1.plant.example": ["198.51.100.30"] });
     const r = await run("ursim.lab.example", ["plc-1.plant.example:502", "192.0.2.40:30002"], d);
