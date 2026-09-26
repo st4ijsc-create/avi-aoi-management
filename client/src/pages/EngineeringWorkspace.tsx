@@ -44,6 +44,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -72,6 +73,11 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
+import {
+  deriveFeatureStatus,
+  FeatureStatusGate,
+  featureStatusLabel,
+} from "@/components/common/FeatureStatusGate";
 
 /** All target classes (mirrors server programmingKindEnum / PROGRAMMING_KINDS). */
 const KINDS = [
@@ -188,7 +194,12 @@ export default function EngineeringWorkspace() {
 
   const utils = trpc.useUtils();
   const statusQ = trpc.programming.status.useQuery(undefined, { enabled: canView });
-  const deployEnabled = statusQ.data?.deployEnabled ?? false;
+  // Doc 80 Task 1 (PLT-02/G-07/X-07) — live evidence 2026-09-25: while `statusQ` was still
+  // loading, the old `?? false` default made the badge/banner assert "Triển khai: OFF" +
+  // name the env var, as if that were a known fact, then flip to ON seconds later. A
+  // pending/erroring query is UNKNOWN, not "off".
+  const deployStatus = deriveFeatureStatus(statusQ, (d: { deployEnabled?: boolean }) => d.deployEnabled);
+  const deployEnabled = deployStatus === "on";
   const streamingEnabled = statusQ.data?.streamingEnabled ?? false;
   // doc 40 ENG-F2 — khi bật, deploy production đi qua Approval Inbox (request→approve).
   const deployApprovalEnabled = statusQ.data?.deployApprovalEnabled ?? false;
@@ -685,8 +696,16 @@ export default function EngineeringWorkspace() {
           description={t("engineering.subtitle", "Soạn → kiểm tra → build → mô phỏng → (sign-off) deploy cho PLC / Robot / Zmotion")}
           actions={
             <>
-              <Badge variant={deployEnabled ? "default" : "secondary"}>
-                {t("engineering.deployFlag", "Deploy")}: {deployEnabled ? "ON" : "OFF"}
+              <Badge
+                variant={deployStatus === "on" ? "default" : deployStatus === "error" ? "destructive" : "secondary"}
+                data-testid="engineering-deploy-badge"
+              >
+                {t("engineering.deployFlag", "Deploy")}: {featureStatusLabel(deployStatus, {
+                  on: t("engineering.deployOn", "ON"),
+                  off: t("engineering.deployOff", "OFF"),
+                  loading: t("engineering.deployChecking", "…"),
+                  error: t("engineering.deployUnknown", "?"),
+                })}
               </Badge>
               <Button variant="outline" size="sm" onClick={() => { statusQ.refetch(); projectsQ.refetch(); }}>
                 <RefreshCw className="mr-1 h-4 w-4" /> {t("common.refresh", "Làm mới")}
@@ -713,14 +732,20 @@ export default function EngineeringWorkspace() {
           </span>
         </div>
 
-        {!deployEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              {t("engineering.deployOffBanner", "DPC_DEPLOY_ENABLED đang TẮT — mọi deploy được ghi nhận là SIMULATED, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.")}
-            </span>
-          </div>
-        )}
+        {/* Doc 80 Task 1 (PLT-02/G-07): honest 4-state (loading/off/on/error) — the banner
+            no longer names the env var, and no longer shows during loading (skeleton instead). */}
+        <FeatureStatusGate
+          status={deployStatus}
+          className="border-warning/40 bg-warning/10 text-warning"
+          offMessage={t(
+            "engineering.deployOffBanner",
+            "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.",
+          )}
+          errorMessage={t(
+            "engineering.deployStatusError",
+            "Không kiểm tra được trạng thái triển khai — tạm coi mọi deploy chỉ mô phỏng cho tới khi xác nhận lại.",
+          )}
+        />
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
           {/* ── Project Explorer ── */}
@@ -824,7 +849,24 @@ export default function EngineeringWorkspace() {
                   </Select>
                 </div>
               )}
-              {(projectsQ.data ?? []).length === 0 && (
+              {/* Doc 80 Task 1 (PLT-02/G-07) — live evidence 2026-09-25: this used to check
+                  ONLY `.length === 0`, so while `projectsQ` was still loading (data undefined
+                  ⇒ `[].length === 0`) it showed "Chưa có dự án" as if that were the known,
+                  settled truth — then flipped to the real project list seconds later. A
+                  pending/erroring query says nothing about whether projects exist. */}
+              {projectsQ.isLoading && (
+                <div className="space-y-1.5 py-1" data-testid="engineering-projects-loading">
+                  <Skeleton className="h-7 w-full rounded-md" />
+                  <Skeleton className="h-7 w-full rounded-md" />
+                  <Skeleton className="h-7 w-3/4 rounded-md" />
+                </div>
+              )}
+              {!projectsQ.isLoading && projectsQ.isError && (
+                <p className="py-4 text-center text-sm text-destructive">
+                  {t("engineering.projectsLoadError", "Không tải được danh sách dự án.")}
+                </p>
+              )}
+              {!projectsQ.isLoading && !projectsQ.isError && (projectsQ.data ?? []).length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">{t("engineering.noProjects", "Chưa có dự án")}</p>
               )}
               {(projectsQ.data ?? []).length > 0 && filteredProjects.length === 0 && (

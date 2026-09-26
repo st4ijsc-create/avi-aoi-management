@@ -70,6 +70,11 @@ import {
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
+import {
+  deriveFeatureStatus,
+  FeatureStatusGate,
+  isFeatureStatusUnsettled,
+} from "@/components/common/FeatureStatusGate";
 
 // ── Typesafe shapes inferred from the safetyRouter output ─────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -228,9 +233,19 @@ export default function SafetyWorkforce() {
   const assignments = (assignmentsQ.data ?? []) as Assignment[];
   const collabs = (collabsQ.data ?? []) as Collaboration[];
 
-  // Flag state — honest preview banners. The router only exposes two flags here.
-  const safetyAuditEnabled = statusQ.data?.safetyAudit ?? true;
-  const workforceEnabled = statusQ.data?.workforce ?? true;
+  // Flag state — honest preview banners. Doc 80 Task 1 (PLT-02/G-07/X-07): pending/erroring
+  // status query is UNKNOWN, not "on" — no more `?? true` optimistic default. The router
+  // exposes two independent flags here (safetyAudit / workforce) off the SAME statusQ.
+  const safetyAuditStatus = deriveFeatureStatus(statusQ, (d: { safetyAudit?: boolean }) => d.safetyAudit);
+  const safetyAuditUnsettled = isFeatureStatusUnsettled(safetyAuditStatus);
+  const workforceStatus = deriveFeatureStatus(statusQ, (d: { workforce?: boolean }) => d.workforce);
+  const workforceUnsettled = isFeatureStatusUnsettled(workforceStatus);
+  const safetyControlReason = permReason
+    ?? (safetyAuditUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
+  const safetyCanControl = canControl && !safetyAuditUnsettled;
+  const workforceControlReason = permReason
+    ?? (workforceUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
+  const workforceCanControl = canControl && !workforceUnsettled;
 
   const refetchAll = () => {
     void utils.safety.status.invalidate();
@@ -398,29 +413,29 @@ export default function SafetyWorkforce() {
           </div>
         </div>
 
-        {/* ── Flag-off preview banners (calm, honest) ────────────────────────── */}
-        {!safetyAuditEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {t(
-                "safety.auditFlagOffBanner",
-                "Preview mode: safety audit is disabled (SAFETY_AUDIT_ENABLED is off). Reads work; recording, auditing and proximity ingest are blocked until the flag is enabled.",
-              )}
-            </span>
-          </div>
-        )}
-        {!workforceEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {t(
-                "workforce.flagOffBanner",
-                "Preview mode: workforce is disabled (WORKFORCE_ENABLED is off). Reads work; assignment and collaboration actions are blocked until the flag is enabled.",
-              )}
-            </span>
-          </div>
-        )}
+        {/* ── Flag status banners — honest 4-state (loading/off/on/error), doc 80 Task 1 ── */}
+        <FeatureStatusGate
+          status={safetyAuditStatus}
+          offMessage={t(
+            "safety.auditFlagOffBanner",
+            "Preview mode: safety audit is disabled. Reads work; recording, auditing and proximity ingest are blocked until it is enabled.",
+          )}
+          errorMessage={t(
+            "safety.auditFlagStatusError",
+            "Could not check whether safety audit is enabled — recording, auditing and proximity ingest are disabled until this is confirmed.",
+          )}
+        />
+        <FeatureStatusGate
+          status={workforceStatus}
+          offMessage={t(
+            "workforce.flagOffBanner",
+            "Preview mode: workforce is disabled. Reads work; assignment and collaboration actions are blocked until it is enabled.",
+          )}
+          errorMessage={t(
+            "workforce.flagStatusError",
+            "Could not check whether workforce is enabled — assignment and collaboration actions are disabled until this is confirmed.",
+          )}
+        />
 
         {/* ── KPI strip ──────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -477,7 +492,7 @@ export default function SafetyWorkforce() {
                     <Badge variant="secondary" className="ml-1 text-xs">{liveEvents.length}</Badge>
                   )}
                 </CardTitle>
-                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setProximityOpen(true)}>
+                <Button size="sm" variant="outline" className="h-8" disabled={!safetyCanControl} title={safetyControlReason} onClick={() => setProximityOpen(true)}>
                   <ScanLine className="mr-1 h-4 w-4" />{t("safety.reportProximity", "Report proximity (TEST ONLY — no alert raised)")}
                 </Button>
               </CardHeader>
@@ -663,7 +678,7 @@ export default function SafetyWorkforce() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setAssignOpen(true)}>
+                  <Button size="sm" variant="outline" className="h-8" disabled={!workforceCanControl} title={workforceControlReason} onClick={() => setAssignOpen(true)}>
                     <UserPlus className="mr-1 h-4 w-4" />{t("workforce.assign", "Assign")}
                   </Button>
                 </div>
@@ -734,7 +749,7 @@ export default function SafetyWorkforce() {
                   <Handshake className="h-4 w-4" />
                   {t("workforce.collabTitle", "Human↔robot handover sessions")}
                 </CardTitle>
-                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setStartCollabOpen(true)}>
+                <Button size="sm" variant="outline" className="h-8" disabled={!workforceCanControl} title={workforceControlReason} onClick={() => setStartCollabOpen(true)}>
                   <HandMetal className="mr-1 h-4 w-4" />{t("workforce.startCollab", "Start collaboration")}
                 </Button>
               </CardHeader>

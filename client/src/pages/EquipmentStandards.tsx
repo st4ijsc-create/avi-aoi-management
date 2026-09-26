@@ -75,6 +75,11 @@ import {
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
+import {
+  deriveFeatureStatus,
+  FeatureStatusGate,
+  isFeatureStatusUnsettled,
+} from "@/components/common/FeatureStatusGate";
 
 // ── Typesafe shapes inferred from the equipmentStandardsRouter output ─────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -196,7 +201,12 @@ export default function EquipmentStandards() {
   const kpis = kpisQ.data as AlarmKpis | undefined;
   const masters = (mastersQ.data ?? []) as MasterAlarmRow[];
 
-  const flagEnabled = statusQ.data?.enabled ?? true;
+  // Doc 80 Task 1 (PLT-02/G-07/X-07): pending/erroring status query is UNKNOWN, not "on".
+  const flagStatus = deriveFeatureStatus(statusQ, (d: { enabled?: boolean }) => d.enabled);
+  const flagUnsettled = isFeatureStatusUnsettled(flagStatus);
+  const flagControlReason = permReason
+    ?? (flagUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
+  const flagCanControl = canControl && !flagUnsettled;
 
   const refetchAll = () => {
     void utils.equipmentStandards.status.invalidate();
@@ -313,18 +323,18 @@ export default function EquipmentStandards() {
           <span>{t("eqStandards.whenToUse", "When to use — govern device-type standards, the ISA-18.2 alarm taxonomy and the review board. Governance metadata only, no device commands.")}</span>
         </div>
 
-        {/* ── Flag-off preview banner (honest) ───────────────────────────────── */}
-        {!flagEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {t(
-                "eqStandards.flagOffBanner",
-                "Preview mode: equipment governance is disabled (EQ_GOVERN_ENABLED is off). Reads work; actions (register type / map alarm / submit / review / publish) are blocked until the flag is enabled.",
-              )}
-            </span>
-          </div>
-        )}
+        {/* ── Flag status banner — honest 4-state (loading/off/on/error), doc 80 Task 1 ── */}
+        <FeatureStatusGate
+          status={flagStatus}
+          offMessage={t(
+            "eqStandards.flagOffBanner",
+            "Preview mode: equipment governance is disabled. Reads work; actions (register type / map alarm / submit / review / publish) are blocked until it is enabled.",
+          )}
+          errorMessage={t(
+            "eqStandards.flagStatusError",
+            "Could not check whether equipment governance is enabled — actions are disabled until this is confirmed.",
+          )}
+        />
 
         {/* Safety note — mirrors the router's NO-OP discipline */}
         <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
@@ -403,7 +413,7 @@ export default function EquipmentStandards() {
               title={t("eqStandards.hierarchyTitle", "Device type hierarchy")}
               className="lg:w-1/2"
               action={
-                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setRegisterOpen(true)}>
+                <Button size="sm" variant="outline" className="h-8" disabled={!flagCanControl} title={flagControlReason} onClick={() => setRegisterOpen(true)}>
                   <Plus className="mr-1 h-4 w-4" />{t("eqStandards.registerType", "Register type")}
                 </Button>
               }
@@ -491,7 +501,7 @@ export default function EquipmentStandards() {
                       {vendors.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setUpsertAlarmOpen(true)}>
+                  <Button size="sm" variant="outline" className="h-8" disabled={!flagCanControl} title={flagControlReason} onClick={() => setUpsertAlarmOpen(true)}>
                     <Plus className="mr-1 h-4 w-4" />{t("eqStandards.mapAlarm", "Map alarm")}
                   </Button>
                 </div>
@@ -597,7 +607,7 @@ export default function EquipmentStandards() {
               title={t("eqStandards.masterTitle", "Master alarm database (rationalization)")}
               contentClassName="p-0"
               action={
-                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => { setEditMaster(null); setMasterAlarmOpen(true); }}>
+                <Button size="sm" variant="outline" className="h-8" disabled={!flagCanControl} title={flagControlReason} onClick={() => { setEditMaster(null); setMasterAlarmOpen(true); }}>
                   <Plus className="mr-1 h-4 w-4" />{t("eqStandards.addMaster", "Add master alarm")}
                 </Button>
               }
