@@ -111,6 +111,56 @@ async function assertZoneInScope(d: Awaited<ReturnType<typeof db>>, ctx: CoDanhT
   if (!inScope) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "zone", parent: "factory" }, `Zone ${zoneId} is outside your factory scope`);
 }
 
+// G2 (doc 16 §7 c&d) — the three FLEET_RESOURCE_ENABLED tables that also carry
+// `factoryId` directly on the row (same "Bảy bảng ghi thẳng" docblock at the top of this
+// file: operation_codes / program_variants / shared_resources are three of the seven).
+// Same shape as `assertZoneInScope` (exists-then-scope, FORBIDDEN only when the row is
+// REAL and out of `ids` — not-found stays the caller's own concern).
+async function assertOperationCodeInScope(d: Awaited<ReturnType<typeof db>>, ctx: CoDanhTinh, operationCodeId: number): Promise<void> {
+  const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+  if (ids === null) return;
+  const [exists] = await d.select({ id: operationCodes.id }).from(operationCodes).where(eq(operationCodes.id, operationCodeId)).limit(1);
+  if (!exists) return;
+  const [inScope] = await d.select({ id: operationCodes.id }).from(operationCodes).where(and(eq(operationCodes.id, operationCodeId), inArray(operationCodes.factoryId, ids.length ? ids : [-1]))).limit(1);
+  if (!inScope) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "operationCode", parent: "factory" }, `Operation code ${operationCodeId} is outside your factory scope`);
+}
+
+async function assertProgramVariantInScope(d: Awaited<ReturnType<typeof db>>, ctx: CoDanhTinh, variantId: number): Promise<void> {
+  const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+  if (ids === null) return;
+  const [exists] = await d.select({ id: programVariants.id }).from(programVariants).where(eq(programVariants.id, variantId)).limit(1);
+  if (!exists) return;
+  const [inScope] = await d.select({ id: programVariants.id }).from(programVariants).where(and(eq(programVariants.id, variantId), inArray(programVariants.factoryId, ids.length ? ids : [-1]))).limit(1);
+  if (!inScope) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "programVariant", parent: "factory" }, `Program variant ${variantId} is outside your factory scope`);
+}
+
+async function assertSharedResourceInScope(d: Awaited<ReturnType<typeof db>>, ctx: CoDanhTinh, resourceId: number): Promise<void> {
+  const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
+  if (ids === null) return;
+  const [exists] = await d.select({ id: sharedResources.id }).from(sharedResources).where(eq(sharedResources.id, resourceId)).limit(1);
+  if (!exists) return;
+  const [inScope] = await d.select({ id: sharedResources.id }).from(sharedResources).where(and(eq(sharedResources.id, resourceId), inArray(sharedResources.factoryId, ids.length ? ids : [-1]))).limit(1);
+  if (!inScope) throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "sharedResource", parent: "factory" }, `Resource ${resourceId} is outside your factory scope`);
+}
+
+/**
+ * Fix round 1 (Important #1) — a CREATE mutation that accepts an optional
+ * client-supplied `factoryId` must not let a scoped actor stamp a NEW row with
+ * ANOTHER factory's id (audit evidence: `createTask`/`createZone` wrote
+ * `input.factoryId` straight to the row with zero check — an engineer scoped to
+ * Factory A could create a task/zone/resource/operation/charger claiming Factory B).
+ * Fail-closed like the other `assert*InScope` helpers: no-op when unrestricted
+ * (`ids === null`) or when the caller didn't supply a `factoryId` at all (an
+ * unscoped/NULL factoryId on the new row is the EXISTING behavior — unchanged; this
+ * only blocks a scoped actor from writing SOMEONE ELSE'S factory id).
+ */
+function assertFactoryIdAllowed(ids: number[] | null, factoryId: number | null | undefined, entityLabel: string): void {
+  if (ids === null || factoryId == null) return;
+  if (!ids.includes(factoryId)) {
+    throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: entityLabel, parent: "factory" }, `factoryId ${factoryId} is outside your factory scope`);
+  }
+}
+
 const TASK_STATUSES = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
 
 export const fleetRouter = router({
@@ -332,6 +382,9 @@ export const fleetRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
+      // Fix round 1 (Important #1) — a scoped actor must not stamp a NEW task with
+      // another factory's id.
+      assertFactoryIdAllowed(await idsTrongPhamVi("factory", phamViCua(ctx)), input.factoryId, "fleetTask");
       // Idempotent on taskKey — replay returns the prior row.
       const [existing] = await d.select().from(tasks).where(eq(tasks.taskKey, input.taskKey)).limit(1);
       if (existing) return { ok: true, id: existing.id, created: false };
@@ -527,6 +580,9 @@ export const fleetRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireFlag();
       const d = await db();
+      // Fix round 1 (Important #1) — a scoped actor must not stamp a NEW zone with
+      // another factory's id.
+      assertFactoryIdAllowed(await idsTrongPhamVi("factory", phamViCua(ctx)), input.factoryId, "zone");
       const [clash] = await d.select().from(zones).where(eq(zones.code, input.code)).limit(1);
       if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "zone" }, `Zone code "${input.code}" already exists`);
       const [row] = await d
@@ -661,9 +717,11 @@ export const fleetRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireResourceFlag();
       const d = await db();
+      // Fix round 1 (Important #2) — same factoryId-stamping guard as createTask/createZone.
+      assertFactoryIdAllowed(await idsTrongPhamVi("factory", phamViCua(ctx)), input.factoryId, "operationCode");
       const [clash] = await d.select().from(operationCodes).where(eq(operationCodes.code, input.code)).limit(1);
       if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "operationCode" }, `Operation code "${input.code}" already exists`);
       const [row] = await d
@@ -680,6 +738,8 @@ export const fleetRouter = router({
           factoryId: input.factoryId ?? null,
         })
         .returning({ id: operationCodes.id });
+      // Fix round 1 (Important #2) — actor + dòng audit bất biến (FLT-02 mở rộng sang G2).
+      if (row) await recordAuditEvent(d, { entityType: "operation_code", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: { ...input, id: row.id } });
       return { ok: true, id: row?.id };
     }),
 
@@ -695,9 +755,15 @@ export const fleetRouter = router({
         notes: z.string().max(2000).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireResourceFlag();
       const d = await db();
+      // Fix round 1 (Important #2) — the operation being mapped must be in scope. Same
+      // reasoning as `resolveOperation`'s read-side check just above: `programProjectId`
+      // belongs to the programming module's own store (program_projects), a different
+      // domain with its own scoping — not re-derived here, matching how `resolveOperation`/
+      // `pickVariant` already only gate on THIS router's own factory-scoped table.
+      await assertOperationCodeInScope(d, ctx, input.operationCodeId);
       const [row] = await d
         .insert(operationProgramMap)
         .values({
@@ -708,6 +774,8 @@ export const fleetRouter = router({
           notes: input.notes ?? null,
         })
         .returning({ id: operationProgramMap.id });
+      // Fix round 1 (Important #2) — actor + dòng audit bất biến.
+      if (row) await recordAuditEvent(d, { entityType: "operation_program_map", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: { ...input, id: row.id } });
       return { ok: true, id: row?.id };
     }),
 
@@ -753,9 +821,13 @@ export const fleetRouter = router({
   recordVariantOutcome: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ variantId: z.number().int().positive(), success: z.boolean(), cycleMs: z.number().int().min(0).optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireResourceFlag();
-      return recordVariantOutcome(input.variantId, { success: input.success, cycleMs: input.cycleMs });
+      const d = await db();
+      await assertProgramVariantInScope(d, ctx, input.variantId); // fix round 1 (Important #2)
+      const result = await recordVariantOutcome(input.variantId, { success: input.success, cycleMs: input.cycleMs });
+      await recordAuditEvent(d, { entityType: "program_variant", entityId: input.variantId, action: "recordOutcome", actorId: ctx.user.id, before: null, after: { ...input, result } });
+      return result;
     }),
 
   createVariant: actuationProcedure
@@ -769,9 +841,11 @@ export const fleetRouter = router({
         scope: z.string().max(64).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireResourceFlag();
       const d = await db();
+      // No `factoryId` field on this input (the row is created with factoryId=NULL,
+      // unchanged from before this fix) — nothing supplied to validate against scope.
       const [row] = await d
         .insert(programVariants)
         .values({
@@ -783,6 +857,7 @@ export const fleetRouter = router({
           scope: input.scope ?? null,
         })
         .returning({ id: programVariants.id });
+      if (row) await recordAuditEvent(d, { entityType: "program_variant", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: { ...input, id: row.id } });
       return { ok: true, id: row?.id };
     }),
 
@@ -853,9 +928,11 @@ export const fleetRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireResourceFlag();
       const d = await db();
+      // Fix round 1 (Important #2) — same factoryId-stamping guard as createTask/createZone.
+      assertFactoryIdAllowed(await idsTrongPhamVi("factory", phamViCua(ctx)), input.factoryId, "sharedResource");
       const [clash] = await d.select().from(sharedResources).where(eq(sharedResources.code, input.code)).limit(1);
       if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "sharedResource" }, `Resource code "${input.code}" already exists`);
       const [row] = await d
@@ -870,9 +947,13 @@ export const fleetRouter = router({
           factoryId: input.factoryId ?? null,
         })
         .returning({ id: sharedResources.id });
+      if (row) await recordAuditEvent(d, { entityType: "shared_resource", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: { ...input, id: row.id } });
       return { ok: true, id: row?.id };
     }),
 
+  // Fix round 1 (Important #2, priority — "same risk as reserve/release") — reserve a
+  // shared resource for a device. Same shape as `reserve` (G1 zones): scope-check BOTH
+  // the resource and the device before claiming, then audit the attempt.
   reserveResource: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
@@ -883,17 +964,27 @@ export const fleetRouter = router({
         queueIfFull: z.boolean().default(true),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireResourceFlag();
-      return claimResource({ resourceId: input.resourceId, deviceId: input.deviceId, taskId: input.taskId ?? null, queueIfFull: input.queueIfFull });
+      const d = await db();
+      await assertSharedResourceInScope(d, ctx, input.resourceId);
+      await assertRobotInScope(d, ctx, input.deviceId);
+      const result = await claimResource({ resourceId: input.resourceId, deviceId: input.deviceId, taskId: input.taskId ?? null, queueIfFull: input.queueIfFull });
+      await recordAuditEvent(d, { entityType: "resource_reservation", entityId: result.reservationId ?? `${input.resourceId}:${input.deviceId}`, action: "reserve", actorId: ctx.user.id, before: null, after: result });
+      return result;
     }),
 
   releaseResource: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ deviceId: z.number().int().positive(), resourceId: z.number().int().positive().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireResourceFlag();
-      return releaseResource(input.deviceId, input.resourceId);
+      const d = await db();
+      await assertRobotInScope(d, ctx, input.deviceId);
+      if (input.resourceId != null) await assertSharedResourceInScope(d, ctx, input.resourceId);
+      const result = await releaseResource(input.deviceId, input.resourceId);
+      await recordAuditEvent(d, { entityType: "resource_reservation", entityId: input.resourceId ?? input.deviceId, action: "release", actorId: ctx.user.id, before: null, after: result });
+      return result;
     }),
 
   // ── G2-d PREDICTIVE CHARGING ───────────────────────────────────────────────
@@ -948,9 +1039,11 @@ export const fleetRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireResourceFlag();
       const d = await db();
+      // Fix round 1 (Important #2) — same factoryId-stamping guard as createTask/createZone.
+      assertFactoryIdAllowed(await idsTrongPhamVi("factory", phamViCua(ctx)), input.factoryId, "chargerStation");
       const [clash] = await d.select().from(chargerStations).where(eq(chargerStations.code, input.code)).limit(1);
       if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "chargerStation" }, `Charger code "${input.code}" already exists`);
       const [row] = await d
@@ -965,14 +1058,23 @@ export const fleetRouter = router({
           factoryId: input.factoryId ?? null,
         })
         .returning({ id: chargerStations.id });
+      if (row) await recordAuditEvent(d, { entityType: "charger_station", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: { ...input, id: row.id } });
       return { ok: true, id: row?.id };
     }),
 
-  /** Run the predictive-charging sweep on demand (also runs on a background timer). */
+  /**
+   * Run the predictive-charging sweep on demand (also runs on a background timer).
+   * ⚠ Same shape as `resolveDeadlock` — a system-wide sweep across EVERY enabled AGV +
+   * EVERY available charger, no single entity id in its input, so there is no per-call
+   * factory-scope gate to apply; actor + audit still record who ran it manually.
+   */
   sweepCharging: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
-    .mutation(async () => {
+    .mutation(async ({ ctx }) => {
       requireResourceFlag();
-      return sweepChargingPlans();
+      const d = await db();
+      const result = await sweepChargingPlans();
+      await recordAuditEvent(d, { entityType: "fleet_charging_sweep", entityId: "global", action: "sweep", actorId: ctx.user.id, before: null, after: result });
+      return result;
     }),
 });

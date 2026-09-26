@@ -3739,6 +3739,7 @@
       "programBuild": "程序构建",
       "programDeployment": "程序部署",
       "programRelease": "程序发布",
+      "programVariant": "程序 A/B 变体",
       "programmingArtifact": "编程构件",
       "programmingProject": "编程项目",
       "qualityGateConfig": "质量门配置",

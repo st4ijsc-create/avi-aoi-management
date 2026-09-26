@@ -3747,6 +3747,7 @@
       "programBuild": "bản dựng chương trình",
       "programDeployment": "bản triển khai chương trình",
       "programRelease": "bản phát hành chương trình kiểm tra",
+      "programVariant": "biến thể A/B của chương trình",
       "programmingArtifact": "artifact chương trình",
       "programmingProject": "dự án lập trình",
       "qualityGateConfig": "cấu hình cổng chất lượng",

@@ -3747,6 +3747,7 @@
       "programBuild": "program build",
       "programDeployment": "program deployment",
       "programRelease": "program release",
+      "programVariant": "program A/B variant",
       "programmingArtifact": "programming artifact",
       "programmingProject": "programming project",
       "qualityGateConfig": "quality gate configuration",
