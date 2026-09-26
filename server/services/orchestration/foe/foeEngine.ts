@@ -774,6 +774,10 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
     }
   }
 
+  // Final review fix #9 — an aborted run must not leave an authorization row behind for a
+  // command it will never send: check the flag BEFORE creating the ai_pending_actions record.
+  if (rc.aborting) return ABORTED_OUTCOME;
+
   // Doc 25 T1 — tạo ủy quyền ai_pending_actions confirmed THẬT trước khi dispatch để
   // cổng HITL của dispatcher (OT/robot) tái-xác-minh và cho qua HỢP LỆ (không còn phụ
   // thuộc mock). Fail-safe: nếu không tạo được, dispatcher fail-closed từ chối.
@@ -1612,7 +1616,14 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
  * `delay` / `wait_*` wakes up at once), THEN the DB row is written 'aborted'. The driver's own
  * terminal writes are conditional (`status <> 'aborted'`), so it can never overwrite this.
  * The DB write itself is conditional too (`status NOT IN ('completed','failed')`): a run that
- * finished first stays finished and the caller is told so.
+ * finished first stays finished and the caller is told so. After a successful write the
+ * registry is read AGAIN (final review fix #1) so a driver that registered in between is
+ * flagged too.
+ *
+ * CROSS-INSTANCE LIMIT: `liveRuns` is per process. When the run's driver lives in another
+ * server instance, this abort only takes effect at that driver's NEXT guarded status write
+ * (`setRunStatusUnlessAborted`); until then it may still execute steps. Closing that needs a
+ * DB poll between steps (not in Đợt 0).
  */
 export async function abortRun(runId: number, user: FoeUser, reason?: string): Promise<StartRunResult> {
   try {
@@ -1640,6 +1651,18 @@ export async function abortRun(runId: number, user: FoeUser, reason?: string): P
       .returning({ id: orchestrationRuns.id });
     if (written.length === 0) {
       return { ok: false, enabled: foeEnabled(), runId, message: `Run ${runId} already terminal.` };
+    }
+    // Final review fix #1 — the registry lookup above ran BEFORE the DB write: a driver that
+    // registered + wrote 'running' in between (e.g. an async run whose setImmediate fired while
+    // our UPDATE was in flight) was never flagged and would dispatch every remaining command
+    // although this abort is acknowledged. Re-read the registry AFTER the write succeeded. Any
+    // driver registering later still sees 'aborted' at its guarded 'running' write and stops.
+    // NOTE: the registry is per-process — a driver alive in ANOTHER instance only notices the
+    // abort at its next guarded status write (it may still run steps until then).
+    const lateLive = liveRuns.get(runId);
+    if (lateLive && !lateLive.aborting) {
+      lateLive.aborting = true;
+      lateLive.controller.abort();
     }
     void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status: "aborted" } });
     return { ok: true, enabled: foeEnabled(), runId, status: "aborted" };

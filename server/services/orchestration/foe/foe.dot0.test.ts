@@ -494,5 +494,119 @@ describe("ORC-01 (fix round 1) — lỗi SAU abort không được ghi đè `abo
   });
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
+// Final review fix #1 — abortRun đọc registry TRƯỚC lệnh ghi DB: một driver đăng ký + ghi
+// 'running' ĐÚNG giữa hai bước ấy không bao giờ bị cắm cờ ⇒ abort đã được xác nhận mà run
+// vẫn dispatch mọi lệnh. Vá: sau khi lệnh ghi có điều kiện thành công, đọc LẠI registry.
+// ════════════════════════════════════════════════════════════════════════════════
+describe("final fix #1 — abort xác nhận trong lúc driver vừa đăng ký", () => {
+  it("driver đăng ký + ghi 'running' GIỮA lượt đọc registry và lệnh ghi DB của abortRun ⇒ vẫn bị cắm cờ, 0 lệnh", async () => {
+    const def: WorkflowDefinition = {
+      ref: "abort-interleave",
+      name: "AbortInterleave",
+      steps: [
+        { id: "d", type: "delay", ms: 400 },
+        { id: "b", type: "command", machineId: 1, command: "stop" },
+      ],
+    };
+    await deployWorkflow(def, ENGINEER);
+    // async: run 'queued', driver chỉ khởi động ở setImmediate kế tiếp ⇒ lượt đọc registry của
+    // abortRun (chuỗi microtask) chắc chắn chạy TRƯỚC khi driver đăng ký.
+    const res = await startRun("abort-interleave", {}, ENGINEER, { async: true });
+    const runId = res.runId!;
+    expect(runRow(runId).status).toBe("queued");
+
+    // Chen: lệnh UPDATE 'aborted' của abortRun chỉ được thực thi SAU KHI driver đã đăng ký,
+    // ghi 'running' và đang ngủ ở bước delay — đúng cửa sổ tranh chấp.
+    const orig = fake.update.bind(fake);
+    const spy = vi.spyOn(fake, "update").mockImplementation((t: any) => {
+      const b = orig(t);
+      const origSet = b.set;
+      const origWhere = b.where;
+      let patch: Record<string, unknown> | undefined;
+      b.set = (p: Record<string, unknown>) => {
+        patch = p;
+        origSet(p);
+        return b;
+      };
+      b.where = (cond: unknown) => {
+        if (patch?.status === "aborted" && String(patch.error ?? "").startsWith("Aborted by user")) {
+          return {
+            returning: async () => {
+              await waitFor(() => runRow(runId).status === "running" && stepRow(runId, "d")?.status === "running");
+              return origWhere(cond).returning();
+            },
+          };
+        }
+        return origWhere(cond);
+      };
+      return b;
+    });
+    try {
+      const ab = await abortRun(runId, SUP, "dung giua chung");
+      expect(ab.ok).toBe(true);
+      // chờ driver nền kết thúc (delay 400 ms nếu KHÔNG bị đánh thức)
+      await new Promise((r) => setTimeout(r, 700));
+      expect(dispatched()).toEqual([]);
+      expect(stepRow(runId, "b")).toBeUndefined();
+      expect(runRow(runId).status).toBe("aborted");
+      expect(String(runRow(runId).error)).toContain("dung giua chung");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Final review fix #9 — kiểm cờ abort TRƯỚC ensureOrchestrationAction: một run đã bị abort
+// không để lại bản ghi ủy quyền (ai_pending_actions) cho bước lệnh chưa từng được gửi.
+// ════════════════════════════════════════════════════════════════════════════════
+describe("final fix #9 — run bị abort không để lại hàng ủy quyền", () => {
+  it("abort đến trong lúc kiểm precondition của bước lệnh ⇒ 0 lệnh, 0 hàng ai_pending_actions", async () => {
+    const mod = await import("../../equipment/equipmentAdapter");
+    let aborted = false;
+    const spy = vi.spyOn(mod.equipmentRegistry, "getAdapter").mockReturnValue({
+      kind: "ot-opcua",
+      delegatesTo: "ot",
+      testConnection: async () => ({ ok: true }),
+      readTelemetry: async () => {
+        if (!aborted) {
+          aborted = true;
+          const runId = runRows()[0].id as number;
+          expect((await abortRun(runId, SUP, "dung truoc lenh")).ok).toBe(true);
+        }
+        return [{ key: "ok", value: 1 }];
+      },
+      sendCommand: async (cmd: { name: string }) => {
+        await otDispatchMock({ commandType: cmd.name } as never);
+        return { ok: true, routedTo: "ot-dispatcher", status: "simulated" };
+      },
+    } as never);
+    try {
+      const def: WorkflowDefinition = {
+        ref: "abort-before-auth",
+        name: "AbortBeforeAuth",
+        steps: [
+          {
+            id: "b",
+            type: "command",
+            machineId: 1,
+            command: "stop",
+            precondition: { source: "telemetry", machineId: 1, key: "ok", op: "eq", value: 1 },
+          },
+        ],
+      };
+      await deployWorkflow(def, ENGINEER);
+      const res = await startRun("abort-before-auth", {}, ENGINEER);
+      expect(aborted).toBe(true);
+      expect(res.status).toBe("aborted");
+      expect(dispatched()).toEqual([]);
+      expect(fake.store.get("ai_pending_actions") ?? []).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 // giữ tham chiếu để tsc không cảnh báo import không dùng
 void orchestrationRuns;
