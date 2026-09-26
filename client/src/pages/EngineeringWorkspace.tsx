@@ -399,12 +399,14 @@ export default function EngineeringWorkspace() {
   // doc 40 (Minh ui-fix) + doc 80 WS-04 — báo toast THEO trạng thái THẬT (status) của hàng
   // server trả về, không chỉ theo cờ `simulated` / không luôn "thành công".
   const showDeployOutcome = (
-    row: { status: string; error?: string | null; targetRolledBack?: boolean },
+    row: { status: string; error?: string | null; targetRolledBack?: boolean; detailJson?: unknown },
     kind: "deploy" | "request" | "rollback",
   ) => {
     const o = deployOutcome(row, kind);
     const msg = t(o.key, o.fallback);
-    const text = o.detail ? `${msg}: ${o.detail}` : msg;
+    // doc 81 Đợt 1B Task 4 — lý do có mã (vd robot-tm chưa hỗ trợ tải chương trình) ⇒ câu dịch.
+    const detailText = o.detailKey ? t(o.detailKey, o.detail ?? "") : o.detail;
+    const text = detailText ? `${msg}: ${detailText}` : msg;
     if (o.level === "error") toast.error(text);
     else if (o.level === "warning") toast.warning(text);
     else if (o.level === "info") toast.info(text);
