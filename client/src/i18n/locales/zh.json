@@ -4188,6 +4188,7 @@
     "reason": {
       "robotNotActive": "本进程的机器人网关尚未加载该机器人（已禁用或 ROBOT_GATEWAY_ENABLED 未开启），因此没有可解除的实时运动锁定。",
       "motionLockUnsupported": "该厂商的驱动每条指令使用一次性连接，没有运动锁定；无可解除内容。",
+      "motionLockChanged": "您确认期间运动锁定已发生变化（出现了新的连接丢失）。未解除任何内容；请重新读取机器人状态后再确认。",
       "deploymentNotAwaitingApproval": "该请求已不再处于待审批状态（已被他人审批/拒绝或正在处理）。请刷新列表查看当前状态。",
       "deployApprovalRecordMissing": "未找到与此请求关联的审批记录——无法审批；请重新提交部署请求。",
       "deployApprovalRecordInvalid": "审批记录已失效（已执行、已取消或已过期）——无法再次审批。",
@@ -14290,6 +14291,7 @@
       "connected": "已连接"
     },
     "motionLock": {
+      "roleRequired": "需要 admin/supervisor/engineer 角色以及设备控制权限（machine_control）",
       "badge": "运动已锁定",
       "tip": "连接丢失/指令结果未知后运动已锁定（{{reason}}，自 {{since}}）。只有机器人确认的停止指令或受控解除才能重新启用。",
       "clear": "解除锁定",

@@ -401,7 +401,7 @@ describe("DeltaDriver — rớt kết nối + KHOÁ CHUYỂN ĐỘNG (fix round 
     nextSocket = makeController(defaultResponder);
     await d.getState(); // vận chuyển lên lại
     expect(d.getMotionLock().locked).toBe(true);
-    const st = d.clearMotionLock({ reason: "robot checked on site, area clear", userId: 42 });
+    const st = d.clearMotionLock({ reason: "robot checked on site, area clear", userId: 42, expectedGeneration: d.getMotionLock().generation! });
     expect(st).toMatchObject({ locked: false, clearedBy: "operator", clearedByUserId: 42, clearReason: "robot checked on site, area clear" });
     expect(d.getMotionLock()).toMatchObject({ locked: false, clearedBy: "operator" });
     const ok = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
@@ -415,5 +415,59 @@ describe("DeltaDriver — rớt kết nối + KHOÁ CHUYỂN ĐỘNG (fix round 
     expect(r.ok).toBe(false);
     expect(r.detail?.reasonCode).toBe("motion_locked_after_link_loss");
     expect(r.detail?.sent).toBe(false);
+  });
+});
+
+// doc 81 Đợt 1B Task 5 fix round 5 — (b) guard mỗi lần ghi tái kiểm khoá; (item 2) gỡ khoá là so-sánh-rồi-gỡ.
+describe("DeltaDriver — fix round 5", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    nextSocket = null;
+    connectCalls = 0;
+    delete process.env.ROBOT_CONTROL_ENABLED;
+    process.env.ROBOT_MOCK_VENDORS_ENABLED = "true";
+  });
+  afterEach(() => { delete process.env.ROBOT_CONTROL_ENABLED; delete process.env.ROBOT_MOCK_VENDORS_ENABLED; });
+
+  it("(b) khoá đặt trong lúc SERVO được trả lời ⇒ guard trước MOVL từ chối ⇒ không MOVL, job failed motion_locked_after_link_loss", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    let drv: any = null;
+    const { d, sock } = await connectedDriver((cmd) => {
+      if (cmd === "SERVO") {
+        drv?.lockMotion("test_link_loss", "injected by test"); // khoá rơi giữa SERVO và MOVL
+        return "OK";
+      }
+      return defaultResponder(cmd, "1", []);
+    });
+    drv = d;
+    const r = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("motion_locked_after_link_loss");
+    expect(sock.written.map(cmdOf)).toEqual(["RDSTS", "SERVO"]);
+  });
+
+  it("(item 2) clearMotionLock so-sánh-rồi-gỡ: generation cũ ⇒ lỗi motion_lock_changed, khoá GIỮ; đúng generation ⇒ gỡ", async () => {
+    const { d, sock } = await connectedDriver();
+    sock.destroy();
+    const g1 = d.getMotionLock();
+    expect(g1.locked).toBe(true);
+    expect(typeof g1.generation).toBe("number");
+    d.clearMotionLock({ reason: "checked", userId: 1, expectedGeneration: g1.generation! });
+    expect(d.getMotionLock().locked).toBe(false);
+    d.lockMotion("line_connection_closed", "second loss during the dialog");
+    const g2 = d.getMotionLock();
+    expect(g2.locked).toBe(true);
+    expect(g2.generation).not.toBe(g1.generation);
+    let err: any = null;
+    try {
+      d.clearMotionLock({ reason: "stale dialog", userId: 1, expectedGeneration: g1.generation! });
+    } catch (e) {
+      err = e;
+    }
+    expect(err?.reasonCode).toBe("motion_lock_changed");
+    expect(err?.state).toMatchObject({ locked: true, generation: g2.generation });
+    expect(d.getMotionLock().locked).toBe(true);
+    const st = d.clearMotionLock({ reason: "re-checked", userId: 1, expectedGeneration: g2.generation! });
+    expect(st.locked).toBe(false);
   });
 });

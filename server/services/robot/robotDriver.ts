@@ -100,7 +100,17 @@ export interface RobotDriver {
    * one-shot-socket drivers (Techman / UR) and sim/AGV drivers have no session to lose.
    */
   getMotionLock?(): MotionLockState;
-  clearMotionLock?(input: { reason: string; userId: number }): MotionLockState;
+  /**
+   * Fix round 5 — compare-and-clear: clears ONLY if `expectedGeneration` (the generation the
+   * operator saw) still matches; otherwise throws {@link MotionLockConflictError} with the new state.
+   */
+  clearMotionLock?(input: { reason: string; userId: number; expectedGeneration: number }): MotionLockState;
+  /**
+   * Fix round 5 (c) — set the motion lock from outside the driver: the dispatcher calls it when its
+   * own deadline makes a motion's outcome unknown, BEFORE it sends the stop. Drivers without a
+   * lock (Techman / UR) simply do not implement it.
+   */
+  lockMotion?(reasonCode: string, detail?: string): void;
 }
 
 /** Snapshot of a driver's motion lock (also what the UI reads through robot.list `live`). */
@@ -111,10 +121,27 @@ export interface MotionLockState {
   detail?: string;
   /** ISO time the lock was set. */
   since?: string;
+  /** Fix round 5 — increments on every unlocked→locked transition; the operator's clear must quote it. */
+  generation?: number;
   clearedBy?: "stop_confirmed" | "operator";
   clearedAt?: string;
   clearedByUserId?: number;
   clearReason?: string;
+}
+
+/** Fix round 5 (c) — reason code the dispatcher locks with when ITS deadline made the outcome unknown. */
+export const DISPATCH_DEADLINE_REASON_CODE = "dispatch_deadline_outcome_unknown" as const;
+
+/** Fix round 5 — the operator's clear quoted a generation that is no longer current (a new link loss happened). */
+export class MotionLockConflictError extends Error {
+  readonly reasonCode = "motion_lock_changed" as const;
+  constructor(readonly state: MotionLockState) {
+    super(
+      `motion_lock_changed: the motion lock changed while the clear was being confirmed — now generation ${state.generation ?? "?"}` +
+        ` (${state.reasonCode ?? "link loss"} since ${state.since ?? "?"}); re-read the state before clearing`,
+    );
+    this.name = "MotionLockConflictError";
+  }
 }
 
 /** Stable reason code: a motion job refused because the driver's motion lock is set. */
@@ -138,23 +165,41 @@ export class RobotMotionLockedError extends Error {
  * `lock()` keeps the FIRST cause while already locked (repeated link-loss events do not rewrite it).
  */
 export class MotionLock {
-  private state: MotionLockState = { locked: false };
+  private state: MotionLockState = { locked: false, generation: 0 };
+  private generation = 0;
 
   lock(reasonCode: string, detail?: string): void {
     if (this.state.locked) return;
-    this.state = { locked: true, reasonCode, detail, since: new Date().toISOString() };
+    this.generation++;
+    this.state = { locked: true, reasonCode, detail, since: new Date().toISOString(), generation: this.generation };
   }
 
   clearByStop(): void {
     if (!this.state.locked) return;
-    this.state = { locked: false, reasonCode: this.state.reasonCode, since: this.state.since, clearedBy: "stop_confirmed", clearedAt: new Date().toISOString() };
-  }
-
-  clearByOperator(input: { reason: string; userId: number }): MotionLockState {
     this.state = {
       locked: false,
       reasonCode: this.state.reasonCode,
       since: this.state.since,
+      generation: this.generation,
+      clearedBy: "stop_confirmed",
+      clearedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Fix round 5 — COMPARE-AND-CLEAR. `expectedGeneration` is the generation the operator saw when
+   * they confirmed; a link loss that happened since (dialog open, audit write in flight) bumped it,
+   * and that newer lock must not be erased by a decision taken about the older one.
+   */
+  clearByOperator(input: { reason: string; userId: number; expectedGeneration: number }): MotionLockState {
+    if (this.state.locked && input.expectedGeneration !== this.generation) {
+      throw new MotionLockConflictError(this.snapshot());
+    }
+    this.state = {
+      locked: false,
+      reasonCode: this.state.reasonCode,
+      since: this.state.since,
+      generation: this.generation,
       clearedBy: "operator",
       clearedAt: new Date().toISOString(),
       clearedByUserId: input.userId,
@@ -169,6 +214,18 @@ export class MotionLock {
 
   snapshot(): MotionLockState {
     return { ...this.state };
+  }
+
+  /**
+   * Fix round 5 (b) — the per-write guard. Wraps the abort-fence guard and RE-CHECKS the lock right
+   * before every socket write, so a motion job that passed the entry check cannot write once the lock
+   * is set mid-job (the entry check alone left the window the reviewer traced). STOP jobs never throw.
+   */
+  guard(job: RobotJobSpec, inner: () => void): () => void {
+    return () => {
+      inner();
+      if (this.state.locked && job.jobType !== "abort") throw new RobotMotionLockedError(this.snapshot());
+    };
   }
 
   /** The RobotJobResult a driver returns for a MOTION job while locked; null when the job may proceed. */

@@ -21,6 +21,8 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { withParams } from "@/lib/engineeringDeepLink";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useActuationReadiness } from "@/hooks/useActuationReadiness";
+import { canClearMotionLock } from "@/lib/robotMotionLock";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
@@ -49,7 +51,7 @@ import { toastTrpcError } from "@/lib/trpcErrors";
 type RobotLive = {
   active: boolean;
   connected: boolean;
-  motionLock: { locked: boolean; reasonCode?: string; since?: string; detail?: string } | null;
+  motionLock: { locked: boolean; reasonCode?: string; since?: string; detail?: string; generation?: number } | null;
 };
 
 type RobotRow = {
@@ -100,6 +102,11 @@ export default function RobotControl() {
   // vi điều khiển OT → gate theo permission bit machine_control/canEdit (admin bypass sẵn
   // trong hasPermission). Engineer/supervisor có machine_control giờ không bị khóa oan.
   const canControl = hasPermission("machine_control", "canEdit");
+  // Fix round 5 (item 3) — robot.clearMotionLock is actuationProcedure (admin/supervisor/engineer)
+  // + machine_control/canEdit: gate the button on BOTH so nobody sees an enabled button that ends
+  // in FORBIDDEN. Advisory only; the server stays the wall.
+  const { role: actuationRole } = useActuationReadiness();
+  const canClearLock = canClearMotionLock(actuationRole, canControl);
   // doc 54 Wave B — the enable-toggle + connection-test SERVER procedures (setEnabled/
   // testConnection) are adminProcedure (admin-only), so a non-admin with machine_control
   // would see the affordance but hit a 403. Gate THESE two controls on isAdmin to match the
@@ -133,7 +140,14 @@ export default function RobotControl() {
       setClearReason("");
       void utils.robot.list.invalidate();
     },
-    onError: (e) => toastTrpcError(e),
+    onError: (e) => {
+      toastTrpcError(e);
+      // Fix round 5 (item 2) — a CONFLICT means the lock changed under the dialog: close it and
+      // re-read, so the operator decides about the CURRENT state, never the one they first saw.
+      setClearTarget(null);
+      setClearReason("");
+      void utils.robot.list.invalidate();
+    },
   });
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -304,9 +318,9 @@ export default function RobotControl() {
                         {r.live?.motionLock?.locked && (
                           <Button
                             size="sm" variant="destructive" className="h-7"
-                            disabled={!canControl || clearLockM.isPending}
+                            disabled={!canClearLock || clearLockM.isPending}
                             onClick={() => { setClearTarget(r); setClearReason(""); }}
-                            title={!canControl ? t("robot.controlPermRequired", "Cần quyền điều khiển máy (machine_control)") : t("robot.motionLock.badge", "Khoá chuyển động")}
+                            title={!canClearLock ? t("robot.motionLock.roleRequired", "Cần vai admin/supervisor/engineer và quyền điều khiển máy (machine_control)") : t("robot.motionLock.badge", "Khoá chuyển động")}
                           >
                             <Unlock className="mr-1 h-3.5 w-3.5" />{t("robot.motionLock.clear", "Gỡ khoá")}
                           </Button>
@@ -463,10 +477,17 @@ export default function RobotControl() {
             <AlertDialogFooter>
               <AlertDialogCancel disabled={clearLockM.isPending}>{t("common.cancel", "Hủy")}</AlertDialogCancel>
               <AlertDialogAction
-                disabled={clearReason.trim().length < 3 || clearLockM.isPending || !clearTarget}
+                disabled={clearReason.trim().length < 3 || clearLockM.isPending || !clearTarget || !canClearLock}
                 onClick={(e) => {
                   e.preventDefault(); // giữ hộp thoại mở tới khi mutation trả lời
-                  if (clearTarget) clearLockM.mutate({ robotId: clearTarget.id, reason: clearReason.trim() });
+                  // Fix round 5 (item 2) — gửi đúng generation đã hiển thị lúc mở hộp thoại (so-sánh-rồi-gỡ ở server).
+                  if (clearTarget) {
+                    clearLockM.mutate({
+                      robotId: clearTarget.id,
+                      reason: clearReason.trim(),
+                      expectedGeneration: clearTarget.live?.motionLock?.generation ?? 0,
+                    });
+                  }
                 }}
               >
                 <Unlock className="mr-1 h-4 w-4" />{t("robot.motionLock.confirm", "Xác nhận gỡ khoá")}

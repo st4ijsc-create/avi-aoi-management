@@ -584,7 +584,7 @@ describe("FANUC RMI — fix round 4 (R13): poll mở lại phiên sau rớt; KHO
     expect(d.getMotionLock().locked).toBe(true);
     const r = await within(dispatchRobotJob(HOME), 10_000);
     expect(r).toMatchObject({ status: "rejected", error: "MOTION_LOCKED" });
-    d.clearMotionLock({ reason: "checked on site", userId: 3 });
+    d.clearMotionLock({ reason: "checked on site", userId: 3, expectedGeneration: d.getMotionLock().generation! });
     const r2 = await within(dispatchRobotJob(HOME), 10_000);
     expect(r2.status).toBe("simulated");
   });
@@ -625,13 +625,79 @@ describe("FANUC RMI — fix round 4 (R13): poll mở lại phiên sau rớt; KHO
     expect(d.getMotionLock().locked).toBe(true);
     expect(d.isConnected()).toBe(true); // không Command nào timeout ⇒ phiên còn, nhưng NHIỄM
     const before = fake.conns.length;
-    d.clearMotionLock({ reason: "checked on site", userId: 3 });
+    d.clearMotionLock({ reason: "checked on site", userId: 3, expectedGeneration: d.getMotionLock().generation! });
     expect(d.isConnected()).toBe(false); // phiên nhiễm bị hạ ngay khi gỡ khoá
     fake.respond = rmiHealthy;
     fake.received.length = 0;
     await within(d.getState(), 5000);
     expect(fake.conns.length).toBe(before + 1);
     expect(fake.received).toEqual(["FRC_Connect", "FRC_GetStatus", "FRC_ReadCartesianPosition"]);
+  });
+});
+
+describe("FANUC RMI — fix round 5: hạn dispatcher rơi TRƯỚC timer Instruction của driver (đường R12 false-done tái mở)", () => {
+  it("(a) STOP xác nhận khi Instruction M1 CÒN CHỜ ⇒ phiên bị hạ (M1 bị huỷ, KHÔNG khoá lại); M2 sau poll KHÔNG bao giờ 'done' nhờ reply muộn của M1", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "1000"; // hạn dispatcher (1000) < timer Instruction của driver (1500)
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 1500);
+    fake.sequential = false;
+    let instructions = 0;
+    fake.respond = (pkt) => {
+      if (typeof pkt.Instruction === "string") {
+        instructions++;
+        // M1: trả lời SAU hạn dispatcher VÀ sau timer driver ⇒ lúc reply tới, waiter M1 đã bị gỡ (nếu phiên còn, reply
+        // sẽ rơi vào waiter cùng khoá của M2 — SequenceID 1 tái dùng sau Initialize). M2: không bao giờ được trả lời.
+        return instructions === 1
+          ? { reply: { Instruction: pkt.Instruction, ErrorID: 0, SequenceID: pkt.SequenceID }, delayMs: 2200 }
+          : { reply: null };
+      }
+      return rmiHealthy(pkt);
+    };
+    const first = await within(dispatchRobotJob(HOME), 10_000);
+    expect(first.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ timeout: true, abort: "abort_sent" });
+    // (a) phiên đã bị hạ dù Instruction M1 CHƯA hết hạn; khoá đã gỡ bởi STOP và KHÔNG bị M1 (bị huỷ vì STOP) đặt lại.
+    expect(d.isConnected()).toBe(false);
+    expect(d.getMotionLock().locked).toBe(false);
+    await within(d.getState(), 5000); // poll mở phiên mới
+    const second = await within(dispatchRobotJob(HOME), 10_000);
+    expect(instructions).toBe(2);
+    expect(second.status).not.toBe("done"); // reply muộn của M1 chết cùng socket cũ
+    expect(second.status).toBe("failed");
+  });
+
+  it("(b) khoá đặt khi GetStatus của job đang chờ ⇒ guard trước FRC_Initialize từ chối ⇒ robot chỉ nhận FRC_GetStatus, job failed motion_locked_after_link_loss", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 3000);
+    fake.respond = (pkt) => (pkt.Command === "FRC_GetStatus" ? { ...rmiHealthy(pkt), delayMs: 300 } : rmiHealthy(pkt));
+    const job = d.runJob({ jobType: "home" });
+    await sleep(50);
+    d.lockMotion("test_link_loss", "injected by test");
+    const r = await within(job, 5000);
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("motion_locked_after_link_loss");
+    await sleep(100);
+    expect(fake.received).toEqual(["FRC_GetStatus"]);
+  });
+
+  it("(c) hạn dispatcher rơi, STOP bị từ chối (ErrorID 9) ⇒ khoá ĐÃ đặt ngay (dispatch_deadline_outcome_unknown) trước khi timer driver chạy; home kế tiếp MOTION_LOCKED", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "1000";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 3000);
+    fake.sequential = false;
+    fake.respond = (pkt) =>
+      typeof pkt.Instruction === "string"
+        ? { reply: null }
+        : pkt.Command === "FRC_Abort"
+          ? { reply: { Command: "FRC_Abort", ErrorID: 9 } }
+          : rmiHealthy(pkt);
+    const first = await within(dispatchRobotJob(HOME), 10_000);
+    expect(first.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ timeout: true, abort: "abort_failed" });
+    expect(d.getMotionLock()).toMatchObject({ locked: true, reasonCode: "dispatch_deadline_outcome_unknown" });
+    const second = await within(dispatchRobotJob(HOME), 10_000);
+    expect(second).toMatchObject({ status: "rejected", error: "MOTION_LOCKED" });
   });
 });
 

@@ -30,7 +30,12 @@ import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions } from "../../../drizzle/schema";
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotDriver } from "./robotDriver";
-import { MOTION_OUTCOME_UNKNOWN_REASON_CODES, MOTION_LOCKED_REASON_CODE, RobotAbortUnsupportedError } from "./robotDriver";
+import {
+  MOTION_OUTCOME_UNKNOWN_REASON_CODES,
+  MOTION_LOCKED_REASON_CODE,
+  DISPATCH_DEADLINE_REASON_CODE,
+  RobotAbortUnsupportedError,
+} from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
 
 /**
@@ -630,7 +635,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     errorText = (outcome.e as Error)?.message ?? String(outcome.e);
   } else {
     status = "failed";
-    detail = { timeout: true, timeoutMs };
+    detail = { timeout: true, timeoutMs, reasonCode: DISPATCH_DEADLINE_REASON_CODE };
     errorText = `robot job timeout after ${timeoutMs}ms`;
   }
 
@@ -639,6 +644,14 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     outcome.kind === "timeout" ||
     (status === "failed" && reasonCode != null && MOTION_OUTCOME_UNKNOWN_REASON_CODES.has(reasonCode));
   if (motion && outcomeUnknown) {
+    // Fix round 5 (c) — R13 "lock on outcome-unknown" applied directly: lock the driver BEFORE the
+    // stop goes out (the driver's own timer may not have fired yet when OUR deadline did). A
+    // confirmed stop clears it again; a failed stop leaves it set. Drivers without a lock no-op.
+    try {
+      robot.driver.lockMotion?.(reasonCode ?? DISPATCH_DEADLINE_REASON_CODE, errorText);
+    } catch (err) {
+      console.error(`[Robot] lockMotion failed for robot ${input.robotId} (stop still sent):`, (err as Error)?.message ?? err);
+    }
     const stop = await stopAfterUnknownOutcome(robot.driver, timeoutMs);
     detail = { ...(detail ?? {}), ...stop };
     errorText = `${errorText ?? "motion outcome unknown"} — ${stop.abort}${"abortError" in stop ? `: ${stop.abortError}` : ""}`;

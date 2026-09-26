@@ -4196,6 +4196,7 @@
     "reason": {
       "robotNotActive": "This robot is not loaded by this process's robot gateway (disabled, or ROBOT_GATEWAY_ENABLED is off), so there is no live motion lock to clear.",
       "motionLockUnsupported": "This vendor's driver opens one connection per command and has no motion lock; there is nothing to clear.",
+      "motionLockChanged": "The motion lock changed while you were confirming (a new link loss). Nothing was cleared; re-read the robot state and confirm again.",
       "deploymentNotAwaitingApproval": "This request is no longer awaiting approval (someone else approved/rejected it or it is being processed). Reload the list to see its current status.",
       "deployApprovalRecordMissing": "The approval record for this request was not found — it cannot be approved; submit the deploy request again.",
       "deployApprovalRecordInvalid": "The approval record is no longer valid (executed, cancelled or expired) — it cannot be approved again.",
@@ -14507,6 +14508,7 @@
       "connected": "Connected"
     },
     "motionLock": {
+      "roleRequired": "Requires the admin/supervisor/engineer role and machine control permission (machine_control)",
       "badge": "Motion locked",
       "tip": "Motion is locked after a link loss / unknown command outcome ({{reason}}, since {{since}}). Only a STOP confirmed by the robot or a controlled clear re-enables it.",
       "clear": "Clear lock",

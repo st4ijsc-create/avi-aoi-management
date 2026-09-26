@@ -131,7 +131,7 @@ import { MitsubishiDriver } from "./drivers/mitsubishiRobotDriver";
 import { NotImplementedRobotDriver } from "./drivers/notImplementedRobotDriver";
 
 // ── Bộ điều khiển MELFA giả (R3, BFP-A3379) ──────────────────────────────────
-type Reply = string | null; // null = im lặng
+type Reply = string | null | { reply: string | null; delayMs: number }; // null = im lặng; fix round 5: reply trễ
 interface FakeMelfa {
   port: number;
   conns: string[][]; // lệnh (phần sau "<robot>;<slot>;") theo từng kết nối
@@ -163,7 +163,8 @@ async function startFakeMelfa(): Promise<FakeMelfa> {
         buf = buf.slice(i + 1);
         const cmd = frame.split(";").slice(2).join(";");
         cmds.push(cmd);
-        const reply = fake.respond(cmd);
+        const ans = fake.respond(cmd);
+        const { reply, delayMs } = typeof ans === "object" && ans !== null ? ans : { reply: ans, delayMs: 0 };
         if (reply === "__DROP_ALL__") {
           for (const s of socks) s.destroy();
           return;
@@ -172,7 +173,10 @@ async function startFakeMelfa(): Promise<FakeMelfa> {
           sock.destroy(); // peer đóng kết nối giữa lệnh
           return;
         }
-        if (reply != null && !sock.destroyed) sock.write(`${reply}\r`);
+        if (reply != null) {
+          if (delayMs > 0) setTimeout(() => { if (!sock.destroyed) sock.write(`${reply}\r`); }, delayMs);
+          else if (!sock.destroyed) sock.write(`${reply}\r`);
+        }
       }
     });
   });
@@ -683,7 +687,7 @@ describe("fix round 4 (R13) — poll nối lại vận chuyển; KHOÁ CHUYỂN 
     expect(driver.getMotionLock().locked).toBe(true);
     const r = await within(dispatchRobotJob(HOME), 10_000);
     expect(r).toMatchObject({ status: "rejected", error: "MOTION_LOCKED" });
-    driver.clearMotionLock({ reason: "checked on site", userId: 3 });
+    driver.clearMotionLock({ reason: "checked on site", userId: 3, expectedGeneration: driver.getMotionLock().generation! });
     const r2 = await within(dispatchRobotJob(HOME), 10_000);
     expect(r2.status).toBe("simulated");
   });
@@ -740,5 +744,55 @@ describe("fix round 4 (R13) — MELFA: chuyển động hết hạn giờ KHOÁ;
     expect(driver.getMotionLock()).toMatchObject({ locked: false, clearedBy: "stop_confirmed" });
     const r3 = await within(dispatchRobotJob(HOME), 10_000);
     expect(r3.status).toBe("done");
+  });
+});
+
+// ── doc 81 Đợt 1B Task 5 fix round 5 ─────────────────────────────────────────
+describe("fix round 5 — (c) khoá TRƯỚC khi gửi dừng ở hạn dispatcher; (b) guard mỗi lần ghi tái kiểm khoá", () => {
+  it("(c) hạn dispatcher rơi ⇒ driver.lockMotion(dispatch_deadline_outcome_unknown) được gọi TRƯỚC abort() (driver giả ghi thứ tự)", async () => {
+    const calls: string[] = [];
+    active.driver = {
+      vendor: "sim",
+      isConnected: () => true,
+      runJob: () => new Promise(() => undefined), // chuyển động không bao giờ trả lời
+      lockMotion: (code: string) => {
+        calls.push(`lock:${code}`);
+      },
+      abort: async () => {
+        calls.push("abort");
+      },
+    };
+    const r = await within(dispatchRobotJob(HOME), 12_000);
+    expect(r.status).toBe("failed");
+    expect(calls).toEqual(["lock:dispatch_deadline_outcome_unknown", "abort"]);
+  });
+
+  it("(c) driver không có lockMotion (Techman/UR) ⇒ vẫn gửi dừng, không lỗi", async () => {
+    let aborts = 0;
+    active.driver = {
+      vendor: "techman",
+      isConnected: () => true,
+      runJob: () => new Promise(() => undefined),
+      abort: async () => {
+        aborts++;
+      },
+    };
+    const r = await within(dispatchRobotJob(HOME), 12_000);
+    expect(r.status).toBe("failed");
+    expect(aborts).toBe(1);
+    expect(ledger.rows[0].result).toMatchObject({ timeout: true, abort: "abort_sent" });
+  });
+
+  it("(b) MELFA: job đã qua kiểm khoá đầu vào, khoá đặt khi CNTLON đang chờ ⇒ guard trước SRVON từ chối ⇒ robot chỉ nhận CNTLON, job failed motion_locked_after_link_loss", async () => {
+    await connectDriver(2000);
+    fake.respond = (cmd) => (cmd === "CNTLON" ? { reply: "Qok", delayMs: 300 } : healthy(cmd));
+    const job = driver.runJob({ jobType: "home" });
+    await sleep(50); // CNTLON đã đi, reply còn 250 ms nữa
+    driver.lockMotion("test_link_loss", "injected by test");
+    const r = await within(job, 5000);
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("motion_locked_after_link_loss");
+    await sleep(100);
+    expect(motionCmds(fake)).toEqual(["CNTLON"]);
   });
 });

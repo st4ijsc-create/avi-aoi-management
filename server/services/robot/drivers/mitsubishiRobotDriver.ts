@@ -405,7 +405,9 @@ export class MitsubishiDriver implements RobotDriver {
     if (refused) return refused;
     // doc 81 Đợt 1B Task 5 fix round 1 — abort fence: checked right before EVERY write
     // (inside TcpLineClient.send, after any reconnect), so nothing follows a STOP.
-    const guard = this.fence.capture(job);
+    // Fix round 5 (b) — the same guard RE-CHECKS the motion lock, so a lock set mid-job stops the
+    // next write (SRVON / EXEC) even though the entry check above already passed.
+    const guard = this.motionLock.guard(job, this.fence.capture(job));
 
     const isAbort = job.jobType === "abort";
     const motionCmd = isAbort ? "STOP" : buildMelfaMotion(job);
@@ -470,9 +472,14 @@ export class MitsubishiDriver implements RobotDriver {
     return this.motionLock.snapshot();
   }
 
-  /** Fix round 4 (R13) — operator clear; the caller (robot.clearMotionLock) has already audited it. */
-  clearMotionLock(input: { reason: string; userId: number }): MotionLockState {
+  /** Fix round 4/5 — operator compare-and-clear; the caller (robot.clearMotionLock) has already audited it. */
+  clearMotionLock(input: { reason: string; userId: number; expectedGeneration: number }): MotionLockState {
     return this.motionLock.clearByOperator(input);
+  }
+
+  /** Fix round 5 (c) — the dispatcher locks here when ITS deadline made a motion's outcome unknown. */
+  lockMotion(reasonCode: string, detail?: string): void {
+    this.motionLock.lock(reasonCode, detail);
   }
 
   async health(): Promise<RobotHealth> {

@@ -14,7 +14,7 @@ import { eq, desc } from "drizzle-orm";
 import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/robot";
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
 import { getActiveRobot } from "../services/robot/robotManager";
-import type { MotionLockState, RobotJobType } from "../services/robot/robotDriver";
+import { MotionLockConflictError, type MotionLockState, type RobotJobType } from "../services/robot/robotDriver";
 
 /**
  * doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) — the LIVE state of a robot in THIS process (what
@@ -102,13 +102,24 @@ export const robotRouter = router({
   //   • sàn vai actuation (admin/supervisor/engineer + 2FA theo cấu hình) + machine_control/canEdit,
   //   • ghi audit (createAuditLog) TRƯỚC khi gỡ — không ghi được thì KHÔNG gỡ (fail-closed),
   //   • trả trạng thái mới. Không gửi byte nào tới robot.
+  //   • fix round 5 (item 2): COMPARE-AND-CLEAR — the UI sends the lock `generation` it displayed; a
+  //     new link loss during the dialog or the audit write bumps it and the clear is refused with
+  //     CONFLICT (the newer lock is never erased by a decision taken about the older one).
   clearMotionLock: actuationProcedure
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({
       robotId: z.number().int().positive(),
       reason: z.string().trim().min(3).max(500),
+      expectedGeneration: z.number().int().nonnegative(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const conflict = (state: MotionLockState) =>
+        appError(
+          "CONFLICT",
+          "OPERATION_FAILED",
+          { operation: "clearRobotMotionLock", reason: "motionLockChanged" },
+          `motion lock changed while you were confirming — now generation ${state.generation ?? "?"} (${state.reasonCode ?? "link loss"} since ${state.since ?? "?"}); re-read the robot state and confirm again`,
+        );
       const rt = getActiveRobot(input.robotId);
       if (!rt) {
         throw appError(
@@ -138,19 +149,41 @@ export const robotRouter = router({
       if (!before.locked) {
         return { robotId: input.robotId, changed: false, connected: connectedNow(), motionLock: before };
       }
-      // Audit FIRST: if the trail cannot be written the lock stays set.
-      await createAuditLog({
+      // Fix round 5 — cheap pre-check before any write: the operator decided about an older lock.
+      if (before.generation !== input.expectedGeneration) throw conflict(before);
+      const auditBase = {
         userId: ctx.user.id,
         userName: ctx.user.name ?? null,
         action: "robot.clearMotionLock",
         entityType: "robot",
         entityId: input.robotId,
         entityName: rt.code,
-        details: { reason: input.reason, vendor: rt.vendor, before },
         ipAddress: ctx.req?.ip ?? null,
         userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+      };
+      // Audit FIRST: if the trail cannot be written the lock stays set.
+      await createAuditLog({
+        ...auditBase,
+        details: { reason: input.reason, vendor: rt.vendor, before, expectedGeneration: input.expectedGeneration },
       });
-      const after = driver.clearMotionLock({ reason: input.reason, userId: ctx.user.id });
+      let after: MotionLockState;
+      try {
+        after = driver.clearMotionLock({ reason: input.reason, userId: ctx.user.id, expectedGeneration: input.expectedGeneration });
+      } catch (err) {
+        if (!(err instanceof MotionLockConflictError)) throw err;
+        // The lock changed between the audit row and the clear (a new link loss). Nothing was cleared;
+        // record that outcome on the trail (best effort) and refuse.
+        try {
+          await createAuditLog({
+            ...auditBase,
+            status: "failure",
+            details: { reason: input.reason, vendor: rt.vendor, before, expectedGeneration: input.expectedGeneration, conflict: err.state },
+          });
+        } catch (auditErr) {
+          console.error(`[Robot] audit of a refused motion-lock clear failed (robot ${input.robotId}):`, (auditErr as Error)?.message ?? auditErr);
+        }
+        throw conflict(err.state);
+      }
       console.warn(`[Robot] motion lock cleared by user ${ctx.user.id} on robot ${input.robotId} (${rt.code}): ${input.reason}`);
       return { robotId: input.robotId, changed: true, connected: connectedNow(), motionLock: after };
     }),
