@@ -44,6 +44,7 @@ import {
   approveDeployment,
   rejectDeployment,
   rollbackDeployment,
+  failInterruptedDeployments,
 } from "./programmingService";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -408,4 +409,99 @@ describe.skipIf(!DB_URL)("Task 4 — deploy/rollback trung thực + khoá tranh 
     }
     expect(deployCalls).toBe(0);
   }, 60_000);
+
+  // ══════════════════ Final review fix #3 — bản ghi deploy TRUNG THỰC / không kẹt ══════════════════
+  it("★★★ fix #3a: deployBuild THẬT mà adapter NÉM ⇒ failed + simulated=false + outcome 'unknown' (thiết bị có thể đã bị ghi)", async () => {
+    const key = `${DAU}-fx3-throw-real`;
+    nextDeploy = new Error("socket reset giữa lúc download");
+    await expect(
+      deployBuild(
+        {
+          buildId: build2,
+          stage: "staging",
+          idempotencyKey: key,
+          deviceId: nextDevice(),
+          hitl: { actionId: `${DAU}-act`, requestedBy: REQUESTER.id, confirmedBy: REQUESTER.id },
+        },
+        REQUESTER,
+      ),
+    ).rejects.toThrow(/socket reset/);
+    expect(deployCalls).toBe(1);
+    const [row] = await (await d()).select().from(programDeployments).where(eq(programDeployments.idempotencyKey, key));
+    expect(row!.status).toBe("failed");
+    expect(row!.simulated).toBe(false);
+    expect((row!.detailJson as Record<string, unknown>).outcome).toBe("unknown");
+  }, 60_000);
+
+  it("★★★ fix #3a: approveDeployment THẬT mà adapter NÉM ⇒ failed + simulated=false + outcome 'unknown'", async () => {
+    process.env.DPC_DEPLOY_APPROVAL_ENABLED = "true";
+    try {
+      const reqRow = await requestDeployApproval(
+        { buildId: build2, deviceId: nextDevice(), reason: "t4", idempotencyKey: `${DAU}-fx3-appr-throw` },
+        REQUESTER,
+      );
+      nextDeploy = new Error("PLC timeout sau khi nhận khối");
+      await expect(approveDeployment(reqRow.id, APPROVER_A, {})).rejects.toThrow(/PLC timeout/);
+      expect(deployCalls).toBe(1);
+      const row = await depById(reqRow.id);
+      expect(row.status).toBe("failed");
+      expect(row.simulated).toBe(false);
+      expect((row.detailJson as Record<string, unknown>).outcome).toBe("unknown");
+    } finally {
+      delete process.env.DPC_DEPLOY_APPROVAL_ENABLED;
+    }
+  }, 60_000);
+
+  it("★★★ fix #3b: quét lúc khởi động đóng dòng 'pending' QUÁ HẠN thành failed (gián đoạn, kết cục không rõ); dòng mới/đang duyệt giữ nguyên", async () => {
+    const x = await d();
+    const old = new Date(Date.now() - 60 * 60_000).toISOString();
+    const fresh = new Date().toISOString();
+    const mk = async (tag: string, detailJson: Record<string, unknown>, status: "pending" | "deployed" = "pending") => {
+      const [row] = await x
+        .insert(programDeployments)
+        .values({
+          buildId: build2,
+          projectId,
+          deviceId: nextDevice(),
+          stage: "staging",
+          status,
+          simulated: true,
+          requestedBy: REQUESTER.id,
+          idempotencyKey: `${DAU}-fx3b-${tag}`,
+          detailJson,
+        })
+        .returning();
+      return row!;
+    };
+    const staleReserved = await mk("stale-reserved", { reservedAt: old });
+    const freshReserved = await mk("fresh-reserved", { reservedAt: fresh });
+    const staleApproving = await mk("stale-approving", { reservedAt: old, approvingAt: old, approvingBy: APPROVER_A.id });
+    const freshApproving = await mk("fresh-approving", { approvingAt: fresh, approvingBy: APPROVER_A.id });
+    // yêu cầu CŨ vừa được một approver nhận (approvingAt mới) ⇒ lượt deploy đang sống, không quét
+    const oldReqFreshApproving = await mk("oldreq-fresh-approving", { reservedAt: old, approvingAt: fresh, approvingBy: APPROVER_A.id });
+    const oldDeployed = await mk("old-deployed", { reservedAt: old }, "deployed");
+
+    const res = await failInterruptedDeployments();
+    expect(res.failedIds).toEqual(expect.arrayContaining([staleReserved.id, staleApproving.id]));
+    expect(res.failedIds).not.toContain(freshReserved.id);
+    expect(res.failedIds).not.toContain(freshApproving.id);
+    expect(res.failedIds).not.toContain(oldReqFreshApproving.id);
+
+    for (const id of [staleReserved.id, staleApproving.id]) {
+      const row = await depById(id);
+      expect(row.status).toBe("failed");
+      expect(row.error).toMatch(/interrupted, outcome unknown/);
+      expect((row.detailJson as Record<string, unknown>).outcome).toBe("unknown");
+    }
+    expect((await depById(freshReserved.id)).status).toBe("pending");
+    expect((await depById(freshApproving.id)).status).toBe("pending");
+    expect((await depById(oldReqFreshApproving.id)).status).toBe("pending");
+    expect((await depById(oldDeployed.id)).status).toBe("deployed");
+  }, 60_000);
+
+  it("fix #3b: quét được GỌI lúc khởi động server (cạnh rehydrate FOE)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("server/_core/index.ts", "utf8");
+    expect(src).toMatch(/failInterruptedDeployments\(\)/);
+  });
 });

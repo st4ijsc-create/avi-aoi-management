@@ -21,7 +21,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   programProjects,
@@ -524,11 +524,18 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
     computed = await computeDeploy(req, b, art, projectDeviceId);
   } catch (e) {
     // Không để dòng giữ chỗ kẹt 'pending' mãi: ghi 'failed' + lỗi thật rồi để lỗi nổi lên như
-    // trước. `simulated` giữ nguyên — không biết chắc thiết bị đã bị chạm hay chưa, nên không
-    // khẳng định một lần ghi thật.
+    // trước. Final review fix #3a — TRUNG THỰC về thiết bị: nếu đây là lượt ghi THẬT (cùng điều
+    // kiện computeDeploy: DPC_DEPLOY_ENABLED + có người ký) thì adapter có thể đã ghi một phần
+    // ⇒ simulated=false + outcome 'unknown' (KHÔNG khẳng định "chưa chạm thiết bị").
+    const realAttempt = realDeployAttempted(req.hitl.confirmedBy);
     const [failedRow] = await d
       .update(programDeployments)
-      .set({ status: "failed", error: (e as Error)?.message ?? String(e) })
+      .set({
+        status: "failed",
+        error: (e as Error)?.message ?? String(e),
+        simulated: !realAttempt,
+        detailJson: { ...((reserved.detailJson ?? {}) as Record<string, unknown>), ...failureOutcome(realAttempt) },
+      })
       .where(eq(programDeployments.id, reserved.id))
       .returning();
     publishDeployed(failedRow);
@@ -548,6 +555,66 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
     .returning();
   publishDeployed(row);
   return row;
+}
+
+/**
+ * Final review fix #3a — cùng điều kiện "ghi thiết bị THẬT" của computeDeploy
+ * (`dpcDeployEnabled() && hitl.confirmedBy != null`). Dùng khi computeDeploy NÉM: không biết
+ * adapter đã ghi tới đâu, nên chỉ được nói "đã mô phỏng" khi chắc chắn KHÔNG có lượt ghi thật.
+ */
+function realDeployAttempted(confirmedBy: number | null | undefined): boolean {
+  return dpcDeployEnabled() && confirmedBy != null;
+}
+
+/** detailJson bổ sung cho một lượt deploy NÉM giữa chừng. */
+function failureOutcome(realAttempt: boolean): Record<string, unknown> {
+  return realAttempt
+    ? { outcome: "unknown", outcomeNote: "deploy threw after a real device write may have started — device state unknown" }
+    : { outcome: "not_written", outcomeNote: "deploy threw before any device write (simulated path)" };
+}
+
+/** Final review fix #3b — tuổi tối thiểu (ms) của một dòng 'pending' trước khi quét đóng nó. */
+export const INTERRUPTED_DEPLOY_MIN_AGE_MS = 15 * 60_000;
+
+/**
+ * Final review fix #3b — QUÉT LÚC KHỞI ĐỘNG (song song rehydrateInterruptedRuns của FOE).
+ * `pending` là trạng thái TRONG-TIẾN-TRÌNH: deployBuild giữ chỗ → adapter → UPDATE kết quả;
+ * approveDeployment nhận hàng → adapter → UPDATE. Tiến trình chết giữa chừng ⇒ dòng kẹt
+ * 'pending' mãi (replay cùng khoá trả 'pending', rollback từ chối đích 'pending', Hộp duyệt
+ * không thấy). Đóng mọi dòng 'pending' CŨ HƠN ngưỡng thành 'failed' + "interrupted, outcome
+ * unknown" (thiết bị có thể đã bị ghi) để người thấy và xử lý. Ngưỡng tính từ mốc MỚI NHẤT
+ * (approvingAt ▸ reservedAt ▸ createdAt) — một lượt duyệt vừa nhận hàng cũ không bị quét nhầm;
+ * ngưỡng rộng để không đụng lượt deploy còn sống ở instance khác. So sánh làm TRONG SQL (tránh
+ * lệch múi giờ timestamp naive khi đọc qua postgres.js). UPDATE có điều kiện status='pending'.
+ * Fail-safe: không bao giờ ném (không được chặn khởi động).
+ */
+export async function failInterruptedDeployments(
+  minAgeMs: number = INTERRUPTED_DEPLOY_MIN_AGE_MS,
+): Promise<{ failedIds: number[] }> {
+  try {
+    const d = await getDb();
+    if (!d) return { failedIds: [] };
+    const secs = Math.max(0, Math.floor(minAgeMs / 1000));
+    const lastTouched = sql`COALESCE(
+      (${programDeployments.detailJson} ->> 'approvingAt')::timestamptz,
+      (${programDeployments.detailJson} ->> 'reservedAt')::timestamptz,
+      ${programDeployments.createdAt}::timestamptz)`;
+    const rows = await d
+      .update(programDeployments)
+      .set({
+        status: "failed",
+        error: "Deploy interrupted, outcome unknown (server restart mid-deploy) — the device may have been written; verify it before retrying.",
+        detailJson: sql`COALESCE(${programDeployments.detailJson}, '{}'::jsonb) || jsonb_build_object(
+          'outcome', 'unknown', 'interrupted', true, 'interruptedSweptAt', ${new Date().toISOString()}::text)`,
+      })
+      .where(and(eq(programDeployments.status, "pending"), sql`${lastTouched} < now() - make_interval(secs => ${secs})`))
+      .returning();
+    for (const r of rows) publishDeployed(r);
+    return { failedIds: rows.map((r) => r.id) };
+  } catch (err) {
+    console.error("[DPC] failInterruptedDeployments failed:", err instanceof Error ? err.message : String(err));
+    return { failedIds: [] };
+  }
 }
 
 async function findDeploymentByKey(idempotencyKey: string) {
@@ -802,12 +869,21 @@ export async function approveDeployment(
     );
   } catch (e) {
     // Không để hàng kẹt 'pending': ghi 'failed' + lỗi thật, rồi để lỗi nổi lên.
+    // Final review fix #3a — approver luôn là người ký (confirmedBy = approver.id) ⇒ lượt ghi thật
+    // khi DPC_DEPLOY_ENABLED: thiết bị có thể đã bị ghi ⇒ simulated=false + outcome 'unknown'.
+    const realAttempt = realDeployAttempted(approver.id);
     const [failedRow] = await d
       .update(programDeployments)
       .set({
         status: "failed",
         error: (e as Error)?.message ?? String(e),
-        detailJson: { ...detail, approvedBy: approver.id, approvedAt: new Date().toISOString() },
+        simulated: !realAttempt,
+        detailJson: {
+          ...detail,
+          approvedBy: approver.id,
+          approvedAt: new Date().toISOString(),
+          ...failureOutcome(realAttempt),
+        },
       })
       .where(eq(programDeployments.id, deploymentId))
       .returning();

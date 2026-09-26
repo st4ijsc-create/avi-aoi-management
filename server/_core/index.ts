@@ -6003,6 +6003,23 @@ async function startServer() {
     console.error("[FOE] rehydrate wiring failed:", (err as any)?.message || err);
   }
 
+  // doc 80 final review fix #3b — DPC deploy: dòng program_deployments 'pending' là trạng thái
+  // TRONG-TIẾN-TRÌNH (giữ chỗ/nhận duyệt → adapter → ghi kết quả). Restart giữa chừng để lại
+  // dòng kẹt 'pending' mãi ⇒ đóng các dòng quá hạn thành 'failed' ("interrupted, outcome
+  // unknown") để chúng rời khỏi trạng thái treo một cách trung thực. Fail-safe, không chặn boot.
+  try {
+    const { failInterruptedDeployments } = await import("../services/programming/programmingService");
+    failInterruptedDeployments()
+      .then((r) => {
+        if (r.failedIds.length > 0) {
+          console.log(`[DPC] Interrupted deploy sweep: ${r.failedIds.length} pending row(s) → failed (outcome unknown). ids=${r.failedIds.join(",")}`);
+        }
+      })
+      .catch((err) => console.error("[DPC] interrupted deploy sweep failed:", (err as any)?.message || err));
+  } catch (err) {
+    console.error("[DPC] interrupted deploy sweep wiring failed:", (err as any)?.message || err);
+  }
+
   // QW3 — Materialized view refresh: MOVED to the W4-D background scheduler
   // set (backgroundJobs.ts); it now also runs on the dedicated jobs DB pool.
 
