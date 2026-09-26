@@ -15,13 +15,21 @@
  *            revocation/expiry included) FOR THIS machine. The service is
  *            reused — never a second hash implementation.
  *
- * Rollout is gated by SOCKET_MACHINE_AUTH_MODE (default `off` = today's
- * behaviour byte-identical — see the handlers in socket.ts). Mismatches are
- * counted in-process (getSocketMachineAuthMismatches) and logged structured so
- * ops can prove "0 mismatch ≥1 tuần" BEFORE flipping `enforce` and before
- * runbook 52 §3.f nulls the legacy column.
+ * Rollout is gated by SOCKET_MACHINE_AUTH_MODE. Mismatches are counted
+ * in-process (getSocketMachineAuthMismatches) and logged structured.
+ *
+ * ★★★ doc 81 Đợt 1B Task 9 (Ruling R6) — MẶC ĐỊNH TRONG MÃ ĐỔI `off` → `enforce`.
+ * BE3 §L4b đo được: cờ vắng trong `.env` ⇒ `off` ⇒ 1.000 socket vô danh vào phòng
+ * `machine:17119`, nhận 100 % telemetry, đánh dấu máy online, và bão confirm_mapping
+ * làm treo ingest 18,3 s. `off` vẫn đặt được qua env (lối thoát, hành vi cũ nguyên văn);
+ * `.env` KHÔNG bị sửa — hiệu lực khi chủ dự án restart.
+ *
+ * ★ Nhánh legacy (plaintext `machines.apiKey`) nay hỏi CÙNG điểm quyết định với router máy
+ * và `/api/v1` (`decideSharedMachineKey`, Task 8): `MACHINE_SHARED_KEY_ALLOWED` (mặc định
+ * deny từ mig 0334) + luật mk_-only + sổ weak-auth. Trước đây socket là cửa DUY NHẤT còn nhận
+ * khoá dùng chung bất kể cờ.
  */
-import { authenticateMachine } from "../services/machineAuthService";
+import { authenticateMachine, decideSharedMachineKey } from "../services/machineAuthService";
 import { logger } from "../logger";
 
 // ── mode ─────────────────────────────────────────────────────────────────────
@@ -30,30 +38,41 @@ export type SocketMachineAuthMode = "off" | "log" | "enforce";
 
 let badModeWarned: string | null = null;
 
+/** Mặc định trong mã (doc 81 Đợt 1B Task 9, Ruling R6). MỘT hằng — mọi điểm đọc dùng nó. */
+export const SOCKET_MACHINE_AUTH_MODE_MAC_DINH: SocketMachineAuthMode = "enforce";
+
 /**
- * `off` (default) | `log` | `enforce`. Unrecognised values fall back to `off`
- * with ONE error log per distinct value — a typo must be loud, but it must not
- * silently change production presence behaviour either (same fail-open-with-
- * loud-log policy as parseWeakAuthPolicy, doc 51 P0).
+ * `off` | `log` | `enforce` (mặc định). Unrecognised values fall back to the
+ * DEFAULT (`enforce`) with ONE error log per distinct value — same "fall back to
+ * the flag's default, never to something more permissive" policy as
+ * parseWeakAuthPolicy (doc 51 P0). Before Task 9 a typo fell back to `off`, i.e.
+ * a typo such as "enforced" silently OPENED the channel.
  */
 export function socketMachineAuthMode(): SocketMachineAuthMode {
   const raw = (process.env.SOCKET_MACHINE_AUTH_MODE ?? "").trim().toLowerCase();
-  if (raw === "" || raw === "off") return "off";
+  if (raw === "") return SOCKET_MACHINE_AUTH_MODE_MAC_DINH;
+  if (raw === "off") return "off";
   if (raw === "log") return "log";
   if (raw === "enforce") return "enforce";
   if (badModeWarned !== raw) {
     badModeWarned = raw;
     logger.error(
-      { flag: "SOCKET_MACHINE_AUTH_MODE", value: raw, fallback: "off", doc: "56-Đ0" },
-      `[SocketMachineAuth] SOCKET_MACHINE_AUTH_MODE="${raw}" không hợp lệ — chỉ nhận off|log|enforce. Đang dùng "off".`,
+      { flag: "SOCKET_MACHINE_AUTH_MODE", value: raw, fallback: SOCKET_MACHINE_AUTH_MODE_MAC_DINH, doc: "81-1B-T9" },
+      `[SocketMachineAuth] SOCKET_MACHINE_AUTH_MODE="${raw}" không hợp lệ — chỉ nhận off|log|enforce. ` +
+        `Đang dùng mặc định "${SOCKET_MACHINE_AUTH_MODE_MAC_DINH}".`,
     );
   }
-  return "off";
+  return SOCKET_MACHINE_AUTH_MODE_MAC_DINH;
 }
 
 // ── verification ─────────────────────────────────────────────────────────────
 
-export type SocketMachineAuthMethod = "legacy" | "mk" | "none";
+/**
+ * `legacy-denied` = khoá KHỚP `machines.apiKey` nhưng chính sách khoá dùng chung
+ * (`decideSharedMachineKey`) từ chối — tách riêng để người vận hành biết phải xoay
+ * sang mk_ (hoặc đặt MACHINE_SHARED_KEY_ALLOWED), không phải đi tìm "khoá sai".
+ */
+export type SocketMachineAuthMethod = "legacy" | "legacy-denied" | "mk" | "none";
 
 export interface SocketMachineAuthResult {
   ok: boolean;
@@ -65,12 +84,15 @@ export interface SocketAuthMachine {
   id: number;
   code: string;
   apiKey: string | null;
+  /** Cho luật mk_-only của decideSharedMachineKey (automation/iot). */
+  machineType?: string | null;
 }
 
 /**
  * Verify a machine socket event's credential: legacy-OR-mk (see file header).
- * Pure decision function — no logging/registry side effects (the handlers call
- * recordSocketMachineAuthMismatch themselves so `off` mode stays untouched).
+ * Decision function — the only side effect is the weak-auth usage registry the
+ * shared-key decision records (rotation evidence, same as HTTP); the handlers
+ * call recordSocketMachineAuthMismatch themselves so `off` mode stays untouched.
  */
 export async function verifyMachineSocketAuth(
   machine: SocketAuthMachine | null | undefined,
@@ -84,8 +106,13 @@ export async function verifyMachineSocketAuth(
   // (a) LEGACY shared plaintext — the comparison machine:sync_started has always
   // done, with the non-null guard GAP-1 requires: once runbook 52 §3.f NULLs the
   // column, this branch can no longer match anything (incl. an empty key).
+  // doc 81 Đợt 1B Task 9: a match is then put to the SAME shared-key decision the
+  // HTTP machine router and /api/v1 use (Task 8) — MACHINE_SHARED_KEY_ALLOWED
+  // (default deny) + mk_-only. No scope: presence marks the machine online and
+  // writes machine_status_logs, so `read-only` does not admit it either.
   if (machine.apiKey != null && machine.apiKey === key) {
-    return { ok: true, method: "legacy" };
+    const { decision } = decideSharedMachineKey(machine, undefined, endpoint);
+    return decision === "allowed" ? { ok: true, method: "legacy" } : { ok: false, method: "legacy-denied" };
   }
 
   // (b) Per-machine mk_ credential — verified by the SAME service the HTTP

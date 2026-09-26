@@ -5,6 +5,16 @@ This script simulates an AVI/AOI machine connecting to the system via WebSocket.
 
 Usage:
     python3 test_machine_websocket.py --url ws://localhost:3000 --code AVI-TEST-001 --name "Test AVI Machine"
+    # machine that already has its per-machine key (doc 81 Dot 1B Task 9 - server default
+    # SOCKET_MACHINE_AUTH_MODE=enforce): authenticate in the handshake, skip registration
+    python3 test_machine_websocket.py --url http://localhost:3000 --code M-17119 --api-key mk_live_...
+
+Socket.io machine clients MUST connect with auth {"clientType": "machine"} (without it the
+server treats the socket as a browser and demands a session cookie). Under the default
+`enforce` mode, confirm_mapping / sync_started / heartbeat need a valid key: either
+auth {machineCode, apiKey} in the handshake, or apiKey in the event payload. A plaintext
+key handed out by admin approval (mach_...) is refused unless the server sets
+MACHINE_SHARED_KEY_ALLOWED=true - use the machine's mk_ key.
 
 Requirements:
     pip install python-socketio websocket-client
@@ -24,13 +34,16 @@ except ImportError:
 
 
 class MachineSimulator:
-    def __init__(self, server_url: str, machine_code: str, machine_name: str, machine_type: str = "AVI"):
+    def __init__(self, server_url: str, machine_code: str, machine_name: str, machine_type: str = "AVI",
+                 api_key: str = None):
         self.server_url = server_url
         self.machine_code = machine_code
         self.machine_name = machine_name
         self.machine_type = machine_type
         self.machine_id = None
-        self.api_key = None
+        # Per-machine key (mk_...) known up front => authenticate in the handshake.
+        self.handshake_key = api_key
+        self.api_key = api_key
         self.is_approved = False
         self.is_connected = False
         
@@ -45,7 +58,16 @@ class MachineSimulator:
         def connect():
             self.is_connected = True
             print(f"[{self._timestamp()}] ✓ Connected to server")
-            self._send_registration()
+            if self.handshake_key:
+                # Socket is bound to this machine by the handshake: map directly.
+                self.is_approved = True
+                self._confirm_mapping()
+            else:
+                self._send_registration()
+
+        @self.sio.on("machine:auth_error")
+        def on_auth_error(data):
+            print(f"[{self._timestamp()}] ✗ Server refused {data.get('event')}: {data.get('code')} - {data.get('message')}")
         
         @self.sio.event
         def disconnect():
@@ -105,6 +127,10 @@ class MachineSimulator:
     
     def _confirm_mapping(self):
         """Confirm machine mapping after approval"""
+        if self.handshake_key:
+            print(f"[{self._timestamp()}] → Confirming mapping (handshake-authenticated)...")
+            self.sio.emit("machine:confirm_mapping", {})
+            return
         if self.machine_id and self.api_key:
             print(f"[{self._timestamp()}] → Confirming mapping...")
             self.sio.emit("machine:confirm_mapping", {
@@ -115,12 +141,13 @@ class MachineSimulator:
     
     def send_heartbeat(self, status: str = "running", metrics: dict = None):
         """Send heartbeat to server"""
-        if not self.is_approved or not self.machine_id:
+        if not self.is_approved or not (self.machine_id or self.handshake_key):
             print(f"[{self._timestamp()}] ⚠ Cannot send heartbeat: Not approved yet")
             return
         
         heartbeat_data = {
-            "machineId": self.machine_id,
+            # handshake-bound socket: the server uses the authenticated machine, id optional
+            **({"machineId": self.machine_id} if self.machine_id else {}),
             "status": status,
             "metrics": metrics or {
                 "temperature": 45.5,
@@ -146,8 +173,12 @@ class MachineSimulator:
         
         try:
             print(f"[{self._timestamp()}] Connecting to {self.server_url}...")
+            auth = {"clientType": "machine"}
+            if self.handshake_key:
+                auth.update({"machineCode": self.machine_code, "apiKey": self.handshake_key})
             self.sio.connect(
                 self.server_url,
+                auth=auth,
                 socketio_path="/api/socket.io",
                 transports=["websocket", "polling"],
             )
@@ -185,6 +216,8 @@ def main():
     parser.add_argument("--type", default="AVI", choices=["AVI", "AOI"], help="Machine type")
     parser.add_argument("--heartbeat", type=int, default=30, help="Heartbeat interval in seconds")
     parser.add_argument("--no-loop", action="store_true", help="Don't run heartbeat loop")
+    parser.add_argument("--api-key", default=None,
+                        help="Per-machine key (mk_...) - authenticate in the handshake and skip registration")
     
     args = parser.parse_args()
     
@@ -194,6 +227,7 @@ def main():
         machine_code=args.code,
         machine_name=args.name,
         machine_type=args.type,
+        api_key=args.api_key,
     )
     
     if simulator.connect():

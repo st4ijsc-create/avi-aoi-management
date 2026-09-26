@@ -43,10 +43,15 @@ class FakeSocket {
   handshake = { auth: { clientType: "machine" }, headers: {} as Record<string, string>, address: "10.0.0.9" };
   handlers = new Map<string, Handler[]>();
   emit = vi.fn();
+  /** Middleware theo gói (socket.use) — doc 81 Đợt 1B Task 9 gắn giới hạn tần suất machine:* ở đây. */
+  middlewares: Array<(packet: unknown[], next: (err?: unknown) => void) => void> = [];
   constructor(id: string, private server: FakeServer) {
     this.id = id;
     this.data = { clientType: "machine" };
     server.sockets.sockets.set(id, this);
+  }
+  use(fn: (packet: unknown[], next: (err?: unknown) => void) => void) {
+    this.middlewares.push(fn);
   }
   on(evt: string, fn: Handler) {
     const arr = this.handlers.get(evt) ?? [];
@@ -68,6 +73,14 @@ class FakeSocket {
   gui(evt: string, ...args: unknown[]) {
     const arr = this.handlers.get(evt);
     if (!arr?.length) throw new Error(`socket giả không có handler "${evt}"`);
+    // Như socket.io: middleware chạy trước, gói bị bỏ (không gọi next) ⇒ KHÔNG listener nào chạy.
+    for (const mw of this.middlewares) {
+      let quaCua = false;
+      mw([evt, ...args], () => {
+        quaCua = true;
+      });
+      if (!quaCua) return;
+    }
     for (const h of arr) h(...args);
   }
 }

@@ -18,14 +18,22 @@ import {
 } from "../services/stateStore/ingest";
 import { registerUnsStreamHandlers } from "../services/stateStore/unsStreamGateway";
 // ── doc 56 Đ0-A (RTM-6 + GAP-1) — machine-event auth on the socket channel.
-// SOCKET_MACHINE_AUTH_MODE default `off` keeps today's behaviour byte-identical;
 // `log`/`enforce` accept legacy-OR-mk_ so a rotated (mk_-only) machine keeps
 // presence after runbook 52 §3.f nulls machines.apiKey.
+// ★★★ doc 81 Đợt 1B Task 9 (R6): SOCKET_MACHINE_AUTH_MODE mặc định trong mã = `enforce`
+// (trước: `off` ⇒ socket máy vô danh vào phòng machine:*, nhận telemetry, đánh dấu online).
+// `off` qua env vẫn là lối thoát — hành vi cũ nguyên văn.
 import {
   socketMachineAuthMode,
   verifyMachineSocketAuth,
   recordSocketMachineAuthMismatch,
 } from "./socketMachineAuth";
+// ── doc 81 Đợt 1B Task 9 (BE3 §L4b Backpressure) — giới hạn tần suất `machine:*` theo socket + IP.
+import {
+  choPhepSuKienMay,
+  choPhepXacThucHandshakeMay,
+  giaiPhongSocketMay,
+} from "./socketMachineRateLimit";
 // ── ĐỢT 6 VÁ CHẶN-1 — phép quyết định phân quyền twin, MỘT nơi duy nhất.
 // Test import ĐÚNG các hàm này (không chép lại biểu thức sang tệp test — G20).
 import { coDanhTinhNguoiDung, nguoiXemDuocNhan } from "./twinPhamViQuyen";
@@ -178,6 +186,75 @@ export interface DashboardUpdate {
   timestamp: Date;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ doc 81 Đợt 1B Task 9 — DANH TÍNH MÁY TRÊN SOCKET (gộp Đợt 1 Task 10)
+// ════════════════════════════════════════════════════════════════════════════
+/** Mã lỗi trả về máy khi sự kiện `machine:*` không kèm xác thực hợp lệ (`enforce`). */
+export const MA_LOI_SOCKET_MAY_CHUA_XAC_THUC = "MACHINE_SOCKET_UNAUTHORIZED";
+
+type HangMay = NonNullable<Awaited<ReturnType<typeof db.getMachineById>>>;
+
+/** Máy đã gắn với socket (handshake hoặc một sự kiện trước đã xác thực), hoặc null. */
+function mayDaGanCua(socket: Socket): { id: number; code: string } | null {
+  const d = socket.data as { machineId?: unknown; machineCode?: unknown } | undefined;
+  return typeof d?.machineId === "number" ? { id: d.machineId, code: String(d.machineCode ?? "") } : null;
+}
+
+function ganMayChoSocket(socket: Socket, may: { id: number; code: string }): void {
+  (socket.data as any).machineId = may.id;
+  (socket.data as any).machineCode = may.code;
+}
+
+/** Id nguyên dương từ payload máy, hoặc null. */
+function idMayTuPayload(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * Handshake `clientType:"machine"` ở `log`/`enforce`. Trả `undefined` = cho nối, `Error` = từ chối.
+ * Trình thông tin (machineCode/machineId/apiKey — bất kỳ trường nào) mà không xác thực được ⇒ `enforce`
+ * từ chối. Tra DB đứng SAU xô tần suất IP (vòng nối-lại bằng khoá sai không thành bão truy vấn).
+ */
+async function xacThucHandshakeMay(socket: Socket, mode: "log" | "enforce"): Promise<Error | undefined> {
+  const a = (socket.handshake.auth ?? {}) as Record<string, unknown>;
+  const machineCode = typeof a.machineCode === "string" ? a.machineCode.trim() : "";
+  const apiKey = typeof a.apiKey === "string" ? a.apiKey : "";
+  const coId = a.machineId !== undefined && a.machineId !== null && a.machineId !== "";
+  if (!machineCode && !apiKey && !coId) return undefined; // vô danh: chỉ đăng ký được, chưa gắn máy
+  if (!choPhepXacThucHandshakeMay(socket.handshake.address)) {
+    return mode === "enforce" ? new Error("RATE_LIMITED") : undefined; // log: cho nối, không tra DB
+  }
+
+  let machine: HangMay | undefined;
+  try {
+    if (machineCode) machine = await db.getMachineByCode(machineCode);
+    else {
+      const id = idMayTuPayload(a.machineId);
+      machine = id != null ? await db.getMachineById(id) : undefined;
+    }
+  } catch (err: any) {
+    console.error("[Socket.io] handshake may: tra cuu may that bai:", err?.message ?? err);
+    machine = undefined;
+  }
+  // machineCode + machineId cùng có mà chỉ tới hai máy khác nhau ⇒ không khớp.
+  if (machine && machineCode && coId && idMayTuPayload(a.machineId) !== machine.id) machine = undefined;
+  if (machine && machine.isActive === false) machine = undefined;
+  const auth = await verifyMachineSocketAuth(machine, apiKey, "socket:handshake");
+  if (machine && auth.ok) {
+    ganMayChoSocket(socket, { id: machine.id, code: machine.code });
+    return undefined;
+  }
+  recordSocketMachineAuthMismatch({
+    event: "handshake",
+    mode,
+    machineId: machine?.id ?? 0,
+    machineCode: machine?.code ?? "?", // KHÔNG ghi mã do client tự khai vào log
+    method: auth.method,
+  });
+  return mode === "enforce" ? new Error("MACHINE_UNAUTHORIZED") : undefined;
+}
+
 export function initializeSocket(server: HttpServer): Server {
   const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
     .split(",")
@@ -199,14 +276,24 @@ export function initializeSocket(server: HttpServer): Server {
 
   // Handshake auth middleware — IEC 62443-2-1 CL2 realtime channel hardening.
   // Browser clients must present a valid session cookie; machine clients
-  // (clientType === 'machine') bypass cookie check because they authenticate
-  // per-event via apiKey (see machine:request_config / machine:sync_started).
+  // (clientType === 'machine') bypass the cookie check and authenticate with a
+  // MACHINE credential instead:
+  //   ★ doc 81 Đợt 1B Task 9 — `auth.machineCode` (hoặc `auth.machineId`) + `auth.apiKey`
+  //     trong handshake, xác thực bằng CÙNG verifyMachineSocketAuth (legacy-OR-mk_). Hợp lệ ⇒
+  //     `socket.data.machineId/machineCode` = máy ĐÃ XÁC THỰC (mọi sự kiện machine:* sau đó dùng
+  //     nó, không tin id trong payload). Trình thông tin mà SAI ⇒ `enforce` từ chối kết nối
+  //     (MACHINE_UNAUTHORIZED), `log` ghi mismatch rồi cho nối (chưa gắn máy).
+  //     KHÔNG trình gì ⇒ vẫn nối được (máy mới cần `machine:register` để được duyệt) nhưng chưa
+  //     gắn máy nào: ở `enforce` confirm_mapping/sync_started/heartbeat phải kèm apiKey đúng.
+  //   `off` ⇒ hành vi cũ nguyên văn: trường auth bị bỏ qua, không tra DB.
   io.use(async (socket, next) => {
     try {
       const clientType = (socket.handshake.auth as any)?.clientType;
       if (clientType === "machine") {
         (socket.data as any).clientType = "machine";
-        return next();
+        const mode = socketMachineAuthMode();
+        if (mode === "off") return next();
+        return next(await xacThucHandshakeMay(socket, mode));
       }
 
       const cookieHeader = socket.handshake.headers.cookie ?? "";
@@ -232,6 +319,64 @@ export function initializeSocket(server: HttpServer): Server {
     const u = (socket.data as any)?.user;
     const ct = (socket.data as any)?.clientType ?? "unknown";
     console.log(`[Socket.io] Client connected: ${socket.id} type=${ct}${u ? ` user=${u.id}` : ""}`);
+
+    // ★★★ doc 81 Đợt 1B Task 9 (BE3 §L4b) — giới hạn tần suất MỌI gói `machine:*` (theo socket + IP),
+    // ở CẢ BA chế độ auth, TRƯỚC mọi listener (kể cả hook state-store additive): gói vượt ngưỡng bị bỏ
+    // ⇒ không handler nào chạy ⇒ không tra DB, không ghi DB. Đếm + log gộp ở socketMachineRateLimit.
+    socket.use((packet, next) => {
+      const ten = packet[0];
+      if (typeof ten === "string" && ten.startsWith("machine:") && !choPhepSuKienMay(socket.id, socket.handshake.address)) {
+        return; // bỏ gói (không gọi next)
+      }
+      next();
+    });
+
+    /** `enforce`: sự kiện máy không kèm xác thực hợp lệ ⇒ trả lỗi cho máy (không vào phòng, không ghi DB). */
+    const tuChoiSuKienMay = (event: string) => {
+      socket.emit("machine:auth_error", {
+        event,
+        code: MA_LOI_SOCKET_MAY_CHUA_XAC_THUC,
+        message:
+          "Machine socket not authenticated: connect with auth { clientType: 'machine', machineCode, apiKey } " +
+          "or send a valid apiKey for this machineId.",
+      });
+    };
+
+    /**
+     * `log`/`enforce`: máy nào đứng sau sự kiện này.
+     *  (1) socket ĐÃ gắn máy ⇒ dùng máy đó; payload chỉ tới máy KHÁC ⇒ không khớp (không tin id payload).
+     *  (2) chưa gắn ⇒ xác thực `apiKey` trong payload cho `machineId` trong payload bằng CÙNG
+     *      verifyMachineSocketAuth (giao thức cũ từng-sự-kiện); khớp ⇒ GẮN socket với máy đó.
+     */
+    const xacDinhMaySuKien = async (
+      event: string,
+      data: any,
+    ): Promise<
+      | { ok: true; may: { id: number; code: string }; hang?: HangMay }
+      | { ok: false; method: "legacy" | "legacy-denied" | "mk" | "none"; hang?: HangMay }
+    > => {
+      const gan = mayDaGanCua(socket);
+      if (gan) {
+        const idPayload = data?.machineId;
+        if (idPayload == null || idMayTuPayload(idPayload) === gan.id) return { ok: true, may: gan };
+        return { ok: false, method: "none" };
+      }
+      const id = idMayTuPayload(data?.machineId);
+      let hang: HangMay | undefined;
+      try {
+        hang = id != null ? await db.getMachineById(id) : undefined;
+      } catch (err: any) {
+        console.error(`[Socket.io] ${event}: tra cuu may that bai:`, err?.message ?? err);
+        hang = undefined;
+      }
+      const auth = await verifyMachineSocketAuth(hang, data?.apiKey, `socket:${event}`);
+      if (!hang || !auth.ok) return { ok: false, method: auth.method, hang };
+      // Một socket = một máy: lượt xác thực song song khác đã gắn socket với máy KHÁC ⇒ không khớp.
+      const ganSau = mayDaGanCua(socket);
+      if (ganSau && ganSau.id !== hang.id) return { ok: false, method: "none", hang };
+      ganMayChoSocket(socket, { id: hang.id, code: hang.code });
+      return { ok: true, may: { id: hang.id, code: hang.code }, hang };
+    };
 
     // Join room for specific factory/workshop/machine updates
     socket.on("subscribe", (data: { factoryId?: number; workshopId?: number; machineId?: number; lineId?: number }) => {
@@ -430,6 +575,7 @@ export function initializeSocket(server: HttpServer): Server {
 
     socket.on("disconnect", () => {
       console.log(`[Socket.io] Client disconnected: ${socket.id}`);
+      giaiPhongSocketMay(socket.id);
       
       // Remove from connected machines if it was a machine
       const machineEntries = Array.from(connectedMachines.entries());
@@ -509,18 +655,27 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Machine sends heartbeat
     socket.on("machine:heartbeat", (data: { machineId: number; status: string; metrics?: any }) => {
-      const machineInfo = connectedMachines.get(data.machineId);
+      // ★ doc 81 Đợt 1B Task 9 — `enforce`: nhịp tim chỉ của socket ĐÃ gắn máy, và cho CHÍNH máy đó
+      // (id payload vắng hoặc trùng). `log`: dùng máy đã gắn nếu có. `off`: id payload (hành vi cũ).
+      const mode = socketMachineAuthMode();
+      const gan = mode === "off" ? null : mayDaGanCua(socket);
+      if (mode === "enforce" && (!gan || (data?.machineId != null && idMayTuPayload(data.machineId) !== gan.id))) {
+        tuChoiSuKienMay("machine:heartbeat");
+        return;
+      }
+      const machineId = gan ? gan.id : data.machineId;
+      const machineInfo = connectedMachines.get(machineId);
       if (machineInfo && machineInfo.socketId === socket.id) {
         machineInfo.lastHeartbeat = new Date();
-        connectedMachines.set(data.machineId, machineInfo);
+        connectedMachines.set(machineId, machineInfo);
         // ★ BỀN HOÁ: cột `machines.lastHeartbeat` là thứ DUY NHẤT mọi màn twin đọc để biết máy
         // còn tươi hay `khong_ro`. Có tiết lưu, không chặn, không ném — xem `ghiNhipTimXuongDb`.
         // Nằm SAU hàng rào danh tính `machineInfo.socketId === socket.id` ở trên (dòng ngay trên
         // cùng khối `if`): một socket lạ mạo danh machineId KHÔNG ghi được gì.
-        ghiNhipTimXuongDb(data.machineId);
+        ghiNhipTimXuongDb(machineId);
         // Shared-store mirror: refresh TTL so a live machine never self-expires.
         void presence.refresh({
-          machineId: data.machineId,
+          machineId,
           machineCode: machineInfo.machineCode,
           socketId: socket.id,
           ipAddress: machineInfo.ipAddress,
@@ -530,7 +685,7 @@ export function initializeSocket(server: HttpServer): Server {
 
         // Broadcast machine status update
         io?.to("global").emit("machine:status_update", {
-          machineId: data.machineId,
+          machineId,
           status: data.status,
           metrics: data.metrics,
           lastHeartbeat: machineInfo.lastHeartbeat,
@@ -542,83 +697,92 @@ export function initializeSocket(server: HttpServer): Server {
     // Doc 56 Đ0-A (RTM-6/GAP-1): historically this event verified NOTHING before
     // setOnline + broadcast — anyone on the LAN could mark any machine online.
     // SOCKET_MACHINE_AUTH_MODE gates the fix:
-    //   off (default) — byte-identical legacy behaviour (no check, synchronous);
+    //   off           — byte-identical legacy behaviour (no check, synchronous);
     //   log           — verify legacy-OR-mk_, count/log mismatches, STILL allow
     //                   (GAP-1 observation week);
-    //   enforce       — mismatch → drop: no setOnline, no broadcast, no
-    //                   machine_status_logs write.
-    // NOTE: in log/enforce the apply step runs AFTER an async DB verify, so the
-    // additive state-store confirm_mapping listener below (registration order)
-    // no longer sees connectedMachines populated — with STATE_STORE_ENABLED on,
-    // tracking then starts at the machine's first heartbeat instead (the same
-    // documented limitation sync_started already has; see stateStore/ingest.ts).
+    //   enforce (mặc định trong mã từ doc 81 Đợt 1B Task 9) — mismatch → drop: no
+    //                   room, no setOnline, no broadcast, no machine_status_logs
+    //                   write, and `machine:auth_error` back to the socket.
+    // ★ Task 9: id/mã máy lấy từ máy ĐÃ XÁC THỰC (socket.data hoặc hàng DB), không từ payload.
+    // A socket already bound (handshake credentials) applies SYNCHRONOUSLY, so the
+    // additive state-store confirm_mapping listener below (registration order) sees
+    // connectedMachines populated. The per-event path (apiKey in payload) applies
+    // after an async DB verify — with STATE_STORE_ENABLED on, tracking then starts at
+    // the machine's first heartbeat instead (documented limitation, stateStore/ingest.ts).
     socket.on("machine:confirm_mapping", (data: { machineId: number; machineCode: string; apiKey: string }) => {
-      const applyConfirmMapping = () => {
+      const applyConfirmMapping = (machineId: number, machineCode: string) => {
         const ipAddress = socket.handshake.address;
-        connectedMachines.set(data.machineId, {
+        connectedMachines.set(machineId, {
           socketId: socket.id,
           ipAddress,
           lastHeartbeat: new Date(),
-          machineCode: data.machineCode,
+          machineCode,
         });
-        onlineMachineCodesMap.set(data.machineId, data.machineCode);
+        onlineMachineCodesMap.set(machineId, machineCode);
         // Shared-store mirror: mark online across the fleet (TTL-bounded).
         void presence.setOnline({
-          machineId: data.machineId,
-          machineCode: data.machineCode,
+          machineId,
+          machineCode,
           socketId: socket.id,
           ipAddress,
           lastHeartbeat: Date.now(),
           status: "online",
         }).catch((err) => console.error("[Socket.io] presence setOnline failed:", err?.message ?? err));
 
-        socket.join(`machine:${data.machineId}`);
-        console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) mapped successfully from ${ipAddress}`);
+        socket.join(`machine:${machineId}`);
+        console.log(`[Socket.io] Machine ${machineId} (${machineCode}) mapped successfully from ${ipAddress}`);
 
         // Log status change to database
         db.createMachineStatusLog({
-          machineId: data.machineId,
+          machineId,
           status: 'online',
           ipAddress,
         }).catch(err => console.error('[Socket.io] Failed to log machine online status:', err));
 
         // Notify admin dashboard
         io?.to("admin").emit("machine:connected", {
-          machineId: data.machineId,
-          machineCode: data.machineCode,
+          machineId,
+          machineCode,
           ipAddress,
           timestamp: new Date(),
         });
 
         // Broadcast status change to all clients
-        io?.emit("machine:status_change", { machineCode: data.machineCode, status: "online" });
+        io?.emit("machine:status_change", { machineCode, status: "online" });
       };
 
       const mode = socketMachineAuthMode();
       if (mode === "off") {
-        applyConfirmMapping(); // legacy: no credential check (today's behaviour)
+        applyConfirmMapping(data.machineId, data.machineCode); // legacy: no credential check (hành vi cũ)
+        return;
+      }
+      // Socket đã gắn máy + payload không chỉ tới máy khác ⇒ áp NGAY (đồng bộ, không tra DB).
+      const gan = mayDaGanCua(socket);
+      if (gan && (data?.machineId == null || idMayTuPayload(data.machineId) === gan.id)) {
+        applyConfirmMapping(gan.id, gan.code);
         return;
       }
       void (async () => {
-        let machine: Awaited<ReturnType<typeof db.getMachineById>>;
-        try {
-          machine = await db.getMachineById(data.machineId);
-        } catch (err: any) {
-          console.error("[Socket.io] confirm_mapping machine lookup failed:", err?.message ?? err);
-          machine = undefined;
-        }
-        const auth = await verifyMachineSocketAuth(machine, data.apiKey, "socket:machine:confirm_mapping");
-        if (!auth.ok) {
+        const kq = await xacDinhMaySuKien("machine:confirm_mapping", data);
+        if (!kq.ok) {
+          const idPayload = idMayTuPayload(data?.machineId);
           recordSocketMachineAuthMismatch({
             event: "machine:confirm_mapping",
             mode,
-            machineId: data.machineId,
-            machineCode: machine?.code ?? data.machineCode,
-            method: auth.method,
+            machineId: idPayload ?? 0,
+            machineCode: kq.hang?.code ?? data?.machineCode,
+            method: kq.method,
           });
-          if (mode === "enforce") return; // reject: no setOnline, no broadcast, no status log
+          if (mode === "enforce") {
+            tuChoiSuKienMay("machine:confirm_mapping"); // reject: no room, no setOnline, no broadcast, no status log
+            return;
+          }
+          if (idPayload == null) return; // log: không có máy nào để áp
+          applyConfirmMapping(idPayload, data.machineCode); // log: vẫn cho qua (tuần quan sát GAP-1)
+          return;
         }
-        applyConfirmMapping();
+        if (socket.disconnected) return;
+        applyConfirmMapping(kq.may.id, kq.may.code);
       })();
     });
 
@@ -826,34 +990,38 @@ export function initializeSocket(server: HttpServer): Server {
     // ============ STEP 4: Machine requests config after approval ============
     socket.on("machine:request_config", async (data: { machineId: number; apiKey: string }) => {
       try {
-        // Verify machine and API Key
-        const machine = await db.getMachineById(data.machineId);
         // Doc 56 Đ0-A follow-up (Đ2a) — request_config used to compare ONLY the
         // legacy plaintext machines.apiKey, so a rotated (mk_-only) machine could
         // never fetch its config once runbook 52 §3.f NULLed the column. `off`
-        // (default) keeps that plaintext comparison byte-identical; `log`/`enforce`
+        // keeps that plaintext comparison byte-identical; `log`/`enforce` (mặc định)
         // accept legacy-OR-mk_ via the SAME verifier as sync_started/confirm_mapping
-        // (per SOCKET_MACHINE_AUTH_MODE) and count every mismatch. A total mismatch
-        // is still rejected exactly like today (no mode weakens this event).
+        // and count every mismatch. A total mismatch is still rejected exactly like
+        // today (no mode weakens this event).
+        // ★ doc 81 Đợt 1B Task 9: socket đã gắn máy (handshake) ⇒ cấu hình của CHÍNH máy đó; id
+        // payload chỉ tới máy khác ⇒ từ chối.
         const mode = socketMachineAuthMode();
+        let machine: HangMay | undefined;
         if (mode === "off") {
+          // Verify machine and API Key
+          machine = await db.getMachineById(data.machineId);
           if (!machine || machine.apiKey !== data.apiKey) {
             socket.emit("machine:config_error", { message: "Invalid machine ID or API Key" });
             return;
           }
         } else {
-          const auth = await verifyMachineSocketAuth(machine, data.apiKey, "socket:machine:request_config");
-          if (!machine || !auth.ok) {
+          const kq = await xacDinhMaySuKien("machine:request_config", data);
+          if (!kq.ok) {
             recordSocketMachineAuthMismatch({
               event: "machine:request_config",
               mode,
-              machineId: data.machineId,
-              machineCode: machine?.code,
-              method: auth.method,
+              machineId: idMayTuPayload(data?.machineId) ?? 0,
+              machineCode: kq.hang?.code,
+              method: kq.method,
             });
             socket.emit("machine:config_error", { message: "Invalid machine ID or API Key" });
             return;
           }
+          machine = kq.hang ?? (await db.getMachineById(kq.may.id));
         }
         // Both branches above return on a missing machine; this guard also narrows
         // `machine` to non-null for the config build below.
@@ -893,7 +1061,7 @@ export function initializeSocket(server: HttpServer): Server {
           message: "Configuration loaded successfully.",
         });
 
-        console.log(`[Socket.io] Config sent to machine ${data.machineId} (${machine.code})`);
+        console.log(`[Socket.io] Config sent to machine ${machine.id} (${machine.code})`);
       } catch (error: any) {
         console.error("[Socket.io] Error fetching machine config:", error);
         socket.emit("machine:config_error", {
@@ -905,48 +1073,55 @@ export function initializeSocket(server: HttpServer): Server {
     // ============ STEP 5: Machine confirms sync started ============
     socket.on("machine:sync_started", async (data: { machineId: number; machineCode: string; apiKey: string }) => {
       try {
-        // Verify machine
-        const machine = await db.getMachineById(data.machineId);
-        // Doc 56 Đ0-A (RTM-6/GAP-1): `off` (default) keeps the legacy PLAINTEXT
-        // comparison byte-identical. `log`/`enforce` accept legacy-OR-mk_ — so a
+        // Doc 56 Đ0-A (RTM-6/GAP-1): `off` keeps the legacy PLAINTEXT comparison
+        // byte-identical. `log`/`enforce` (mặc định) accept legacy-OR-mk_ — so a
         // rotated machine (machines.apiKey NULLed per runbook 52 §3.f) still
         // syncs with its mk_ key — and count/log every mismatch; a total
         // mismatch is rejected exactly like today (no mode weakens this event).
+        // ★ doc 81 Đợt 1B Task 9: id/mã máy từ máy ĐÃ XÁC THỰC, không từ payload.
         const mode = socketMachineAuthMode();
+        let machineId: number;
+        let machineCode: string;
         if (mode === "off") {
+          // Verify machine
+          const machine = await db.getMachineById(data.machineId);
           if (!machine || machine.apiKey !== data.apiKey) {
             socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
             return;
           }
+          machineId = data.machineId;
+          machineCode = data.machineCode;
         } else {
-          const auth = await verifyMachineSocketAuth(machine, data.apiKey, "socket:machine:sync_started");
-          if (!machine || !auth.ok) {
+          const kq = await xacDinhMaySuKien("machine:sync_started", data);
+          if (!kq.ok) {
             recordSocketMachineAuthMismatch({
               event: "machine:sync_started",
               mode,
-              machineId: data.machineId,
-              machineCode: machine?.code ?? data.machineCode,
-              method: auth.method,
+              machineId: idMayTuPayload(data?.machineId) ?? 0,
+              machineCode: kq.hang?.code ?? data?.machineCode,
+              method: kq.method,
             });
             socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
             return;
           }
+          machineId = kq.may.id;
+          machineCode = kq.may.code;
         }
 
         const ipAddress = socket.handshake.address;
 
         // Store in connected machines
-        connectedMachines.set(data.machineId, {
+        connectedMachines.set(machineId, {
           socketId: socket.id,
           ipAddress,
           lastHeartbeat: new Date(),
-          machineCode: data.machineCode,
+          machineCode,
         });
-        onlineMachineCodesMap.set(data.machineId, data.machineCode);
+        onlineMachineCodesMap.set(machineId, machineCode);
         // Shared-store mirror: mark online across the fleet (TTL-bounded).
         void presence.setOnline({
-          machineId: data.machineId,
-          machineCode: data.machineCode,
+          machineId,
+          machineCode,
           socketId: socket.id,
           ipAddress,
           lastHeartbeat: Date.now(),
@@ -954,17 +1129,17 @@ export function initializeSocket(server: HttpServer): Server {
         }).catch((err) => console.error("[Socket.io] presence setOnline failed:", err?.message ?? err));
 
         // Join machine-specific room
-        socket.join(`machine:${data.machineId}`);
+        socket.join(`machine:${machineId}`);
 
         // Update lastSyncAt in DB
-        await db.updateMachine(data.machineId, {
+        await db.updateMachine(machineId, {
           lastSyncAt: new Date(),
           syncMode: "online",
         });
 
         // Log status
         db.createMachineStatusLog({
-          machineId: data.machineId,
+          machineId,
           status: "online",
           ipAddress,
         }).catch(err => console.error("[Socket.io] Failed to log sync status:", err));
@@ -1003,19 +1178,25 @@ export function initializeSocket(server: HttpServer): Server {
     // (`machine:sync_started` verifies its apiKey asynchronously, so a machine
     // that never confirms a mapping lands in the state store on its FIRST
     // heartbeat instead — documented honest limitation in stateStore/ingest.ts.)
+    // doc 81 Đợt 1B Task 9: máy gắn qua handshake có thể bỏ machineId khỏi payload ⇒ dùng máy đã gắn
+    // (socket.data chỉ được đặt ở log/enforce — `off` giữ nguyên id payload).
     socket.on("machine:heartbeat", (data: { machineId: number; status: string; metrics?: any }) => {
       if (!stateStoreEnabled()) return;
-      const info = connectedMachines.get(data?.machineId);
+      const machineId = data?.machineId ?? mayDaGanCua(socket)?.id;
+      if (machineId == null) return;
+      const info = connectedMachines.get(machineId);
       if (!info || info.socketId !== socket.id) return; // same guard as the primary handler
-      trackMachineSocket(socket.id, data.machineId);
-      void stateStoreOnMachineStatus({ machineId: data.machineId, status: data.status, metrics: data.metrics });
+      trackMachineSocket(socket.id, machineId);
+      void stateStoreOnMachineStatus({ machineId, status: data?.status, metrics: data?.metrics });
     });
     socket.on("machine:confirm_mapping", (data: { machineId: number }) => {
       if (!stateStoreEnabled()) return;
-      const info = connectedMachines.get(data?.machineId);
+      const machineId = data?.machineId ?? mayDaGanCua(socket)?.id;
+      if (machineId == null) return;
+      const info = connectedMachines.get(machineId);
       if (!info || info.socketId !== socket.id) return; // primary handler registered the mapping synchronously
-      trackMachineSocket(socket.id, data.machineId);
-      void stateStoreOnMachineStatus({ machineId: data.machineId, status: "online" });
+      trackMachineSocket(socket.id, machineId);
+      void stateStoreOnMachineStatus({ machineId, status: "online" });
     });
     socket.on("disconnect", () => {
       // No-op unless this socket was tracked as a machine (ingest.ts keeps its
