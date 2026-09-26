@@ -102,12 +102,20 @@ export async function fetchObservation(rule: InterlockRule): Promise<Observation
       const conds = [gte(otTelemetry.ts, since)];
       if (rule.machineId != null) conds.push(eq(otTelemetry.machineId, rule.machineId));
       if (rule.sourceKey) conds.push(eq(otTelemetry.metric, rule.sourceKey));
+      // ILK-04 (doc 80 Phụ lục D §7.4) — lấy N mẫu MỚI NHẤT trong cửa sổ
+      // (ORDER BY ts DESC LIMIT n), rồi đảo lại thành thứ tự thời gian TĂNG DẦN
+      // (cũ→mới) vì `series` là hợp đồng "newest-last" mà ruleEvaluator dùng
+      // (consecutiveCount lấy `series.slice(-consecutiveCount)`). Trước vá:
+      // ORDER BY ts ASC LIMIT n lấy N mẫu CŨ NHẤT trong cửa sổ — khi cửa sổ có
+      // nhiều hơn windowSize mẫu, cổng không bao giờ thấy giá trị mới nhất
+      // (tái hiện: 120 mẫu/1h, windowSize 50 → cổng thấy mẫu #1..50, bỏ #51..120).
       const rows = await db
         .select({ v: otTelemetry.numValue, t: otTelemetry.ts })
         .from(otTelemetry)
         .where(and(...conds))
-        .orderBy(otTelemetry.ts)
+        .orderBy(desc(otTelemetry.ts))
         .limit(rule.windowSize ?? 50);
+      rows.reverse();
       const series = rows.map((r) => (r.v != null ? Number(r.v) : null));
       const latest = series.length ? series[series.length - 1] : null;
       return { series, scalar: latest };

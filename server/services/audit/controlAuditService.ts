@@ -24,6 +24,13 @@ import { secPlatformEnabled } from "../security/policyGate";
 
 /** Kiểu db drizzle đã resolve (khớp getDb) — caller luôn truyền db non-null. */
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+// ILK-10 (doc 80 Phụ lục D §7.4) — recordAuditEvent giờ được gọi TỪ BÊN TRONG
+// `db.transaction(async (tx) => { ... })` của caller (interlockRouter), để dòng
+// audit và thay đổi cấu hình rule chung một transaction (cùng thất bại/cùng đậu).
+// `DbOrTx` là idiom đã dùng ở server/db/hierarchy.ts, machineRecipe.ts,
+// inspectionProgramService.ts — kiểu của tham số `tx` được SUY ra từ chính
+// `Db["transaction"]` nên không cần tự khai lại kiểu PgTransaction.
+type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /** Advisory-lock key that serialises audit-chain appends (arbitrary constant). */
 const AUDIT_CHAIN_LOCK = 918_273_645;
@@ -62,7 +69,7 @@ export function computeAuditHash(prevHash: string, fields: AuditHashFields, ts: 
  * Ghi ĐÚNG MỘT dòng audit bất biến. Trả về dòng vừa ghi (hoặc null). Khi SEC_PLATFORM bật,
  * dòng được nối vào hash-chain (advisory-lock serialise); tắt → INSERT thường (hành vi cũ).
  */
-export async function recordAuditEvent(db: Db, e: AuditEventInput): Promise<ControlAuditLog | null> {
+export async function recordAuditEvent(db: DbOrTx, e: AuditEventInput): Promise<ControlAuditLog | null> {
   const base = {
     entityType: e.entityType,
     entityId: String(e.entityId),

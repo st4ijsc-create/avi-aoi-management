@@ -13576,7 +13576,10 @@
     "disableConfirmDescription": "Rule sẽ ngừng giám sát điều kiện và ngừng kích hoạt hành động đã cấu hình.",
     "disableImpact": "Lớp bảo vệ tự động này TẮT cho tới khi được bật lại — vượt ngưỡng sẽ không chặn/dừng/cảnh báo.",
     "deleteConfirmDescription": "Xoá vĩnh viễn — không thể hoàn tác (đã ghi audit trước khi xoá).",
-    "deleteImpact": "Định nghĩa rule và lớp bảo vệ tự động tương ứng biến mất khỏi hệ thống."
+    "deleteImpact": "Định nghĩa rule và lớp bảo vệ tự động tương ứng biến mất khỏi hệ thống.",
+    "resolveConfirmTitle": "Đánh dấu đã xử lý sự kiện này?",
+    "resolveConfirmDescription": "Sự kiện sẽ chuyển sang trạng thái Đã xử lý và không còn hiện ở tab \"Chưa xử lý\".",
+    "resolveImpact": "Lý do sẽ được lưu làm ghi chú của sự kiện và ghi vào sổ audit."
   },
   "quickIssue": {
     "button": "Báo sự cố",
@@ -14049,7 +14052,8 @@
     "xuLyNhom": "Xử lý \"{{label}}\"",
     "thuGon": "Thu gọn",
     "confirmMot": "Cảnh báo \"{{title}}\" (nguồn {{sources}}) sẽ bị đóng vĩnh viễn — không thể hoàn tác từ màn hình này.",
-    "confirmNhieu": "{{count}} cảnh báo (nguồn {{sources}}) — {{label}} — sẽ bị đóng VĨNH VIỄN, không thể hoàn tác từ màn hình này."
+    "confirmNhieu": "{{count}} cảnh báo (nguồn {{sources}}) — {{label}} — sẽ bị đóng VĨNH VIỄN, không thể hoàn tác từ màn hình này.",
+    "resolveViaConsoleReason": "Xử lý qua OpsConsole (Alert Center) — xác nhận nhanh"
   },
   "cmd": {
     "subtitle": "Một màn hình trực tiếp: cây phân cấp, bản sao số nhà máy, KPI và dải cảnh báo hợp nhất trên toàn hệ thống.",

@@ -97,6 +97,19 @@ function numOrNull(s: string): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+// ILK-05 (doc 80 Phụ lục D §7.4) — commandValue giờ được lưu thật (schema có
+// cột jsonb). Cho phép nhập JSON (true/42/"tag") hoặc rơi về chuỗi thô nếu
+// không parse được, thay vì luôn bỏ giá trị như trước.
+function commandValueOrNull(s: string): unknown {
+  const v = s.trim();
+  if (!v) return null;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
+}
+
 function actionVariant(action: string): "default" | "secondary" | "destructive" | "outline" {
   if (action === "alert") return "secondary";
   if (action === "reduce_speed") return "outline";
@@ -212,7 +225,6 @@ export default function InterlockRuleManagement() {
   };
 
   const submitRule = () => {
-    // Router input does NOT accept commandValue — recorded server-side only (F5b).
     const base = {
       name: form.name.trim(),
       description: form.description.trim() || undefined,
@@ -231,6 +243,8 @@ export default function InterlockRuleManagement() {
       targetMachineId: form.action !== "alert" ? numOrNull(form.targetMachineId) : null,
       targetAdapterId: form.action !== "alert" ? numOrNull(form.targetAdapterId) : null,
       commandTag: form.action !== "alert" ? (form.commandTag.trim() || null) : null,
+      // ILK-05 — router giờ CHẤP NHẬN commandValue (cột jsonb có thật, lưu thật).
+      commandValue: form.action !== "alert" ? commandValueOrNull(form.commandValue) : null,
       cooldownSeconds: numOrNull(form.cooldownSeconds) ?? 300,
     };
     if (form.id != null) updateRule.mutate({ id: form.id, ...base });
@@ -404,8 +418,12 @@ export default function InterlockRuleManagement() {
                                 </Tooltip>
                               )
                             )}
-                            {/* doc 44 G5.4 — tắt một rule an toàn đang chạy = gỡ lớp bảo vệ
-                                tự động → ConfirmWithReason (2 bước + lý do bắt buộc). */}
+                            {/* doc 44 G5.4 / ILK-03 (doc 80) — tắt một rule an toàn đang chạy =
+                                gỡ lớp bảo vệ tự động → ConfirmWithReason (2 bước + lý do bắt
+                                buộc); riskLevel "high" (không phải "low" — ILK-03) vì tắt một
+                                interlock ĐANG BẬT có cùng mức rủi ro với xoá rule. reason được
+                                gửi thẳng vào mutation — backend ghi audit kèm reason (bắt buộc
+                                ≥3 ký tự) thay vì chỉ log console. */}
                             {r.enabled && (
                               <ConfirmWithReason
                                 trigger={
@@ -417,22 +435,19 @@ export default function InterlockRuleManagement() {
                                 title={t("interlockRules.disableConfirmTitle", 'Tắt rule "{{name}}"?', { name: r.name })}
                                 description={t("interlockRules.disableConfirmDescription", "Rule sẽ ngừng giám sát điều kiện và ngừng kích hoạt hành động đã cấu hình.")}
                                 impact={t("interlockRules.disableImpact", "Lớp bảo vệ tự động này TẮT cho tới khi được bật lại — vượt ngưỡng sẽ không chặn/dừng/cảnh báo.")}
-                                riskLevel="low"
+                                riskLevel="high"
                                 disabled={!canEdit || disableRule.isPending}
                                 onConfirm={async (reason) => {
-                                  // TODO(doc 44 G5.4): interlock.disable chưa nhận `reason` trong
-                                  // input — khi backend thêm field, truyền reason vào mutation
-                                  // (audit server-side) thay vì chỉ log client-side như dưới.
-                                  console.info("[interlock.disable] reason:", { id: r.id, reason });
-                                  await disableRule.mutateAsync({ id: r.id });
+                                  await disableRule.mutateAsync({ id: r.id, reason });
                                 }}
                               />
                             )}
                             <Button size="sm" variant="outline" disabled={!canEdit} title={editReason} onClick={() => openEdit(r)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            {/* doc 44 G5.4 — hard-delete rule an toàn: rủi ro cao → 2 bước
-                                + lý do + gõ chuỗi xác nhận (thay AlertDialog 1 bước cũ). */}
+                            {/* doc 44 G5.4 / ILK-03 (doc 80) — hard-delete rule an toàn: rủi ro
+                                cao → 2 bước + lý do + gõ chuỗi xác nhận. reason gửi thẳng vào
+                                mutation — backend ghi audit kèm reason trước khi xoá. */}
                             <ConfirmWithReason
                               trigger={
                                 <Button size="sm" variant="destructive" disabled={!canDelete || deleteRule.isPending}
@@ -446,11 +461,7 @@ export default function InterlockRuleManagement() {
                               riskLevel="high"
                               disabled={!canDelete || deleteRule.isPending}
                               onConfirm={async (reason) => {
-                                // TODO(doc 44 G5.4): interlock.delete chưa nhận `reason` trong
-                                // input — khi backend thêm field, truyền reason vào mutation
-                                // (audit server-side) thay vì chỉ log client-side như dưới.
-                                console.info("[interlock.delete] reason:", { id: r.id, reason });
-                                await deleteRule.mutateAsync({ id: r.id });
+                                await deleteRule.mutateAsync({ id: r.id, reason });
                               }}
                             />
                           </TableCell>
@@ -515,12 +526,26 @@ export default function InterlockRuleManagement() {
                       <TableCell>{ev.action ? <Badge variant={actionVariant(ev.action)}>{ev.action}</Badge> : "—"}</TableCell>
                       <TableCell><Badge variant="outline">{ev.status}</Badge></TableCell>
                       <TableCell className="text-right">
+                        {/* ILK-03 (doc 80) — resolveEvent giờ đòi reason (≥3 ký tự, ghi vào
+                            sổ audit + lưu làm ghi chú sự kiện) → ConfirmWithReason thay vì
+                            gọi mutate() thẳng không lý do. */}
                         {ev.status !== "resolved" && (
-                          <Button size="sm" variant="outline" disabled={!canEdit || resolveEvent.isPending}
-                            title={editReason}
-                            onClick={() => resolveEvent.mutate({ id: ev.id })}>
-                            {t("interlockRules.resolve")}
-                          </Button>
+                          <ConfirmWithReason
+                            trigger={
+                              <Button size="sm" variant="outline" disabled={!canEdit || resolveEvent.isPending}
+                                title={editReason}>
+                                {t("interlockRules.resolve")}
+                              </Button>
+                            }
+                            title={t("interlockRules.resolveConfirmTitle", "Đánh dấu đã xử lý sự kiện này?")}
+                            description={t("interlockRules.resolveConfirmDescription", "Sự kiện sẽ chuyển sang trạng thái Đã xử lý và không còn hiện ở tab \"Chưa xử lý\".")}
+                            impact={t("interlockRules.resolveImpact", "Lý do sẽ được lưu làm ghi chú của sự kiện và ghi vào sổ audit.")}
+                            riskLevel="low"
+                            disabled={!canEdit || resolveEvent.isPending}
+                            onConfirm={async (reason) => {
+                              await resolveEvent.mutateAsync({ id: ev.id, reason });
+                            }}
+                          />
                         )}
                       </TableCell>
                     </TableRow>

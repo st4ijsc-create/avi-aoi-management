@@ -548,7 +548,12 @@ export default function OpsConsole() {
   const resolveOneAsync = useCallback((a: NormalAlert): Promise<unknown> => {
     switch (a.source) {
       case "andon": return resolveAndonAsync({ id: a.id });
-      case "interlock": return resolveInterlockAsync({ id: a.id });
+      // ILK-03 (doc 80) — interlock.resolveEvent giờ đòi `reason` (≥3 ký tự, ghi
+      // vào sổ audit). OpsConsole xử lý qua AlertDialog xác nhận nhanh (W1),
+      // KHÔNG có ô nhập lý do riêng cho từng cảnh báo (bulk nhiều nguồn khác
+      // nhau) — giữ NGUYÊN luồng xác nhận một-click hiện có, gửi một lý do cố
+      // định nêu rõ NGUỒN xác nhận (khác "không có lý do" như trước vá).
+      case "interlock": return resolveInterlockAsync({ id: a.id, reason: t("opsConsole.resolveViaConsoleReason") });
       case "mqtt": return resolveMqttAsync({ id: a.id });
       default: return Promise.reject(new Error(t("opsConsole.nguonKhongCoResolve", { source: a.source })));
     }

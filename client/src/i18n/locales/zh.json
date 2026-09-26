@@ -13379,7 +13379,10 @@
     "disableConfirmDescription": "该规则将停止监控其条件，并停止触发已配置的动作。",
     "disableImpact": "该自动保护层将保持关闭，直到重新启用 — 超限时不再拦截/停机/告警。",
     "deleteConfirmDescription": "永久删除 — 无法撤销（删除前已写入审计记录）。",
-    "deleteImpact": "规则定义及其自动保护层将从系统中消失。"
+    "deleteImpact": "规则定义及其自动保护层将从系统中消失。",
+    "resolveConfirmTitle": "将此事件标记为已处理？",
+    "resolveConfirmDescription": "事件将变为已处理状态，不再显示在“未处理”标签页中。",
+    "resolveImpact": "理由将保存为该事件的备注，并写入审计日志。"
   },
   "quickIssue": {
     "button": "报告异常",
@@ -13852,7 +13855,8 @@
     "xuLyNhom": "处理「{{label}}」",
     "thuGon": "收起",
     "confirmMot": "告警「{{title}}」（来源 {{sources}}）将被永久关闭 — 无法从本界面撤销。",
-    "confirmNhieu": "{{count}} 条告警（来源 {{sources}}）— {{label}} — 将被永久关闭，无法从本界面撤销。"
+    "confirmNhieu": "{{count}} 条告警（来源 {{sources}}）— {{label}} — 将被永久关闭，无法从本界面撤销。",
+    "resolveViaConsoleReason": "通过 OpsConsole（告警中心）快速确认处理"
   },
   "cmd": {
     "subtitle": "一个实时面板：层级结构、工厂孪生、KPI 以及覆盖全域的统一告警栏。",
