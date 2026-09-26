@@ -465,8 +465,12 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
 
   // Release the failed device's claim: each task back to pending, retryCount bumped,
   // assignment dropped. Per-row so retryCount increments from each task's own value.
+  // Final review fix #4 — CAS like allocateTask: release ONLY if the task is still exactly what
+  // we read (same status, still on this device). A task completed / reassigned meanwhile is not
+  // ours to release (an unconditional write would revive or steal it) → skip it entirely.
+  const released: typeof open = [];
   for (const t of open) {
-    await db
+    const [rel] = await db
       .update(tasks)
       .set({
         status: "pending",
@@ -477,7 +481,13 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
         lastError: reason,
         updatedAt: new Date(),
       })
-      .where(eq(tasks.id, t.id));
+      .where(and(eq(tasks.id, t.id), eq(tasks.status, t.status), eq(tasks.assignedDeviceId, deviceId)))
+      .returning({ id: tasks.id });
+    if (!rel) {
+      console.log(`[Fleet] rebalance device ${deviceId}: task ${t.id} changed concurrently — not released`);
+      continue;
+    }
+    released.push(t);
     // U1-a — publish task.failed (the device dropped this task mid-work; it will be
     // re-queued below). Fire-and-forget; the re-allocation may then emit task.assigned.
     publishTaskEvent("failed", {
@@ -497,12 +507,16 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
   // Re-allocate each (now pending) task to a DIFFERENT eligible device.
   let reassigned = 0;
   let unassigned = 0;
-  for (const t of open) {
+  for (const t of released) {
     const candidates = (await loadCandidatesFromDb()).filter((c) => c.deviceId !== deviceId);
     const decision = scoreCandidates(taskToAllocInput(t), candidates);
     traceAllocation(`task-${t.id}`, decision, `rebalance (${reason})`); // doc 33 I1 (F6)
     if (decision.best) {
-      await db
+      // Final review fix #4 — CAS on 'pending' (same as allocateTask): the task sat in 'pending'
+      // between the release above and here, so a concurrent allocateTask / drain may already have
+      // assigned it. An unconditional write would assign it a SECOND time (overwriting the other
+      // winner, whose task.assigned event is then a lie). Lost race ⇒ counted as unassigned.
+      const [won] = await db
         .update(tasks)
         .set({
           status: "assigned",
@@ -511,8 +525,14 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
           assignedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(tasks.id, t.id));
-      reassigned++;
+        .where(and(eq(tasks.id, t.id), eq(tasks.status, "pending")))
+        .returning({ id: tasks.id });
+      if (won) {
+        reassigned++;
+      } else {
+        console.log(`[Fleet] rebalance device ${deviceId}: task ${t.id} lost the reassignment race (assigned concurrently)`);
+        unassigned++;
+      }
     } else {
       unassigned++;
     }

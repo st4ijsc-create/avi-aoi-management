@@ -84,6 +84,9 @@ function requireResourceFlag() {
 // (không tự bịa NOT_FOUND thay cho thủ tục gọi) — mỗi hàm chỉ ném khi hàng CÓ THẬT mà
 // nằm ngoài `ids`.
 // ════════════════════════════════════════════════════════════════════════════
+/** Final review fix #8 — states a manual assign may (re)assign from (everything but completed/cancelled, as the guard in `assign`). */
+const ASSIGNABLE_TASK_STATUSES = ["pending", "assigned", "running", "failed"];
+
 async function assertTaskInScope(d: Awaited<ReturnType<typeof db>>, ctx: CoDanhTinh, taskId: number): Promise<void> {
   const ids = await idsTrongPhamVi("factory", phamViCua(ctx));
   if (ids === null) return;
@@ -455,11 +458,17 @@ export const fleetRouter = router({
       if (!deviceSupportsCapability(robot.kind, t.requiredCapability)) {
         throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Device ${input.deviceId} (${robot.kind}) does not support capability "${t.requiredCapability}"`);
       }
+      // Final review fix #8 — the terminal-status guard above reads a SNAPSHOT; a task completed /
+      // cancelled between that read and this write must NOT be revived to 'assigned'. Conditional
+      // write on the assignable (non-terminal) states; 0 rows ⇒ CONFLICT.
       const [updated] = await d
         .update(tasks)
         .set({ status: "assigned", assignedDeviceId: input.deviceId, assignedDeviceKind: "robot", assignedAt: new Date(), updatedAt: new Date() })
-        .where(eq(tasks.id, input.taskId))
+        .where(and(eq(tasks.id, input.taskId), inArray(tasks.status, ASSIGNABLE_TASK_STATUSES)))
         .returning();
+      if (!updated) {
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Task ${input.taskId} changed concurrently (no longer assignable)`);
+      }
       // U1-a — publish task.assigned for the manual (re)assign path too.
       publishTaskEvent("assigned", {
         taskId: input.taskId,
