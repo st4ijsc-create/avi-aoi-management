@@ -163,4 +163,46 @@ describe("SafetyWorkforce — hai cờ độc lập trên CÙNG safety.status, k
     await openWorkforceTab();
     expect(screen.getByRole("button", { name: /^Assign$/i })).not.toBeDisabled();
   });
+
+  // ĐỘT BIẾN riêng cho TỆP NÀY (Fix round 1 finding #1) — xem task-1-report.md: quay
+  // `safetyCanControl`/`workforceCanControl` (dòng ~246-249) về đúng `canControl` khiến các
+  // ca "ĐANG TẢI"/"LỖI" ở trên (và "Start collaboration" dưới) ĐỎ — xác nhận, hoàn nguyên.
+});
+
+// Fix round 1 (finding #2) — nút ghi "Start collaboration" (tab "Collaboration") dùng CHUNG
+// `workforceCanControl`/`workforceControlReason` với "Assign" nhưng KHÔNG có test riêng.
+async function openCollaborationTab() {
+  const { default: userEvent } = await import("@testing-library/user-event");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("tab", { name: /^Collaboration$/i }));
+}
+
+describe("SafetyWorkforce — 'Start collaboration' (tab Collaboration) cùng workforceCanControl", () => {
+  it("safety.status ĐANG TẢI ⇒ 'Start collaboration' bị khoá", async () => {
+    setQueryOverride("safety.status", makeQuery({ isLoading: true }));
+    render(<SafetyWorkforce />);
+    await openCollaborationTab();
+    expect(screen.getByRole("button", { name: "Start collaboration" })).toBeDisabled();
+  });
+
+  it("safety.status LỖI ⇒ 'Start collaboration' vẫn khoá", async () => {
+    setQueryOverride("safety.status", makeQuery({ isError: true }));
+    render(<SafetyWorkforce />);
+    await openCollaborationTab();
+    expect(screen.getByRole("button", { name: "Start collaboration" })).toBeDisabled();
+  });
+
+  it("safety.status xong, workforce TẮT ⇒ 'Start collaboration' VẪN bật", async () => {
+    setQueryOverride("safety.status", makeQuery({ data: { safetyAudit: true, workforce: false } }));
+    render(<SafetyWorkforce />);
+    await openCollaborationTab();
+    expect(screen.getByRole("button", { name: "Start collaboration" })).not.toBeDisabled();
+  });
+
+  it("safety.status xong, workforce BẬT ⇒ 'Start collaboration' bật", async () => {
+    setQueryOverride("safety.status", makeQuery({ data: { safetyAudit: true, workforce: true } }));
+    render(<SafetyWorkforce />);
+    await openCollaborationTab();
+    expect(screen.getByRole("button", { name: "Start collaboration" })).not.toBeDisabled();
+  });
 });

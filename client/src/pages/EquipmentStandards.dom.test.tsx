@@ -118,4 +118,65 @@ describe("EquipmentStandards — flag status (equipmentStandards.status) không 
     expect(screen.queryByTestId("feature-status-loading")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Register type/i })).not.toBeDisabled();
   });
+
+  // ĐỘT BIẾN riêng cho TỆP NÀY (Fix round 1 finding #1) — xem task-1-report.md: quay
+  // `flagCanControl = canControl && !flagUnsettled` (dòng ~209) về đúng `canControl` khiến
+  // CA 1 ("statusQ ĐANG TẢI") ở trên VÀ mọi ca "ĐANG TẢI"/"LỖI" trong bảng dưới ĐỎ (nút không
+  // còn bị khoá) — xác nhận đã đo, ghi trong report, hoàn nguyên sau khi đỏ.
+});
+
+// Fix round 1 (finding #2) — hai nút ghi khác cũng dùng CHUNG `flagCanControl`/
+// `flagControlReason` (EquipmentStandards.tsx dòng ~416/504/610) nhưng KHÔNG có test nào
+// canh: "Map alarm" (tab "Alarm taxonomy") và "Add master alarm" (tab "Alarm performance").
+async function clickTab(name: string) {
+  const { default: userEvent } = await import("@testing-library/user-event");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("tab", { name }));
+}
+
+const OTHER_BUTTONS: { tabName: string; buttonName: string }[] = [
+  { tabName: "Alarm taxonomy", buttonName: "Map alarm" },
+  { tabName: "Alarm performance", buttonName: "Add master alarm" },
+];
+
+describe("EquipmentStandards — nút ghi khác cùng flagCanControl (Map alarm / Add master alarm)", () => {
+  it.each(OTHER_BUTTONS)(
+    "statusQ ĐANG TẢI ⇒ '$buttonName' (tab $tabName) bị khoá",
+    async ({ tabName, buttonName }) => {
+      setQueryOverride("equipmentStandards.status", makeQuery({ isLoading: true }));
+      render(<EquipmentStandards />);
+      await clickTab(tabName);
+      expect(screen.getByRole("button", { name: buttonName })).toBeDisabled();
+    },
+  );
+
+  it.each(OTHER_BUTTONS)(
+    "statusQ LỖI ⇒ '$buttonName' (tab $tabName) vẫn khoá",
+    async ({ tabName, buttonName }) => {
+      setQueryOverride("equipmentStandards.status", makeQuery({ isError: true }));
+      render(<EquipmentStandards />);
+      await clickTab(tabName);
+      expect(screen.getByRole("button", { name: buttonName })).toBeDisabled();
+    },
+  );
+
+  it.each(OTHER_BUTTONS)(
+    "statusQ xong, cờ TẮT ⇒ '$buttonName' (tab $tabName) VẪN bật",
+    async ({ tabName, buttonName }) => {
+      setQueryOverride("equipmentStandards.status", makeQuery({ data: { enabled: false } }));
+      render(<EquipmentStandards />);
+      await clickTab(tabName);
+      expect(screen.getByRole("button", { name: buttonName })).not.toBeDisabled();
+    },
+  );
+
+  it.each(OTHER_BUTTONS)(
+    "statusQ xong, cờ BẬT ⇒ '$buttonName' (tab $tabName) bật",
+    async ({ tabName, buttonName }) => {
+      setQueryOverride("equipmentStandards.status", makeQuery({ data: { enabled: true } }));
+      render(<EquipmentStandards />);
+      await clickTab(tabName);
+      expect(screen.getByRole("button", { name: buttonName })).not.toBeDisabled();
+    },
+  );
 });

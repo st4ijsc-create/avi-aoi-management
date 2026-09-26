@@ -147,3 +147,85 @@ describe("FleetOrchestration — G1 flag status (fleet.status) không còn `?? t
   // ĐỎ (Reserve không còn bị khoá, banner OFF cũng không hiện đúng lúc) — xác nhận test khoá
   // đúng dòng đã vá. Đã revert sau khi xác nhận đỏ.
 });
+
+// Fix round 1 (finding #2) — 5 nút ghi G2 (Operations/Resources/Charging) bị brief nêu
+// "đã khoá" nhưng KHÔNG có test nào canh. Cả năm đều nhận `canControl={g2CanControl}` /
+// `controlReason={g2ControlReason}` từ component cha (xem FleetOrchestration.tsx dòng
+// ~910-946) — bảng dưới lặp qua cả năm, đổi tab tương ứng rồi assert disabled/enabled.
+const ONE_RESOURCE = [
+  {
+    id: 1,
+    code: "R-A",
+    name: "Resource A",
+    type: "jig",
+    status: "available",
+    currentOwnerDeviceId: null,
+    availability: { activeCount: 0, queuedCount: 0 },
+  },
+];
+
+async function clickTab(name: string) {
+  const { default: userEvent } = await import("@testing-library/user-event");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("tab", { name }));
+}
+
+const G2_BUTTONS: { tabName: string; buttonName: string }[] = [
+  { tabName: "Operations", buttonName: "New operation" },
+  { tabName: "Resources", buttonName: "New resource" },
+  { tabName: "Resources", buttonName: "Reserve" },
+  { tabName: "Charging", buttonName: "New charger" },
+  { tabName: "Charging", buttonName: "Sweep now" },
+];
+
+describe("FleetOrchestration — G2 (fleet.resourceStatus) khoá 5 nút ghi Operations/Resources/Charging", () => {
+  beforeEach(() => {
+    // Một resource để nút "Reserve" (theo từng resource, không phải nút đầu trang) render ra.
+    setQueryOverride("fleet.listResources", makeQuery({ data: ONE_RESOURCE }));
+  });
+
+  it.each(G2_BUTTONS)(
+    "resourceStatus ĐANG TẢI ⇒ '$buttonName' (tab $tabName) bị khoá",
+    async ({ tabName, buttonName }) => {
+      setQueryOverride("fleet.resourceStatus", makeQuery({ isLoading: true }));
+      render(<FleetOrchestration />);
+      await clickTab(tabName);
+      expect(screen.getByRole("button", { name: buttonName })).toBeDisabled();
+    },
+  );
+
+  it.each(G2_BUTTONS)(
+    "resourceStatus LỖI ⇒ '$buttonName' (tab $tabName) vẫn khoá",
+    async ({ tabName, buttonName }) => {
+      setQueryOverride("fleet.resourceStatus", makeQuery({ isError: true }));
+      render(<FleetOrchestration />);
+      await clickTab(tabName);
+      expect(screen.getByRole("button", { name: buttonName })).toBeDisabled();
+    },
+  );
+
+  it.each(G2_BUTTONS)(
+    "resourceStatus xong, cờ TẮT ⇒ '$buttonName' (tab $tabName) VẪN bật (đã biết, server tự chặn/ghi honest)",
+    async ({ tabName, buttonName }) => {
+      setQueryOverride("fleet.resourceStatus", makeQuery({ data: { enabled: false } }));
+      render(<FleetOrchestration />);
+      await clickTab(tabName);
+      expect(screen.getByRole("button", { name: buttonName })).not.toBeDisabled();
+    },
+  );
+
+  it.each(G2_BUTTONS)(
+    "resourceStatus xong, cờ BẬT ⇒ '$buttonName' (tab $tabName) bật",
+    async ({ tabName, buttonName }) => {
+      setQueryOverride("fleet.resourceStatus", makeQuery({ data: { enabled: true } }));
+      render(<FleetOrchestration />);
+      await clickTab(tabName);
+      expect(screen.getByRole("button", { name: buttonName })).not.toBeDisabled();
+    },
+  );
+
+  // ĐỘT BIẾN riêng cho g2CanControl (khác biến với flagStatus/G1 đã đột biến ở trên) — xem
+  // task-1-report.md "Fix round 1": quay `g2CanControl = canControl && !resourceFlagUnsettled`
+  // về `canControl` khiến TOÀN BỘ 5 ca "ĐANG TẢI" ở trên ĐỎ (không còn khoá) — xác nhận rồi
+  // hoàn nguyên.
+});
