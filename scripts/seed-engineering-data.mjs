@@ -16,8 +16,13 @@
 // Run:  node scripts/seed-engineering-data.mjs   (after sim:factory built the topology)
 import 'dotenv/config';
 import postgres from 'postgres';
+import { createHash } from 'node:crypto';
 
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });
+// doc80 QĐ4 — MUST be byte-identical to server/services/programming/programmingService.ts
+// hashContent(): sha256 hex of the artifact content. A seed contentHash that isn't a
+// real hash of `content` fails verifyAfterDownload()/any hash-compare consumer silently.
+const hashContent = (content) => createHash('sha256').update(content, 'utf8').digest('hex');
 const log = (...a) => console.log('[seed-eng]', ...a);
 const now = new Date();
 const daysAgo = (d) => new Date(now.getTime() - d * 864e5);
@@ -46,6 +51,10 @@ async function main() {
   const adminId = admin?.id;
   const [eng] = await sql`SELECT id FROM users WHERE role='engineer' ORDER BY id LIMIT 1`;
   const engineerId = eng?.id ?? adminId;
+  // doc80 QĐ4 — reviews must come from someone who ISN'T the author; the admin
+  // placeholder is reserved for FINAL approval, not review. Prefer a supervisor.
+  const [sup] = await sql`SELECT id FROM users WHERE role='supervisor' ORDER BY id LIMIT 1`;
+  const supervisorId = sup?.id ?? adminId;
   const byType = (t) => machines.find((m) => m.machineType === t);
   const aoi = byType('AOI'), avi = byType('AVI'), spi = byType('SPI');
   const robot = byType('ROBOT'), conv = byType('AUTOMATION'), screw = byType('SCREWDRIVE');
@@ -97,11 +106,17 @@ async function main() {
       const [ac] = await sql`SELECT count(*)::int n FROM program_artifacts WHERE "projectId"=${projectId}`;
       if (ac.n > 0) continue; // chain already seeded for this project → skip (idempotent)
 
+      // doc80 QĐ4 — contentHash MUST be the real sha256 of `content` (hashContent()
+      // above), never a fabricated 'seedhash-…' placeholder. reviewedBy on the
+      // 'approved' v1 must be someone OTHER than the author (createdBy=engineerId) —
+      // programmingService.reviewArtifact() enforces this SoD in the app; the admin
+      // placeholder is reserved for sign-off elsewhere, not review here.
       const [a1] = await sql`INSERT INTO program_artifacts ("projectId",branch,version,kind,language,content,"contentHash",status,"reviewStatus","reviewedBy","reviewedAt","diagnosticsJson","createdBy","factoryId")
-        VALUES (${projectId},'main',1,${p.kind},${p.language},${p.content},${'seedhash-' + p.code + '-1'},'released','approved',${adminId},${daysAgo(3)},${jb({ errors: 0, warnings: 1 })},${engineerId},${factoryId}) RETURNING id`;
+        VALUES (${projectId},'main',1,${p.kind},${p.language},${p.content},${hashContent(p.content)},'released','approved',${supervisorId},${daysAgo(3)},${jb({ errors: 0, warnings: 1 })},${engineerId},${factoryId}) RETURNING id`;
       // A newer draft version (four-eyes pending) so the version list isn't singleton.
+      const v2Content = p.content + '\n// v2 WIP';
       await sql`INSERT INTO program_artifacts ("projectId",branch,version,kind,language,content,"contentHash",status,"reviewStatus","createdBy","factoryId")
-        VALUES (${projectId},'main',2,${p.kind},${p.language},${p.content + '\n// v2 WIP'},${'seedhash-' + p.code + '-2'},'draft','pending_review',${engineerId},${factoryId})`;
+        VALUES (${projectId},'main',2,${p.kind},${p.language},${v2Content},${hashContent(v2Content)},'draft','pending_review',${engineerId},${factoryId})`;
 
       const [b1] = await sql`INSERT INTO program_builds ("artifactId","adapterKind",status,ok,"diagnosticsJson","outputRef","durationMs","createdBy","factoryId")
         VALUES (${a1.id},${p.kind},'ok',true,${jb({ errors: 0, warnings: 1 })},${'build/' + p.code + '/v1.out'},${900 + Math.floor(Math.random() * 1400)},${engineerId},${factoryId}) RETURNING id`;
@@ -110,8 +125,11 @@ async function main() {
         VALUES (${b1.id},${jb({ scenario: 'nominal', cycles: 10 })},true,${jb({ steps: [{ t: 0, s: 'start' }, { t: 500, s: 'done' }] })},${jb([])},${600 + Math.floor(Math.random() * 500)},${engineerId},${factoryId})`;
 
       // Append-only deploy audit (simulated — DPC_DEPLOY_ENABLED off). ON CONFLICT DO NOTHING.
+      // doc80 QĐ4 — a SIMULATED dry-run deploy has NO human sign-off: signedOffBy stays
+      // NULL (no admin placeholder standing in for an approval that never happened);
+      // the honest state is recorded in detailJson.note instead.
       await sql`INSERT INTO program_deployments ("buildId","projectId","deviceId",stage,status,simulated,"signedOffBy","requestedBy","idempotencyKey","detailJson","factoryId")
-        VALUES (${b1.id},${projectId},${p.deviceId},'staging','simulated',true,${adminId},${engineerId},${'seed-deploy-' + p.code},${jb({ note: 'seed dry-run staging deploy' })},${factoryId})
+        VALUES (${b1.id},${projectId},${p.deviceId},'staging','simulated',true,${null},${engineerId},${'seed-deploy-' + p.code},${jb({ note: 'seed: simulated, not signed off' })},${factoryId})
         ON CONFLICT DO NOTHING`;
       chainN++;
     }
@@ -177,7 +195,7 @@ async function main() {
         reason: 'Tối ưu quỹ đạo giảm thời gian chu kỳ 8%.', productModelId: null,
         impact: { affectedPrograms: ['SEED-ROBOT-CELL-L1'], notes: 'Chờ mô phỏng trước khi trình duyệt.' },
         items: [{ entityType: 'program', entityCode: 'SEED-ROBOT-CELL-L1', action: 'modify', description: 'Rút ngắn quỹ đạo P1→P2' }] },
-      { key: 'SEED-ECN-0003', title: 'Thêm biến thể sản phẩm mới', changeType: 'product', status: 'submitted',
+      { key: 'SEED-ECN-0003', title: 'Thêm biến thể sản phẩm mới', changeType: 'product', status: 'in_review',
         reason: 'Yêu cầu khách hàng bổ sung màu vỏ.', productModelId: null,
         impact: { notes: 'Cần cập nhật điểm đo cho biến thể.' },
         items: [{ entityType: 'product', entityCode: 'VARIANT-BLK', action: 'add', description: 'Biến thể vỏ đen' }] },
@@ -189,7 +207,10 @@ async function main() {
       const submittedAt = e.status === 'draft' ? null : daysAgo(5);
       const reviewedAt = ['in_review', 'approved', 'rejected', 'implemented', 'closed'].includes(e.status) ? daysAgo(4) : null;
       const approvedAt = ['approved', 'implemented', 'closed'].includes(e.status) ? daysAgo(3) : null;
-      const reviewedBy = reviewedAt ? adminId : null;
+      // doc80 QĐ4 — SoD (ecnService.reviewEcn/approveEcn): requestedBy ≠ reviewedBy ≠
+      // approvedBy. requestedBy is always engineerId here, so the reviewer must be
+      // someone else (supervisorId) — never the admin placeholder standing in twice.
+      const reviewedBy = reviewedAt ? supervisorId : null;
       const approvedBy = approvedAt ? adminId : null;
       const effectivity = approvedAt ? daysAgo(-3) : null;
       [ec] = await sql`INSERT INTO engineering_changes ("ecnKey",title,"changeType","productModelId",reason,"impactSummary",status,"effectivityDate","requestedBy","reviewedBy","approvedBy","submittedAt","reviewedAt","approvedAt","factoryId",note)
@@ -261,15 +282,19 @@ async function main() {
           ON CONFLICT DO NOTHING`;
         stepN++;
       }
-      // First workflow also gets a currently-running run for a live-history feel.
+      // doc80 QĐ4 — a seeded run must NEVER be left in a paused/non-terminal status
+      // ('running'/'held'/'awaiting_confirm'): that reads as real work interrupted
+      // mid-flight, not sample history. First workflow instead gets a SECOND run
+      // that reached a terminal state (failed at the HITL gate) for variety.
       if (wi === 0) {
-        const [run2] = await sql`INSERT INTO orchestration_runs ("workflowId","workflowRef",status,"paramsJson","contextJson","currentStepId","startedBy","startedAt")
-          VALUES (${wf.id},${wf.ref},'running',${jb({ lineCode: 'SIM-L1' })},${jb({ seed: true })},'s2',${adminId},${minsAgo(8)}) RETURNING id`;
+        const started2 = minsAgo(30), atGate = minsAgo(28), finished2 = minsAgo(22);
+        const [run2] = await sql`INSERT INTO orchestration_runs ("workflowId","workflowRef",status,"paramsJson","contextJson","startedBy","startedAt","finishedAt","error")
+          VALUES (${wf.id},${wf.ref},'failed',${jb({ lineCode: 'SIM-L1' })},${jb({ seed: true, gate: 'blocked' })},${adminId},${started2},${finished2},'SIM: hitl_gate hết hạn chờ xác nhận (seed demo failure)') RETURNING id`;
         runN++;
         await sql`INSERT INTO orchestration_run_steps ("runId","stepId","stepType",status,attempt,"resultJson","startedAt","finishedAt")
-          VALUES (${run2.id},'s1','command','completed',1,${jb({ ok: true })},${minsAgo(8)},${minsAgo(7)}) ON CONFLICT DO NOTHING`;
-        await sql`INSERT INTO orchestration_run_steps ("runId","stepId","stepType",status,attempt,"resultJson","startedAt")
-          VALUES (${run2.id},'s2','hitl_gate','running',1,${jb({})},${minsAgo(7)}) ON CONFLICT DO NOTHING`;
+          VALUES (${run2.id},'s1','command','completed',1,${jb({ ok: true })},${started2},${atGate}) ON CONFLICT DO NOTHING`;
+        await sql`INSERT INTO orchestration_run_steps ("runId","stepId","stepType",status,attempt,"resultJson","startedAt","finishedAt","error")
+          VALUES (${run2.id},'s2','hitl_gate','failed',1,${jb({ ok: false })},${atGate},${finished2},'timeout chờ xác nhận') ON CONFLICT DO NOTHING`;
         stepN += 2;
       }
     }
