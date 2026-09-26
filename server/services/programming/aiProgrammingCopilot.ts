@@ -264,9 +264,46 @@ function langForKind(kind: string): string {
 /** Extract the first fenced code block from an LLM response; else the trimmed whole text. */
 function extractCode(text: string): string {
   if (!text) return "";
+  // Fix round 1 (#4) — đo thật T04: lượt tự sửa (tắt nghĩ) trả `{"thought": "…suy luận…", "code": "…"}`
+  // và CẢ vỏ JSON 5 KB được validator robot-tm cho qua rồi gắn "Auto-repaired". Vỏ suy luận ⇒ lấy
+  // đúng `code`; không có `code` ⇒ KHÔNG có mã (không bao giờ đem suy luận đi validate).
+  const vo = goVoSuyLuan(text);
+  if (vo !== null) return vo ? extractCode(vo) : "";
   const fence = text.match(/```[a-zA-Z0-9_+.\-]*[ \t]*\r?\n([\s\S]*?)```/);
   if (fence && typeof fence[1] === "string") return fence[1].trim();
   return text.trim();
+}
+
+const KHOA_SUY_LUAN = ["thought", "thoughts", "thinking", "reasoning", "analysis", "reflection"];
+const KHOA_MA = ["code", "program", "source"];
+
+/**
+ * Fix round 1 (#4) — văn bản (hoặc khối ```json bọc ngoài) có phải một object JSON mang khoá SUY
+ * LUẬN không? Có ⇒ trả chuỗi `code` bên trong ("" nếu không có); không ⇒ `null` (xử lý như cũ).
+ * JSON hợp lệ của IR/POU không có khoá suy luận nên KHÔNG bị đụng.
+ */
+function goVoSuyLuan(text: string): string | null {
+  const t = text.trim();
+  const ungVien: string[] = [t];
+  const tham = t.match(/^```[a-zA-Z0-9_+.\-]*[ \t]*\r?\n([\s\S]*)```\s*$/); // hàng rào NGOÀI CÙNG (tham lam)
+  if (tham) ungVien.push(tham[1].trim());
+  for (const c of ungVien) {
+    if (!c.startsWith("{")) continue;
+    let o: unknown;
+    try {
+      o = JSON.parse(c);
+    } catch {
+      continue;
+    }
+    if (!o || typeof o !== "object" || Array.isArray(o)) continue;
+    const rec = o as Record<string, unknown>;
+    if (!Object.keys(rec).some((k) => KHOA_SUY_LUAN.includes(k.toLowerCase()))) continue;
+    for (const k of Object.keys(rec)) {
+      if (KHOA_MA.includes(k.toLowerCase()) && typeof rec[k] === "string") return String(rec[k]);
+    }
+    return "";
+  }
+  return null;
 }
 
 /** Cheap keyword signals from the request/code → tag bonuses for golden-example selection. */

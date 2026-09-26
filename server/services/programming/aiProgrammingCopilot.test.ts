@@ -434,6 +434,51 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
     });
   });
 
+  // ── Fix round 1 · #4 — suy luận lọt vào mã (T04 đo thật: lượt tự sửa trả {"thought": …, "code": …}) ──
+  describe("Fix 4 — vỏ JSON {thought, code} không bao giờ thành 'mã đã kiểm'", () => {
+    const TM_OK = "POINT P1 = (100,0,200,180,0,0)\nHOME\nMOVE P1\nGRIP\nHOME";
+
+    it("lượt tự sửa trả {\"thought\", \"code\"} (đúng hình T04) ⇒ gỡ vỏ, code KHÔNG chứa suy luận", async () => {
+      vi.mocked(chatCompletion)
+        .mockResolvedValueOnce(llm("```\nLOOP 10\nMOVE P9\nEND\n```"))
+        .mockResolvedValueOnce(
+          llm(JSON.stringify({ thought: "The user wants to fix a robot-tm program … LOOP is unknown …", code: TM_OK }, null, 2)),
+        );
+      const r = await generateProgram({ kind: "robot-tm", request: "gắp đặt" });
+      expect(r.code).toBe(TM_OK);
+      expect(r.code).not.toMatch(/thought|The user wants/);
+    });
+
+    it("vỏ bọc trong khối ```json ở lượt chính ⇒ cũng gỡ", async () => {
+      vi.mocked(chatCompletion).mockResolvedValueOnce(
+        llm("```json\n" + JSON.stringify({ reasoning: "step 1 …", code: "```tmscript\n" + TM_OK + "\n```" }) + "\n```"),
+      );
+      const r = await generateProgram({ kind: "robot-tm", request: "gắp đặt" });
+      expect(r.code).toBe(TM_OK);
+    });
+
+    it("chỉ có suy luận, không có `code` ⇒ coi là KHÔNG có mã (ok:false), không bao giờ ok:true", async () => {
+      process.env.AI_CODEGEN_REPAIR_MAX = "0";
+      try {
+        vi.mocked(chatCompletion).mockResolvedValueOnce(llm(JSON.stringify({ thought: "I think the loop should be FOR …" })));
+        const r = await generateProgram({ kind: "robot-tm", request: "gắp đặt" });
+        expect(r.ok).toBe(false);
+        expect(r.code).toBeUndefined();
+      } finally {
+        delete process.env.AI_CODEGEN_REPAIR_MAX;
+      }
+    });
+
+    it("JSON hợp lệ của kind cấu trúc (ir-flow) KHÔNG bị đụng", async () => {
+      vi.mocked(generateJSON).mockRejectedValueOnce(new Error("grammar off"));
+      vi.mocked(chatCompletion).mockResolvedValueOnce(
+        llm('```json\n{"flow_id":"f","target_device_type":"generic","version":1,"blocks":[{"id":"b1","type":"wait","ms":100}]}\n```'),
+      );
+      const r = await generateProgram({ kind: "ir-flow", request: "wait a moment" });
+      expect(JSON.parse(r.code!).flow_id).toBe("f");
+    });
+  });
+
   it("STRUCTURED KIND falls back to the free-text path when grammar generation throws (no crash)", async () => {
     // generateJSON throwing (e.g. a grammar-build failure) must NOT crash — it degrades to the
     // free-text chatCompletion path, which then validates as usual.
