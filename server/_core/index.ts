@@ -6293,14 +6293,8 @@ async function startServer() {
     console.error("[OpcuaGateway] init failed:", (err as any)?.message || err);
   }
 
-  // F1.1 — OT Connectivity Framework (parallel to OPC-UA scaffold above).
-  // Disabled by default; opt in via OT_GATEWAY_ENABLED=true.
-  try {
-    const { startOt } = await import("../services/ot");
-    await startOt();
-  } catch (err) {
-    console.error("[OT] init failed:", (err as any)?.message || err);
-  }
+  // F1.1 — OT Connectivity Framework: khởi động NỀN ngay sau `server.listen` (bên dưới) —
+  // doc 81 Đợt 1B Task 2 (BE1 §0 (3)): chờ startOt ở đây từng chặn listen vô hạn.
 
   // MTConnect ingestion — poll MTConnect Agents (CNC / machine tools) → telemetry.
   // Additive + parallel to OT framework. No-op unless MTCONNECT_ENABLED=true.
@@ -6432,6 +6426,23 @@ async function startServer() {
       logger.error({ err }, '[CacheWarming] Failed to initialize');
     });
   });
+
+  // F1.1 — OT Connectivity Framework (parallel to OPC-UA scaffold above).
+  // Disabled by default; opt in via OT_GATEWAY_ENABLED=true.
+  // doc 81 Đợt 1B Task 2 — chạy NỀN SAU listen, không await: một thiết bị treo không còn giữ
+  // được boot; lỗi chỉ được log (startBackgroundOt không bao giờ reject). Mỗi adapter tự có
+  // hạn khởi động OT_ADAPTER_START_TIMEOUT_MS (otManager).
+  void import("../services/ot/backgroundStart")
+    .then(({ startBackgroundOt }) =>
+      startBackgroundOt(
+        async () => {
+          const { startOt } = await import("../services/ot");
+          await startOt();
+        },
+        (message, detail) => console.error(message, detail),
+      ),
+    )
+    .catch((err) => console.error("[OT] init failed:", (err as any)?.message || err));
   
   // Graceful shutdown
   let isShuttingDown = false;

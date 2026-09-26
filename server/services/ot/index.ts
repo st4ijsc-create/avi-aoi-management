@@ -56,6 +56,9 @@ export {
   listActiveAdapters,
   getSupervisorStatus,
   listSupervisorStatuses,
+  // doc 81 Đợt 1B Task 2 — trạng thái từng adapter (legacy + HA).
+  getOtAdapterStatus,
+  listOtAdapterStatuses,
 } from "./otManager";
 
 /**
