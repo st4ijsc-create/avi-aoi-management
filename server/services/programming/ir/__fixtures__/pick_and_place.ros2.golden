@@ -67,6 +67,7 @@ class PickAndPlaceNode(Node):
         self._plan_and_execute()
         # [IR move_linear #b2]
         self.move_group.set_max_velocity_scaling_factor(0.2)
+        self.move_group.set_max_acceleration_scaling_factor(1)
         self.move_group.set_pose_target([0.3, 0.1, 0.2, 0, 3.14, 0])
         self._plan_and_execute()
         # [IR grip #b3]
@@ -75,6 +76,7 @@ class PickAndPlaceNode(Node):
         if self.read_io("1") == True:
             # [IR move_linear #b5]
             self.move_group.set_max_velocity_scaling_factor(0.15)
+            self.move_group.set_max_acceleration_scaling_factor(1)
             self.move_group.set_pose_target([0.3, -0.1, 0.2, 0, 3.14, 0])
             self._plan_and_execute()
         else:

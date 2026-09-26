@@ -1,5 +1,5 @@
 # URScript generated from IR flow "p3_demo" v1
-# Units: position mm->m, speed mm/s->m/s, angles rx/ry/rz passed through.
+# Units: position mm->m, speed mm/s->m/s, accel mm/s^2->m/s^2, angles rx/ry/rz passed through.
 # SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL).
 def p3_demo():
   # [IR counter #b1]
@@ -19,7 +19,7 @@ def p3_demo():
     wu_elapsed = wu_elapsed + 0.1
   end
   # [IR set_output #b7]
-  set_digital_out(DO2, (cycles > 0))
+  set_standard_digital_out(DO2, (cycles > 0))
   # [IR pid_control #b8]
   # PID skeleton (URScript has no native PID) — bounded, deterministic step.
   pid_sp = target

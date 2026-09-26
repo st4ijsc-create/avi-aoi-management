@@ -1,5 +1,5 @@
 # URScript generated from IR flow "fb_demo" v1
-# Units: position mm->m, speed mm/s->m/s, angles rx/ry/rz passed through.
+# Units: position mm->m, speed mm/s->m/s, accel mm/s^2->m/s^2, angles rx/ry/rz passed through.
 # SAFETY: deploy only via the gated programmingService (DPC_DEPLOY_ENABLED + HITL).
 # [IR function_block #fb1] pulse
 def pulse(level, hold_ms):
