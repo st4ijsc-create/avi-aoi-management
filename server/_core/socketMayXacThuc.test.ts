@@ -43,8 +43,12 @@ const MAY: Record<number, any> = {
   200: { id: 200, code: "M-200", name: "May 200", machineType: "AOI", apiKey: null, isActive: true, stationId: null, registrationStatus: "approved", syncMode: "realtime" },
   // Máy còn khoá dùng chung plaintext (chưa xoay) — chịu MACHINE_SHARED_KEY_ALLOWED (mặc định deny).
   300: { id: 300, code: "M-300", name: "May 300", machineType: "AOI", apiKey: "mach_legacy_300", isActive: true, stationId: null, registrationStatus: "approved", syncMode: "realtime" },
+  // Máy NGỪNG hoạt động còn khoá plaintext — fix round 1 mục 6 (đường từng-sự-kiện phải kiểm isActive).
+  301: { id: 301, code: "M-301", name: "May 301", machineType: "AOI", apiKey: "mach_inactive_301", isActive: false, stationId: null, registrationStatus: "approved", syncMode: "realtime" },
+  // Máy chờ onboarding qua socket (register → approve) — fix round 1 mục 2 (R18).
+  500: { id: 500, code: "M-500", name: "May 500", machineType: "AOI", apiKey: null, isActive: true, stationId: null, registrationStatus: "pending", syncMode: "realtime", serialNumber: null, firmwareVersion: null },
 };
-const BANG_KHOA = [
+const BANG_KHOA: any[] = [
   { id: 5, machineId: 17119, keyHash: sha256(K_17119), isActive: true, revokedAt: null, expiresAt: null, scopes: [] },
   { id: 6, machineId: 200, keyHash: sha256(K_200), isActive: true, revokedAt: null, expiresAt: null, scopes: [] },
 ];
@@ -61,6 +65,16 @@ const dbKhoaGia = {
     }),
   }),
   update: () => ({ set: () => ({ where: async () => undefined }) }),
+  // issueMachineKey THẬT ghi vào đây (fix round 1 mục 2): lưu đúng HÀNG sản phẩm đưa xuống.
+  insert: () => ({
+    values: (v: any) => ({
+      returning: async () => {
+        const row = { id: 1000 + BANG_KHOA.length, revokedAt: null, lastUsedAt: null, createdAt: new Date(), ...v };
+        BANG_KHOA.push(row);
+        return [row];
+      },
+    }),
+  }),
 };
 
 const createMachineStatusLog = vi.fn(async (_x: any) => undefined);
@@ -417,11 +431,14 @@ describe("★★★ Task 9 — giới hạn tần suất machine:* (bão 1.000 s
     const t0 = Date.now();
     for (let i = 0; i < 1000; i++) may.emit("machine:confirm_mapping", {});
     // Mọi gói được xử lý = hoặc INSERT (đường gắn sẵn là đồng bộ) hoặc bị bỏ-và-đếm.
-    await vi.waitFor(() => expect(insertCho(17119) + rlMod.thongKeGioiHanSuKienMay().boQua).toBe(1000), { timeout: 5000 });
+    // Mỗi gói ĐƯỢC xử lý làm mới presence (setOnline); gói bị bỏ được đếm. Fix round 1 mục 4: socket đã map
+    // cùng máy ⇒ KHÔNG INSERT lặp ⇒ đúng 1 INSERT cho cả cơn bão.
+    await vi.waitFor(() => expect(onlineCho(17119) + rlMod.thongKeGioiHanSuKienMay().boQua).toBe(1000), { timeout: 5000 });
     const ms = Date.now() - t0;
-    const n = insertCho(17119);
+    const n = onlineCho(17119);
     expect(n).toBeGreaterThanOrEqual(1);
     expect(n).toBeLessThanOrEqual(tran(L, ms));
+    expect(insertCho(17119)).toBe(1);
     expect(rlMod.thongKeGioiHanSuKienMay().boQuaTheoSocket).toBe(1000 - n);
     const dongLog = warnSpy.mock.calls.map((a: unknown[]) => a.map(String).join(" ")).filter((s: string) => /GIOI HAN machine/.test(s));
     expect(dongLog.length).toBeGreaterThanOrEqual(1);
@@ -474,5 +491,163 @@ describe("★★★ Task 9 — giới hạn tần suất machine:* (bão 1.000 s
     expect(kq.every((k) => k.status === "rejected")).toBe(true);
     expect(getMachineByCode.mock.calls.length).toBeLessThanOrEqual(tran(LIP, ms));
     expect(rlMod.thongKeGioiHanSuKienMay().boQuaTheoHandshake).toBeGreaterThan(0);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Fix round 1 (FIX_BASE 9f4f96151)
+// ════════════════════════════════════════════════════════════════════════════
+describe("★★★ Fix round 1 — danh tính phát đi, onboarding mk_, ma, lặp, xô IP, isActive, sổ mismatch", () => {
+  it("(F1) ★ sync_started từ socket gắn M-200 kèm machineCode 'M-17119' ⇒ admin/global chỉ thấy M-200 (không bao giờ M-17119/undefined)", async () => {
+    const { ad } = await quanSatVien();
+    const syncStatus = ghiNhan(ad, "machine:sync_status");
+    const statusChange = ghiNhan(ad, "machine:status_change");
+    const b = await mayCoKhoa("M-200", K_200);
+    const ok = new Promise((r) => b.once("machine:sync_confirmed", r));
+    b.emit("machine:sync_started", { machineCode: "M-17119" });
+    await trongHan(ok, 2000, "sync_confirmed");
+    const ok2 = new Promise((r) => b.once("machine:sync_confirmed", r));
+    b.emit("machine:sync_started", {});
+    await trongHan(ok2, 2000, "sync_confirmed 2");
+    await vi.waitFor(() => expect(syncStatus.length).toBe(2), { timeout: 2000 });
+    await vi.waitFor(() => expect(statusChange.filter((g) => g.status === "syncing").length).toBe(2), { timeout: 2000 });
+    for (const g of syncStatus) expect(g).toMatchObject({ machineId: 200, machineCode: "M-200" });
+    for (const g of statusChange.filter((x) => x.status === "syncing")) expect(g.machineCode).toBe("M-200");
+    expect(JSON.stringify([syncStatus, statusChange])).not.toContain("M-17119");
+  });
+
+  it("(F2) ★ R18 — register → admin duyệt ⇒ máy nhận khoá mk_ (hiện MỘT lần, băm-lưu, không plaintext trong DB/log) ⇒ nối lại bằng khoá đó dưới enforce ⇒ ONLINE", async () => {
+    const logSpy = vi.spyOn(console, "log");
+    const errSpy = vi.spyOn(console, "error");
+    try {
+      const may = await mayVoDanh();
+      const ack = new Promise((r) => may.once("machine:register_ack", r));
+      may.emit("machine:register", { code: "NEW-500", name: "moi", type: "AOI", serialNumber: "SN-500" });
+      await trongHan(ack, 2000, "register_ack");
+      const duyet = new Promise<any>((r) => may.once("machine:registration_approved", r));
+      const ad = await ketNoi({ phien: 1 });
+      const okAd = new Promise<any>((r) => ad.once("admin:approve_success", r));
+      ad.emit("admin:approve_registration", { socketId: may.id, machineId: 500 });
+      const [goiMay, goiAd] = await trongHan(Promise.all([duyet, okAd]), 3000, "approve");
+      const khoa: string = goiMay.apiKey;
+      expect(khoa).toMatch(/^mk_[0-9a-f]{48}$/);
+      expect(goiAd.apiKey).toBe(khoa); // hiện cho admin đúng một lần (như cách mach_ được giao)
+      // băm-lưu: hàng api_keys mới gắn máy 500 mang SHA-256 (tính độc lập ở đây), không chứa plaintext
+      const hang = BANG_KHOA.find((r) => r.machineId === 500);
+      expect(hang?.keyHash).toBe(sha256(khoa));
+      expect(JSON.stringify(hang)).not.toContain(khoa);
+      // machines.apiKey KHÔNG bị ghi plaintext
+      const capNhat = updateMachine.mock.calls.filter((c) => c[0] === 500);
+      expect(capNhat).toHaveLength(1);
+      expect(capNhat[0][1]).toMatchObject({ registrationStatus: "approved" });
+      expect(capNhat[0][1]).not.toHaveProperty("apiKey");
+      // không log khoá
+      const moiLog = [...logSpy.mock.calls, ...errSpy.mock.calls, ...warnSpy.mock.calls].flat().map(String).join("\n");
+      expect(moiLog).not.toContain(khoa);
+
+      // Nối lại bằng khoá được giao, xác thực ở handshake, dưới enforce mặc định ⇒ online.
+      const lai = await mayCoKhoa("M-500", khoa);
+      lai.emit("machine:confirm_mapping", {});
+      await vi.waitFor(() => expect(phongCua(lai)).toEqual(["machine:500"]), { timeout: 2000 });
+      expect(insertCho(500)).toBeGreaterThanOrEqual(1);
+      expect(onlineCho(500)).toBe(1);
+      // Giao thức cũ từng-sự-kiện (scripts/test_machine_websocket.py): chính socket đăng ký gửi khoá trong payload ⇒ cũng được.
+      may.emit("machine:confirm_mapping", { machineId: 500, machineCode: "NEW-500", apiKey: khoa });
+      await vi.waitFor(() => expect(phongCua(may)).toEqual(["machine:500"]), { timeout: 2000 });
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+    }
+  });
+
+  it("(F2b) mode off qua env ⇒ duyệt giữ hành vi cũ (khoá mach_ ghi vào machines.apiKey), không đúc mk_", async () => {
+    process.env.SOCKET_MACHINE_AUTH_MODE = "off";
+    const soKhoaTruoc = BANG_KHOA.length;
+    const may = await mayVoDanh();
+    const ack = new Promise((r) => may.once("machine:register_ack", r));
+    may.emit("machine:register", { code: "OFF-500", name: "off", type: "AOI" });
+    await trongHan(ack, 2000, "register_ack");
+    const duyet = new Promise<any>((r) => may.once("machine:registration_approved", r));
+    const ad = await ketNoi({ phien: 1 });
+    ad.emit("admin:approve_registration", { socketId: may.id, machineId: 500 });
+    const goi = await trongHan(duyet, 3000, "approve off");
+    expect(goi.apiKey).toMatch(/^mach_/);
+    expect(updateMachine.mock.calls.find((c) => c[0] === 500)?.[1]).toMatchObject({ apiKey: goi.apiKey });
+    expect(BANG_KHOA.length).toBe(soKhoaTruoc);
+  });
+
+  it("(F3) ★ sync_started từng-sự-kiện, socket NGẮT trong lúc chờ xác thực ⇒ không online ma, không updateMachine, không INSERT", async () => {
+    const may = await mayVoDanh();
+    getMachineById.mockImplementationOnce(async (id: number) => {
+      await cho(300);
+      return MAY[id] ? { ...MAY[id] } : undefined;
+    });
+    may.emit("machine:sync_started", { machineId: 17119, machineCode: "M-17119", apiKey: K_17119 });
+    await vi.waitFor(() => expect(getMachineById).toHaveBeenCalled(), { timeout: 2000 });
+    may.disconnect();
+    await cho(600);
+    expect(onlineCho(17119)).toBe(0);
+    expect(updateMachine).not.toHaveBeenCalled();
+    expect(insertCho(17119)).toBe(0);
+    // đối chứng: không ngắt ⇒ online
+    const may2 = await mayVoDanh();
+    const ok = new Promise((r) => may2.once("machine:sync_confirmed", r));
+    may2.emit("machine:sync_started", { machineId: 17119, machineCode: "M-17119", apiKey: K_17119 });
+    await trongHan(ok, 2000, "sync_confirmed");
+    expect(onlineCho(17119)).toBe(1);
+  });
+
+  it("(F4) ★ confirm_mapping LẶP trên socket đã map cùng máy ⇒ đúng MỘT INSERT (vẫn làm mới presence); socket KHÁC map cùng máy ⇒ INSERT mới", async () => {
+    const may = await mayCoKhoa("M-17119", K_17119);
+    for (let i = 0; i < 5; i++) may.emit("machine:confirm_mapping", {});
+    await vi.waitFor(() => expect(onlineCho(17119)).toBe(5), { timeout: 2000 });
+    expect(insertCho(17119)).toBe(1);
+    const may2 = await mayCoKhoa("M-17119", K_17119);
+    may2.emit("machine:confirm_mapping", {});
+    await vi.waitFor(() => expect(onlineCho(17119)).toBe(6), { timeout: 2000 });
+    expect(insertCho(17119)).toBe(2);
+  });
+
+  it("(F5) ★ bão VÔ DANH cùng IP (10 socket × 10 gói, vắt cạn xô IP vô danh) KHÔNG làm rơi confirm_mapping của socket ĐÃ gắn", async () => {
+    // Xô IP 2/giây ⇒ nạp 1 token mỗi 500 ms: đủ chậm để xô còn CẠN khi gói của socket đã gắn tới (với 50/giây
+    // xô tự nạp trong lúc waitFor và ca này xanh cả trên bản chưa vá — đo được ở RED lần đầu).
+    process.env.SOCKET_MACHINE_EVENT_RATE_PER_IP = "2";
+    const gan = await mayCoKhoa("M-200", K_200);
+    const vd: ClientSocket[] = [];
+    for (let i = 0; i < 10; i++) vd.push(await mayVoDanh());
+    const loi: any[] = [];
+    for (const s of vd) s.on("machine:auth_error", (g: any) => loi.push(g));
+    for (const s of vd) for (let i = 0; i < 10; i++) s.emit("machine:heartbeat", { machineId: 17119, status: "x" });
+    await vi.waitFor(() => expect(loi.length + rlMod.thongKeGioiHanSuKienMay().boQua).toBe(100), { timeout: 3000 });
+    expect(rlMod.thongKeGioiHanSuKienMay().boQuaTheoIp).toBeGreaterThan(0); // xô IP vô danh thật sự cạn
+    gan.emit("machine:confirm_mapping", {});
+    await vi.waitFor(() => expect(phongCua(gan)).toEqual(["machine:200"]), { timeout: 2000 });
+  });
+
+  it("(F6) ★ đường từng-sự-kiện kiểm isActive: máy NGỪNG (khoá plaintext, MACHINE_SHARED_KEY_ALLOWED=true) ⇒ từ chối; đối chứng máy đang chạy ⇒ nhận", async () => {
+    process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
+    const s = await mayVoDanh();
+    const loi = ghiNhan(s, "machine:auth_error");
+    s.emit("machine:confirm_mapping", { machineId: 301, machineCode: "M-301", apiKey: "mach_inactive_301" });
+    await vi.waitFor(() => expect(loi.length).toBe(1), { timeout: 2000 });
+    expect(insertCho(301)).toBe(0);
+    expect(phongCua(s)).toEqual([]);
+    const s2 = await mayVoDanh();
+    s2.emit("machine:confirm_mapping", { machineId: 300, machineCode: "M-300", apiKey: "mach_legacy_300" });
+    await vi.waitFor(() => expect(phongCua(s2)).toEqual(["machine:300"]), { timeout: 2000 });
+  });
+
+  it("(F7) sổ mismatch KHÔNG ghi mã máy do client tự khai (confirm_mapping + sync_started)", async () => {
+    const s = await mayVoDanh();
+    const loi = ghiNhan(s, "machine:auth_error");
+    const syncLoi = ghiNhan(s, "machine:sync_error");
+    s.emit("machine:confirm_mapping", { machineId: 999999, machineCode: "GIA-MAO-XYZ", apiKey: "rac" });
+    s.emit("machine:confirm_mapping", { machineId: 17119, machineCode: "GIA-MAO-ABC", apiKey: "rac" });
+    s.emit("machine:sync_started", { machineId: 999998, machineCode: "GIA-MAO-SYNC", apiKey: "rac" });
+    await vi.waitFor(() => expect(loi.length).toBe(2), { timeout: 2000 });
+    await vi.waitFor(() => expect(syncLoi.length).toBe(1), { timeout: 2000 });
+    const rows = authMod.getSocketMachineAuthMismatches();
+    expect(JSON.stringify(rows)).not.toContain("GIA-MAO");
+    expect(rows.find((r) => r.event === "machine:confirm_mapping" && r.machineId === 17119)?.machineCode).toBe("M-17119");
   });
 });

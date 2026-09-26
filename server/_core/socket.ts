@@ -28,6 +28,8 @@ import {
   verifyMachineSocketAuth,
   recordSocketMachineAuthMismatch,
 } from "./socketMachineAuth";
+// ── doc 81 Đợt 1B Task 9 fix round 1 (Ruling R18) — duyệt đăng ký qua socket cấp khoá mk_ (băm-lưu).
+import { issueMachineKey } from "../services/machineAuthService";
 // ── doc 81 Đợt 1B Task 9 (BE3 §L4b Backpressure) — giới hạn tần suất `machine:*` theo socket + IP.
 import {
   choPhepSuKienMay,
@@ -325,7 +327,11 @@ export function initializeSocket(server: HttpServer): Server {
     // ⇒ không handler nào chạy ⇒ không tra DB, không ghi DB. Đếm + log gộp ở socketMachineRateLimit.
     socket.use((packet, next) => {
       const ten = packet[0];
-      if (typeof ten === "string" && ten.startsWith("machine:") && !choPhepSuKienMay(socket.id, socket.handshake.address)) {
+      if (
+        typeof ten === "string" &&
+        ten.startsWith("machine:") &&
+        !choPhepSuKienMay(socket.id, socket.handshake.address, mayDaGanCua(socket) != null)
+      ) {
         return; // bỏ gói (không gọi next)
       }
       next();
@@ -369,6 +375,9 @@ export function initializeSocket(server: HttpServer): Server {
         console.error(`[Socket.io] ${event}: tra cuu may that bai:`, err?.message ?? err);
         hang = undefined;
       }
+      // Fix round 1 (mục 6): cùng luật với handshake — máy NGỪNG hoạt động không xác thực được
+      // (nhánh plaintext không tự kiểm isActive; nhánh mk_ có, nhưng không dựa vào đó).
+      if (hang && hang.isActive === false) hang = undefined;
       const auth = await verifyMachineSocketAuth(hang, data?.apiKey, `socket:${event}`);
       if (!hang || !auth.ok) return { ok: false, method: auth.method, hang };
       // Một socket = một máy: lượt xác thực song song khác đã gắn socket với máy KHÁC ⇒ không khớp.
@@ -710,8 +719,14 @@ export function initializeSocket(server: HttpServer): Server {
     // after an async DB verify — with STATE_STORE_ENABLED on, tracking then starts at
     // the machine's first heartbeat instead (documented limitation, stateStore/ingest.ts).
     socket.on("machine:confirm_mapping", (data: { machineId: number; machineCode: string; apiKey: string }) => {
+      const mode = socketMachineAuthMode();
       const applyConfirmMapping = (machineId: number, machineCode: string) => {
         const ipAddress = socket.handshake.address;
+        // Fix round 1 (mục 4): socket này ĐÃ map đúng máy này ⇒ lượt lặp chỉ làm mới presence/phát sóng,
+        // KHÔNG ghi thêm một hàng machine_status_logs (trước: ~10 INSERT/giây vô hạn từ một máy có khoá).
+        // Chỉ ở log/enforce — `off` giữ nguyên hành vi cũ.
+        const daMapChinhSocketNay =
+          mode !== "off" && connectedMachines.get(machineId)?.socketId === socket.id;
         connectedMachines.set(machineId, {
           socketId: socket.id,
           ipAddress,
@@ -733,11 +748,13 @@ export function initializeSocket(server: HttpServer): Server {
         console.log(`[Socket.io] Machine ${machineId} (${machineCode}) mapped successfully from ${ipAddress}`);
 
         // Log status change to database
-        db.createMachineStatusLog({
-          machineId,
-          status: 'online',
-          ipAddress,
-        }).catch(err => console.error('[Socket.io] Failed to log machine online status:', err));
+        if (!daMapChinhSocketNay) {
+          db.createMachineStatusLog({
+            machineId,
+            status: 'online',
+            ipAddress,
+          }).catch(err => console.error('[Socket.io] Failed to log machine online status:', err));
+        }
 
         // Notify admin dashboard
         io?.to("admin").emit("machine:connected", {
@@ -751,7 +768,6 @@ export function initializeSocket(server: HttpServer): Server {
         io?.emit("machine:status_change", { machineCode, status: "online" });
       };
 
-      const mode = socketMachineAuthMode();
       if (mode === "off") {
         applyConfirmMapping(data.machineId, data.machineCode); // legacy: no credential check (hành vi cũ)
         return;
@@ -769,8 +785,9 @@ export function initializeSocket(server: HttpServer): Server {
           recordSocketMachineAuthMismatch({
             event: "machine:confirm_mapping",
             mode,
-            machineId: idPayload ?? 0,
-            machineCode: kq.hang?.code ?? data?.machineCode,
+            // Fix round 1 (mục 7): như handshake — chỉ ghi máy TRA ĐƯỢC từ DB, không ghi mã client tự khai.
+            machineId: kq.hang?.id ?? 0,
+            machineCode: kq.hang?.code,
             method: kq.method,
           });
           if (mode === "enforce") {
@@ -778,7 +795,7 @@ export function initializeSocket(server: HttpServer): Server {
             return;
           }
           if (idPayload == null) return; // log: không có máy nào để áp
-          applyConfirmMapping(idPayload, data.machineCode); // log: vẫn cho qua (tuần quan sát GAP-1)
+          applyConfirmMapping(idPayload, kq.hang?.code ?? data.machineCode); // log: vẫn cho qua (tuần quan sát GAP-1)
           return;
         }
         if (socket.disconnected) return;
@@ -878,24 +895,44 @@ export function initializeSocket(server: HttpServer): Server {
 
       try {
         // Step 2: Get or generate API Key
-        let apiKey = data.apiKey || "";
         const existingMachine = await db.getMachineById(data.machineId);
         if (!existingMachine) {
           socket.emit("admin:approve_error", { message: `Machine ID ${data.machineId} not found in database` });
           return;
         }
 
-        // Generate new API Key if machine doesn't have one
-        if (!apiKey || apiKey.trim() === "") {
-          apiKey = existingMachine.apiKey || `mach_${nanoid(32)}`;
+        // ★★★ doc 81 Đợt 1B Task 9 fix round 1 (Ruling R18). Ở log/enforce (enforce = mặc định) socket
+        // xác thực khoá plaintext qua decideSharedMachineKey (MACHINE_SHARED_KEY_ALLOWED mặc định deny)
+        // ⇒ khoá `mach_` cấp ở đây sẽ bị chính socket (và HTTP) từ chối, onboarding qua socket chết.
+        // Nên: đúc khoá `mk_` riêng máy bằng issueMachineKey (băm SHA-256 lưu api_keys, KHÔNG ghi
+        // machines.apiKey, không nhận khoá admin tự gõ), giao đúng như `mach_` trước đây (máy + admin,
+        // hiện MỘT lần), không bao giờ log. `off` = lối thoát ⇒ giữ nguyên văn đường `mach_` cũ (ở `off`
+        // sync_started/request_config vẫn so plaintext machines.apiKey — mk_ sẽ không qua được ở đó).
+        const cheDo = socketMachineAuthMode();
+        let apiKey: string;
+        let keyPrefix: string | null = null;
+        if (cheDo === "off") {
+          apiKey = data.apiKey || "";
+          // Generate new API Key if machine doesn't have one
+          if (!apiKey || apiKey.trim() === "") {
+            apiKey = existingMachine.apiKey || `mach_${nanoid(32)}`;
+          }
+        } else {
+          const khoa = await issueMachineKey({
+            machineId: existingMachine.id,
+            name: `socket-approve:${existingMachine.code}`,
+            createdBy: ((socket.data as any)?.user?.id as number | undefined) ?? null,
+          });
+          apiKey = khoa.plaintextKey;
+          keyPrefix = khoa.keyPrefix;
         }
 
-        // Update machine in DB: set registrationStatus, serialNumber, firmwareVersion, apiKey
+        // Update machine in DB: set registrationStatus, serialNumber, firmwareVersion (+ apiKey chỉ ở `off`)
         await db.updateMachine(data.machineId, {
           registrationStatus: "approved",
           serialNumber: registration.machineInfo.serialNumber || existingMachine.serialNumber,
           firmwareVersion: registration.machineInfo.firmwareVersion || existingMachine.firmwareVersion,
-          apiKey,
+          ...(cheDo === "off" ? { apiKey } : {}),
           lastSyncAt: new Date(),
         });
 
@@ -950,7 +987,12 @@ export function initializeSocket(server: HttpServer): Server {
           registrationCode: registration.machineInfo.code,
         });
 
-        console.log(`[Socket.io] Registration approved for ${registration.machineInfo.code} -> Machine ID ${data.machineId} (API Key: ${apiKey.substring(0, 10)}...)`);
+        if (cheDo === "off") {
+          console.log(`[Socket.io] Registration approved for ${registration.machineInfo.code} -> Machine ID ${data.machineId} (API Key: ${apiKey.substring(0, 10)}...)`);
+        } else {
+          // Chỉ tiền tố công khai (cột keyPrefix) — không bao giờ log khoá.
+          console.log(`[Socket.io] Registration approved for ${registration.machineInfo.code} -> Machine ID ${data.machineId} (khoa mk_ prefix ${keyPrefix})`);
+        }
       } catch (error: any) {
         console.error("[Socket.io] Error approving registration:", error);
         socket.emit("admin:approve_error", { message: `Failed to approve: ${error.message}` });
@@ -1014,7 +1056,7 @@ export function initializeSocket(server: HttpServer): Server {
             recordSocketMachineAuthMismatch({
               event: "machine:request_config",
               mode,
-              machineId: idMayTuPayload(data?.machineId) ?? 0,
+              machineId: kq.hang?.id ?? 0,
               machineCode: kq.hang?.code,
               method: kq.method,
             });
@@ -1097,8 +1139,8 @@ export function initializeSocket(server: HttpServer): Server {
             recordSocketMachineAuthMismatch({
               event: "machine:sync_started",
               mode,
-              machineId: idMayTuPayload(data?.machineId) ?? 0,
-              machineCode: kq.hang?.code ?? data?.machineCode,
+              machineId: kq.hang?.id ?? 0,
+              machineCode: kq.hang?.code, // fix round 1 (mục 7): không ghi mã client tự khai
               method: kq.method,
             });
             socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
@@ -1106,6 +1148,9 @@ export function initializeSocket(server: HttpServer): Server {
           }
           machineId = kq.may.id;
           machineCode = kq.may.code;
+          // Fix round 1 (mục 3): socket ngắt trong lúc chờ xác thực ⇒ không để lại mục online "ma"
+          // (handler disconnect đã chạy xong, không ai dọn connectedMachines/presence cho socket này nữa).
+          if (socket.disconnected) return;
         }
 
         const ipAddress = socket.handshake.address;
@@ -1151,16 +1196,17 @@ export function initializeSocket(server: HttpServer): Server {
         });
 
         // Notify admin & global
+        // Fix round 1 (mục 1): danh tính ĐÃ xác thực (ở `off` chính là data.* như cũ).
         io?.to("admin").emit("machine:sync_status", {
-          machineId: data.machineId,
-          machineCode: data.machineCode,
+          machineId,
+          machineCode,
           status: "syncing",
           ipAddress,
           timestamp: new Date(),
         });
-        io?.emit("machine:status_change", { machineCode: data.machineCode, status: "syncing" });
+        io?.emit("machine:status_change", { machineCode, status: "syncing" });
 
-        console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) started real-time sync`);
+        console.log(`[Socket.io] Machine ${machineId} (${machineCode}) started real-time sync`);
       } catch (error: any) {
         console.error("[Socket.io] Error starting sync:", error);
         socket.emit("machine:sync_error", { message: `Failed to start sync: ${error.message}` });

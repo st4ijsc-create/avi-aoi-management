@@ -9,7 +9,10 @@
  *
  * Hai lớp độc lập, cùng là xô token (dung lượng = tốc độ/giây, nạp liên tục):
  *   • theo SOCKET — một kết nối không bão được;
- *   • theo IP     — nhiều kết nối từ một nguồn không cộng dồn thành bão.
+ *   • theo IP     — nhiều kết nối từ một nguồn không cộng dồn thành bão. Fix round 1 (mục 5): HAI xô
+ *     IP tách rời — socket ĐÃ gắn máy (xác thực) và socket VÔ DANH (còn được nhận để `machine:register`,
+ *     cùng mọi lượt handshake có trình khoá) — nên một cơn bão vô danh từ cùng IP/NAT không vắt cạn
+ *     được phần của máy đã xác thực.
  * Gói vượt ngưỡng bị BỎ (không handler nào chạy ⇒ không ghi DB) và ĐẾM; log GỘP toàn cục
  * (tối đa 1 dòng / LOG_GOP_MS), không in payload (không có apiKey trong log).
  *
@@ -105,11 +108,22 @@ function ghiBoQua(lop: "socket" | "ip" | "handshake", socketId: string | null, i
  * Một gói `machine:*` từ `socketId`@`ip` có được xử lý không. Kiểm CẢ HAI lớp trước, chỉ trừ token
  * khi cả hai còn (gói bị lớp IP chặn không ăn token của socket và ngược lại).
  */
-export function choPhepSuKienMay(socketId: string, ip: string, bayGio: number = Date.now()): boolean {
+/** Khoá xô IP: máy đã xác thực và vô danh KHÔNG chung xô. */
+function khoaXoIp(ip: string, daGanMay: boolean): string {
+  return `${daGanMay ? "may" : "vodanh"}|${ip}`;
+}
+
+export function choPhepSuKienMay(
+  socketId: string,
+  ip: string,
+  /** Socket đã gắn một máy ĐÃ xác thực (socket.data.machineId). */
+  daGanMay = false,
+  bayGio: number = Date.now(),
+): boolean {
   const tocSocket = gioiHanSuKienMayMoiSocket();
   const tocIp = gioiHanSuKienMayMoiIp();
   const xs = tocSocket > 0 ? napXo(xoSocket, socketId, tocSocket, bayGio) : null;
-  const xi = tocIp > 0 ? napXo(xoIp, ip, tocIp, bayGio) : null;
+  const xi = tocIp > 0 ? napXo(xoIp, khoaXoIp(ip, daGanMay), tocIp, bayGio) : null;
   if (xs && xs.token < 1) {
     ghiBoQua("socket", socketId, ip, bayGio);
     return false;
@@ -125,13 +139,13 @@ export function choPhepSuKienMay(socketId: string, ip: string, bayGio: number = 
 }
 
 /**
- * Handshake socket máy CÓ trình thông tin xác thực ⇒ tra DB. Ăn chung xô IP với sự kiện
- * `machine:*` để một vòng nối-lại-liên-tục bằng khoá sai không thành bão truy vấn DB.
+ * Handshake socket máy CÓ trình thông tin xác thực ⇒ tra DB. Ăn xô IP VÔ DANH (socket chưa xác thực)
+ * để một vòng nối-lại-liên-tục bằng khoá sai không thành bão truy vấn DB — và không đụng xô của máy đã gắn.
  */
 export function choPhepXacThucHandshakeMay(ip: string, bayGio: number = Date.now()): boolean {
   const tocIp = gioiHanSuKienMayMoiIp();
   if (tocIp <= 0) return true;
-  const xi = napXo(xoIp, ip, tocIp, bayGio);
+  const xi = napXo(xoIp, khoaXoIp(ip, false), tocIp, bayGio);
   if (xi.token < 1) {
     ghiBoQua("handshake", null, ip, bayGio);
     return false;

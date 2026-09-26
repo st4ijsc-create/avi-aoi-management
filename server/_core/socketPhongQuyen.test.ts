@@ -88,6 +88,17 @@ vi.mock("../db", () => ({
   getDb: vi.fn(async () => null),
 }));
 
+// ── doc 81 Đợt 1B Task 9 fix round 1 (R18): ở mặc định enforce, admin:approve_registration đúc khoá mk_ qua
+// issueMachineKey (cần bảng api_keys). Tệp này đo CỔNG QUYỀN của approve, không đo khoá ⇒ chỉ thay đúng hàm
+// đúc bằng một khoá cố định; mọi thứ khác của machineAuthService giữ THẬT. Đường đúc thật + băm-lưu được đo
+// ở socketMayXacThuc.test.ts (F2).
+vi.mock("../services/machineAuthService", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/machineAuthService")>()),
+  issueMachineKey: vi.fn(async (o: { machineId: number }) => ({
+    id: 1, machineId: o.machineId, keyPrefix: "mk_abc123", plaintextKey: "mk_" + "ab".repeat(24),
+  })),
+}));
+
 // ── Mọi cạnh hạ tầng khác: rỗng/tắt (tệp này đo PHÂN QUYỀN PHÒNG). ──
 vi.mock("./socketRedisAdapter", () => ({ attachRedisAdapter: vi.fn(async () => false) }));
 vi.mock("./machinePresenceStore", () => ({
