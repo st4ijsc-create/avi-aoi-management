@@ -14,7 +14,7 @@
  */
 import net from "node:net";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { TcpLineClient, TcpLineTimeoutError, TcpLineClosedError } from "./tcpLineClient";
+import { TcpLineClient, TcpLineTimeoutError, TcpLineClosedError, TcpLineResetError, TcpLineNotConnectedError } from "./tcpLineClient";
 
 interface FakeLineServer {
   port: number;
@@ -186,18 +186,27 @@ describe("TcpLineClient — đóng kết nối khi lệnh đang chờ mang reaso
 });
 
 describe("TcpLineClient — peer đóng ⇒ client 'cũ' (nối lại được), không chết (fix round 2)", () => {
-  it("sau khi peer đóng giữa lệnh, lần gửi kế tiếp nối lại (chạy onReconnect) và nhận đúng reply", async () => {
+  // Fix round 3 — sau peer drop: isConnected() = false; lệnh thường bị TỪ CHỐI (0 byte, không nối
+  // lại); CHỈ lần gửi mang allowAfterPeerDrop (lệnh dừng) được nối lại (chạy onReconnect).
+  it("sau khi peer đóng giữa lệnh: không còn 'connected', lệnh thường bị từ chối; chỉ STOP (allowAfterPeerDrop) nối lại", async () => {
     const c = await openClient({
       onReconnect: async (client) => {
         await client.send("HELLO\r", 1000);
       },
     });
     await within(c.send("DIE\r", 2000), 3000).catch(() => undefined);
-    expect(c.isConnected()).toBe(true);
-    const b = await within(c.send("B\r", 1000), 3000);
-    expect(b).toBe("B-REPLY");
+    expect(c.isConnected()).toBe(false);
+    const refused = await within(c.send("MOVE\r", 1000), 3000).then(
+      () => null,
+      (e) => e,
+    );
+    expect(refused).toBeInstanceOf(TcpLineNotConnectedError);
+    expect(server.perConnection.length).toBe(1); // không nối lại cho lệnh thường
+    const b = await within(c.send("STOP\r", 1000, { allowAfterPeerDrop: true }), 3000);
+    expect(b).toBe("STOP-REPLY");
     expect(server.perConnection.length).toBe(2);
-    expect(server.perConnection[1]).toEqual(["HELLO", "B"]);
+    expect(server.perConnection[1]).toEqual(["HELLO", "STOP"]);
+    expect(c.isConnected()).toBe(true);
   });
 
   it("nối lại THẤT BẠI (server tắt) ⇒ lúc đó mới báo mất kết nối", async () => {
@@ -210,6 +219,21 @@ describe("TcpLineClient — peer đóng ⇒ client 'cũ' (nối lại được),
     await new Promise((r) => setTimeout(r, 50));
     await expect(within(c.send("X\r", 500), 3000)).rejects.toBeTruthy();
     expect(c.isConnected()).toBe(false);
+  });
+});
+
+describe("TcpLineClient — reset kết nối dưới lệnh đang bay mang reasonCode (fix round 3)", () => {
+  it("lệnh khác hết hạn giờ khi lệnh A còn chờ ⇒ A bị huỷ với TcpLineResetError, reasonCode line_connection_reset", async () => {
+    const c = await openClient();
+    const a = c.send("SLOW\r", 5000).then(
+      () => null,
+      (e) => e,
+    );
+    const b = c.send("SLOW\r", 50).catch((e) => e); // poll song song, hạn ngắn ⇒ reset kết nối
+    expect(await within(b, 3000)).toBeInstanceOf(TcpLineTimeoutError);
+    const errA = await within(a, 3000);
+    expect(errA).toBeInstanceOf(TcpLineResetError);
+    expect((errA as TcpLineResetError).reasonCode).toBe("line_connection_reset");
   });
 });
 

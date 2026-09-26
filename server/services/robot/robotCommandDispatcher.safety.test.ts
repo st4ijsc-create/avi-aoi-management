@@ -164,6 +164,10 @@ async function startFakeMelfa(): Promise<FakeMelfa> {
         const cmd = frame.split(";").slice(2).join(";");
         cmds.push(cmd);
         const reply = fake.respond(cmd);
+        if (reply === "__DROP_ALL__") {
+          for (const s of socks) s.destroy();
+          return;
+        }
         if (reply === "__CLOSE__") {
           sock.destroy(); // peer đóng kết nối giữa lệnh
           return;
@@ -577,6 +581,55 @@ describe("fix round 2 — abort thứ hai KHÔNG rào STOP của abort thứ nh�
     expect(await within(a1, 5000)).toBe("ok");
     expect(await within(a2, 5000)).toBe("ok");
     expect(fake.conns.slice(before).flat()).toEqual(["OPEN=AOICTRL", "STOP", "STOP"]);
+  });
+});
+
+describe("fix round 3 — MELFA rớt kết nối khi rảnh: cổng 3 chặn chuyển động, chỉ STOP được nối lại", () => {
+  it("drop khi rảnh ⇒ dispatch home bị từ chối, 0 byte chuyển động; abort (qua dispatcher VÀ trực tiếp) tới robot trên kết nối mới sau OPEN=", async () => {
+    await connectDriver(2000);
+    // STATE ⇒ server đóng mọi kết nối (robot rớt khi đang rảnh)
+    fake.respond = (cmd) => (cmd === "STATE" ? "__DROP_ALL__" : healthy(cmd));
+    await driver.getState().catch(() => undefined);
+    fake.respond = healthy;
+    expect(driver.isConnected()).toBe(false);
+    const before = fake.conns.length;
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("rejected");
+    expect(r.error).toBe("robot not active/connected");
+    expect(fake.conns.slice(before).flat()).toEqual([]);
+    const stop = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(stop.status).toBe("done");
+    expect(fake.conns.slice(before)).toEqual([["OPEN=AOICTRL", "STOP"]]);
+  });
+
+  it("job đã qua cổng 3 TRƯỚC khi robot rớt (gọi runJob trực tiếp) ⇒ bị từ chối line_not_connected, KHÔNG mở kết nối mới, 0 byte", async () => {
+    await connectDriver(2000);
+    fake.respond = (cmd) => (cmd === "STATE" ? "__DROP_ALL__" : healthy(cmd));
+    await driver.getState().catch(() => undefined);
+    fake.respond = healthy;
+    const before = fake.conns.length;
+    const r = await within(driver.runJob({ jobType: "home" }), 5000);
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("line_not_connected");
+    await sleep(100);
+    expect(fake.conns.length).toBe(before);
+  });
+
+  it("reset kết nối dưới EXEC đang bay (vd một poll song song hết hạn) ⇒ reasonCode line_connection_reset ⇒ dispatcher gửi STOP", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    await connectDriver(3000);
+    fake.respond = (cmd) => {
+      if (cmd.startsWith("EXEC")) {
+        // mô phỏng poll song song hết hạn ⇒ resetConnection() dưới EXEC đang chờ
+        setTimeout(() => (driver as any).client.resetConnection("concurrent poll timeout"), 50);
+        return null;
+      }
+      return healthy(cmd);
+    };
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "line_connection_reset", abort: "abort_sent" });
+    expect(fake.conns[fake.conns.length - 1]).toEqual(["OPEN=AOICTRL", "STOP"]);
   });
 });
 

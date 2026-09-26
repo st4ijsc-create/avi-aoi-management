@@ -427,8 +427,11 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   }
 
   // 3) Active + connected driver.
+  //    Fix round 3 — isConnected() is false after a peer drop (MELFA/Delta/FANUC); that refuses
+  //    MOTION here. A STOP (abort) is not refused on that ground: its driver path is the only
+  //    one allowed to re-establish the session to deliver the stop.
   const robot = getActiveRobot(input.robotId);
-  if (!robot || !robot.driver.isConnected()) {
+  if (!robot || (motion && !robot.driver.isConnected())) {
     const jobId = await record(input, "rejected", undefined, "robot not active/connected");
     return { ok: false, status: "rejected", jobId, error: "robot not active/connected" };
   }

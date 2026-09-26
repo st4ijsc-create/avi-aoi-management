@@ -65,6 +65,33 @@ export class TcpLineClosedError extends Error {
   }
 }
 
+/** Stable reason code: the connection was reset (another request timed out / an abort preempted). */
+export const LINE_CONNECTION_RESET = "line_connection_reset" as const;
+
+/**
+ * doc 81 Đợt 1B Task 5 fix round 3 — rejection of requests still in flight when the connection
+ * is reset (e.g. a concurrent poll timed out while EXEC was pending): the command's bytes may
+ * already have reached the robot ⇒ outcome unknown ⇒ the dispatcher sends a stop.
+ */
+export class TcpLineResetError extends Error {
+  readonly reasonCode = LINE_CONNECTION_RESET;
+  constructor(message: string) {
+    super(message);
+    this.name = "TcpLineResetError";
+  }
+}
+
+/** Stable reason code: the send was refused before any byte (client down / peer dropped). */
+export const LINE_NOT_CONNECTED = "line_not_connected" as const;
+
+export class TcpLineNotConnectedError extends Error {
+  readonly reasonCode = LINE_NOT_CONNECTED;
+  constructor(message: string) {
+    super(message);
+    this.name = "TcpLineNotConnectedError";
+  }
+}
+
 export interface TcpLineSendOptions {
   /**
    * Called immediately before the frame is written (after any transparent reconnect). Throw
@@ -72,6 +99,12 @@ export interface TcpLineSendOptions {
    * fenced by abort() while waiting (e.g. in the reconnect window) never reaches the wire.
    */
   guard?: () => void;
+  /**
+   * Fix round 3 — after a PEER drop only a stop may reconnect: pass true for the STOP frame.
+   * Without it a send on a peer-dropped client is refused (TcpLineNotConnectedError), so a job
+   * gated before the drop can never run CNTLON/SRVON/EXEC on a fresh session.
+   */
+  allowAfterPeerDrop?: boolean;
 }
 
 export interface TcpLineClientOptions {
@@ -114,6 +147,8 @@ export class TcpLineClient {
   private stale = false;
   private reconnecting: Promise<void> | null = null;
   private handshaking = false;
+  /** Fix round 3 — the PEER closed / errored: not connected for anything but a stop. */
+  private peerDropped = false;
 
   constructor(
     private readonly name: string,
@@ -121,11 +156,13 @@ export class TcpLineClient {
   ) {}
 
   /**
-   * Logically open: true after open() until close() or a failed reconnect. A connection
-   * dropped by a timeout or by the peer still counts (it is re-established lazily).
+   * True after open() until close(), a failed reconnect, or a PEER drop. A connection dropped by
+   * a request timeout still counts (re-established lazily). Fix round 3: after a peer drop the
+   * client reports NOT connected (dispatcher gate 3 refuses motion); only a send with
+   * `allowAfterPeerDrop` (the STOP) reconnects through the stale path, which clears the drop.
    */
   isConnected(): boolean {
-    return this.connected;
+    return this.connected && !this.peerDropped;
   }
 
   async open(host: string, port: number, timeoutMs: number): Promise<void> {
@@ -191,7 +228,10 @@ export class TcpLineClient {
   private dropByPeer(err: Error): void {
     this.socket = null;
     this.rxBuf = "";
-    if (this.connected) this.stale = true;
+    if (this.connected) {
+      this.stale = true;
+      this.peerDropped = true;
+    }
     this.failAllPending(err);
   }
 
@@ -231,7 +271,7 @@ export class TcpLineClient {
     this.socket = null;
     this.rxBuf = "";
     if (this.connected) this.stale = true;
-    this.failAllPending(new Error(`${this.name} connection reset: ${reason}`));
+    this.failAllPending(new TcpLineResetError(`${this.name} connection reset: ${reason}`));
     if (old) {
       try { old.destroy(); } catch { /* ignore */ }
     }
@@ -243,6 +283,7 @@ export class TcpLineClient {
         try {
           await this.connectSocket();
           this.stale = false;
+          this.peerDropped = false; // a fresh transport exists (the handshake below may still fail)
           if (this.opts.onReconnect) {
             this.handshaking = true;
             try {
@@ -270,7 +311,10 @@ export class TcpLineClient {
 
   /** Write one fully-framed line (terminator already included) and await the next reply line. */
   async send(frame: string, timeoutMs: number, sendOpts: TcpLineSendOptions = {}): Promise<string> {
-    if (!this.connected) throw new Error(`${this.name}: not connected`);
+    if (!this.connected) throw new TcpLineNotConnectedError(`${this.name}: not connected`);
+    if (this.peerDropped && !sendOpts.allowAfterPeerDrop && !this.handshaking) {
+      throw new TcpLineNotConnectedError(`${this.name}: peer dropped the connection — only a stop may reconnect`);
+    }
     if (this.stale || (this.reconnecting && !this.handshaking)) {
       await this.reconnect();
     }
@@ -311,6 +355,7 @@ export class TcpLineClient {
     this.failAllPending(new Error(`${this.name} closing`));
     this.connected = false;
     this.stale = false;
+    this.peerDropped = false;
     const s = this.socket;
     this.socket = null;
     if (s) {

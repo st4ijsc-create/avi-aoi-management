@@ -259,10 +259,10 @@ export class MitsubishiDriver implements RobotDriver {
   }
 
   /** Send one command, await the reply, and throw if it is a MELFA error. */
-  private async command(cmd: string, guard?: () => void): Promise<MelfaReply> {
+  private async command(cmd: string, guard?: () => void, allowAfterPeerDrop = false): Promise<MelfaReply> {
     if (!this.client) throw new DeviceUnreachableError("mitsubishiRobot");
     const reply = parseMelfaResponse(
-      await this.client.send(frameMelfaCommand(cmd, this.robotNo, this.slotNo), this.timeoutMs, { guard }),
+      await this.client.send(frameMelfaCommand(cmd, this.robotNo, this.slotNo), this.timeoutMs, { guard, allowAfterPeerDrop }),
     );
     if (!reply.ok) throw new Error(`MELFA ${cmd.split(/[ (]/)[0]} failed: error ${reply.errorNo ?? "?"}`);
     return reply;
@@ -407,7 +407,8 @@ export class MitsubishiDriver implements RobotDriver {
         await this.command("CNTLON", guard);
         await this.command("SRVON", guard);
       }
-      const reply = await this.command(motionCmd, guard);
+      // Fix round 3 — only the STOP may reconnect after a peer drop.
+      const reply = await this.command(motionCmd, guard, isAbort);
       this.lastOkAt = new Date();
       return { ok: true, status: "done", detail: { jobType: job.jobType, command: framed, sent: true, reply: reply.payload } };
     } catch (err) {

@@ -137,8 +137,10 @@ export async function abortThroughRunJob(
 export const MOTION_OUTCOME_UNKNOWN_REASON_CODES: ReadonlySet<string> = new Set([
   "line_reply_timeout",     // TcpLineClient (MELFA / Delta): no reply line in time
   "line_connection_closed", // TcpLineClient: peer closed / socket error while a command was pending
+  "line_connection_reset",  // TcpLineClient: connection reset (e.g. a concurrent poll timed out) under a command
   "rmi_reply_timeout",      // FANUC RMI: no reply packet in time
   "rmi_connection_closed",  // FANUC RMI: socket dropped while a request was pending
+  "rmi_session_reset",      // FANUC RMI: session reset (another request timed out) under a command
   "tm_reply_timeout",       // Techman Listen Node (Task 4 classification)
   "tm_connection_closed",   // Techman Listen Node closed before a complete reply
 ]);

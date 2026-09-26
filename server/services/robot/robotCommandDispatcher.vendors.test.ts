@@ -236,7 +236,9 @@ describe("FANUC RMI — reply timeout ⇒ FRC_Abort TRƯỚC khi chốt failed (
     };
     const r = await within(dispatchRobotJob(HOME), 10_000);
     expect(r.status).toBe("failed");
-    expect(fake.received).toEqual(["FRC_GetStatus", "FRC_Initialize", "FRC_JointMotionJRep", "FRC_Abort"]);
+    // Fix round 3 — timeout ⇒ phiên RMI bị reset ⇒ FRC_Abort đi trên phiên MỚI (FRC_Connect trước).
+    expect(fake.received).toEqual(["FRC_GetStatus", "FRC_Initialize", "FRC_JointMotionJRep", "FRC_Connect", "FRC_Abort"]);
+    expect(fake.conns[fake.conns.length - 1]).toEqual(["FRC_Connect", "FRC_Abort"]);
     expect(atFinalize).toContain("FRC_Abort"); // dừng ĐÃ tới robot trước lúc sổ chốt
     expect(ledger.rows[0].status).toBe("failed");
     expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout", abort: "abort_sent" });
@@ -382,6 +384,117 @@ describe("FANUC RMI — từng lớp đối chiếu reply (R12, fix round 2)", (
     const r = await within(dispatchRobotJob(HOME), 10_000);
     expect(r.status).not.toBe("done");
     expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout", abort: "abort_sent" });
+  });
+});
+
+describe("FANUC RMI — một reply bị mất không đầu độc phiên (fix round 3)", () => {
+  it("FRC_Abort lần 1 không được trả lời ⇒ abort() thất bại; phiên bị reset ⇒ abort() lần 2 (phiên MỚI) thành công", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 300);
+    let aborts = 0;
+    fake.respond = (pkt) => {
+      if (pkt.Command === "FRC_Abort") {
+        aborts++;
+        return aborts === 1 ? { reply: null } : rmiHealthy(pkt); // reply lần 1 MẤT
+      }
+      return rmiHealthy(pkt);
+    };
+    await expect(within(d.abort(), 5000)).rejects.toThrow(/rmi_reply_timeout|timeout/);
+    await expect(within(d.abort(), 5000)).resolves.toBeUndefined();
+    expect(fake.conns[fake.conns.length - 1]).toEqual(["FRC_Connect", "FRC_Abort"]);
+  });
+
+  it("FRC_GetStatus bị mất reply ⇒ job failed + dừng (mở phiên mới); job KẾ TIẾP chạy trọn GetStatus→Initialize→motion ⇒ done", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    await fanucOn(fake, 300);
+    let statuses = 0;
+    fake.respond = (pkt) => {
+      if (pkt.Command === "FRC_GetStatus") {
+        statuses++;
+        if (statuses === 1) return { reply: null }; // reply GetStatus đầu tiên MẤT
+      }
+      return rmiHealthy(pkt);
+    };
+    const first = await within(dispatchRobotJob(HOME), 10_000);
+    expect(first.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout", abort: "abort_sent" });
+    const second = await within(dispatchRobotJob(HOME), 10_000);
+    expect(second.status).toBe("done");
+    expect(fake.conns[fake.conns.length - 1]).toEqual([
+      "FRC_Connect",
+      "FRC_Abort",
+      "FRC_GetStatus",
+      "FRC_Initialize",
+      "FRC_JointMotionJRep",
+    ]);
+  });
+});
+
+describe("FANUC RMI — mở lại phiên là single-flight (fix round 3)", () => {
+  it("hai abort() đồng thời sau khi robot rớt kết nối ⇒ ĐÚNG MỘT FRC_Connect, hai FRC_Abort trên cùng phiên mới, cả hai resolve", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 1000);
+    // rớt kết nối khi đang rảnh: server đóng socket phiên hiện tại
+    fake.respond = (pkt) => (pkt.Command === "FRC_GetStatus" ? { reply: null, drop: true } : rmiHealthy(pkt));
+    await d.getState().catch(() => undefined); // GetStatus ⇒ server đóng ⇒ client "dropped"
+    fake.respond = rmiHealthy;
+    expect(d.isConnected()).toBe(false);
+    const before = fake.conns.length;
+    const [a1, a2] = await within(
+      Promise.all([d.abort().then(() => "ok", (e: Error) => e.message), d.abort().then(() => "ok", (e: Error) => e.message)]),
+      5000,
+    );
+    expect([a1, a2]).toEqual(["ok", "ok"]);
+    const fresh = fake.conns.slice(before);
+    expect(fresh).toEqual([["FRC_Connect", "FRC_Abort", "FRC_Abort"]]);
+  });
+
+  it("runJob khi không có client ⇒ failed có mã rmi_not_connected (không dùng non-null assertion)", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const d = new FanucDriver();
+    (d as any).connected = true; // trạng thái lệch: cờ bật nhưng không có client
+    const r = await d.runJob({ jobType: "home" });
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("rmi_not_connected");
+  });
+});
+
+describe("FANUC RMI — rớt kết nối khi rảnh ⇒ cổng 3 chặn chuyển động, STOP vẫn tới robot (fix round 3)", () => {
+  it("drop khi rảnh ⇒ dispatch home bị từ chối, 0 gói; abort qua dispatcher mở phiên mới và gửi FRC_Abort", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 1000);
+    fake.respond = (pkt) => (pkt.Command === "FRC_GetStatus" ? { reply: null, drop: true } : rmiHealthy(pkt));
+    await d.getState().catch(() => undefined);
+    fake.respond = rmiHealthy;
+    fake.received.length = 0;
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("rejected");
+    expect(fake.received).toEqual([]);
+    const stop = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    expect(stop.status).toBe("done");
+    expect(fake.received).toEqual(["FRC_Connect", "FRC_Abort"]);
+  });
+
+  it("job chuyển động đã qua cổng 3 TRƯỚC khi rớt (runJob trực tiếp) ⇒ rmi_not_connected, KHÔNG mở phiên mới, 0 gói", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const fake = await startFakeRmi();
+    const d = await fanucOn(fake, 1000);
+    fake.respond = (pkt) => (pkt.Command === "FRC_GetStatus" ? { reply: null, drop: true } : rmiHealthy(pkt));
+    await d.getState().catch(() => undefined);
+    fake.respond = rmiHealthy;
+    fake.received.length = 0;
+    const before = fake.conns.length;
+    const r = await within(d.runJob({ jobType: "home" }), 5000);
+    expect(r.ok).toBe(false);
+    expect(r.detail?.reasonCode).toBe("rmi_not_connected");
+    await sleep(100);
+    expect(fake.conns.length).toBe(before);
+    expect(fake.received).toEqual([]);
   });
 });
 

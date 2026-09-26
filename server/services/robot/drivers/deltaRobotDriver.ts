@@ -239,10 +239,15 @@ export class DeltaDriver implements RobotDriver {
   }
 
   /** Send one command frame, await the reply, and throw if it is a Delta error. */
-  private async command(cmd: string, args: Array<string | number> = [], guard?: () => void): Promise<DeltaReply> {
+  private async command(
+    cmd: string,
+    args: Array<string | number> = [],
+    guard?: () => void,
+    allowAfterPeerDrop = false,
+  ): Promise<DeltaReply> {
     if (!this.client) throw new DeviceUnreachableError("deltaRobot");
     const frame = frameDeltaCommand(this.seq++, cmd, args);
-    const reply = parseDeltaResponse(await this.client.send(frame, this.timeoutMs, { guard }));
+    const reply = parseDeltaResponse(await this.client.send(frame, this.timeoutMs, { guard, allowAfterPeerDrop }));
     if (!reply.ok) throw new Error(`Delta ${cmd} failed: error ${reply.errorCode ?? "?"}`);
     return reply;
   }
@@ -377,7 +382,8 @@ export class DeltaDriver implements RobotDriver {
       if (!isAbort) {
         await this.command("SERVO", [1], guard);
       }
-      const reply = await this.command(cmd, args, guard);
+      // Fix round 3 — only the STOP may reconnect after a peer drop.
+      const reply = await this.command(cmd, args, guard, isAbort);
       this.lastOkAt = new Date();
       return { ok: true, status: "done", detail: { jobType: job.jobType, command: cmd, sent: true, reply: reply.fields } };
     } catch (err) {
